@@ -19,7 +19,14 @@ export function MaterialSymbol({
 }: MaterialSymbolProps) {
   return (
     <span
-      className={`material-symbols material-symbols-outlined ${filled ? "material-symbols-filled" : ""} text-[${size}px] ${className}`}
+      className={`material-symbols material-symbols-outlined ${filled ? "material-symbols-filled" : ""} ${className}`}
+      style={
+        {
+          fontSize: size,
+          "--fill": filled ? 1 : 0,
+          "--wght": weight,
+        } as React.CSSProperties
+      }
       data-weight={weight}
       data-fill={filled ? 1 : 0}
     >

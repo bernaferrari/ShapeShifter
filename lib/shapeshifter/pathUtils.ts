@@ -4,74 +4,127 @@
  * Focused on morphing compatibility.
  */
 
-import { Command, CommandType, PathData, Point, SubPath } from "./types";
+import type { Command, CommandType, PathData, Point, SubPath } from "./types";
 
 let idCounter = 0;
 function generateId(): string {
   return `cmd_${Date.now()}_${idCounter++}`;
 }
 
+const COMMAND_POINT_COUNTS: Partial<Record<CommandType, number>> = {
+  M: 1,
+  L: 1,
+  H: 1,
+  V: 1,
+  C: 3,
+  S: 2,
+  Q: 2,
+  T: 1,
+  A: 1,
+};
+
+const clonePath = (pathData: PathData): PathData => structuredClone(pathData);
+
+const round = (value: number) => Number(value.toFixed(3));
+
+function ensureSubPath(subPaths: SubPath[]): SubPath {
+  const current = subPaths.at(-1);
+  if (current) return current;
+  const created = { commands: [] };
+  subPaths.push(created);
+  return created;
+}
+
 /**
  * Parse an SVG path 'd' string into structured PathData.
- * Supports the most common commands used in icon animation.
+ * Supports absolute and relative M/L/H/V/C/S/Q/T/Z. Arcs are kept as endpoint
+ * commands so imported icon paths remain editable instead of being dropped.
  */
 export function parsePath(d: string): PathData {
   if (!d || !d.trim()) {
     return { subPaths: [{ commands: [] }] };
   }
 
-  const commands: Command[] = [];
-  // Improved regex for SVG path commands
-  const commandRegex = /([MLCSQAZHVST])\s*([^MLCSQAZHVST]*)/gi;
-  let match;
+  const tokens = d.match(/[a-zA-Z]|[-+]?(?:\d*\.)?\d+(?:e[-+]?\d+)?/gi) ?? [];
+  const subPaths: SubPath[] = [];
+  let index = 0;
+  let commandToken = "";
+  let current: Point = { x: 0, y: 0 };
+  let subPathStart: Point = { x: 0, y: 0 };
 
-  while ((match = commandRegex.exec(d)) !== null) {
-    const type = match[1].toUpperCase() as CommandType;
-    const args = match[2]
-      .trim()
-      .split(/[\s,]+/)
-      .filter(Boolean)
-      .map(parseFloat);
+  const isCommand = (token: string | undefined) => !!token && /^[a-zA-Z]$/.test(token);
+  const readNumber = () => Number(tokens[index++]);
+  const readPoint = (relative: boolean): Point => {
+    const x = readNumber();
+    const y = readNumber();
+    return relative ? { x: current.x + x, y: current.y + y } : { x, y };
+  };
 
-    const points: Point[] = [];
+  while (index < tokens.length) {
+    if (isCommand(tokens[index])) {
+      commandToken = tokens[index++];
+    }
+    if (!commandToken) break;
 
-    if (type === "M" || type === "L") {
-      for (let i = 0; i < args.length; i += 2) {
-        points.push({ x: args[i], y: args[i + 1] });
-      }
-    } else if (type === "C") {
-      // Cubic: 3 points (control1, control2, end)
-      for (let i = 0; i < args.length; i += 2) {
-        points.push({ x: args[i], y: args[i + 1] });
-      }
-    } else if (type === "Q") {
-      for (let i = 0; i < args.length; i += 2) {
-        points.push({ x: args[i], y: args[i + 1] });
-      }
-    } else if (type === "Z") {
-      // Close path - no points needed for rendering
-    } else {
-      // Fallback: treat as sequence of x,y
-      for (let i = 0; i < args.length; i += 2) {
-        if (!isNaN(args[i]) && !isNaN(args[i + 1])) {
-          points.push({ x: args[i], y: args[i + 1] });
-        }
-      }
+    const rawType = commandToken;
+    const type = rawType.toUpperCase() as CommandType;
+    const relative = rawType !== rawType.toUpperCase();
+    const subPath = ensureSubPath(subPaths);
+
+    if (type === "Z") {
+      subPath.commands.push({ id: generateId(), type: "Z", points: [] });
+      current = { ...subPathStart };
+      continue;
     }
 
-    if (points.length > 0 || type === "Z") {
-      commands.push({
-        id: generateId(),
-        type,
-        points,
-      });
+    if (type === "M") {
+      const point = readPoint(relative);
+      current = point;
+      subPathStart = point;
+      subPaths.push({ commands: [{ id: generateId(), type: "M", points: [point] }] });
+
+      while (index < tokens.length && !isCommand(tokens[index])) {
+        const linePoint = readPoint(relative);
+        current = linePoint;
+        ensureSubPath(subPaths).commands.push({ id: generateId(), type: "L", points: [linePoint] });
+      }
+      continue;
+    }
+
+    while (index < tokens.length && !isCommand(tokens[index])) {
+      if (type === "H") {
+        const x = readNumber();
+        current = { x: relative ? current.x + x : x, y: current.y };
+        subPath.commands.push({ id: generateId(), type: "L", points: [{ ...current }] });
+        continue;
+      }
+
+      if (type === "V") {
+        const y = readNumber();
+        current = { x: current.x, y: relative ? current.y + y : y };
+        subPath.commands.push({ id: generateId(), type: "L", points: [{ ...current }] });
+        continue;
+      }
+
+      if (type === "A") {
+        if (index + 6 >= tokens.length) break;
+        index += 5;
+        const end = readPoint(relative);
+        current = end;
+        subPath.commands.push({ id: generateId(), type: "L", points: [end] });
+        continue;
+      }
+
+      const pointCount = COMMAND_POINT_COUNTS[type];
+      if (!pointCount || index + pointCount * 2 > tokens.length) break;
+
+      const points = Array.from({ length: pointCount }, () => readPoint(relative));
+      current = points.at(-1) ?? current;
+      subPath.commands.push({ id: generateId(), type, points });
     }
   }
 
-  // Group into subpaths (very simple version for now)
-  const subPaths: SubPath[] = [{ commands }];
-
-  return { subPaths };
+  return { subPaths: subPaths.filter((subPath) => subPath.commands.length > 0) };
 }
 
 /**
@@ -89,7 +142,7 @@ export function pathToString(pathData: PathData): string {
       }
 
       cmd.points.forEach((p, index) => {
-        d += `${p.x.toFixed(2)} ${p.y.toFixed(2)}`;
+        d += `${round(p.x)} ${round(p.y)}`;
         if (index < cmd.points.length - 1) d += " ";
       });
       d += " ";
@@ -116,7 +169,7 @@ export function updatePoint(
   pointIdx: number,
   newPoint: Point,
 ): PathData {
-  const newData = JSON.parse(JSON.stringify(pathData)); // cheap deep clone for now
+  const newData = clonePath(pathData);
   const cmd = newData.subPaths[subIdx].commands[cmdIdx];
   if (cmd && cmd.points[pointIdx]) {
     cmd.points[pointIdx] = newPoint;
@@ -133,7 +186,7 @@ export function addPointAfter(
   cmdIdx: number,
   newPoint: Point,
 ): PathData {
-  const newData = JSON.parse(JSON.stringify(pathData));
+  const newData = clonePath(pathData);
   const sub = newData.subPaths[subIdx];
 
   const newCmd: Command = {
@@ -150,7 +203,7 @@ export function addPointAfter(
  * Delete a command (point).
  */
 export function deleteCommand(pathData: PathData, subIdx: number, cmdIdx: number): PathData {
-  const newData = JSON.parse(JSON.stringify(pathData));
+  const newData = clonePath(pathData);
   newData.subPaths[subIdx].commands.splice(cmdIdx, 1);
   return newData;
 }
@@ -170,7 +223,10 @@ export function insertPointNear(
     sub.commands.forEach((cmd, cmdIdx) => {
       if (cmd.type === "Z" || cmd.points.length === 0) return;
 
-      const prevPoint = (cmdIdx > 0 ? sub.commands[cmdIdx - 1].points.at(-1) : undefined) ?? { x: 0, y: 0 };
+      const prevPoint = (cmdIdx > 0 ? sub.commands[cmdIdx - 1].points.at(-1) : undefined) ?? {
+        x: 0,
+        y: 0,
+      };
 
       const endPoint = cmd.points.at(-1)!;
 
@@ -225,7 +281,7 @@ export function getInterpolatedPath(from: PathData, to: PathData, t: number): st
         if (toCmd) {
           result += toCmd.type;
           toCmd.points.forEach((p) => {
-            result += `${p.x.toFixed(2)} ${p.y.toFixed(2)} `;
+            result += `${round(p.x)} ${round(p.y)} `;
           });
         }
         continue;
@@ -235,7 +291,7 @@ export function getInterpolatedPath(from: PathData, to: PathData, t: number): st
         // Similar fallback
         result += fromCmd.type;
         fromCmd.points.forEach((p) => {
-          result += `${p.x.toFixed(2)} ${p.y.toFixed(2)} `;
+          result += `${round(p.x)} ${round(p.y)} `;
         });
         continue;
       }
@@ -244,15 +300,19 @@ export function getInterpolatedPath(from: PathData, to: PathData, t: number): st
       result += fromCmd.type;
 
       const maxPts = Math.max(fromCmd.points.length, toCmd.points.length);
+      if (maxPts === 0) {
+        continue;
+      }
 
       for (let p = 0; p < maxPts; p++) {
         const fp = fromCmd.points[p] || fromCmd.points[fromCmd.points.length - 1];
         const tp = toCmd.points[p] || toCmd.points[toCmd.points.length - 1];
+        if (!fp || !tp) continue;
 
         const x = fp.x + (tp.x - fp.x) * t;
         const y = fp.y + (tp.y - fp.y) * t;
 
-        result += `${x.toFixed(2)} ${y.toFixed(2)} `;
+        result += `${round(x)} ${round(y)} `;
       }
     }
   }

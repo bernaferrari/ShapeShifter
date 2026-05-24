@@ -5,7 +5,6 @@ import {
   Play,
   Pause,
   SkipBack,
-  SkipForward,
   Undo2,
   Redo2,
   Download,
@@ -30,7 +29,7 @@ import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { MaterialSymbol } from "./MaterialSymbol";
 import { ExportDialog } from "./ExportDialog";
-import { ThemeToggle } from "../ThemeToggle"; // We'll create this helper if needed
+import { ThemeToggle } from "../ThemeToggle";
 
 interface ToolbarProps {
   onExport: (type: string) => void;
@@ -41,6 +40,7 @@ interface ToolbarProps {
   onShowHelp: () => void;
   resetAllViews: () => void;
   isPlaying: boolean;
+  isActionMode: boolean;
   editingSide: "from" | "to";
   setEditingSide: (side: "from" | "to") => void;
   undo: () => void;
@@ -58,6 +58,7 @@ export function Toolbar({
   onShowHelp,
   resetAllViews,
   isPlaying,
+  isActionMode,
   editingSide,
   setEditingSide,
   undo,
@@ -67,12 +68,10 @@ export function Toolbar({
 }: ToolbarProps) {
   const {
     addLayer,
-    deleteLayer,
-    selectedLayerId,
-    layers,
     reverseSelectedLayer,
     shiftSelectedLayer,
     autoFixSelectedLayer,
+    closeActionMode,
   } = useEditorStore();
 
   const handleAutoFix = () => {
@@ -82,16 +81,29 @@ export function Toolbar({
   };
 
   return (
-    <header className="editor-toolbar">
+    <header className="flex min-h-12 shrink-0 items-center gap-2 overflow-x-auto border-b bg-primary px-3 text-primary-foreground shadow-sm [scrollbar-width:none]">
       <div className="flex items-center gap-3">
         {/* Brand */}
-        <div className="flex items-center gap-2 pr-4 border-r border-border">
-          <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center">
+        <div className="flex items-center gap-2 border-r border-primary-foreground/20 pr-4">
+          {isActionMode && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
+              aria-label="Close path morphing mode"
+              onClick={closeActionMode}
+            >
+              <MaterialSymbol name="arrow_back" size={20} />
+            </Button>
+          )}
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary-foreground/15">
             <MaterialSymbol name="auto_awesome" size={18} filled weight={600} />
           </div>
           <div>
-            <div className="font-semibold tracking-[-0.02em] text-lg">ShapeShifter</div>
-            <div className="text-[10px] text-muted-foreground -mt-1">2026</div>
+            <div className="text-lg font-semibold tracking-tight">{isActionMode ? "Path morphing" : "Shape Shifter"}</div>
+            <div className="-mt-1 text-[10px] text-primary-foreground/70">
+              {isActionMode ? "Edit start and end path compatibility" : "React 2026"}
+            </div>
           </div>
         </div>
 
@@ -100,18 +112,53 @@ export function Toolbar({
         </Badge>
 
         {/* Help */}
-        <Button variant="ghost" size="sm" className="editor-btn gap-1.5" onClick={onShowHelp}>
+        <Button variant="ghost" size="sm" className="gap-1.5 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground" onClick={onShowHelp}>
           <HelpCircle className="w-4 h-4" /> Shortcuts
         </Button>
       </div>
 
+      <div className="flex items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+              variant="ghost"
+              size="icon"
+              className="text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
+              onClick={onResetAnim}
+              aria-label="Reset animation"
+              />
+            }
+          >
+            <SkipBack className="w-4 h-4" />
+          </TooltipTrigger>
+          <TooltipContent>Reset animation</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+              variant="default"
+              size="icon"
+              className="bg-primary-foreground text-primary hover:bg-primary-foreground/90"
+              onClick={onTogglePlay}
+              aria-label={isPlaying ? "Pause animation" : "Play animation"}
+              />
+            }
+          >
+            {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+          </TooltipTrigger>
+          <TooltipContent>{isPlaying ? "Pause" : "Play"} animation</TooltipContent>
+        </Tooltip>
+      </div>
+
       {/* File */}
-      <div className="group">
+      <div className="flex items-center gap-1">
         <DropdownMenu>
-          <DropdownMenuTrigger>
-            <Button variant="ghost" size="sm" className="editor-btn gap-2">
-              <Upload className="w-4 h-4" /> File
-            </Button>
+          <DropdownMenuTrigger
+            render={<Button variant="ghost" size="sm" className="gap-2 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground" />}
+          >
+            <Upload className="w-4 h-4" /> File
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-52">
             <DropdownMenuItem onClick={() => toast.info("New project (demo)")}>
@@ -119,6 +166,9 @@ export function Toolbar({
             </DropdownMenuItem>
             <DropdownMenuItem onClick={onOpenSVGImport}>
               <Upload className="w-4 h-4 mr-2" /> Import from SVG
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => addLayer("path")}>
+              <Plus className="w-4 h-4 mr-2" /> Add Layer
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => onExport("json")}>
@@ -129,123 +179,162 @@ export function Toolbar({
       </div>
 
       {/* Edit */}
-      <div className="group">
+      <div className="flex items-center gap-1">
         <Tooltip>
-          <TooltipTrigger>
-            <Button
+          <TooltipTrigger
+            render={
+              <Button
               variant="ghost"
               size="icon"
-              className="editor-btn"
+              className="text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
               onClick={undo}
               disabled={!canUndo}
-            >
-              <Undo2 className="w-4 h-4" />
-            </Button>
+              aria-label="Undo"
+              />
+            }
+          >
+            <Undo2 className="w-4 h-4" />
           </TooltipTrigger>
           <TooltipContent>Undo (⌘Z)</TooltipContent>
         </Tooltip>
         <Tooltip>
-          <TooltipTrigger>
-            <Button
+          <TooltipTrigger
+            render={
+              <Button
               variant="ghost"
               size="icon"
-              className="editor-btn"
+              className="text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
               onClick={redo}
               disabled={!canRedo}
-            >
-              <Redo2 className="w-4 h-4" />
-            </Button>
+              aria-label="Redo"
+              />
+            }
+          >
+            <Redo2 className="w-4 h-4" />
           </TooltipTrigger>
           <TooltipContent>Redo (⇧⌘Z)</TooltipContent>
         </Tooltip>
       </div>
 
-      {/* Transform */}
-      <div className="group">
+      {/* Transform / Action Mode */}
+      <div className="flex items-center gap-1">
         <Tooltip>
-          <TooltipTrigger>
-            <Button
+          <TooltipTrigger
+            render={
+              <Button
               variant={editingSide === "from" ? "default" : "ghost"}
               size="sm"
               onClick={() => setEditingSide("from")}
-              className="editor-btn gap-1.5"
-            >
-              <MaterialSymbol name="arrow_left" size={16} /> From
-            </Button>
+              className={editingSide === "from" ? "gap-1.5 bg-primary-foreground text-primary hover:bg-primary-foreground/90" : "gap-1.5 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"}
+              />
+            }
+          >
+            <MaterialSymbol name="arrow_left" size={16} /> From
           </TooltipTrigger>
           <TooltipContent>Edit starting shape (1)</TooltipContent>
         </Tooltip>
         <Tooltip>
-          <TooltipTrigger>
-            <Button
+          <TooltipTrigger
+            render={
+              <Button
               variant={editingSide === "to" ? "default" : "ghost"}
               size="sm"
               onClick={() => setEditingSide("to")}
-              className="editor-btn gap-1.5"
-            >
-              To <MaterialSymbol name="arrow_right" size={16} />
-            </Button>
+              className={editingSide === "to" ? "gap-1.5 bg-primary-foreground text-primary hover:bg-primary-foreground/90" : "gap-1.5 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"}
+              />
+            }
+          >
+            To <MaterialSymbol name="arrow_right" size={16} />
           </TooltipTrigger>
           <TooltipContent>Edit ending shape (2)</TooltipContent>
         </Tooltip>
       </div>
 
       {/* Magic Tools */}
-      <div className="group">
+      <div className="flex items-center gap-1">
         <Tooltip>
-          <TooltipTrigger>
-            <Button
+          <TooltipTrigger
+            render={
+              <Button
               variant="outline"
               size="sm"
-              className="editor-btn gap-2"
+              className="gap-2 border-primary-foreground/30 bg-primary-foreground/5 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
               onClick={handleAutoFix}
-            >
-              <Zap className="w-4 h-4" /> Auto Fix
-            </Button>
+              />
+            }
+          >
+            <Zap className="w-4 h-4" /> Auto Fix
           </TooltipTrigger>
           <TooltipContent>Make paths compatible (A)</TooltipContent>
         </Tooltip>
+        {isActionMode && (
+          <>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="border-primary-foreground/30 bg-primary-foreground/5 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
+                    onClick={() => {
+                      shiftSelectedLayer(-1);
+                      toast.success("Shifted back");
+                    }}
+                    aria-label="Shift back points"
+                  />
+                }
+              >
+                <SkipBack className="h-4 w-4" />
+              </TooltipTrigger>
+              <TooltipContent>Shift back points</TooltipContent>
+            </Tooltip>
+          </>
+        )}
         <Tooltip>
-          <TooltipTrigger>
-            <Button
+          <TooltipTrigger
+            render={
+              <Button
               variant="outline"
               size="sm"
-              className="editor-btn gap-2"
+              className="gap-2 border-primary-foreground/30 bg-primary-foreground/5 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
               onClick={() => {
                 reverseSelectedLayer();
                 toast.success("Reversed");
               }}
-            >
-              <RotateCw className="w-4 h-4" /> Reverse
-            </Button>
+              />
+            }
+          >
+            <RotateCw className="w-4 h-4" /> Reverse
           </TooltipTrigger>
           <TooltipContent>Reverse (R)</TooltipContent>
         </Tooltip>
         <Tooltip>
-          <TooltipTrigger>
-            <Button
+          <TooltipTrigger
+            render={
+              <Button
               variant="outline"
               size="sm"
-              className="editor-btn gap-2"
+              className="gap-2 border-primary-foreground/30 bg-primary-foreground/5 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
               onClick={() => {
                 shiftSelectedLayer(1);
                 toast.success("Shifted");
               }}
-            >
-              <ArrowLeftRight className="w-4 h-4" /> Shift
-            </Button>
+              />
+            }
+          >
+            <ArrowLeftRight className="w-4 h-4" /> Shift
           </TooltipTrigger>
           <TooltipContent>Shift points (S)</TooltipContent>
         </Tooltip>
       </div>
 
       {/* Samples */}
-      <div className="group">
+      <div className="flex items-center gap-1">
         <DropdownMenu>
-          <DropdownMenuTrigger>
-            <Button variant="ghost" size="sm" className="editor-btn gap-2">
-              Samples
-            </Button>
+          <DropdownMenuTrigger
+            render={<Button variant="ghost" size="sm" className="gap-2 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground" />}
+          >
+            Samples
           </DropdownMenuTrigger>
           <DropdownMenuContent>
             <DropdownMenuItem onClick={() => onLoadSample(0)}>Play → Pause</DropdownMenuItem>
@@ -258,27 +347,21 @@ export function Toolbar({
       </div>
 
       {/* Export */}
-      <div className="group">
-        <DropdownMenu>
-          <DropdownMenuTrigger>
-            <Button variant="ghost" size="sm" className="editor-btn gap-2">
-              <Download className="w-4 h-4" /> Export
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onClick={() => onExport("svg")}>Animated SVG</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onExport("css")}>CSS Keyframes</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onExport("lottie")}>Lottie JSON</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => onExport("json")}>Project (.json)</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+      <div className="flex items-center gap-1">
+        <ExportDialog>
+          <Button variant="ghost" size="sm" className="gap-2 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground">
+            <Download className="w-4 h-4" /> Export
+          </Button>
+        </ExportDialog>
       </div>
 
       {/* Reset Views */}
-      <Button variant="ghost" size="sm" className="editor-btn" onClick={resetAllViews}>
+      <Button variant="ghost" size="sm" className="text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground" onClick={resetAllViews}>
         Reset Views
       </Button>
+
+      <div className="flex-1" />
+      <ThemeToggle />
     </header>
   );
 }

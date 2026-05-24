@@ -13,16 +13,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { Badge } from "@/components/ui/badge";
 import { Download, Film } from "lucide-react";
 import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editorStore";
 import {
   exportAnimatedSVG,
+  exportAnimatedVectorDrawable,
   exportCSSKeyframes,
   exportLottie,
   exportProjectJSON,
-  exportGIF,
+  exportSvgSpritesheet,
+  exportVectorDrawable,
   type ExportOptions,
 } from "@/lib/shapeshifter/exporter";
 
@@ -31,11 +32,11 @@ interface ExportDialogProps {
 }
 
 export function ExportDialog({ children }: ExportDialogProps) {
-  const { layers, selectedLayerId } = useEditorStore();
+  const { layers, selectedLayerId, vector, animation, hiddenLayerIds } = useEditorStore();
   const currentLayer = layers.find((l) => l.id === selectedLayerId) || layers[0];
 
   const [open, setOpen] = useState(false);
-  const [format, setFormat] = useState<"svg" | "css" | "lottie" | "gif" | "json">("svg");
+  const [format, setFormat] = useState<"svg" | "css" | "lottie" | "vector" | "avd" | "spritesheet" | "json">("svg");
   const [options, setOptions] = useState<ExportOptions>({
     duration: 1.4,
     fps: 60,
@@ -81,25 +82,35 @@ export function ExportDialog({ children }: ExportDialogProps) {
           break;
 
         case "lottie":
-          const lottieJson = exportLottie(
+          const lottieContent = exportLottie(
             currentLayer.from,
             currentLayer.to,
             currentLayer.name,
             options.duration,
           );
-          blob = new Blob([JSON.stringify(lottieJson, null, 2)], { type: "application/json" });
-          filename = `${baseName}-morph.json`;
+          blob = new Blob([JSON.stringify(lottieContent, null, 2)], { type: "application/json" });
+          filename = `${baseName}.lottie.json`;
           break;
 
-        case "gif":
-          blob = await exportGIF(currentLayer.from, currentLayer.to, options);
-          filename = `${baseName}-morph.gif`;
+        case "vector":
+          blob = new Blob([exportVectorDrawable(currentLayer, options)], { type: "application/xml" });
+          filename = `${baseName}-vector.xml`;
+          break;
+
+        case "avd":
+          blob = new Blob([exportAnimatedVectorDrawable(currentLayer, options)], { type: "application/xml" });
+          filename = `${baseName}-animated-vector.xml`;
+          break;
+
+        case "spritesheet":
+          blob = new Blob([exportSvgSpritesheet(currentLayer, options)], { type: "image/svg+xml" });
+          filename = `${baseName}-spritesheet.svg`;
           break;
 
         case "json":
-          const project = exportProjectJSON(layers);
+          const project = exportProjectJSON(layers, vector, animation, hiddenLayerIds);
           blob = new Blob([JSON.stringify(project, null, 2)], { type: "application/json" });
-          filename = `shapeshifter-${Date.now()}.json`;
+          filename = `${vector.name || "shapeshifter"}.shapeshifter`;
           break;
       }
 
@@ -125,7 +136,7 @@ export function ExportDialog({ children }: ExportDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger>{children}</DialogTrigger>
+      <DialogTrigger render={children as React.ReactElement} />
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -142,8 +153,8 @@ export function ExportDialog({ children }: ExportDialogProps) {
           {/* Format Selection */}
           <div>
             <Label className="text-xs font-medium tracking-widest">FORMAT</Label>
-            <div className="grid grid-cols-5 gap-2 mt-2">
-              {(["svg", "css", "lottie", "gif", "json"] as const).map((f) => (
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {(["svg", "css", "lottie", "vector", "avd", "spritesheet", "json"] as const).map((f) => (
                 <Button
                   key={f}
                   variant={format === f ? "default" : "outline"}
@@ -156,10 +167,12 @@ export function ExportDialog({ children }: ExportDialogProps) {
               ))}
             </div>
             <div className="text-[10px] text-muted-foreground mt-1.5">
-              {format === "gif" && "Rasterized 60fps GIF • Best for web/social"}
               {format === "svg" && "Self-contained animated SVG with JS • Best quality"}
               {format === "css" && "Pure CSS keyframes • Zero JS"}
-              {format === "lottie" && "Lottie JSON • After Effects / mobile ready"}
+              {format === "lottie" && "Lottie JSON for apps and motion pipelines"}
+              {format === "vector" && "Android Vector Drawable XML"}
+              {format === "avd" && "Animated Vector Drawable XML bundle"}
+              {format === "spritesheet" && "Frame-by-frame SVG spritesheet"}
               {format === "json" && "Full project backup (all layers)"}
             </div>
           </div>
@@ -194,22 +207,6 @@ export function ExportDialog({ children }: ExportDialogProps) {
                   onValueChange={(v) => setOptions({ ...options, strokeWidth: Array.isArray(v) ? v[0] : v })}
                 />
               </div>
-
-              {format === "gif" && (
-                <div>
-                  <div className="flex justify-between text-xs mb-1.5">
-                    <Label>FPS</Label>
-                    <span className="font-mono text-primary">{options.fps}</span>
-                  </div>
-                  <Slider
-                    value={[options.fps || 60]}
-                    min={15}
-                    max={60}
-                    step={5}
-                    onValueChange={(v) => setOptions({ ...options, fps: Array.isArray(v) ? v[0] : v })}
-                  />
-                </div>
-              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>

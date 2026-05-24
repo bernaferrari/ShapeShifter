@@ -1,77 +1,94 @@
 "use client";
 
-import React, { useRef, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { useEditorStore } from "@/lib/store/editorStore";
-import { getAllCommands, pathToString, getInterpolatedPath } from "@/lib/shapeshifter/pathUtils";
-import { Command } from "@/lib/shapeshifter/types";
+import { pathToString, getInterpolatedPath } from "@/lib/shapeshifter/pathUtils";
 
 interface PathCanvasProps {
   resetKey?: number;
   side: "from" | "to" | "preview";
   width?: number;
   height?: number;
+  zoom?: number;
 }
 
 export const PathCanvas = React.memo(function PathCanvas({
   side,
-  width = 520,
-  height = 520,
+  width = 320,
+  height = 320,
   resetKey,
-}: PathCanvasProps & { resetKey?: number }) {
+  zoom = 1,
+}: PathCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
 
-  // Pan and Zoom state (local to each canvas for independence)
   const [viewBox, setViewBox] = React.useState({ x: 0, y: 0, w: 48, h: 48, scale: 1 });
+  const [isPanning, setIsPanning] = React.useState(false);
+  const [lastPan, setLastPan] = React.useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const scale = Math.max(0.5, Math.min(8, zoom));
+    const size = 48 / scale;
+    setViewBox({ x: 24 - size / 2, y: 24 - size / 2, w: size, h: size, scale });
+  }, [resetKey, zoom]);
+
+  const pointFromEvent = useCallback(
+    (clientX: number, clientY: number) => {
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (!rect) return null;
+      return {
+        x: viewBox.x + ((clientX - rect.left) / rect.width) * viewBox.w,
+        y: viewBox.y + ((clientY - rect.top) / rect.height) * viewBox.h,
+      };
+    },
+    [viewBox],
+  );
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
       e.preventDefault();
-      const rect = svgRef.current?.getBoundingClientRect();
-      if (!rect) return;
-
-      const mouseX = ((e.clientX - rect.left) / rect.width) * viewBox.w + viewBox.x;
-      const mouseY = ((e.clientY - rect.top) / rect.height) * viewBox.h + viewBox.y;
+      const mouse = pointFromEvent(e.clientX, e.clientY);
+      if (!mouse) return;
 
       const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9;
       const newScale = Math.max(0.5, Math.min(10, viewBox.scale * zoomFactor));
       const newW = 48 / newScale;
       const newH = 48 / newScale;
 
-      const newX = mouseX - (mouseX - viewBox.x) * (newW / viewBox.w);
-      const newY = mouseY - (mouseY - viewBox.y) * (newH / viewBox.h);
+      const newX = mouse.x - (mouse.x - viewBox.x) * (newW / viewBox.w);
+      const newY = mouse.y - (mouse.y - viewBox.y) * (newH / viewBox.h);
 
       setViewBox({ x: newX, y: newY, w: newW, h: newH, scale: newScale });
     },
-    [viewBox],
+    [pointFromEvent, viewBox],
   );
 
-  // Pan with middle mouse or when holding space (simplified: drag background)
-  const [isPanning, setIsPanning] = React.useState(false);
-  const [lastPan, setLastPan] = React.useState({ x: 0, y: 0 });
-
   const handleSvgPointerDown = useCallback((e: React.PointerEvent) => {
-    if (e.button === 1 || e.buttons === 4) {
-      // middle mouse
+    if (e.button === 1 || e.altKey) {
       setIsPanning(true);
       setLastPan({ x: e.clientX, y: e.clientY });
-      (e.target as SVGElement).setPointerCapture(e.pointerId);
+      svgRef.current?.setPointerCapture(e.pointerId);
     }
   }, []);
 
   const handleSvgPointerMove = useCallback(
     (e: React.PointerEvent) => {
       if (isPanning) {
-        const dx = (e.clientX - lastPan.x) / (520 / viewBox.w);
-        const dy = (e.clientY - lastPan.y) / (520 / viewBox.h);
+        const rect = svgRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const dx = ((e.clientX - lastPan.x) / rect.width) * viewBox.w;
+        const dy = ((e.clientY - lastPan.y) / rect.height) * viewBox.h;
         setViewBox((prev) => ({ ...prev, x: prev.x - dx, y: prev.y - dy }));
         setLastPan({ x: e.clientX, y: e.clientY });
       }
     },
-    [isPanning, lastPan, viewBox.w],
+    [isPanning, lastPan, viewBox.h, viewBox.w],
   );
 
-  const handleSvgPointerUp = useCallback(() => {
+  const handleSvgPointerUp = useCallback((e: React.PointerEvent) => {
     setIsPanning(false);
+    if (svgRef.current?.hasPointerCapture(e.pointerId)) {
+      svgRef.current.releasePointerCapture(e.pointerId);
+    }
   }, []);
 
   const {
@@ -81,10 +98,11 @@ export const PathCanvas = React.memo(function PathCanvas({
     selection,
     progress,
     snapToGrid,
+    pushHistory,
     updateSelectedPoint,
     addPointOnPath,
     selectPoint,
-    clearSelection,
+    setEditingSide,
   } = useEditorStore();
 
   const currentLayer = layers.find((l) => l.id === selectedLayerId);
@@ -103,39 +121,54 @@ export const PathCanvas = React.memo(function PathCanvas({
   };
 
   const displayPath = getDisplayPath();
+  const fallbackStroke = side === "to" ? "hsl(var(--destructive))" : "hsl(var(--primary))";
+  const hasExplicitStroke = Boolean(currentLayer.strokeColor);
+  const hasExplicitFill = Boolean(currentLayer.fillColor);
+  const previewStroke = hasExplicitStroke ? currentLayer.strokeColor : "currentColor";
+  const strokeWidth =
+    hasExplicitStroke || !hasExplicitFill ? (currentLayer.strokeWidth && currentLayer.strokeWidth > 0 ? currentLayer.strokeWidth : 2.2) : 0;
 
-  const commands = getAllCommands(targetPathData);
+  const commands = useMemo(
+    () =>
+      targetPathData.subPaths.flatMap((subPath, subPathIndex) =>
+        subPath.commands.map((command, commandIndex) => ({
+          command,
+          subPathIndex,
+          commandIndex,
+        })),
+      ),
+    [targetPathData],
+  );
 
   // Dragging logic
   const handlePointerDown = useCallback(
-    (e: React.PointerEvent, cmdIndex: number, pointIndex: number) => {
+    (e: React.PointerEvent, subPathIndex: number, commandIndex: number, pointIndex: number) => {
       if (!isEditingThisSide) return;
 
       e.stopPropagation();
       (e.target as SVGElement).setPointerCapture(e.pointerId);
+      pushHistory();
 
       const newSelection = {
         layerId: selectedLayerId,
         side: editingSide,
-        subPathIndex: 0,
-        commandIndex: cmdIndex,
+        subPathIndex,
+        commandIndex,
         pointIndex,
       };
       selectPoint(newSelection);
 
       const handleMove = (moveEvent: PointerEvent) => {
-        if (!svgRef.current) return;
-
-        const rect = svgRef.current.getBoundingClientRect();
-        let x = ((moveEvent.clientX - rect.left) / rect.width) * 48;
-        let y = ((moveEvent.clientY - rect.top) / rect.height) * 48;
+        const point = pointFromEvent(moveEvent.clientX, moveEvent.clientY);
+        if (!point) return;
+        let { x, y } = point;
 
         if (snapToGrid) {
           x = Math.round(x * 2) / 2;
           y = Math.round(y * 2) / 2;
         }
 
-        updateSelectedPoint({ x, y });
+        updateSelectedPoint({ x, y }, { recordHistory: false });
       };
 
       const handleUp = () => {
@@ -146,40 +179,62 @@ export const PathCanvas = React.memo(function PathCanvas({
       window.addEventListener("pointermove", handleMove);
       window.addEventListener("pointerup", handleUp);
     },
-    [isEditingThisSide, selectedLayerId, editingSide, snapToGrid, updateSelectedPoint, selectPoint],
+    [
+      editingSide,
+      isEditingThisSide,
+      pointFromEvent,
+      pushHistory,
+      selectedLayerId,
+      selectPoint,
+      snapToGrid,
+      updateSelectedPoint,
+    ],
   );
 
-  // Click on SVG background / path to add point
   const handleSvgClick = useCallback(
     (e: React.MouseEvent<SVGSVGElement>) => {
-      if (!isEditingThisSide || !svgRef.current) return;
+      if (side === "preview") return;
+      if (!isEditingThisSide) {
+        setEditingSide(side);
+        return;
+      }
 
-      const rect = svgRef.current.getBoundingClientRect();
-      const x = ((e.clientX - rect.left) / rect.width) * 48;
-      const y = ((e.clientY - rect.top) / rect.height) * 48;
+      const point = pointFromEvent(e.clientX, e.clientY);
+      if (!point) return;
 
-      // Add point
-      addPointOnPath(x, y);
+      addPointOnPath(point.x, point.y);
     },
-    [isEditingThisSide, addPointOnPath],
+    [addPointOnPath, isEditingThisSide, pointFromEvent, setEditingSide, side],
   );
 
-  const isSelected = (cmdIdx: number, ptIdx: number) =>
-    selection?.commandIndex === cmdIdx && selection?.pointIndex === ptIdx;
+  const isSelected = (subPathIndex: number, commandIndex: number, pointIndex: number) =>
+    selection?.subPathIndex === subPathIndex &&
+    selection?.commandIndex === commandIndex &&
+    selection?.pointIndex === pointIndex;
 
   return (
     <svg
       ref={svgRef}
       width={width}
       height={height}
-      viewBox="0 0 48 48"
-      className="path-canvas cursor-crosshair"
+      viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
+      className="h-full w-full min-w-0 cursor-crosshair touch-none select-none bg-card"
       onClick={handleSvgClick}
+      onWheel={handleWheel}
+      onPointerDown={handleSvgPointerDown}
+      onPointerMove={handleSvgPointerMove}
+      onPointerUp={handleSvgPointerUp}
+      onDoubleClick={() => {
+        const size = 48 / Math.max(0.5, Math.min(8, zoom));
+        setViewBox({ x: 24 - size / 2, y: 24 - size / 2, w: size, h: size, scale: zoom });
+      }}
+      role="img"
+      aria-label={`${side} path canvas`}
     >
       {/* Subtle grid */}
       <defs>
         <pattern id="grid" width="4" height="4" patternUnits="userSpaceOnUse">
-          <path d="M 4 0 L 0 0 0 4" fill="none" stroke="var(--editor-grid)" strokeWidth="0.4" />
+          <path d="M 4 0 L 0 0 0 4" className="stroke-border" fill="none" strokeWidth="0.4" />
         </pattern>
       </defs>
       <rect x="0" y="0" width="48" height="48" fill="url(#grid)" />
@@ -187,22 +242,41 @@ export const PathCanvas = React.memo(function PathCanvas({
       {/* The actual path */}
       <path
         d={displayPath}
-        className={side === "preview" ? "path-preview" : side === "from" ? "path-from" : "path-to"}
-        fill="none"
-        strokeWidth={side === "preview" ? 2.5 : 2.2}
+        className={
+          side === "preview"
+            ? "text-foreground drop-shadow-sm"
+            : side === "from"
+              ? "drop-shadow-sm"
+              : "opacity-85 drop-shadow-sm [stroke-dasharray:4_3]"
+        }
+        fill={currentLayer.fillColor || "none"}
+        fillOpacity={currentLayer.fillAlpha ?? 1}
+        stroke={side === "preview" ? previewStroke : currentLayer.strokeColor || fallbackStroke}
+        strokeOpacity={currentLayer.strokeAlpha ?? 1}
+        strokeWidth={side === "preview" ? Math.max(strokeWidth, 2.2) : strokeWidth}
+        strokeLinecap={currentLayer.strokeLinecap ?? "butt"}
+        strokeLinejoin={currentLayer.strokeLinejoin ?? "miter"}
+        strokeMiterlimit={currentLayer.strokeMiterLimit ?? 4}
+        fillRule={currentLayer.fillType === "evenOdd" ? "evenodd" : "nonzero"}
       />
 
       {/* Control points (only for from/to when editing) */}
       {isEditingThisSide &&
-        commands.map((cmd, cmdIdx) =>
-          cmd.points.map((point, ptIdx) => (
-            <g key={`${cmd.id}-${ptIdx}`}>
+        commands.map(({ command, subPathIndex, commandIndex }) =>
+          command.points.map((point, pointIndex) => (
+            <g key={`${command.id}-${pointIndex}`}>
               <circle
                 cx={point.x}
                 cy={point.y}
                 r="1.6"
-                className={`control-point ${isSelected(cmdIdx, ptIdx) ? "selected" : ""}`}
-                onPointerDown={(e) => handlePointerDown(e, cmdIdx, ptIdx)}
+                className={`cursor-grab stroke-background stroke-2 drop-shadow-sm transition-[fill,stroke,transform] duration-100 ${
+                  isSelected(subPathIndex, commandIndex, pointIndex)
+                    ? "fill-primary stroke-3"
+                    : "fill-primary hover:fill-accent"
+                }`}
+                onPointerDown={(e) =>
+                  handlePointerDown(e, subPathIndex, commandIndex, pointIndex)
+                }
               />
             </g>
           )),

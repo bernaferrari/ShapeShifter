@@ -28,17 +28,78 @@ export interface PathData {
   _string?: string;
 }
 
+export type LayerType = "path" | "clipPath" | "group" | "vector";
+export type StrokeLineCap = "butt" | "square" | "round";
+export type StrokeLineJoin = "miter" | "round" | "bevel";
+export type FillType = "nonZero" | "evenOdd";
+
+export interface PathStyle {
+  pathData?: PathData;
+  fillColor?: string;
+  fillAlpha?: number;
+  strokeColor?: string;
+  strokeAlpha?: number;
+  strokeWidth?: number;
+  strokeLinecap?: StrokeLineCap;
+  strokeLinejoin?: StrokeLineJoin;
+  strokeMiterLimit?: number;
+  trimPathStart?: number;
+  trimPathEnd?: number;
+  trimPathOffset?: number;
+  fillType?: FillType;
+}
+
+export interface TimelineBlock {
+  id: string;
+  layerId: string | number;
+  propertyName: string;
+  fromValue: string | number;
+  toValue: string | number;
+  startTime: number;
+  endTime: number;
+  interpolator?: string;
+  type?: "path" | "color" | "number";
+}
+
+export interface AnimationState {
+  id: string;
+  name: string;
+  duration: number;
+  blocks: TimelineBlock[];
+}
+
+export interface VectorMetadata {
+  id: string | number;
+  name: string;
+  width: number;
+  height: number;
+  alpha: number;
+}
+
 /**
  * A single editable layer in the animation.
  */
-export interface Layer {
+export interface Layer extends PathStyle {
   id: number | string;
   name: string;
+  type: LayerType;
   from: PathData;
   to: PathData;
   visible: boolean;
   locked: boolean;
+  expanded?: boolean;
+  parentId?: string | number | null;
+  children?: Layer[];
+  alpha?: number;
+  translateX?: number;
+  translateY?: number;
+  scaleX?: number;
+  scaleY?: number;
+  rotation?: number;
+  pivotX?: number;
+  pivotY?: number;
   duration?: number; // per-layer duration override
+  timeline?: TimelineBlock[];
 }
 
 /**

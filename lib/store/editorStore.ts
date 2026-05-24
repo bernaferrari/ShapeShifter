@@ -8,23 +8,68 @@ import { create } from "zustand";
 
 import {
   parsePath,
+  pathToString,
   updatePoint,
   addPointAfter,
   deleteCommand,
   insertPointNear,
-  getInterpolatedPath,
   reversePath,
   shiftPath,
 } from "../shapeshifter/pathUtils";
-import type { Layer, Selection, Point, PathData } from "../shapeshifter/types";
+import type {
+  AnimationState,
+  Layer,
+  LayerType,
+  Selection,
+  Point,
+  PathData,
+  VectorMetadata,
+} from "../shapeshifter/types";
+
+const PATH_STYLE_DEFAULTS = {
+  fillColor: "",
+  fillAlpha: 1,
+  strokeColor: "",
+  strokeAlpha: 1,
+  strokeWidth: 0,
+  strokeLinecap: "butt" as const,
+  strokeLinejoin: "miter" as const,
+  strokeMiterLimit: 4,
+  trimPathStart: 0,
+  trimPathEnd: 1,
+  trimPathOffset: 0,
+  fillType: "nonZero" as const,
+};
+
+function createPathLayer(layer: Omit<Layer, "type"> & Partial<Pick<Layer, "type">>): Layer {
+  return {
+    ...PATH_STYLE_DEFAULTS,
+    pathData: layer.from,
+    alpha: 1,
+    translateX: 0,
+    translateY: 0,
+    scaleX: 1,
+    scaleY: 1,
+    rotation: 0,
+    pivotX: 0,
+    pivotY: 0,
+    timeline: [],
+    ...layer,
+    type: layer.type ?? "path",
+  };
+}
 
 interface EditorState {
   // Layers
   layers: Layer[];
   selectedLayerId: string | number;
+  vector: VectorMetadata;
+  animation: AnimationState;
+  hiddenLayerIds: string[];
 
   // Editing mode
   editingSide: "from" | "to";
+  isActionMode: boolean;
 
   // Selection
   selection: Selection | null;
@@ -33,14 +78,16 @@ interface EditorState {
   isPlaying: boolean;
   progress: number; // 0-1
   speed: number;
+  isSlowMotion: boolean;
+  isRepeating: boolean;
 
   // UI
   zoom: number;
   snapToGrid: boolean;
 
   // History for undo/redo (professional 2026 tool feel)
-  history: any[];
-  future: any[];
+  history: Layer[][];
+  future: Layer[][];
   canUndo: boolean;
   canRedo: boolean;
 
@@ -51,11 +98,22 @@ interface EditorState {
 
   // Actions
   setLayers: (layers: Layer[]) => void;
+  importLayers: (layers: Layer[]) => void;
+  loadProject: (project: {
+    layers: Layer[];
+    vector: VectorMetadata;
+    animation: AnimationState;
+    hiddenLayerIds: string[];
+  }) => void;
+  replaceSelectedLayerPaths: (paths: Partial<Pick<Layer, "from" | "to" | "name">>) => void;
+  updateSelectedLayer: (patch: Partial<Layer>) => void;
   selectLayer: (id: string | number) => void;
   setEditingSide: (side: "from" | "to") => void;
+  startActionMode: () => void;
+  closeActionMode: () => void;
 
   // Path manipulation (the heart of ShapeShifter)
-  updateSelectedPoint: (newPoint: Point) => void;
+  updateSelectedPoint: (newPoint: Point, options?: { recordHistory?: boolean }) => void;
   addPointOnPath: (clickX: number, clickY: number) => void;
   deleteSelectedPoint: () => void;
 
@@ -63,6 +121,8 @@ interface EditorState {
   togglePlayback: () => void;
   setProgress: (progress: number) => void;
   setSpeed: (speed: number) => void;
+  toggleSlowMotion: () => void;
+  toggleRepeating: () => void;
 
   // UI
   setZoom: (zoom: number) => void;
@@ -75,9 +135,12 @@ interface EditorState {
   loadSample: (index: number) => void;
 
   // Layer management
-  addLayer: () => void;
+  addLayer: (type?: LayerType) => void;
   deleteLayer: (id: string | number) => void;
   toggleLayerVisibility: (id: string | number) => void;
+  toggleLayerExpanded: (id: string | number) => void;
+  convertLayerType: (id: string | number, type: Extract<LayerType, "path" | "clipPath">) => void;
+  addTimelineBlock: (layerId: string | number, propertyName: string) => void;
 
   // Selection
   selectPoint: (selection: Selection) => void;
@@ -90,23 +153,27 @@ interface EditorState {
 }
 
 const initialLayers: Layer[] = [
-  {
+  createPathLayer({
     id: 0,
     name: "Play → Pause",
     from: parsePath("M 12 6 L 12 18 M 6 12 L 18 12"),
     to: parsePath("M 8 8 L 16 16 M 8 16 L 16 8"),
     visible: true,
     locked: false,
-  },
-  {
+    strokeColor: "#000000",
+    strokeWidth: 2.4,
+  }),
+  createPathLayer({
     id: 1,
     name: "Menu → Close",
     from: parsePath("M 4 6 L 20 6 M 4 12 L 20 12 M 4 18 L 20 18"),
     to: parsePath("M 6 6 L 18 18 M 18 6 L 6 18"),
     visible: true,
     locked: false,
-  },
-  {
+    strokeColor: "#000000",
+    strokeWidth: 2.4,
+  }),
+  createPathLayer({
     id: 2,
     name: "Heart → Star",
     from: parsePath(
@@ -115,28 +182,48 @@ const initialLayers: Layer[] = [
     to: parsePath("M 12 4 L 14 9 L 19 9 L 15 12 L 17 17 L 12 14 L 7 17 L 9 12 L 5 9 L 10 9 Z"),
     visible: true,
     locked: false,
-  },
+    fillColor: "#000000",
+  }),
 ];
+
+const cloneLayers = (layers: Layer[]) => structuredClone(layers);
 
 export const useEditorStore = create<EditorState>((set, get) => ({
   layers: initialLayers,
+  vector: {
+    id: "vector",
+    name: "ShapeShifter",
+    width: 24,
+    height: 24,
+    alpha: 1,
+  },
+  animation: {
+    id: "anim",
+    name: "anim",
+    duration: 1000,
+    blocks: [],
+  },
+  hiddenLayerIds: [],
   history: [],
   future: [],
   canUndo: false,
   canRedo: false,
   selectedLayerId: 0,
   editingSide: "from",
+  isActionMode: false,
   selection: null,
   isPlaying: false,
   progress: 0,
   speed: 1,
+  isSlowMotion: false,
+  isRepeating: true,
   zoom: 1,
   snapToGrid: true,
 
   pushHistory: () => {
     const { layers, history } = get();
     set({
-      history: [...history, JSON.parse(JSON.stringify(layers))],
+      history: [...history, cloneLayers(layers)].slice(-100),
       future: [],
       canUndo: true,
       canRedo: false,
@@ -150,7 +237,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       layers: prev,
       history: history.slice(0, -1),
-      future: [JSON.parse(JSON.stringify(layers)), ...get().future],
+      future: [cloneLayers(layers), ...get().future],
       canUndo: history.length > 1,
       canRedo: true,
     });
@@ -163,14 +250,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       layers: next,
       future: future.slice(1),
-      history: [...get().history, JSON.parse(JSON.stringify(layers))],
+      history: [...get().history, cloneLayers(layers)],
       canUndo: true,
       canRedo: future.length > 1,
     });
   },
 
   autoFixSelectedLayer: () => {
-    const { layers, selectedLayerId, editingSide } = get();
+    const { layers, selectedLayerId } = get();
     const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
     if (layerIndex === -1) return false;
     const layer = layers[layerIndex];
@@ -188,7 +275,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     // Pad the shorter path by duplicating its last point in each subpath
     const shorter = fromCount < toCount ? "from" : "to";
     const diff = Math.abs(fromCount - toCount);
-    const path = JSON.parse(JSON.stringify(layer[shorter])) as PathData;
+    const path = structuredClone(layer[shorter]) as PathData;
 
     let remaining = diff;
     for (const sp of path.subPaths) {
@@ -204,6 +291,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     const newLayers = [...layers];
     newLayers[layerIndex] = { ...layer, [shorter]: path };
+    get().pushHistory();
     set({ layers: newLayers });
     return true;
   },
@@ -234,21 +322,83 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (layerIndex === -1) return;
 
     const newLayers = [...layers];
+    get().pushHistory();
     newLayers[layerIndex] = {
       ...newLayers[layerIndex],
       name: sample.name,
       from: parsePath(sample.from),
       to: parsePath(sample.to),
+      pathData: parsePath(sample.from),
     };
     set({ layers: newLayers });
   },
 
-  setLayers: (layers) => set({ layers }),
-  selectLayer: (id) => set({ selectedLayerId: id, selection: null }),
-  setEditingSide: (side) => set({ editingSide: side }),
-
-  updateSelectedPoint: (newPoint) => {
+  setLayers: (layers) => {
     get().pushHistory();
+    set({
+      layers,
+      selectedLayerId: layers[0]?.id ?? 0,
+      selection: null,
+      progress: 0,
+    });
+  },
+  importLayers: (incomingLayers) => {
+    if (!incomingLayers.length) return;
+    const { layers } = get();
+    get().pushHistory();
+    set({
+      layers: [...layers, ...incomingLayers],
+      selectedLayerId: incomingLayers[0]?.id ?? layers[0]?.id ?? 0,
+      selection: null,
+    });
+  },
+  loadProject: (project) => {
+    get().pushHistory();
+    set({
+      layers: project.layers,
+      vector: project.vector,
+      animation: project.animation,
+      hiddenLayerIds: project.hiddenLayerIds,
+      selectedLayerId: project.layers[0]?.id ?? 0,
+      selection: null,
+      progress: 0,
+      isActionMode: false,
+    });
+  },
+  replaceSelectedLayerPaths: (paths) => {
+    const { layers, selectedLayerId } = get();
+    const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
+    if (layerIndex === -1) return;
+
+    const newLayers = [...layers];
+    newLayers[layerIndex] = {
+      ...newLayers[layerIndex],
+      ...paths,
+      pathData: paths.from ?? newLayers[layerIndex].pathData,
+    };
+    get().pushHistory();
+    set({ layers: newLayers });
+  },
+  updateSelectedLayer: (patch) => {
+    const { layers, selectedLayerId } = get();
+    const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
+    if (layerIndex === -1) return;
+
+    const newLayers = [...layers];
+    newLayers[layerIndex] = { ...newLayers[layerIndex], ...patch };
+    get().pushHistory();
+    set({ layers: newLayers });
+  },
+  selectLayer: (id) => set({ selectedLayerId: id, selection: null }),
+  setEditingSide: (side) =>
+    set((state) => ({
+      editingSide: side,
+      selection: state.editingSide === side ? state.selection : null,
+    })),
+  startActionMode: () => set({ isActionMode: true, selection: null }),
+  closeActionMode: () => set({ isActionMode: false, selection: null }),
+
+  updateSelectedPoint: (newPoint, options) => {
     const { layers, selectedLayerId, editingSide, selection } = get();
     if (!selection) return;
 
@@ -268,11 +418,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     const newLayers = [...layers];
     if (editingSide === "from") {
-      newLayers[layerIndex] = { ...layer, from: updatedPath };
+      newLayers[layerIndex] = { ...layer, from: updatedPath, pathData: updatedPath };
     } else {
       newLayers[layerIndex] = { ...layer, to: updatedPath };
     }
 
+    if (options?.recordHistory !== false) {
+      get().pushHistory();
+    }
     set({ layers: newLayers });
   },
 
@@ -291,16 +444,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     const newLayers = [...layers];
     if (editingSide === "from") {
-      newLayers[layerIndex] = { ...layer, from: updatedPath };
+      newLayers[layerIndex] = { ...layer, from: updatedPath, pathData: updatedPath };
     } else {
       newLayers[layerIndex] = { ...layer, to: updatedPath };
     }
 
+    get().pushHistory();
     set({ layers: newLayers });
   },
 
   deleteSelectedPoint: () => {
-    get().pushHistory();
     const { layers, selectedLayerId, editingSide, selection } = get();
     if (!selection) return;
 
@@ -314,11 +467,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     const newLayers = [...layers];
     if (editingSide === "from") {
-      newLayers[layerIndex] = { ...layer, from: updatedPath };
+      newLayers[layerIndex] = { ...layer, from: updatedPath, pathData: updatedPath };
     } else {
       newLayers[layerIndex] = { ...layer, to: updatedPath };
     }
 
+    get().pushHistory();
     set({
       layers: newLayers,
       selection: null,
@@ -326,15 +480,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   togglePlayback: () => set((state) => ({ isPlaying: !state.isPlaying })),
-  setProgress: (progress) => set({ progress }),
+  setProgress: (progress) => set({ progress: Math.max(0, Math.min(1, progress)) }),
   setSpeed: (speed) => set({ speed }),
+  toggleSlowMotion: () => set((state) => ({ isSlowMotion: !state.isSlowMotion })),
+  toggleRepeating: () => set((state) => ({ isRepeating: !state.isRepeating })),
 
   setZoom: (zoom) => set({ zoom }),
   toggleSnap: () => set((state) => ({ snapToGrid: !state.snapToGrid })),
 
   // === MAGIC TOOL: Reverse (core 2017 feature, now real) ===
   reverseSelectedLayer: () => {
-    get().pushHistory();
     const { layers, selectedLayerId, editingSide } = get();
     const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
     if (layerIndex === -1) return;
@@ -346,16 +501,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     const newLayers = [...layers];
     if (editingSide === "from") {
-      newLayers[layerIndex] = { ...layer, from: updatedPath };
+      newLayers[layerIndex] = { ...layer, from: updatedPath, pathData: updatedPath };
     } else {
       newLayers[layerIndex] = { ...layer, to: updatedPath };
     }
 
+    get().pushHistory();
     set({ layers: newLayers });
   },
 
   shiftSelectedLayer: (steps: number = 1) => {
-    get().pushHistory();
     const { layers, selectedLayerId, editingSide } = get();
     const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
     if (layerIndex === -1) return false;
@@ -367,11 +522,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     const newLayers = [...layers];
     if (editingSide === "from") {
-      newLayers[layerIndex] = { ...layer, from: updatedPath };
+      newLayers[layerIndex] = { ...layer, from: updatedPath, pathData: updatedPath };
     } else {
       newLayers[layerIndex] = { ...layer, to: updatedPath };
     }
 
+    get().pushHistory();
     set({ layers: newLayers });
     return true; // for toast feedback
   },
@@ -390,17 +546,24 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   // Full layer management (single source of truth)
-  addLayer: () => {
+  addLayer: (type = "path") => {
     const { layers } = get();
-    const newLayer: Layer = {
+    const label =
+      type === "clipPath" ? "Clip path" : type === "group" ? "Group layer" : "Path layer";
+    const newLayer: Layer = createPathLayer({
       id: Date.now(),
-      name: `Layer ${layers.length + 1}`,
+      name: `${label} ${layers.length + 1}`,
+      type,
       from: parsePath("M 10 10 L 30 10 L 30 30 L 10 30 Z"),
       to: parsePath("M 15 15 L 25 15 L 25 25 L 15 25 Z"),
       visible: true,
       locked: false,
-    };
-    set({ layers: [...layers, newLayer], selectedLayerId: newLayer.id });
+      fillColor: type === "path" ? "#000000" : "",
+      strokeColor: type === "clipPath" ? "#000000" : "",
+      strokeWidth: type === "clipPath" ? 1.5 : 0,
+    });
+    get().pushHistory();
+    set({ layers: [...layers, newLayer], selectedLayerId: newLayer.id, selection: null });
   },
 
   deleteLayer: (id: string | number) => {
@@ -412,13 +575,64 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (selectedLayerId === id) {
       newSelected = newLayers[0]?.id ?? 0;
     }
-    set({ layers: newLayers, selectedLayerId: newSelected });
+    get().pushHistory();
+    set({ layers: newLayers, selectedLayerId: newSelected, selection: null });
   },
 
   toggleLayerVisibility: (id: string | number) => {
     const { layers } = get();
     const newLayers = layers.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l));
+    get().pushHistory();
     set({ layers: newLayers });
+  },
+
+  toggleLayerExpanded: (id: string | number) => {
+    const { layers } = get();
+    set({ layers: layers.map((l) => (l.id === id ? { ...l, expanded: l.expanded === false } : l)) });
+  },
+
+  convertLayerType: (id, type) => {
+    const { layers } = get();
+    const newLayers = layers.map((layer) => (layer.id === id ? { ...layer, type } : layer));
+    get().pushHistory();
+    set({ layers: newLayers });
+  },
+
+  addTimelineBlock: (layerId, propertyName) => {
+    const { layers, animation } = get();
+    const layer = layers.find((candidate) => candidate.id === layerId);
+    if (!layer) return;
+
+    const value = (() => {
+      if (propertyName === "pathData") return pathToString(layer.pathData ?? layer.from);
+      const candidate = layer[propertyName as keyof Layer];
+      return typeof candidate === "number" || typeof candidate === "string" ? candidate : "";
+    })();
+
+    const block = {
+      id: `${Date.now()}`,
+      layerId,
+      propertyName,
+      startTime: 0,
+      endTime: animation.duration,
+      interpolator: "FAST_OUT_SLOW_IN",
+      type: propertyName === "pathData" ? "path" as const : typeof value === "number" ? "number" as const : "color" as const,
+      fromValue: value,
+      toValue: value,
+    };
+
+    get().pushHistory();
+    set({
+      animation: {
+        ...animation,
+        blocks: [...animation.blocks, block],
+      },
+      layers: layers.map((candidate) =>
+        candidate.id === layerId
+          ? { ...candidate, timeline: [...(candidate.timeline ?? []), block], expanded: true }
+          : candidate,
+      ),
+    });
   },
 
   // === Compatibility helper (for UI warnings) ===

@@ -3,7 +3,7 @@
  * Production-grade export functionality for morph animations.
  */
 
-import { PathData } from "./types";
+import type { AnimationState, Layer, PathData, VectorMetadata } from "./types";
 import { getInterpolatedPath, pathToString } from "./pathUtils";
 
 export interface ExportOptions {
@@ -31,7 +31,6 @@ export function exportAnimatedSVG(
 ): string {
   const {
     duration = 1.2,
-    fps = 60,
     width = 512,
     height = 512,
     loop = true,
@@ -204,6 +203,124 @@ export function downloadAnimatedSVG(
   URL.revokeObjectURL(url);
 }
 
+const escapeXml = (value: string) =>
+  value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+
+const safeName = (value: string) => value.replace(/[^\w.]+/g, "_").replace(/^(\d)/, "_$1");
+
+function styleAttrs(layer: Layer) {
+  const attrs: string[] = [];
+  const fillColor = layer.fillColor || "none";
+  const strokeColor = layer.strokeColor || "";
+
+  attrs.push(`fill="${escapeXml(fillColor)}"`);
+  if ((layer.fillAlpha ?? 1) !== 1) attrs.push(`fill-opacity="${layer.fillAlpha}"`);
+  if (strokeColor) attrs.push(`stroke="${escapeXml(strokeColor)}"`);
+  if ((layer.strokeAlpha ?? 1) !== 1) attrs.push(`stroke-opacity="${layer.strokeAlpha}"`);
+  if ((layer.strokeWidth ?? 0) > 0) attrs.push(`stroke-width="${layer.strokeWidth}"`);
+  if ((layer.strokeLinecap ?? "butt") !== "butt") attrs.push(`stroke-linecap="${layer.strokeLinecap}"`);
+  if ((layer.strokeLinejoin ?? "miter") !== "miter") attrs.push(`stroke-linejoin="${layer.strokeLinejoin}"`);
+  if ((layer.strokeMiterLimit ?? 4) !== 4) attrs.push(`stroke-miterlimit="${layer.strokeMiterLimit}"`);
+  if ((layer.fillType ?? "nonZero") === "evenOdd") attrs.push(`fill-rule="evenodd"`);
+  return attrs.join(" ");
+}
+
+export function exportStaticSVG(layers: Layer[], options: ExportOptions = {}) {
+  const { width = 512, height = 512 } = options;
+  const paths = layers
+    .filter((layer) => layer.visible !== false && layer.type !== "group")
+    .map((layer) => {
+      const d = pathToString(layer.from);
+      if (!d) return "";
+      return `  <path id="${escapeXml(safeName(layer.name))}" d="${escapeXml(d)}" ${styleAttrs(layer)} />`;
+    })
+    .filter(Boolean)
+    .join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 48 48">
+${paths}
+</svg>
+`;
+}
+
+export function exportSvgSpritesheet(layer: Layer, options: ExportOptions = {}) {
+  const { width = 512, height = 512, fps = 10, duration = 1.2 } = options;
+  const frameCount = Math.max(2, Math.round(fps * duration));
+  const frames = Array.from({ length: frameCount }, (_, index) => {
+    const t = frameCount === 1 ? 0 : index / (frameCount - 1);
+    const translateX = index * 48;
+    const d = getInterpolatedPath(layer.from, layer.to, t);
+    return `  <g id="${escapeXml(safeName(layer.name))}_frame_${index}" transform="translate(${translateX} 0)">
+    <path d="${escapeXml(d)}" ${styleAttrs(layer)} />
+  </g>`;
+  }).join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width * frameCount}" height="${height}" viewBox="0 0 ${48 * frameCount} 48">
+${frames}
+</svg>
+`;
+}
+
+export function exportVectorDrawable(layer: Layer, options: ExportOptions = {}) {
+  const { width = 48, height = 48 } = options;
+  const d = pathToString(layer.from);
+  const fill = layer.fillColor || "@android:color/transparent";
+  const stroke = layer.strokeColor || "";
+  return `<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="${width}dp"
+    android:height="${height}dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+  <path
+      android:name="${escapeXml(safeName(layer.name))}"
+      android:pathData="${escapeXml(d)}"
+      android:fillColor="${escapeXml(fill)}"${stroke ? `
+      android:strokeColor="${escapeXml(stroke)}"
+      android:strokeWidth="${layer.strokeWidth ?? 1}"` : ""}
+      android:fillAlpha="${layer.fillAlpha ?? 1}"
+      android:strokeAlpha="${layer.strokeAlpha ?? 1}"
+      android:strokeLineCap="${layer.strokeLinecap ?? "butt"}"
+      android:strokeLineJoin="${layer.strokeLinejoin ?? "miter"}"
+      android:strokeMiterLimit="${layer.strokeMiterLimit ?? 4}"
+      android:fillType="${layer.fillType === "evenOdd" ? "evenOdd" : "nonZero"}"
+      android:trimPathStart="${layer.trimPathStart ?? 0}"
+      android:trimPathEnd="${layer.trimPathEnd ?? 1}"
+      android:trimPathOffset="${layer.trimPathOffset ?? 0}" />
+</vector>
+`;
+}
+
+export function exportAnimatedVectorDrawable(layer: Layer, options: ExportOptions = {}) {
+  const { duration = 1.2 } = options;
+  const name = safeName(layer.name);
+  const fromD = pathToString(layer.from);
+  const toD = pathToString(layer.to);
+  return `<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/${name}_vector">
+  <target
+      android:name="${escapeXml(name)}"
+      android:animation="@animator/${name}_morph" />
+</animated-vector>
+
+<!-- ${name}_vector.xml -->
+${exportVectorDrawable(layer, options)}
+
+<!-- animator/${name}_morph.xml -->
+<objectAnimator xmlns:android="http://schemas.android.com/apk/res/android"
+    android:duration="${Math.round(duration * 1000)}"
+    android:propertyName="pathData"
+    android:valueFrom="${escapeXml(fromD)}"
+    android:valueTo="${escapeXml(toD)}"
+    android:valueType="pathType" />
+`;
+}
+
 /**
  * Basic Lottie JSON stub for the morph (2026 format).
  * Real production Lottie would require full layer/shape structure.
@@ -336,111 +453,86 @@ export function downloadLottie(from: PathData, to: PathData, layerName: string) 
   URL.revokeObjectURL(url);
 }
 
-/**
- * High-quality GIF export using gifenc (modern, tiny, 2026-grade)
- * Renders the morph using Canvas 2D for maximum compatibility.
- */
-export async function exportGIF(
-  fromPath: PathData,
-  toPath: PathData,
-  options: ExportOptions = {},
-): Promise<Blob> {
-  const { GIFEncoder, quantize, applyPalette } = await import("gifenc");
+export function exportProjectJSON(
+  layers: Layer[],
+  vector: VectorMetadata = {
+    id: "vector",
+    name: "ShapeShifter",
+    width: 24,
+    height: 24,
+    alpha: 1,
+  },
+  animation: AnimationState = {
+    id: "anim",
+    name: "anim",
+    duration: 1000,
+    blocks: [],
+  },
+  hiddenLayerIds: string[] = [],
+) {
+  const byParent = new Map<string, Layer[]>();
+  for (const layer of layers) {
+    const parentKey = layer.parentId == null ? "__root__" : String(layer.parentId);
+    byParent.set(parentKey, [...(byParent.get(parentKey) ?? []), layer]);
+  }
 
-  const {
-    duration = 1.4,
-    fps = 60,
-    width = 512,
-    height = 512,
-    strokeWidth = 3,
-    fromColor = "#3b82f6",
-    toColor = "#8b5cf6",
-    morphColor = "#22c55e",
-  } = options;
+  const serializeLayer = (layer: Layer): Record<string, unknown> => {
+    const base = {
+      id: String(layer.id),
+      name: layer.name,
+      type: layer.type === "clipPath" ? "clipPath" : layer.type === "group" ? "group" : "path",
+    };
 
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d", { alpha: true })!;
-
-  const encoder = GIFEncoder();
-  const totalFrames = Math.floor(duration * fps);
-  const frameDelay = Math.round(1000 / fps);
-
-  // Helper to draw a path on canvas
-  function drawPath(d: string, color: string, sw: number, opacity = 1) {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = sw;
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-    ctx.globalAlpha = opacity;
-
-    const commands = d.match(/[MLCQZ][^MLCQZ]*/gi) || [];
-    ctx.beginPath();
-
-    for (const cmd of commands) {
-      const type = cmd[0];
-      const nums = cmd
-        .slice(1)
-        .trim()
-        .split(/[\s,]+/)
-        .map(Number)
-        .filter((n) => !isNaN(n));
-
-      if (type === "M" && nums.length >= 2) {
-        ctx.moveTo(nums[0], nums[1]);
-      } else if (type === "L" && nums.length >= 2) {
-        ctx.lineTo(nums[0], nums[1]);
-      } else if (type === "C" && nums.length >= 6) {
-        ctx.bezierCurveTo(nums[0], nums[1], nums[2], nums[3], nums[4], nums[5]);
-      } else if (type === "Q" && nums.length >= 4) {
-        ctx.quadraticCurveTo(nums[0], nums[1], nums[2], nums[3]);
-      }
+    if (layer.type === "group") {
+      return {
+        ...base,
+        rotation: layer.rotation ?? 0,
+        scaleX: layer.scaleX ?? 1,
+        scaleY: layer.scaleY ?? 1,
+        pivotX: layer.pivotX ?? 0,
+        pivotY: layer.pivotY ?? 0,
+        translateX: layer.translateX ?? 0,
+        translateY: layer.translateY ?? 0,
+        children: (byParent.get(String(layer.id)) ?? []).map(serializeLayer),
+      };
     }
-    ctx.stroke();
-  }
 
-  // Generate frames
-  for (let i = 0; i < totalFrames; i++) {
-    const t = (i / totalFrames) % 1;
-    const morphD = getInterpolatedPath(fromPath, toPath, t);
-    const fromD = pathToString(fromPath);
-    const toD = pathToString(toPath);
+    return {
+      ...base,
+      pathData: pathToString(layer.pathData ?? layer.from),
+      fillColor: layer.fillColor ?? "",
+      fillAlpha: layer.fillAlpha ?? 1,
+      strokeColor: layer.strokeColor ?? "",
+      strokeAlpha: layer.strokeAlpha ?? 1,
+      strokeWidth: layer.strokeWidth ?? 0,
+      strokeLinecap: layer.strokeLinecap ?? "butt",
+      strokeLinejoin: layer.strokeLinejoin ?? "miter",
+      strokeMiterLimit: layer.strokeMiterLimit ?? 4,
+      trimPathStart: layer.trimPathStart ?? 0,
+      trimPathEnd: layer.trimPathEnd ?? 1,
+      trimPathOffset: layer.trimPathOffset ?? 0,
+      fillType: layer.fillType ?? "nonZero",
+    };
+  };
 
-    ctx.fillStyle = "#0f172a";
-    ctx.fillRect(0, 0, width, height);
+  const children = (byParent.get("__root__") ?? []).map(serializeLayer);
 
-    // Subtle from/to
-    drawPath(fromD, fromColor, strokeWidth * 0.7, 0.35);
-    drawPath(toD, toColor, strokeWidth * 0.7, 0.35);
-
-    // Main morph
-    drawPath(morphD, morphColor, strokeWidth, 1);
-
-    // Encode frame
-    const imageData = ctx.getImageData(0, 0, width, height);
-    const palette = quantize(imageData.data, 256);
-    const indexed = applyPalette(imageData.data, palette);
-
-    encoder.writeFrame(indexed, width, height, {
-      palette,
-      delay: frameDelay,
-      dispose: 1,
-    });
-  }
-
-  encoder.finish();
-  return new Blob([encoder.bytes().slice()], { type: "image/gif" });
-}
-
-export function exportProjectJSON(layers: any[]) {
   return {
-    version: "2026.1",
-    exportedAt: new Date().toISOString(),
-    layers: layers.map((l) => ({
-      ...l,
-      from: pathToString(l.from),
-      to: pathToString(l.to),
-    })),
+    version: 1,
+    layers: {
+      vectorLayer: {
+        id: String(vector.id),
+        name: vector.name,
+        type: "vector",
+        width: vector.width,
+        height: vector.height,
+        alpha: vector.alpha,
+        children,
+      },
+      hiddenLayerIds,
+    },
+    timeline: {
+      animation,
+    },
   };
 }

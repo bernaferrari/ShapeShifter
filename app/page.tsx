@@ -1,24 +1,40 @@
 "use client";
 
 import React, { useCallback, useMemo } from "react";
-import { Play, Plus, Trash2, Eye, EyeOff, Zap, RotateCw, ArrowLeftRight, HelpCircle, Download } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { Play, Zap, RotateCw, ArrowLeftRight, HelpCircle, Download } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
 import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editorStore";
-import { parsePath, pathToString } from "@/lib/shapeshifter/pathUtils";
-import { downloadAnimatedSVG, downloadCSSKeyframes, downloadLottie } from "@/lib/shapeshifter/exporter";
+import { parsePath } from "@/lib/shapeshifter/pathUtils";
+import {
+  downloadAnimatedSVG,
+  downloadCSSKeyframes,
+  downloadLottie,
+  exportAnimatedVectorDrawable,
+  exportProjectJSON,
+  exportSvgSpritesheet,
+  exportVectorDrawable,
+} from "@/lib/shapeshifter/exporter";
+import { flattenOriginalProject, isOriginalShapeShifterProject } from "@/lib/shapeshifter/project";
+import { importLayersFromSvg, importLayersFromVectorDrawable } from "@/lib/shapeshifter/importers";
+import type { Layer } from "@/lib/shapeshifter/types";
 import { Toolbar } from "@/components/editor/Toolbar";
 import { CanvasArea } from "@/components/editor/CanvasArea";
 import { Inspector } from "@/components/editor/Inspector";
 import { MaterialSymbol } from "@/components/editor/MaterialSymbol";
+import { LayerTimeline } from "@/components/editor/LayerTimeline";
+
+function isEditableTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+}
 
 export default function ShapeShifter2026() {
   // Keyboard shortcuts for 2026 power user experience
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isEditableTarget(e.target)) return;
       const store = useEditorStore.getState();
 
       // Undo / Redo
@@ -87,8 +103,8 @@ export default function ShapeShifter2026() {
         const point = store.getCurrentSelectedPoint();
         if (!point) return;
         const step = e.shiftKey ? 5 : 0.5;
-        let dx = 0,
-          dy = 0;
+        let dx = 0;
+        let dy = 0;
         if (e.key === "ArrowUp") dy = -step;
         if (e.key === "ArrowDown") dy = step;
         if (e.key === "ArrowLeft") dx = -step;
@@ -108,15 +124,50 @@ export default function ShapeShifter2026() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  React.useEffect(() => {
+    let frameId = 0;
+    let previousTime = performance.now();
+
+    const tick = (time: number) => {
+      const store = useEditorStore.getState();
+      if (!store.isPlaying) {
+        previousTime = time;
+        frameId = requestAnimationFrame(tick);
+        return;
+      }
+
+      const elapsed = time - previousTime;
+      previousTime = time;
+      const duration = Math.max(1, store.animation.duration);
+      const speed = store.isSlowMotion ? 0.25 : store.speed;
+      const nextProgress = store.progress + (elapsed * speed) / duration;
+
+      if (nextProgress >= 1) {
+        if (store.isRepeating) {
+          store.setProgress(nextProgress % 1);
+        } else {
+          store.setProgress(1);
+          store.togglePlayback();
+        }
+      } else {
+        store.setProgress(nextProgress);
+      }
+
+      frameId = requestAnimationFrame(tick);
+    };
+
+    frameId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameId);
+  }, []);
+
   // Everything comes from the store (single source of truth)
   const {
     layers,
     selectedLayerId,
     editingSide,
     isPlaying,
+    isActionMode,
     setEditingSide,
-    deleteLayer,
-    toggleLayerVisibility,
     undo,
     redo,
     canUndo,
@@ -128,34 +179,62 @@ export default function ShapeShifter2026() {
     [layers, selectedLayerId],
   );
 
-  // Hidden file input for modern SVG import
+  // Hidden file input for original SVG/XML/project import
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  const handleSVGFile = (file: File) => {
+  const handleImportFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target?.result as string;
       try {
-        const ds: string[] = [];
-        const regex = /d=["']([^"']+)["']/g;
-        let m;
-        while ((m = regex.exec(text)) !== null) ds.push(m[1]);
-        if (ds.length === 0) {
+        if (file.name.endsWith(".json") || file.name.endsWith(".shapeshifter")) {
+          const project = JSON.parse(text);
+          if (isOriginalShapeShifterProject(project)) {
+            const flattened = flattenOriginalProject(project);
+            if (!flattened.layers.length) {
+              toast.error("No path layers found in original project");
+              return;
+            }
+            useEditorStore.getState().loadProject(flattened);
+            toast.success(`Opened ${flattened.vector.name}`, {
+              description: `${flattened.layers.length} layer(s), ${flattened.animation.blocks.length} animation block(s)`,
+            });
+            return;
+          }
+
+          const importedLayers: Layer[] = Array.isArray(project.layers)
+            ? project.layers.map((layer: Partial<Layer>, index: number) => ({
+                ...layer,
+                id: layer.id ?? Date.now() + index,
+                type: layer.type ?? "path",
+                from: typeof layer.from === "string" ? parsePath(layer.from) : layer.from,
+                to: typeof layer.to === "string" ? parsePath(layer.to) : layer.to,
+                pathData: typeof layer.from === "string" ? parsePath(layer.from) : layer.pathData,
+                visible: layer.visible ?? true,
+                locked: layer.locked ?? false,
+              }))
+            : [];
+          if (!importedLayers.length) {
+            toast.error("No layers found in project file");
+            return;
+          }
+          useEditorStore.getState().setLayers(importedLayers);
+          toast.success(`Opened project with ${importedLayers.length} layer(s)`);
+          return;
+        }
+
+        const importedLayers = file.name.endsWith(".xml")
+          ? importLayersFromVectorDrawable(text)
+          : importLayersFromSvg(text, file.name.replace(/\.[^.]+$/, ""));
+
+        if (importedLayers.length === 0) {
           toast.error("No path data found in file");
           return;
         }
-        const state = useEditorStore.getState();
-        const idx = state.layers.findIndex((l) => l.id === state.selectedLayerId);
-        if (idx < 0) return;
-        const nl = [...state.layers];
-        const lay = { ...nl[idx] };
-        if (ds[0]) lay.from = parsePath(ds[0]);
-        if (ds[1]) lay.to = parsePath(ds[1]);
-        nl[idx] = lay;
-        useEditorStore.setState({ layers: nl });
-        toast.success(`Imported ${ds.length} path(s) from file`);
+        useEditorStore.getState().importLayers(importedLayers);
+        toast.success(`Imported ${importedLayers.length} layer(s) from ${file.name.endsWith(".xml") ? "Vector Drawable" : "SVG"}`);
       } catch (error) {
-        toast.error("Failed to parse SVG file", { description: String(error) });
+        toast.error("Failed to parse file", { description: String(error) });
       }
     };
     reader.readAsText(file);
@@ -166,10 +245,10 @@ export default function ShapeShifter2026() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
-    if (file && file.name.endsWith(".svg")) {
-      handleSVGFile(file);
+    if (file && /\.(svg|xml|json|shapeshifter)$/i.test(file.name)) {
+      handleImportFile(file);
     } else {
-      toast.error("Please drop an .svg file");
+      toast.error("Please drop an SVG, Vector Drawable XML, or project file");
     }
   };
 
@@ -195,6 +274,7 @@ export default function ShapeShifter2026() {
 
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (isEditableTarget(e.target)) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setCommandOpen((open) => !open);
@@ -231,7 +311,40 @@ export default function ShapeShifter2026() {
         toast.success("CSS Keyframes exported");
       } else if (type === "lottie") {
         downloadLottie(fromPath, toPath, name);
-        toast.success("Lottie exported (high quality)");
+        toast.success("Lottie exported");
+      } else if (type === "vector" || type === "avd" || type === "spritesheet") {
+        const content =
+          type === "vector"
+            ? exportVectorDrawable(layer)
+            : type === "avd"
+              ? exportAnimatedVectorDrawable(layer)
+              : exportSvgSpritesheet(layer);
+        const blob = new Blob([content], { type: type === "spritesheet" ? "image/svg+xml" : "application/xml" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${name}-${type}.${type === "spritesheet" ? "svg" : "xml"}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success(`${type.toUpperCase()} exported`);
+      } else if (type === "json") {
+        const payload = JSON.stringify(
+          exportProjectJSON(state.layers, state.vector, state.animation, state.hiddenLayerIds),
+          null,
+          2,
+        );
+        const blob = new Blob([payload], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${state.vector.name || "shapeshifter"}.shapeshifter`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success("Project exported");
       } else {
         toast.info(`Export type "${type}" coming soon`);
       }
@@ -259,8 +372,7 @@ export default function ShapeShifter2026() {
   // Playback + animation state flows from Zustand
 
   return (
-    <div className="editor-app" onDrop={handleDrop} onDragOver={handleDragOver}>
-      {/* === BEAUTIFUL 2026 TOOLBAR === */}
+    <div className="flex h-dvh flex-col bg-background text-foreground" onDrop={handleDrop} onDragOver={handleDragOver}>
       <Toolbar
         onExport={handleExport}
         onLoadSample={loadSample}
@@ -270,6 +382,7 @@ export default function ShapeShifter2026() {
         onShowHelp={() => setHelpOpen(true)}
         resetAllViews={resetAllViews}
         isPlaying={isPlaying}
+        isActionMode={isActionMode}
         editingSide={editingSide}
         setEditingSide={setEditingSide}
         undo={undo}
@@ -278,134 +391,40 @@ export default function ShapeShifter2026() {
         canRedo={canRedo}
       />
 
-      {/* === MAIN RESIZABLE EDITOR === */}
-      <div className="editor-main">
-        <ResizablePanelGroup orientation="horizontal" className="flex-1">
-          {/* LEFT: LAYERS + TIMELINE (future split) */}
-          <ResizablePanel defaultSize={22} minSize={18} className="side-panel layer-panel">
-            <div className="p-3 border-b border-border flex items-center justify-between">
-              <div className="font-semibold text-sm tracking-tight flex items-center gap-2">
-                <MaterialSymbol name="layers" size={18} /> Layers
-              </div>
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => {
-                  useEditorStore.getState().addLayer();
-                }}
-                className="h-7 w-7"
-              >
-                <Plus className="w-4 h-4" />
-              </Button>
-            </div>
+      <div className="flex min-h-0 flex-1 overflow-hidden bg-muted">
+        <main className="flex min-w-0 flex-1">
+          <CanvasArea
+            resetFrom={resetFrom}
+            resetPreview={resetPreview}
+            resetTo={resetTo}
+            resetAllViews={resetAllViews}
+          />
+        </main>
 
-            <div className="scroll-area p-2 space-y-1 flex-1">
-              {layers.map((layer, idx) => (
-                <div
-                  key={layer.id}
-                  onClick={() => {
-                    useEditorStore.getState().selectLayer(layer.id);
-                  }}
-                  className={`layer-item ${selectedLayerId === layer.id ? "selected" : ""}`}
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm truncate">{layer.name}</div>
-                    <div className="text-[10px] text-muted-foreground font-mono truncate">
-                      {pathToString(layer.from).slice(0, 22)}…
-                    </div>
-                  </div>
-
-                  <div className="flex gap-0.5">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleLayerVisibility(layer.id);
-                      }}
-                    >
-                      {layer.visible ? (
-                        <Eye className="w-3.5 h-3.5" />
-                      ) : (
-                        <EyeOff className="w-3.5 h-3.5" />
-                      )}
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteLayer(layer.id);
-                      }}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="p-3 border-t border-border text-[10px] text-muted-foreground">
-              {layers.length} layers • Click to select
-            </div>
-          </ResizablePanel>
-
-          <ResizableHandle />
-
-          {/* CENTER: THE CANVAS — WHERE THE MAGIC HAPPENS */}
-          <ResizablePanel defaultSize={56} minSize={35} className="canvas-area">
-            <CanvasArea
-              resetFrom={resetFrom}
-              setResetFrom={setResetFrom}
-              resetPreview={resetPreview}
-              setResetPreview={setResetPreview}
-              resetTo={resetTo}
-              setResetTo={setResetTo}
-              resetAllViews={resetAllViews}
-            />
-          </ResizablePanel>
-
-          <ResizableHandle />
-
-          {/* RIGHT: INSPECTOR */}
-          <ResizablePanel defaultSize={22} minSize={18} className="side-panel property-panel">
-            <div className="p-4 border-b border-border">
-              <div className="font-semibold tracking-tight">Inspector</div>
-              <div className="text-xs text-muted-foreground mt-0.5">
-                {currentLayer ? `${currentLayer.name} • ${editingSide.toUpperCase()}` : "No layer"}
+        {!isActionMode && (
+          <aside className="flex w-80 shrink-0 flex-col border-l bg-sidebar shadow-sm">
+            <div className="flex min-h-16 items-center gap-3 border-b bg-card px-4 py-3">
+              <MaterialSymbol name="polyline" size={30} className="shrink-0 text-muted-foreground" />
+              <div className="flex min-w-0 flex-col">
+                <span className="truncate text-[17px] font-semibold leading-6">{currentLayer?.name ?? "No layer"}</span>
+                <span className="text-[13px] leading-5 text-muted-foreground">{editingSide.toUpperCase()} path</span>
               </div>
             </div>
             <Inspector />
-          </ResizablePanel>
-        </ResizablePanelGroup>
+          </aside>
+        )}
       </div>
 
-      {/* Status bar */}
-      <div className="status-bar text-xs tracking-tight">
-        <div>ShapeShifter 2026 — beautiful path morphing</div>
-        <div className="flex-1" />
-        <div className="flex gap-4 text-[10px]">
-          <span>
-            <kbd>Space</kbd> Play • <kbd>A</kbd> AutoFix • <kbd>R</kbd> Reverse • <kbd>S</kbd> Shift
-            • <kbd>⌘Z</kbd> Undo
-          </span>
-          <span>
-            Arrows nudge • <kbd>1/2</kbd> sides • Double-click canvas to reset view
-          </span>
-        </div>
-        <div className="text-primary">Linear-inspired • Material Symbols ready</div>
-      </div>
+      <LayerTimeline onOpenSVGImport={openSVGImport} onExport={handleExport} onLoadSample={loadSample} />
 
       <input
         type="file"
         ref={fileInputRef}
-        accept=".svg"
+        accept=".svg,.xml,.json,.shapeshifter"
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
-          if (f) handleSVGFile(f);
+          if (f) handleImportFile(f);
           e.target.value = "";
         }}
       />
