@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "react", "unicorn"],
+  "ignorePatterns": [".original-angular/**", "node_modules/**", ".next/**"],
+  "rules": {
+    "typescript/no-explicit-any": "warn",
+    "typescript/no-unused-vars": "warn",
+    "react/jsx-no-undef": "error",
+    "react/no-danger": "warn",
+    "unicorn/prefer-query-selector": "warn"
+  }
+}
