@@ -220,7 +220,8 @@ export function CanvasArea({
             value={[progress * 100]}
             max={100}
             step={0.1}
-            onValueChange={([v]) => {
+            onValueChange={(val) => {
+              const v = Array.isArray(val) ? val[0] : val;
               setProgress(v / 100);
               if (isPlaying) {
                 const { togglePlayback } = useEditorStore.getState();

@@ -20,51 +20,6 @@ export const PathCanvas = React.memo(function PathCanvas({
 }: PathCanvasProps & { resetKey?: number }) {
   const svgRef = useRef<SVGSVGElement>(null);
 
-  // Pan and Zoom (local for now - independent per pane)
-  const [view, setView] = React.useState({ x: 0, y: 0, scale: 1 });
-
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? 1.15 : 0.87;
-    const newScale = Math.max(0.4, Math.min(12, view.scale * delta));
-    setView((prev) => ({ ...prev, scale: newScale }));
-  };
-
-  // Simple pan on background drag (middle mouse or alt+drag)
-  const [panning, setPanning] = React.useState(false);
-  const [panStart, setPanStart] = React.useState({ x: 0, y: 0, vx: 0, vy: 0 });
-
-  const startPan = (e: React.PointerEvent) => {
-    if (e.button === 1 || e.altKey) {
-      setPanning(true);
-      setPanStart({ x: e.clientX, y: e.clientY, vx: view.x, vy: view.y });
-    }
-  };
-
-  const doPan = (e: React.PointerEvent) => {
-    if (panning) {
-      const dx = (e.clientX - panStart.x) / (width / (48 / view.scale));
-      const dy = (e.clientY - panStart.y) / (height / (48 / view.scale));
-      setView((prev) => ({ ...prev, x: panStart.vx - dx, y: panStart.vy - dy }));
-    }
-  };
-
-  const endPan = () => setPanning(false);
-
-  // Improved pan/zoom with reset
-  const resetView = () => {
-    setView({ x: 0, y: 0, scale: 1 });
-  };
-
-  // Double click to reset
-  const handleDoubleClick = (e: React.MouseEvent) => {
-    if (e.target === svgRef.current) {
-      resetView();
-    }
-  };
-
-  const vb = `${view.x} ${view.y} ${48 / view.scale} ${48 / view.scale}`;
-
   // Pan and Zoom state (local to each canvas for independence)
   const [viewBox, setViewBox] = React.useState({ x: 0, y: 0, w: 48, h: 48, scale: 1 });
 
@@ -148,13 +103,6 @@ export const PathCanvas = React.memo(function PathCanvas({
   };
 
   const displayPath = getDisplayPath();
-
-  // Expose reset to parent
-  useImperativeHandle(ref, () => ({
-    resetView: () => {
-      setView({ x: 0, y: 0, scale: 1 });
-    },
-  }));
 
   const commands = getAllCommands(targetPathData);
 

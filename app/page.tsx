@@ -1,11 +1,19 @@
 "use client";
 
 import React, { useCallback, useMemo } from "react";
-import { Play, Plus, Trash2, Eye, EyeOff, Zap, RotateCw, ArrowLeftRight } from "lucide-react";
+import { Play, Plus, Trash2, Eye, EyeOff, Zap, RotateCw, ArrowLeftRight, HelpCircle, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
 import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editorStore";
+import { parsePath, pathToString } from "@/lib/shapeshifter/pathUtils";
+import { downloadAnimatedSVG, downloadCSSKeyframes, downloadLottie } from "@/lib/shapeshifter/exporter";
+import { Toolbar } from "@/components/editor/Toolbar";
+import { CanvasArea } from "@/components/editor/CanvasArea";
+import { Inspector } from "@/components/editor/Inspector";
+import { MaterialSymbol } from "@/components/editor/MaterialSymbol";
 
 export default function ShapeShifter2026() {
   // Keyboard shortcuts for 2026 power user experience
@@ -108,6 +116,7 @@ export default function ShapeShifter2026() {
     isPlaying,
     setEditingSide,
     deleteLayer,
+    toggleLayerVisibility,
     undo,
     redo,
     canUndo,
@@ -215,15 +224,13 @@ export default function ShapeShifter2026() {
 
     try {
       if (type === "svg" || type === "animated") {
-        const svgContent = Exporter.exportAnimatedSVG(fromPath, toPath, name);
-        Exporter.downloadFile(svgContent, `${name}_morph.svg`, "image/svg+xml");
+        downloadAnimatedSVG(fromPath, toPath, name);
         toast.success("Animated SVG exported");
       } else if (type === "css") {
-        const cssContent = Exporter.exportCSSKeyframes(fromPath, toPath, name);
-        Exporter.downloadFile(cssContent, `${name}_morph.css`, "text/css");
+        downloadCSSKeyframes(fromPath, toPath, name);
         toast.success("CSS Keyframes exported");
       } else if (type === "lottie") {
-        Exporter.downloadLottie(fromPath, toPath, name);
+        downloadLottie(fromPath, toPath, name);
         toast.success("Lottie exported (high quality)");
       } else {
         toast.info(`Export type "${type}" coming soon`);
@@ -273,7 +280,7 @@ export default function ShapeShifter2026() {
 
       {/* === MAIN RESIZABLE EDITOR === */}
       <div className="editor-main">
-        <ResizablePanelGroup direction="horizontal" className="flex-1">
+        <ResizablePanelGroup orientation="horizontal" className="flex-1">
           {/* LEFT: LAYERS + TIMELINE (future split) */}
           <ResizablePanel defaultSize={22} minSize={18} className="side-panel layer-panel">
             <div className="p-3 border-b border-border flex items-center justify-between">
@@ -299,12 +306,12 @@ export default function ShapeShifter2026() {
                   onClick={() => {
                     useEditorStore.getState().selectLayer(layer.id);
                   }}
-                  className={`layer-item ${selectedLayer === idx ? "selected" : ""}`}
+                  className={`layer-item ${selectedLayerId === layer.id ? "selected" : ""}`}
                 >
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm truncate">{layer.name}</div>
                     <div className="text-[10px] text-muted-foreground font-mono truncate">
-                      {layer.from.slice(0, 22)}…
+                      {pathToString(layer.from).slice(0, 22)}…
                     </div>
                   </div>
 
@@ -315,7 +322,7 @@ export default function ShapeShifter2026() {
                       className="h-6 w-6"
                       onClick={(e) => {
                         e.stopPropagation();
-                        toggleVisibility(layer.id);
+                        toggleLayerVisibility(layer.id);
                       }}
                     >
                       {layer.visible ? (

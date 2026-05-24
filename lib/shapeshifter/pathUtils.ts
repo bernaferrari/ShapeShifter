@@ -170,7 +170,7 @@ export function insertPointNear(
     sub.commands.forEach((cmd, cmdIdx) => {
       if (cmd.type === "Z" || cmd.points.length === 0) return;
 
-      const prevPoint = cmdIdx > 0 ? sub.commands[cmdIdx - 1].points.at(-1) : { x: 0, y: 0 };
+      const prevPoint = (cmdIdx > 0 ? sub.commands[cmdIdx - 1].points.at(-1) : undefined) ?? { x: 0, y: 0 };
 
       const endPoint = cmd.points.at(-1)!;
 

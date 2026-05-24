@@ -50,7 +50,7 @@ export function exportAnimatedSVG(
   for (let i = 0; i <= keyframes; i++) {
     const t = i / keyframes;
     const interp = getInterpolatedPath(fromPath, toPath, t);
-    keyframeData.push(`"${pathToString(interp)}"`);
+    keyframeData.push(`"${interp}"`);
   }
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
@@ -157,8 +157,7 @@ export function exportCSSKeyframes(
 
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
-    const interp = getInterpolatedPath(fromPath, toPath, t);
-    const d = pathToString(interp);
+    const d = getInterpolatedPath(fromPath, toPath, t);
     const percent = Math.round((i / steps) * 100);
     keyframes += `  ${percent}% { d: path("${d}"); }\n`;
   }
@@ -404,10 +403,9 @@ export async function exportGIF(
   // Generate frames
   for (let i = 0; i < totalFrames; i++) {
     const t = (i / totalFrames) % 1;
-    const interp = getInterpolatedPath(fromPath, toPath, t);
+    const morphD = getInterpolatedPath(fromPath, toPath, t);
     const fromD = pathToString(fromPath);
     const toD = pathToString(toPath);
-    const morphD = pathToString(interp);
 
     ctx.fillStyle = "#0f172a";
     ctx.fillRect(0, 0, width, height);
@@ -432,7 +430,7 @@ export async function exportGIF(
   }
 
   encoder.finish();
-  return new Blob([encoder.bytes()], { type: "image/gif" });
+  return new Blob([encoder.bytes().slice()], { type: "image/gif" });
 }
 
 export function exportProjectJSON(layers: any[]) {

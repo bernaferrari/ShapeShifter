@@ -74,7 +74,7 @@ export function ExportDialog({ children }: ExportDialogProps) {
             currentLayer.from,
             currentLayer.to,
             currentLayer.name,
-            options,
+            options.duration,
           );
           blob = new Blob([cssContent], { type: "text/css" });
           filename = `${baseName}-morph.css`;
@@ -85,7 +85,7 @@ export function ExportDialog({ children }: ExportDialogProps) {
             currentLayer.from,
             currentLayer.to,
             currentLayer.name,
-            options,
+            options.duration,
           );
           blob = new Blob([JSON.stringify(lottieJson, null, 2)], { type: "application/json" });
           filename = `${baseName}-morph.json`;
@@ -125,7 +125,7 @@ export function ExportDialog({ children }: ExportDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{children}</DialogTrigger>
+      <DialogTrigger>{children}</DialogTrigger>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -177,7 +177,7 @@ export function ExportDialog({ children }: ExportDialogProps) {
                   min={0.4}
                   max={4}
                   step={0.1}
-                  onValueChange={([v]) => setOptions({ ...options, duration: v })}
+                  onValueChange={(v) => setOptions({ ...options, duration: Array.isArray(v) ? v[0] : v })}
                 />
               </div>
 
@@ -191,7 +191,7 @@ export function ExportDialog({ children }: ExportDialogProps) {
                   min={0.5}
                   max={8}
                   step={0.1}
-                  onValueChange={([v]) => setOptions({ ...options, strokeWidth: v })}
+                  onValueChange={(v) => setOptions({ ...options, strokeWidth: Array.isArray(v) ? v[0] : v })}
                 />
               </div>
 
@@ -206,7 +206,7 @@ export function ExportDialog({ children }: ExportDialogProps) {
                     min={15}
                     max={60}
                     step={5}
-                    onValueChange={([v]) => setOptions({ ...options, fps: v })}
+                    onValueChange={(v) => setOptions({ ...options, fps: Array.isArray(v) ? v[0] : v })}
                   />
                 </div>
               )}

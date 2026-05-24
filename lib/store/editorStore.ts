@@ -16,6 +16,7 @@ import {
   reversePath,
   shiftPath,
 } from "../shapeshifter/pathUtils";
+import type { Layer, Selection, Point, PathData } from "../shapeshifter/types";
 
 interface EditorState {
   // Layers
@@ -73,6 +74,11 @@ interface EditorState {
   autoFixSelectedLayer: () => boolean;
   loadSample: (index: number) => void;
 
+  // Layer management
+  addLayer: () => void;
+  deleteLayer: (id: string | number) => void;
+  toggleLayerVisibility: (id: string | number) => void;
+
   // Selection
   selectPoint: (selection: Selection) => void;
   clearSelection: () => void;
@@ -126,6 +132,116 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   speed: 1,
   zoom: 1,
   snapToGrid: true,
+
+  pushHistory: () => {
+    const { layers, history } = get();
+    set({
+      history: [...history, JSON.parse(JSON.stringify(layers))],
+      future: [],
+      canUndo: true,
+      canRedo: false,
+    });
+  },
+
+  undo: () => {
+    const { history, layers } = get();
+    if (history.length === 0) return;
+    const prev = history[history.length - 1];
+    set({
+      layers: prev,
+      history: history.slice(0, -1),
+      future: [JSON.parse(JSON.stringify(layers)), ...get().future],
+      canUndo: history.length > 1,
+      canRedo: true,
+    });
+  },
+
+  redo: () => {
+    const { future, layers } = get();
+    if (future.length === 0) return;
+    const next = future[0];
+    set({
+      layers: next,
+      future: future.slice(1),
+      history: [...get().history, JSON.parse(JSON.stringify(layers))],
+      canUndo: true,
+      canRedo: future.length > 1,
+    });
+  },
+
+  autoFixSelectedLayer: () => {
+    const { layers, selectedLayerId, editingSide } = get();
+    const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
+    if (layerIndex === -1) return false;
+    const layer = layers[layerIndex];
+
+    const countPoints = (path: PathData) =>
+      path.subPaths.reduce(
+        (sum, sp) => sum + sp.commands.reduce((csum, cmd) => csum + cmd.points.length, 0),
+        0,
+      );
+
+    const fromCount = countPoints(layer.from);
+    const toCount = countPoints(layer.to);
+    if (fromCount === toCount) return true;
+
+    // Pad the shorter path by duplicating its last point in each subpath
+    const shorter = fromCount < toCount ? "from" : "to";
+    const diff = Math.abs(fromCount - toCount);
+    const path = JSON.parse(JSON.stringify(layer[shorter])) as PathData;
+
+    let remaining = diff;
+    for (const sp of path.subPaths) {
+      const lastCmd = sp.commands[sp.commands.length - 1];
+      if (lastCmd && lastCmd.points.length > 0 && remaining > 0) {
+        const lastPt = lastCmd.points[lastCmd.points.length - 1];
+        while (remaining > 0) {
+          lastCmd.points.push({ ...lastPt });
+          remaining--;
+        }
+      }
+    }
+
+    const newLayers = [...layers];
+    newLayers[layerIndex] = { ...layer, [shorter]: path };
+    set({ layers: newLayers });
+    return true;
+  },
+
+  loadSample: (index: number) => {
+    const samples: { name: string; from: string; to: string }[] = [
+      {
+        name: "Play → Pause",
+        from: "M 12 6 L 12 18 M 6 12 L 18 12",
+        to: "M 8 8 L 16 16 M 8 16 L 16 8",
+      },
+      {
+        name: "Menu → Close",
+        from: "M 4 6 L 20 6 M 4 12 L 20 12 M 4 18 L 20 18",
+        to: "M 6 6 L 18 18 M 18 6 L 6 18",
+      },
+      {
+        name: "Heart → Star",
+        from: "M 12 21 L 12 21 L 12 21 C 12 21 4 15 4 9 C 4 5 7 3 10 5 C 12 3 15 5 15 9 C 15 15 12 21 12 21 Z",
+        to: "M 12 4 L 14 9 L 19 9 L 15 12 L 17 17 L 12 14 L 7 17 L 9 12 L 5 9 L 10 9 Z",
+      },
+    ];
+    const sample = samples[index % samples.length];
+    if (!sample) return;
+
+    const { layers, selectedLayerId } = get();
+    const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
+    if (layerIndex === -1) return;
+
+    const newLayers = [...layers];
+    newLayers[layerIndex] = {
+      ...newLayers[layerIndex],
+      name: sample.name,
+      from: parsePath(sample.from),
+      to: parsePath(sample.to),
+    };
+    set({ layers: newLayers });
+  },
 
   setLayers: (layers) => set({ layers }),
   selectLayer: (id) => set({ selectedLayerId: id, selection: null }),
@@ -242,7 +358,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     get().pushHistory();
     const { layers, selectedLayerId, editingSide } = get();
     const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
-    if (layerIndex === -1) return;
+    if (layerIndex === -1) return false;
 
     const layer = layers[layerIndex];
     const targetPath = editingSide === "from" ? layer.from : layer.to;
@@ -287,7 +403,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({ layers: [...layers, newLayer], selectedLayerId: newLayer.id });
   },
 
-  deleteLayer: (id: number) => {
+  deleteLayer: (id: string | number) => {
     const { layers, selectedLayerId } = get();
     if (layers.length === 1) return;
 
@@ -299,7 +415,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({ layers: newLayers, selectedLayerId: newSelected });
   },
 
-  toggleLayerVisibility: (id: number) => {
+  toggleLayerVisibility: (id: string | number) => {
     const { layers } = get();
     const newLayers = layers.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l));
     set({ layers: newLayers });
