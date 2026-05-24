@@ -12,9 +12,15 @@ import {
   updatePoint,
   addPointAfter,
   deleteCommand,
-  insertPointNear,
+  deleteSubPath,
+  splitCommandInHalf,
+  setCommandAsFirst,
+  splitPointNear,
   reversePath,
   shiftPath,
+  autoFixPathPair,
+  arePathsStructurallyCompatible,
+  countPathPoints,
 } from "../shapeshifter/pathUtils";
 import type {
   AnimationState,
@@ -22,9 +28,31 @@ import type {
   LayerType,
   Selection,
   Point,
-  PathData,
   VectorMetadata,
 } from "../shapeshifter/types";
+
+export type ToolMode = "select" | "pen" | "direct" | "hand";
+
+export interface HoveredItem {
+  type: "point" | "command" | "layer" | "block";
+  id: string | number;
+  subPathIndex?: number;
+  commandIndex?: number;
+  pointIndex?: number;
+}
+
+export interface DragState {
+  type: string;
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+}
+
+export interface ClipboardData {
+  layers: Layer[];
+  timestamp: number;
+}
 
 const PATH_STYLE_DEFAULTS = {
   fillColor: "",
@@ -85,6 +113,21 @@ interface EditorState {
   zoom: number;
   snapToGrid: boolean;
 
+  // Timeline
+  selectedBlockIds: string[];
+  collapsedLayerIds: (string | number)[];
+  timelineZoom: number;
+  timelineScrollX: number;
+  timelineScrollY: number;
+
+  // Action Mode
+  toolMode: ToolMode;
+  hoveredItem: HoveredItem | null;
+  dragState: DragState | null;
+
+  // Clipboard
+  clipboard: ClipboardData | null;
+
   // History for undo/redo (professional 2026 tool feel)
   history: Layer[][];
   future: Layer[][];
@@ -116,6 +159,9 @@ interface EditorState {
   updateSelectedPoint: (newPoint: Point, options?: { recordHistory?: boolean }) => void;
   addPointOnPath: (clickX: number, clickY: number) => void;
   deleteSelectedPoint: () => void;
+  deleteSelectedSubPath: () => void;
+  splitSelectedCommand: () => void;
+  setSelectedCommandAsFirst: () => void;
 
   // Playback
   togglePlayback: () => void;
@@ -127,6 +173,26 @@ interface EditorState {
   // UI
   setZoom: (zoom: number) => void;
   toggleSnap: () => void;
+
+  // Timeline
+  selectBlocks: (blockIds: string[]) => void;
+  toggleBlockSelection: (blockId: string) => void;
+  clearBlockSelection: () => void;
+  toggleLayerCollapsed: (layerId: string | number) => void;
+  setTimelineZoom: (zoom: number) => void;
+  setTimelineScroll: (x: number, y: number) => void;
+
+  // Action Mode
+  setToolMode: (mode: ToolMode) => void;
+  setHoveredItem: (item: HoveredItem | null) => void;
+  startDrag: (type: string, x: number, y: number) => void;
+  updateDrag: (x: number, y: number) => void;
+  endDrag: () => void;
+
+  // Clipboard
+  copyLayers: (layerIds: (string | number)[]) => void;
+  pasteLayers: () => void;
+  cutLayers: (layerIds: (string | number)[]) => void;
 
   // Magic tools (ported & enhanced from 2017 original)
   reverseSelectedLayer: () => void;
@@ -146,10 +212,21 @@ interface EditorState {
   selectPoint: (selection: Selection) => void;
   clearSelection: () => void;
 
+  // Vector metadata + animation
+  updateVector: (patch: Partial<VectorMetadata>) => void;
+  setAnimationDuration: (ms: number) => void;
+
+  // Project
+  resetProject: () => void;
+
   // Helpers
   getCurrentSelectedPoint: () => Point | null;
-  getSelectedPoint: () => Point | null;
-  getCompatibilityStatus: () => any;
+  getCompatibilityStatus: () => {
+    compatible: boolean;
+    fromPoints: number;
+    toPoints: number;
+    warning: string;
+  };
 }
 
 const initialLayers: Layer[] = [
@@ -219,6 +296,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   isRepeating: true,
   zoom: 1,
   snapToGrid: true,
+  selectedBlockIds: [],
+  collapsedLayerIds: [],
+  timelineZoom: 1,
+  timelineScrollX: 0,
+  timelineScrollY: 0,
+  toolMode: "select",
+  hoveredItem: null,
+  dragState: null,
+  clipboard: null,
 
   pushHistory: () => {
     const { layers, history } = get();
@@ -262,56 +348,49 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (layerIndex === -1) return false;
     const layer = layers[layerIndex];
 
-    const countPoints = (path: PathData) =>
-      path.subPaths.reduce(
-        (sum, sp) => sum + sp.commands.reduce((csum, cmd) => csum + cmd.points.length, 0),
-        0,
-      );
-
-    const fromCount = countPoints(layer.from);
-    const toCount = countPoints(layer.to);
-    if (fromCount === toCount) return true;
-
-    // Pad the shorter path by duplicating its last point in each subpath
-    const shorter = fromCount < toCount ? "from" : "to";
-    const diff = Math.abs(fromCount - toCount);
-    const path = structuredClone(layer[shorter]) as PathData;
-
-    let remaining = diff;
-    for (const sp of path.subPaths) {
-      const lastCmd = sp.commands[sp.commands.length - 1];
-      if (lastCmd && lastCmd.points.length > 0 && remaining > 0) {
-        const lastPt = lastCmd.points[lastCmd.points.length - 1];
-        while (remaining > 0) {
-          lastCmd.points.push({ ...lastPt });
-          remaining--;
-        }
-      }
-    }
+    const [from, to] = autoFixPathPair(layer.from, layer.to);
 
     const newLayers = [...layers];
-    newLayers[layerIndex] = { ...layer, [shorter]: path };
+    newLayers[layerIndex] = { ...layer, from, to, pathData: from };
     get().pushHistory();
     set({ layers: newLayers });
     return true;
   },
 
   loadSample: (index: number) => {
-    const samples: { name: string; from: string; to: string }[] = [
+    const samples: { name: string; from: string; to: string; fillColor?: string; strokeColor?: string; strokeWidth?: number }[] = [
       {
         name: "Play → Pause",
         from: "M 12 6 L 12 18 M 6 12 L 18 12",
         to: "M 8 8 L 16 16 M 8 16 L 16 8",
+        strokeColor: "#000000",
+        strokeWidth: 2.4,
       },
       {
         name: "Menu → Close",
         from: "M 4 6 L 20 6 M 4 12 L 20 12 M 4 18 L 20 18",
         to: "M 6 6 L 18 18 M 18 6 L 6 18",
+        strokeColor: "#000000",
+        strokeWidth: 2.4,
       },
       {
         name: "Heart → Star",
         from: "M 12 21 L 12 21 L 12 21 C 12 21 4 15 4 9 C 4 5 7 3 10 5 C 12 3 15 5 15 9 C 15 15 12 21 12 21 Z",
         to: "M 12 4 L 14 9 L 19 9 L 15 12 L 17 17 L 12 14 L 7 17 L 9 12 L 5 9 L 10 9 Z",
+        fillColor: "#000000",
+      },
+      {
+        name: "Arrow → Check",
+        from: "M 4 12 L 20 12 M 14 6 L 20 12 L 14 18",
+        to: "M 6 12 L 10 16 L 18 8",
+        strokeColor: "#000000",
+        strokeWidth: 2.4,
+      },
+      {
+        name: "Circle → Square",
+        from: "M 12 4 C 16.42 4 20 7.58 20 12 C 20 16.42 16.42 20 12 20 C 7.58 20 4 16.42 4 12 C 4 7.58 7.58 4 12 4 Z",
+        to: "M 12 4 C 12 4 20 4 20 4 C 20 4 20 20 20 20 C 20 20 4 20 4 20 C 4 20 4 4 4 4 Z",
+        fillColor: "#000000",
       },
     ];
     const sample = samples[index % samples.length];
@@ -329,6 +408,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       from: parsePath(sample.from),
       to: parsePath(sample.to),
       pathData: parsePath(sample.from),
+      ...(sample.fillColor != null ? { fillColor: sample.fillColor } : {}),
+      ...(sample.strokeColor != null ? { strokeColor: sample.strokeColor } : {}),
+      ...(sample.strokeWidth != null ? { strokeWidth: sample.strokeWidth } : {}),
     };
     set({ layers: newLayers });
   },
@@ -437,10 +519,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const layer = layers[layerIndex];
     const targetPath = editingSide === "from" ? layer.from : layer.to;
 
-    const result = insertPointNear(targetPath, { x: clickX, y: clickY });
-    if (!result) return;
-
-    const updatedPath = addPointAfter(targetPath, result.subIdx, result.cmdIdx, result.newPoint);
+    // Split the nearest segment (preserves type: C→C, Q→Q, etc.)
+    const updatedPath = splitPointNear(targetPath, { x: clickX, y: clickY });
+    if (!updatedPath) return;
 
     const newLayers = [...layers];
     if (editingSide === "from") {
@@ -479,6 +560,60 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
   },
 
+  deleteSelectedSubPath: () => {
+    const { layers, selectedLayerId, editingSide, selection } = get();
+    if (!selection) return;
+    const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
+    if (layerIndex === -1) return;
+    const layer = layers[layerIndex];
+    const targetPath = editingSide === "from" ? layer.from : layer.to;
+    const updatedPath = deleteSubPath(targetPath, selection.subPathIndex);
+    const newLayers = [...layers];
+    if (editingSide === "from") {
+      newLayers[layerIndex] = { ...layer, from: updatedPath, pathData: updatedPath };
+    } else {
+      newLayers[layerIndex] = { ...layer, to: updatedPath };
+    }
+    get().pushHistory();
+    set({ layers: newLayers, selection: null });
+  },
+
+  splitSelectedCommand: () => {
+    const { layers, selectedLayerId, editingSide, selection } = get();
+    if (!selection) return;
+    const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
+    if (layerIndex === -1) return;
+    const layer = layers[layerIndex];
+    const targetPath = editingSide === "from" ? layer.from : layer.to;
+    const updatedPath = splitCommandInHalf(targetPath, selection.subPathIndex, selection.commandIndex);
+    const newLayers = [...layers];
+    if (editingSide === "from") {
+      newLayers[layerIndex] = { ...layer, from: updatedPath, pathData: updatedPath };
+    } else {
+      newLayers[layerIndex] = { ...layer, to: updatedPath };
+    }
+    get().pushHistory();
+    set({ layers: newLayers });
+  },
+
+  setSelectedCommandAsFirst: () => {
+    const { layers, selectedLayerId, editingSide, selection } = get();
+    if (!selection) return;
+    const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
+    if (layerIndex === -1) return;
+    const layer = layers[layerIndex];
+    const targetPath = editingSide === "from" ? layer.from : layer.to;
+    const updatedPath = setCommandAsFirst(targetPath, selection.subPathIndex, selection.commandIndex);
+    const newLayers = [...layers];
+    if (editingSide === "from") {
+      newLayers[layerIndex] = { ...layer, from: updatedPath, pathData: updatedPath };
+    } else {
+      newLayers[layerIndex] = { ...layer, to: updatedPath };
+    }
+    get().pushHistory();
+    set({ layers: newLayers });
+  },
+
   togglePlayback: () => set((state) => ({ isPlaying: !state.isPlaying })),
   setProgress: (progress) => set({ progress: Math.max(0, Math.min(1, progress)) }),
   setSpeed: (speed) => set({ speed }),
@@ -487,6 +622,66 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   setZoom: (zoom) => set({ zoom }),
   toggleSnap: () => set((state) => ({ snapToGrid: !state.snapToGrid })),
+
+  selectBlocks: (blockIds) => set({ selectedBlockIds: blockIds }),
+  toggleBlockSelection: (blockId) =>
+    set((state) => ({
+      selectedBlockIds: state.selectedBlockIds.includes(blockId)
+        ? state.selectedBlockIds.filter((id) => id !== blockId)
+        : [...state.selectedBlockIds, blockId],
+    })),
+  clearBlockSelection: () => set({ selectedBlockIds: [] }),
+  toggleLayerCollapsed: (layerId) =>
+    set((state) => ({
+      collapsedLayerIds: state.collapsedLayerIds.includes(layerId)
+        ? state.collapsedLayerIds.filter((id) => id !== layerId)
+        : [...state.collapsedLayerIds, layerId],
+    })),
+  setTimelineZoom: (zoom) => set({ timelineZoom: Math.max(0.1, Math.min(10, zoom)) }),
+  setTimelineScroll: (x, y) => set({ timelineScrollX: x, timelineScrollY: y }),
+
+  setToolMode: (mode) => set({ toolMode: mode }),
+  setHoveredItem: (item) => set({ hoveredItem: item }),
+  startDrag: (type, x, y) => set({ dragState: { type, startX: x, startY: y, currentX: x, currentY: y } }),
+  updateDrag: (x, y) =>
+    set((state) =>
+      state.dragState ? { dragState: { ...state.dragState, currentX: x, currentY: y } } : {},
+    ),
+  endDrag: () => set({ dragState: null }),
+
+  copyLayers: (layerIds) => {
+    const { layers } = get();
+    const copied = layers.filter((l) => layerIds.includes(l.id));
+    if (copied.length === 0) return;
+    set({ clipboard: { layers: structuredClone(copied), timestamp: Date.now() } });
+  },
+  pasteLayers: () => {
+    const { clipboard, layers } = get();
+    if (!clipboard || clipboard.layers.length === 0) return;
+    const pasted = clipboard.layers.map((l) => ({
+      ...structuredClone(l),
+      id: Date.now() + Math.random(),
+      name: `${l.name} copy`,
+    }));
+    get().pushHistory();
+    set({
+      layers: [...layers, ...pasted],
+      selectedLayerId: pasted[0]?.id ?? layers[0]?.id ?? 0,
+      selection: null,
+    });
+  },
+  cutLayers: (layerIds) => {
+    const { layers } = get();
+    if (layers.length <= layerIds.length) return;
+    get().copyLayers(layerIds);
+    const remaining = layers.filter((l) => !layerIds.includes(l.id));
+    get().pushHistory();
+    set({
+      layers: remaining,
+      selectedLayerId: remaining[0]?.id ?? 0,
+      selection: null,
+    });
+  },
 
   // === MAGIC TOOL: Reverse (core 2017 feature, now real) ===
   reverseSelectedLayer: () => {
@@ -635,48 +830,73 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
   },
 
+  updateVector: (patch) => {
+    set((state) => ({ vector: { ...state.vector, ...patch } }));
+  },
+
+  setAnimationDuration: (ms) => {
+    set((state) => ({
+      animation: {
+        ...state.animation,
+        duration: Math.max(100, ms),
+        blocks: state.animation.blocks.map((b) =>
+          b.endTime === state.animation.duration ? { ...b, endTime: Math.max(100, ms) } : b,
+        ),
+      },
+    }));
+  },
+
+  // === Project reset ===
+  resetProject: () => {
+    get().pushHistory();
+    set({
+      layers: cloneLayers(initialLayers),
+      selectedLayerId: initialLayers[0]?.id ?? 0,
+      selection: null,
+      progress: 0,
+      isPlaying: false,
+      isActionMode: false,
+      editingSide: "from",
+      vector: { id: "vector", name: "ShapeShifter", width: 24, height: 24, alpha: 1 },
+      animation: { id: "anim", name: "anim", duration: 1000, blocks: [] },
+      hiddenLayerIds: [],
+      selectedBlockIds: [],
+      collapsedLayerIds: [],
+      timelineZoom: 1,
+      timelineScrollX: 0,
+      timelineScrollY: 0,
+      toolMode: "select",
+      hoveredItem: null,
+      dragState: null,
+      clipboard: null,
+    });
+  },
+
   // === Compatibility helper (for UI warnings) ===
   getCompatibilityStatus: () => {
     const { layers, selectedLayerId } = get();
     const layer = layers.find((l) => l.id === selectedLayerId);
     if (!layer) return { compatible: true, fromPoints: 0, toPoints: 0, warning: "" };
 
-    const countPoints = (path: any) =>
-      path.subPaths.reduce(
-        (sum: number, sp: any) =>
-          sum + sp.commands.reduce((csum: number, cmd: any) => csum + cmd.points.length, 0),
-        0,
-      );
-
-    const fromCount = countPoints(layer.from);
-    const toCount = countPoints(layer.to);
-    const diff = Math.abs(fromCount - toCount);
+    const fromCount = countPathPoints(layer.from);
+    const toCount = countPathPoints(layer.to);
     const ratio = Math.max(fromCount, toCount) / Math.max(1, Math.min(fromCount, toCount));
+    const compatible = arePathsStructurallyCompatible(layer.from, layer.to);
 
     let warning = "";
-    if (diff > 0) {
+    if (!compatible) {
       if (ratio > 1.5) {
-        warning = "Paths have very different point counts — use Auto Fix";
+        warning = "Paths have very different structure — use Auto Fix";
       } else {
-        warning = "Point counts differ — morph may look uneven";
+        warning = "Path commands differ — use Auto Fix";
       }
     }
 
     return {
-      compatible: diff === 0,
+      compatible,
       fromPoints: fromCount,
       toPoints: toCount,
       warning,
     };
-  },
-
-  getSelectedPoint: () => {
-    const { layers, selection, editingSide } = get();
-    if (!selection) return null;
-    const layer = layers.find((l) => l.id === selection.layerId);
-    if (!layer) return null;
-    const path = editingSide === "from" ? layer.from : layer.to;
-    const cmd = path.subPaths[selection.subPathIndex]?.commands[selection.commandIndex];
-    return cmd?.points[selection.pointIndex] || null;
   },
 }));
