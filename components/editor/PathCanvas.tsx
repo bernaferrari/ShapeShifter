@@ -103,6 +103,7 @@ export const PathCanvas = React.memo(function PathCanvas({
     addPointOnPath,
     selectPoint,
     setEditingSide,
+    toolMode,
   } = useEditorStore();
 
   const currentLayer = layers.find((l) => l.id === selectedLayerId);
@@ -204,7 +205,7 @@ export const PathCanvas = React.memo(function PathCanvas({
 
       addPointOnPath(point.x, point.y);
     },
-    [addPointOnPath, isEditingThisSide, pointFromEvent, setEditingSide, side],
+    [addPointOnPath, isEditingThisSide, pointFromEvent, setEditingSide, side, toolMode],
   );
 
   const isSelected = (subPathIndex: number, commandIndex: number, pointIndex: number) =>

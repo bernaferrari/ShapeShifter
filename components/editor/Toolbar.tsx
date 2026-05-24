@@ -72,6 +72,10 @@ export function Toolbar({
     shiftSelectedLayer,
     autoFixSelectedLayer,
     closeActionMode,
+    toolMode,
+    setToolMode,
+    splitSelectedCommand,
+    setSelectedCommandAsFirst,
   } = useEditorStore();
 
   const handleAutoFix = () => {
@@ -287,6 +291,66 @@ export function Toolbar({
                 <SkipBack className="h-4 w-4" />
               </TooltipTrigger>
               <TooltipContent>Shift back points</TooltipContent>
+            </Tooltip>
+          </>
+        )}
+        {isActionMode && (
+          <>
+            {/* Tool Mode Switcher - advancing pure SVG Action Mode parity (sy0 / 5t1) */}
+            <div className="flex items-center gap-0.5 rounded border border-primary-foreground/30 bg-primary-foreground/5 p-0.5 text-xs">
+              <button
+                onClick={() => setToolMode("select")}
+                className={`rounded px-2 py-0.5 ${toolMode === "select" ? "bg-primary-foreground/20 text-primary-foreground" : "hover:bg-primary-foreground/10"}`}
+                title="Select / Move points"
+              >Select</button>
+              <button
+                onClick={() => setToolMode("pen")}
+                className={`rounded px-2 py-0.5 ${toolMode === "pen" ? "bg-primary-foreground/20 text-primary-foreground" : "hover:bg-primary-foreground/10"}`}
+                title="Pen / Add points (matches original Add Points mode)"
+              >Pen</button>
+              <button
+                onClick={() => setToolMode("direct")}
+                className={`rounded px-2 py-0.5 ${toolMode === "direct" ? "bg-primary-foreground/20 text-primary-foreground" : "hover:bg-primary-foreground/10"}`}
+                title="Direct edit (handles)"
+              >Direct</button>
+            </div>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="border-primary-foreground/30 bg-primary-foreground/5 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
+                    onClick={() => {
+                      splitSelectedCommand();
+                      toast.success("Split in half");
+                    }}
+                    aria-label="Split command in half"
+                  />
+                }
+              >
+                <MaterialSymbol name="call_split" size={16} />
+              </TooltipTrigger>
+              <TooltipContent>Split in half (original toolbar action)</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="border-primary-foreground/30 bg-primary-foreground/5 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
+                    onClick={() => {
+                      setSelectedCommandAsFirst();
+                      toast.success("Set as first point");
+                    }}
+                    aria-label="Set selected command as first"
+                  />
+                }
+              >
+                <MaterialSymbol name="first_page" size={16} />
+              </TooltipTrigger>
+              <TooltipContent>Set as first (original toolbar)</TooltipContent>
             </Tooltip>
           </>
         )}
