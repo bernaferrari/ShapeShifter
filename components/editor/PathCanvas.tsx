@@ -24,6 +24,7 @@ export const PathCanvas = React.memo(function PathCanvas({
   const [viewBox, setViewBox] = React.useState({ x: 0, y: 0, w: 48, h: 48, scale: 1 });
   const [isPanning, setIsPanning] = React.useState(false);
   const [lastPan, setLastPan] = React.useState({ x: 0, y: 0 });
+  const [boxSelect, setBoxSelect] = React.useState<null | {start: {x:number; y:number}; current: {x:number; y:number}}>(null);
 
   useEffect(() => {
     const scale = Math.max(0.5, Math.min(8, zoom));
@@ -42,6 +43,25 @@ export const PathCanvas = React.memo(function PathCanvas({
     },
     [viewBox],
   );
+
+
+  const {
+    layers,
+    selectedLayerId,
+    editingSide,
+    selection,
+    progress,
+    snapToGrid,
+    pushHistory,
+    updateSelectedPoint,
+    addPointOnPath,
+    selectPoint,
+    setEditingSide,
+    toolMode,
+  } = useEditorStore();
+
+  
+  
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
@@ -67,8 +87,18 @@ export const PathCanvas = React.memo(function PathCanvas({
       setIsPanning(true);
       setLastPan({ x: e.clientX, y: e.clientY });
       svgRef.current?.setPointerCapture(e.pointerId);
+      return;
     }
-  }, []);
+    // Use getState to avoid declaration order issues with toolMode/isEditingThisSide (robust for Action Mode features)
+    const state = useEditorStore.getState();
+    if (state.toolMode === "select" && state.editingSide === (side === "from" ? "from" : "to") && e.button === 0) {
+      const p = pointFromEvent(e.clientX, e.clientY);
+      if (p) {
+        setBoxSelect({ start: p, current: p });
+        svgRef.current?.setPointerCapture(e.pointerId);
+      }
+    }
+  }, [pointFromEvent, side]);
 
   const handleSvgPointerMove = useCallback(
     (e: React.PointerEvent) => {
@@ -80,31 +110,55 @@ export const PathCanvas = React.memo(function PathCanvas({
         setViewBox((prev) => ({ ...prev, x: prev.x - dx, y: prev.y - dy }));
         setLastPan({ x: e.clientX, y: e.clientY });
       }
+      if (boxSelect) {
+        const p = pointFromEvent(e.clientX, e.clientY);
+        if (p) setBoxSelect(prev => prev ? {...prev, current: p} : null);
+      }
     },
-    [isPanning, lastPan, viewBox.h, viewBox.w],
+    [isPanning, lastPan, viewBox.h, viewBox.w, boxSelect, pointFromEvent],
   );
 
   const handleSvgPointerUp = useCallback((e: React.PointerEvent) => {
     setIsPanning(false);
+    if (boxSelect) {
+      // Hit test points inside box (simple AABB for now)
+      const {start, current} = boxSelect;
+      const minX = Math.min(start.x, current.x);
+      const maxX = Math.max(start.x, current.x);
+      const minY = Math.min(start.y, current.y);
+      const maxY = Math.max(start.y, current.y);
+      let hit = null;
+      // Use current layer commands
+      const layer = layers.find(l => l.id === selectedLayerId);
+      if (layer) {
+        const path = editingSide === "from" ? layer.from : layer.to;
+        for (let si = 0; si < path.subPaths.length; si++) {
+          const sp = path.subPaths[si];
+          for (let ci = 0; ci < sp.commands.length; ci++) {
+            const cmd = sp.commands[ci];
+            for (let pi = 0; pi < cmd.points.length; pi++) {
+              const pt = cmd.points[pi];
+              if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) {
+                hit = {subPathIndex: si, commandIndex: ci, pointIndex: pi};
+                break;
+              }
+            }
+            if (hit) break;
+          }
+          if (hit) break;
+        }
+      }
+      if (hit) {
+        selectPoint({ layerId: selectedLayerId, side: editingSide, ...hit });
+      }
+      setBoxSelect(null);
+    }
     if (svgRef.current?.hasPointerCapture(e.pointerId)) {
       svgRef.current.releasePointerCapture(e.pointerId);
     }
-  }, []);
+  }, [boxSelect, layers, selectedLayerId, editingSide, selectPoint]);
 
-  const {
-    layers,
-    selectedLayerId,
-    editingSide,
-    selection,
-    progress,
-    snapToGrid,
-    pushHistory,
-    updateSelectedPoint,
-    addPointOnPath,
-    selectPoint,
-    setEditingSide,
-    toolMode,
-  } = useEditorStore();
+  
 
   const currentLayer = layers.find((l) => l.id === selectedLayerId);
   if (!currentLayer) return null;
@@ -239,6 +293,20 @@ export const PathCanvas = React.memo(function PathCanvas({
         </pattern>
       </defs>
       <rect x="0" y="0" width="48" height="48" fill="url(#grid)" />
+      {/* Box selection rect (select tool) */}
+      {boxSelect && (
+        <rect
+          x={Math.min(boxSelect.start.x, boxSelect.current.x)}
+          y={Math.min(boxSelect.start.y, boxSelect.current.y)}
+          width={Math.abs(boxSelect.current.x - boxSelect.start.x)}
+          height={Math.abs(boxSelect.current.y - boxSelect.start.y)}
+          fill="none"
+          stroke="hsl(var(--primary))"
+          strokeWidth="0.4"
+          strokeDasharray="2 1"
+          opacity="0.8"
+        />
+      )}
 
       {/* The actual path */}
       <path
