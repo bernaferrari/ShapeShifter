@@ -25,6 +25,8 @@ export const PathCanvas = React.memo(function PathCanvas({
   const [isPanning, setIsPanning] = React.useState(false);
   const [lastPan, setLastPan] = React.useState({ x: 0, y: 0 });
   const [boxSelect, setBoxSelect] = React.useState<null | {start: {x:number; y:number}; current: {x:number; y:number}}>(null);
+  // For batch multi-point drag: track last known position of the primary drag point to compute uniform deltas
+  const [dragSession, setDragSession] = React.useState<null | { lastX: number; lastY: number; primarySel: any }>(null);
 
   useEffect(() => {
     const scale = Math.max(0.5, Math.min(8, zoom));
@@ -245,6 +247,14 @@ export const PathCanvas = React.memo(function PathCanvas({
       const addToMulti = e.shiftKey;
       selectPoint(newSelection, addToMulti);
 
+      // Init batch drag session if we have multi selected (including the one we just selected/toggled)
+      const currentMulti = useEditorStore.getState().selectedPoints || [];
+      if (currentMulti.length > 1) {
+        setDragSession({ lastX: e.clientX, lastY: e.clientY, primarySel: newSelection });
+      } else {
+        setDragSession(null);
+      }
+
       const handleMove = (moveEvent: PointerEvent) => {
         const point = pointFromEvent(moveEvent.clientX, moveEvent.clientY);
         if (!point) return;
@@ -255,12 +265,31 @@ export const PathCanvas = React.memo(function PathCanvas({
           y = Math.round(y * 2) / 2;
         }
 
-        updateSelectedPoint({ x, y }, { recordHistory: false });
+        const session = dragSession;
+        const multi = useEditorStore.getState().selectedPoints || [];
+        if (session && multi.length > 1) {
+          // Compute screen-space delta, convert via viewBox scale approx for world delta
+          const rect = svgRef.current?.getBoundingClientRect();
+          if (rect) {
+            const scaleX = viewBox.w / rect.width;
+            const scaleY = viewBox.h / rect.height;
+            const dx = (moveEvent.clientX - session.lastX) * scaleX;
+            const dy = (moveEvent.clientY - session.lastY) * scaleY;
+
+            const { translateSelectedPoints } = useEditorStore.getState();
+            translateSelectedPoints(dx, dy, { recordHistory: false });
+
+            setDragSession({ ...session, lastX: moveEvent.clientX, lastY: moveEvent.clientY });
+          }
+        } else {
+          updateSelectedPoint({ x, y }, { recordHistory: false });
+        }
       };
 
       const handleUp = () => {
         window.removeEventListener("pointermove", handleMove);
         window.removeEventListener("pointerup", handleUp);
+        setDragSession(null);
       };
 
       window.addEventListener("pointermove", handleMove);

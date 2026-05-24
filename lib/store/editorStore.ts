@@ -166,6 +166,9 @@ interface EditorState {
   splitSelectedCommand: () => void;
   setSelectedCommandAsFirst: () => void;
 
+  // Batch direct manipulation (for multi point selection drag parity)
+  translateSelectedPoints: (dx: number, dy: number, options?: { recordHistory?: boolean }) => void;
+
   // Playback
   togglePlayback: () => void;
   setProgress: (progress: number) => void;
@@ -508,6 +511,46 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       newLayers[layerIndex] = { ...layer, from: updatedPath, pathData: updatedPath };
     } else {
       newLayers[layerIndex] = { ...layer, to: updatedPath };
+    }
+
+    if (options?.recordHistory !== false) {
+      get().pushHistory();
+    }
+    set({ layers: newLayers });
+  },
+
+  translateSelectedPoints: (dx, dy, options) => {
+    const { layers, selectedLayerId, editingSide, selectedPoints, selection } = get();
+    if (!selectedPoints || selectedPoints.length === 0 || dx === 0 && dy === 0) return;
+
+    const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
+    if (layerIndex === -1) return;
+
+    const layer = layers[layerIndex];
+    let targetPath = editingSide === "from" ? layer.from : layer.to;
+
+    // Apply delta to every selected point (uniform translate for batch drag)
+    for (const sel of selectedPoints) {
+      const cmd = targetPath.subPaths[sel.subPathIndex]?.commands[sel.commandIndex];
+      if (!cmd) continue;
+      const currentPt = cmd.points[sel.pointIndex];
+      if (!currentPt) continue;
+
+      const newPt = { x: currentPt.x + dx, y: currentPt.y + dy };
+      targetPath = updatePoint(
+        targetPath,
+        sel.subPathIndex,
+        sel.commandIndex,
+        sel.pointIndex,
+        newPt,
+      );
+    }
+
+    const newLayers = [...layers];
+    if (editingSide === "from") {
+      newLayers[layerIndex] = { ...layer, from: targetPath, pathData: targetPath };
+    } else {
+      newLayers[layerIndex] = { ...layer, to: targetPath };
     }
 
     if (options?.recordHistory !== false) {
