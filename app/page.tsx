@@ -97,7 +97,44 @@ export default function ShapeShifter2026() {
         return;
       }
 
-      // Nudge selected point with arrows (very useful)
+
+      // Tool mode switches (original Action Mode toolbar parity)
+      if (e.key.toLowerCase() === "v" && !e.metaKey) { // Select / move
+        e.preventDefault();
+        store.setToolMode("select");
+        return;
+      }
+      if (e.key.toLowerCase() === "p" && !e.metaKey) { // Pen
+        e.preventDefault();
+        store.setToolMode("pen");
+        return;
+      }
+      if (e.key.toLowerCase() === "d" && !e.metaKey) { // Direct / handles
+        e.preventDefault();
+        store.setToolMode("direct");
+        return;
+      }
+
+      // More original actions
+      if (e.key.toLowerCase() === "x" && !e.metaKey) { // Split (like onSplitInHalfClick)
+        e.preventDefault();
+        store.splitSelectedCommand?.();
+        return;
+      }
+      if (e.key.toLowerCase() === "f" && !e.metaKey) { // Set as first
+        e.preventDefault();
+        store.setSelectedCommandAsFirst?.();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w") { // Close action mode
+        e.preventDefault();
+        store.closeActionMode?.();
+        return;
+      }
+
+      // Arrow nudges (extend if needed)
+
+            // Nudge selected point with arrows (very useful)
       if (store.selection && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
         e.preventDefault();
         const point = store.getCurrentSelectedPoint();
