@@ -14,6 +14,9 @@ import {
   RotateCw,
   ArrowLeftRight,
   HelpCircle,
+  Trash2,
+  X,
+  GitBranch,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -76,6 +79,8 @@ export function Toolbar({
     setToolMode,
     splitSelectedCommand,
     setSelectedCommandAsFirst,
+    deleteSelectedPoint,
+    deleteSelectedSubPath,
   } = useEditorStore();
 
   const handleAutoFix = () => {
@@ -352,6 +357,64 @@ export function Toolbar({
               </TooltipTrigger>
               <TooltipContent>Set as first (original toolbar)</TooltipContent>
             </Tooltip>
+
+            {/* Additional original actions for full toolbar parity (closes iet/uak gaps) */}
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="border-primary-foreground/30 bg-primary-foreground/5 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
+                    onClick={() => {
+                      deleteSelectedPoint();
+                    }}
+                    aria-label="Delete selected point (original onDeletePointsClick)"
+                  />
+                }
+              >
+                <Trash2 className="h-4 w-4" />
+              </TooltipTrigger>
+              <TooltipContent>Delete Point</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="border-primary-foreground/30 bg-primary-foreground/5 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
+                    onClick={() => {
+                      deleteSelectedSubPath();
+                    }}
+                    aria-label="Delete selected subpath (original onDeleteSubPathsClick)"
+                  />
+                }
+              >
+                <X className="h-4 w-4" />
+              </TooltipTrigger>
+              <TooltipContent>Delete SubPath</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="border-primary-foreground/30 bg-primary-foreground/5 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
+                    onClick={() => {
+                      // Full PairSubPaths port pending (see PairSubPathHelper in original)
+                    }}
+                    aria-label="Pair subpaths (original onPairSubPathsClick)"
+                  />
+                }
+              >
+                <GitBranch className="h-4 w-4" />
+              </TooltipTrigger>
+              <TooltipContent>Pair SubPaths (TODO full port)</TooltipContent>
+            </Tooltip>
           </>
         )}
         <Tooltip>
@@ -426,6 +489,8 @@ export function Toolbar({
 
       <div className="flex-1" />
       <ThemeToggle />
-    </header>
+    
+
+</header>
   );
 }
