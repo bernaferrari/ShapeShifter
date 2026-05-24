@@ -244,6 +244,27 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
             </span>
           ))}
         </div>
+
+        {selectedBlockIds.length > 0 && (
+          <div className="flex items-center gap-2 px-3 py-1 text-[10px] bg-muted/50 border-b">
+            <span>Selected block interpolator:</span>
+            <select
+              className="text-xs bg-background border rounded px-1"
+              value={animation.blocks.find(b => selectedBlockIds.includes(b.id))?.interpolator || "FAST_OUT_SLOW_IN"}
+              onChange={(e) => {
+                const selId = selectedBlockIds[0];
+                if (selId) updateTimelineBlock(selId, { interpolator: e.target.value });
+              }}
+            >
+              <option value="FAST_OUT_SLOW_IN">Fast out slow in</option>
+              <option value="LINEAR">Linear</option>
+              <option value="EASE_IN">Ease in</option>
+              <option value="EASE_OUT">Ease out</option>
+              <option value="EASE_IN_OUT">Ease in out</option>
+            </select>
+          </div>
+        )}
+
         <div className="relative min-h-0 flex-1 bg-[linear-gradient(90deg,var(--border)_1px,transparent_1px)] bg-[length:10%_100%] pt-2.5">
           <div
             className="absolute bottom-0 top-0 z-10 w-0.5 bg-destructive before:absolute before:-left-1 before:-top-px before:h-2.5 before:w-2.5 before:rounded-full before:bg-destructive"
