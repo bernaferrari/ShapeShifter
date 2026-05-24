@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { ChevronRight, Eye, EyeOff, FolderOpen, Import, MoreVertical, Plus, Timer, ZoomIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -22,10 +23,15 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
     convertLayerType,
     addTimelineBlock,
     addLayer,
+    selectedBlockIds,
+    updateTimelineBlock,
     progress,
     animation,
   } = useEditorStore();
   const durationSeconds = animation.duration / 1000;
+
+  const [draggingBlock, setDraggingBlock] = React.useState<null | { id: string; startX: number; originalStart: number; originalEnd: number }>(null);
+
   const depthById = new Map<string, number>();
   const childCountById = new Map<string, number>();
   for (const layer of layers) {
@@ -224,7 +230,7 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
         <div className="flex h-10 items-center gap-2 border-b px-3">
           <div className="flex items-center gap-1.5 text-xs font-semibold">
             <Timer className="h-3.5 w-3.5" />
-            <span>anim</span>
+            <span>anim</span><span className="ml-1 text-[10px] text-accent">(drag blocks)</span>
             <span className="text-muted-foreground">{animation.duration}ms</span>
           </div>
           <Button size="icon-xs" variant="ghost" aria-label="Zoom timeline to fit">
@@ -247,17 +253,59 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
             <div key={layer.id} className="relative h-9 border-b">
               {animation.blocks
                 .filter((block) => String(block.layerId) === String(layer.id))
-                .map((block) => (
-                  <div
-                    key={block.id}
-                    className="absolute top-2.5 h-2.5 rounded-full bg-accent/70 shadow-inner"
-                    style={{
-                      left: `${(block.startTime / animation.duration) * 100}%`,
-                      width: `${Math.max(1, ((block.endTime - block.startTime) / animation.duration) * 100)}%`,
-                    }}
-                    title={`${block.propertyName}: ${block.startTime}-${block.endTime}ms`}
-                  />
-                ))}
+                .map((block) => {
+                  const isSelected = selectedBlockIds.includes(block.id);
+                  const leftPct = (block.startTime / animation.duration) * 100;
+                  const widthPct = Math.max(1, ((block.endTime - block.startTime) / animation.duration) * 100);
+                  const handleDragStart = (e: React.PointerEvent) => {
+                    e.stopPropagation();
+                    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                    setDraggingBlock({
+                      id: block.id,
+                      startX: e.clientX,
+                      originalStart: block.startTime,
+                      originalEnd: block.endTime,
+                    });
+                    const store = useEditorStore.getState();
+                    store.toggleBlockSelection(block.id);
+                  };
+
+                  const handleDragMove = (e: React.PointerEvent) => {
+                    if (!draggingBlock || draggingBlock.id !== block.id) return;
+                    const deltaX = e.clientX - draggingBlock.startX;
+                    const deltaTime = (deltaX / 300) * animation.duration; // approximate px to ms scale
+                    let newStart = Math.max(0, Math.min(animation.duration - 50, draggingBlock.originalStart + deltaTime));
+                    let newEnd = Math.max(newStart + 50, Math.min(animation.duration, draggingBlock.originalEnd + deltaTime));
+                    // Basic snap to grid (50ms)
+                    if (true) {
+                      newStart = Math.round(newStart / 50) * 50;
+                      newEnd = Math.round(newEnd / 50) * 50;
+                    }
+                    const store = useEditorStore.getState();
+                    store.updateTimelineBlock(block.id, { startTime: newStart, endTime: newEnd });
+                  };
+
+                  const handleDragEnd = (e: React.PointerEvent) => {
+                    setDraggingBlock(null);
+                    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+                  };
+
+                  return (
+                    <div
+                      key={block.id}
+                      className={`absolute top-2.5 h-2.5 rounded-full shadow-inner cursor-grab active:cursor-grabbing transition-all ${isSelected ? "bg-primary ring-1 ring-primary-foreground" : "bg-accent/70"}`}
+                      style={{
+                        left: `${leftPct}%`,
+                        width: `${widthPct}%`,
+                      }}
+                      title={`${block.propertyName}: ${block.startTime}-${block.endTime}ms (drag to move)`}
+                      onPointerDown={handleDragStart}
+                      onPointerMove={handleDragMove}
+                      onPointerUp={handleDragEnd}
+                      onPointerCancel={handleDragEnd}
+                    />
+                  );
+                })}
               {animation.blocks.filter((block) => String(block.layerId) === String(layer.id)).length === 0 && (
                 <div
                   className="absolute top-2.5 h-2.5 rounded-full bg-muted shadow-inner"

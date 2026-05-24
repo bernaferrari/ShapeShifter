@@ -183,6 +183,7 @@ interface EditorState {
   // Timeline
   selectBlocks: (blockIds: string[]) => void;
   toggleBlockSelection: (blockId: string) => void;
+  updateTimelineBlock: (blockId: string, patch: Partial<{startTime: number; endTime: number; interpolator: string}>) => void;
   clearBlockSelection: () => void;
   toggleLayerCollapsed: (layerId: string | number) => void;
   setTimelineZoom: (zoom: number) => void;
@@ -899,6 +900,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           ? { ...candidate, timeline: [...(candidate.timeline ?? []), block], expanded: true }
           : candidate,
       ),
+    });
+  },
+
+
+  updateTimelineBlock: (blockId, patch) => {
+    const { animation } = get();
+    const newBlocks = animation.blocks.map((b) =>
+      b.id === blockId ? { ...b, ...patch } : b
+    );
+    set({
+      animation: { ...animation, blocks: newBlocks },
     });
   },
 
