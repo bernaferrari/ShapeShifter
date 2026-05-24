@@ -101,6 +101,9 @@ interface EditorState {
 
   // Selection
   selection: Selection | null;
+  // Multi-point selection support for batch direct manipulation
+  // (faithful port of original paper.js BatchSelectItemsGesture + multi segment selection in edit path mode)
+  selectedPoints: Selection[];
 
   // Playback
   isPlaying: boolean;
@@ -208,9 +211,10 @@ interface EditorState {
   convertLayerType: (id: string | number, type: Extract<LayerType, "path" | "clipPath">) => void;
   addTimelineBlock: (layerId: string | number, propertyName: string) => void;
 
-  // Selection
-  selectPoint: (selection: Selection) => void;
+  // Selection (single primary + multi batch for direct manipulation parity)
+  selectPoint: (selection: Selection | null, addToMulti?: boolean) => void;
   clearSelection: () => void;
+  selectMultiplePoints: (points: Selection[]) => void;
 
   // Vector metadata + animation
   updateVector: (patch: Partial<VectorMetadata>) => void;
@@ -289,6 +293,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   editingSide: "from",
   isActionMode: false,
   selection: null,
+  selectedPoints: [],
   isPlaying: false,
   progress: 0,
   speed: 1,
@@ -420,7 +425,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       layers,
       selectedLayerId: layers[0]?.id ?? 0,
-      selection: null,
+      selection: null, selectedPoints: [],
       progress: 0,
     });
   },
@@ -442,7 +447,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       animation: project.animation,
       hiddenLayerIds: project.hiddenLayerIds,
       selectedLayerId: project.layers[0]?.id ?? 0,
-      selection: null,
+      selection: null, selectedPoints: [],
       progress: 0,
       isActionMode: false,
     });
@@ -471,14 +476,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     get().pushHistory();
     set({ layers: newLayers });
   },
-  selectLayer: (id) => set({ selectedLayerId: id, selection: null }),
+  selectLayer: (id) => set({ selectedLayerId: id, selection: null, selectedPoints: [] }),
   setEditingSide: (side) =>
     set((state) => ({
       editingSide: side,
       selection: state.editingSide === side ? state.selection : null,
     })),
-  startActionMode: () => set({ isActionMode: true, selection: null }),
-  closeActionMode: () => set({ isActionMode: false, selection: null }),
+  startActionMode: () => set({ isActionMode: true, selection: null, selectedPoints: [] }),
+  closeActionMode: () => set({ isActionMode: false, selection: null, selectedPoints: [] }),
 
   updateSelectedPoint: (newPoint, options) => {
     const { layers, selectedLayerId, editingSide, selection } = get();
@@ -575,7 +580,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       newLayers[layerIndex] = { ...layer, to: updatedPath };
     }
     get().pushHistory();
-    set({ layers: newLayers, selection: null });
+    set({ layers: newLayers, selection: null, selectedPoints: [] });
   },
 
   splitSelectedCommand: () => {
@@ -727,8 +732,32 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     return true; // for toast feedback
   },
 
-  selectPoint: (selection) => set({ selection }),
-  clearSelection: () => set({ selection: null }),
+  selectPoint: (selection, addToMulti = false) => {
+    if (!selection) {
+      set({ selection: null, selectedPoints: [] });
+      return;
+    }
+    set((state) => {
+      if (addToMulti) {
+        const exists = state.selectedPoints.some(
+          (p) => p.subPathIndex === selection.subPathIndex &&
+                 p.commandIndex === selection.commandIndex &&
+                 p.pointIndex === selection.pointIndex &&
+                 p.layerId === selection.layerId && p.side === selection.side
+        );
+        const newSelected = exists 
+          ? state.selectedPoints.filter(p => !(p.subPathIndex === selection.subPathIndex && p.commandIndex === selection.commandIndex && p.pointIndex === selection.pointIndex && p.layerId === selection.layerId && p.side === selection.side))
+          : [...state.selectedPoints, selection];
+        return { 
+          selection, 
+          selectedPoints: newSelected.length > 0 ? newSelected : [selection] 
+        };
+      }
+      return { selection, selectedPoints: [selection] };
+    });
+  },
+  selectMultiplePoints: (points: Selection[]) => set({ selectedPoints: points, selection: points[0] || null }),
+  clearSelection: () => set({ selection: null, selectedPoints: [] }),
 
   getCurrentSelectedPoint: () => {
     const state = get();
@@ -758,7 +787,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       strokeWidth: type === "clipPath" ? 1.5 : 0,
     });
     get().pushHistory();
-    set({ layers: [...layers, newLayer], selectedLayerId: newLayer.id, selection: null });
+    set({ layers: [...layers, newLayer], selectedLayerId: newLayer.id, selection: null, selectedPoints: [] });
   },
 
   deleteLayer: (id: string | number) => {
@@ -771,7 +800,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       newSelected = newLayers[0]?.id ?? 0;
     }
     get().pushHistory();
-    set({ layers: newLayers, selectedLayerId: newSelected, selection: null });
+    set({ layers: newLayers, selectedLayerId: newSelected, selection: null, selectedPoints: [] });
   },
 
   toggleLayerVisibility: (id: string | number) => {
@@ -852,7 +881,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       layers: cloneLayers(initialLayers),
       selectedLayerId: initialLayers[0]?.id ?? 0,
-      selection: null,
+      selection: null, selectedPoints: [],
       progress: 0,
       isPlaying: false,
       isActionMode: false,

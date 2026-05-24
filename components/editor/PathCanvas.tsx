@@ -50,6 +50,7 @@ export const PathCanvas = React.memo(function PathCanvas({
     selectedLayerId,
     editingSide,
     selection,
+    selectedPoints,
     progress,
     snapToGrid,
     pushHistory,
@@ -94,6 +95,11 @@ export const PathCanvas = React.memo(function PathCanvas({
     if (state.toolMode === "select" && state.editingSide === (side === "from" ? "from" : "to") && e.button === 0) {
       const p = pointFromEvent(e.clientX, e.clientY);
       if (p) {
+        // If not holding shift, clear previous selection on new box start (original BatchSelect behavior)
+        if (!e.shiftKey) {
+          const { clearSelection } = useEditorStore.getState();
+          clearSelection();
+        }
         setBoxSelect({ start: p, current: p });
         svgRef.current?.setPointerCapture(e.pointerId);
       }
@@ -148,8 +154,32 @@ export const PathCanvas = React.memo(function PathCanvas({
           if (hit) break;
         }
       }
-      if (hit) {
-        selectPoint({ layerId: selectedLayerId, side: editingSide, ...hit });
+      // Collect ALL points inside the box (full batch select parity with original)
+      const hits: any[] = [];
+      if (layer) {
+        const path = editingSide === "from" ? layer.from : layer.to;
+        for (let si = 0; si < path.subPaths.length; si++) {
+          const sp = path.subPaths[si];
+          for (let ci = 0; ci < sp.commands.length; ci++) {
+            const cmd = sp.commands[ci];
+            for (let pi = 0; pi < cmd.points.length; pi++) {
+              const pt = cmd.points[pi];
+              if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) {
+                hits.push({ subPathIndex: si, commandIndex: ci, pointIndex: pi });
+              }
+            }
+          }
+        }
+      }
+      if (hits.length > 0) {
+        const multiSels = hits.map(h => ({ layerId: selectedLayerId, side: editingSide, ...h }));
+        // Use new multi action
+        const { selectMultiplePoints } = useEditorStore.getState();
+        selectMultiplePoints(multiSels);
+      } else if (boxSelect) {
+        // empty box click clears in select mode (original behavior)
+        const { clearSelection } = useEditorStore.getState();
+        clearSelection();
       }
       setBoxSelect(null);
     }
@@ -211,7 +241,9 @@ export const PathCanvas = React.memo(function PathCanvas({
         commandIndex,
         pointIndex,
       };
-      selectPoint(newSelection);
+      // Shift = toggle / additive multi-select (original shift behavior in edit path)
+      const addToMulti = e.shiftKey;
+      selectPoint(newSelection, addToMulti);
 
       const handleMove = (moveEvent: PointerEvent) => {
         const point = pointFromEvent(moveEvent.clientX, moveEvent.clientY);
@@ -262,10 +294,22 @@ export const PathCanvas = React.memo(function PathCanvas({
     [addPointOnPath, isEditingThisSide, pointFromEvent, setEditingSide, side, toolMode],
   );
 
-  const isSelected = (subPathIndex: number, commandIndex: number, pointIndex: number) =>
-    selection?.subPathIndex === subPathIndex &&
-    selection?.commandIndex === commandIndex &&
-    selection?.pointIndex === pointIndex;
+  const isSelected = (subPathIndex: number, commandIndex: number, pointIndex: number) => {
+    // Support multi-point selection (box select + shift)
+    if (selectedPoints && selectedPoints.length > 0) {
+      return selectedPoints.some(
+        (sel) => sel.subPathIndex === subPathIndex && 
+                 sel.commandIndex === commandIndex && 
+                 sel.pointIndex === pointIndex &&
+                 sel.layerId === selectedLayerId &&
+                 sel.side === editingSide
+      );
+    }
+    // Fallback to single
+    return selection?.subPathIndex === subPathIndex &&
+           selection?.commandIndex === commandIndex &&
+           selection?.pointIndex === pointIndex;
+  };
 
   return (
     <svg
