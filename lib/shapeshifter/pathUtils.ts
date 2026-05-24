@@ -107,11 +107,24 @@ export function parsePath(d: string): PathData {
       }
 
       if (type === "A") {
-        if (index + 6 >= tokens.length) break;
-        index += 5;
+        // Preserve arc data (rx, ry, xRotation, largeArc, sweep, endpoint)
+        // Full arc-to-bezier conversion will be done in Wave 1 (W1-T1).
+        // For now we at least stop silent data loss so roundtrips and later
+        // conversion are possible.
+        if (index + 7 > tokens.length) break;
+        const rx = readNumber();
+        const ry = readNumber();
+        const xRotation = readNumber();
+        const largeArc = readNumber() !== 0;
+        const sweep = readNumber() !== 0;
         const end = readPoint(relative);
         current = end;
-        subPath.commands.push({ id: generateId(), type: "L", points: [end] });
+        subPath.commands.push({
+          id: generateId(),
+          type: "A",
+          points: [end],
+          arcParams: { rx, ry, xRotation, largeArc, sweep },
+        });
         continue;
       }
 
