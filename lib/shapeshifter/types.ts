@@ -5,18 +5,32 @@
 
 export type CommandType = "M" | "L" | "C" | "Q" | "A" | "Z" | "H" | "V" | "S" | "T";
 
+export type InterpolatorName =
+  | "FAST_OUT_SLOW_IN"
+  | "FAST_OUT_LINEAR_IN"
+  | "LINEAR_OUT_SLOW_IN"
+  | "ACCELERATE_DECELERATE"
+  | "LINEAR";
+
 export interface Point {
   x: number;
   y: number;
 }
 
 export interface Command {
-  id: string; // stable id for React keys and selection
+  id: string;
   type: CommandType;
-  points: Point[]; // control + end points depending on command
-  // For future: arc params, etc.
-  originalString?: string; // for debugging
+  points: Point[];
+  /** Present for preserved elliptical arcs (rx, ry, xRotation, largeArc, sweep). */
+  arcParams?: {
+    rx: number;
+    ry: number;
+    xRotation: number;
+    largeArc: boolean;
+    sweep: boolean;
+  };
 }
+
 
 export interface SubPath {
   commands: Command[];
