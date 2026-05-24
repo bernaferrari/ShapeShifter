@@ -261,27 +261,60 @@ export const PathCanvas = React.memo(function PathCanvas({
         fillRule={currentLayer.fillType === "evenOdd" ? "evenodd" : "nonzero"}
       />
 
-      {/* Control points (only for from/to when editing) */}
+      {/* Control points + bezier handles (direct mode fidelity - port of original EditPath/handle rendering) */}
       {isEditingThisSide &&
-        commands.map(({ command, subPathIndex, commandIndex }) =>
-          command.points.map((point, pointIndex) => (
-            <g key={`${command.id}-${pointIndex}`}>
-              <circle
-                cx={point.x}
-                cy={point.y}
-                r="1.6"
-                className={`cursor-grab stroke-background stroke-2 drop-shadow-sm transition-[fill,stroke,transform] duration-100 ${
-                  isSelected(subPathIndex, commandIndex, pointIndex)
-                    ? "fill-primary stroke-3"
-                    : "fill-primary hover:fill-accent"
-                }`}
-                onPointerDown={(e) =>
-                  handlePointerDown(e, subPathIndex, commandIndex, pointIndex)
-                }
-              />
-            </g>
-          )),
-        )}
+        commands.map(({ command, subPathIndex, commandIndex }) => {
+          const isCubic = command.type === "C";
+          const isQuad = command.type === "Q";
+          return command.points.map((point, pointIndex) => {
+            const isHandle = (isCubic && pointIndex < 2) || (isQuad && pointIndex < 1);
+            const showHandles = toolMode === "direct" || toolMode === "select";
+            if (isHandle && !showHandles) return null;
+
+            const r = isHandle ? 1.2 : 1.6;
+            const fill = isHandle ? "hsl(var(--accent))" : (isSelected(subPathIndex, commandIndex, pointIndex) ? "hsl(var(--primary))" : "hsl(var(--primary))");
+            const strokeW = isHandle ? 1 : 2;
+
+            return (
+              <g key={`${command.id}-${pointIndex}`}>
+                {/* Handle line for cubics (original draws point -> handleIn / handleOut) */}
+                {isCubic && showHandles && pointIndex < 2 && (
+                  <line
+                    x1={command.points[2]?.x ?? point.x}
+                    y1={command.points[2]?.y ?? point.y}
+                    x2={point.x}
+                    y2={point.y}
+                    stroke="hsl(var(--muted-foreground))"
+                    strokeWidth="0.5"
+                    strokeDasharray="1 1"
+                    opacity={0.6}
+                  />
+                )}
+                <circle
+                  cx={point.x}
+                  cy={point.y}
+                  r={r}
+                  className={`cursor-grab transition-[fill,stroke,transform] duration-100 ${
+                    isSelected(subPathIndex, commandIndex, pointIndex)
+                      ? "stroke-background stroke-2"
+                      : isHandle ? "stroke-accent/60 hover:stroke-accent" : "stroke-background stroke-2 hover:stroke-accent"
+                  }`}
+                  fill={fill}
+                  strokeWidth={strokeW}
+                  onPointerDown={(e) =>
+                    handlePointerDown(e, subPathIndex, commandIndex, pointIndex)
+                  }
+                />
+                {/* Small label for handles in direct mode (dev aid, matches original hit distinction) */}
+                {isHandle && toolMode === "direct" && (
+                  <text x={point.x + 2} y={point.y - 2} fontSize="3" fill="hsl(var(--muted-foreground))" opacity="0.7">
+                    {pointIndex === 0 ? "in" : "out"}
+                  </text>
+                )}
+              </g>
+            );
+          });
+        })}
     </svg>
   );
 });
