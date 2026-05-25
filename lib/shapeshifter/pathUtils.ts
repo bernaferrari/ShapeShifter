@@ -334,7 +334,7 @@ export function insertPointNear(
   sampleCount = 50,
 ): { subIdx: number; cmdIdx: number; newPoint: Point; t?: number } | null {
   let bestDist = Infinity;
-  let bestResult: any = null;
+  let bestResult: { subIdx: number; cmdIdx: number; newPoint: Point; t: number } | null = null;
 
   pathData.subPaths.forEach((sub, subIdx) => {
     sub.commands.forEach((cmd, cmdIdx) => {
@@ -730,7 +730,7 @@ export function autoFixPathPair(from: PathData, to: PathData): [PathData, PathDa
     const candidates = generateShiftReverseCandidates(a, s);
     let bestA = a;
     let bestScore = -Infinity;
-    let bestAlignment: any = null;
+    let bestAlignment: { from: readonly NWAlignment<Command>[]; to: readonly NWAlignment<Command>[]; score: number } | null = null;
 
     for (const cand of candidates) {
       const fromCmds = cand.subPaths[s]?.commands || [];
@@ -754,8 +754,8 @@ export function autoFixPathPair(from: PathData, to: PathData): [PathData, PathDa
     }
 
     if (bestAlignment) {
-      a = applyAlignmentSplits(bestA, bestAlignment, s, "a");
-      b = applyAlignmentSplits(b, bestAlignment, s, "b");
+      a = applyAlignmentSplits(bestA, { from: [...bestAlignment.from], to: [...bestAlignment.to] }, s, "a");
+      b = applyAlignmentSplits(b, { from: [...bestAlignment.from], to: [...bestAlignment.to] }, s, "b");
     }
 
     // Then equalize remaining command counts the old (safe) way

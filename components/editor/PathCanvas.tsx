@@ -4,6 +4,8 @@ import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { pathToString, getInterpolatedPath } from "@/lib/shapeshifter/pathUtils";
 
+type PointSelection = { subPathIndex: number; commandIndex: number; pointIndex: number };
+
 interface PathCanvasProps {
   resetKey?: number;
   side: "from" | "to" | "preview";
@@ -26,7 +28,7 @@ export const PathCanvas = React.memo(function PathCanvas({
   const [lastPan, setLastPan] = React.useState({ x: 0, y: 0 });
   const [boxSelect, setBoxSelect] = React.useState<null | {start: {x:number; y:number}; current: {x:number; y:number}}>(null);
   // For batch multi-point drag: track last known position of the primary drag point to compute uniform deltas
-  const [dragSession, setDragSession] = React.useState<null | { lastX: number; lastY: number; primarySel: any }>(null);
+  const [dragSession, setDragSession] = React.useState<null | { lastX: number; lastY: number; primarySel: PointSelection | null }>(null);
 
   useEffect(() => {
     const scale = Math.max(0.5, Math.min(8, zoom));
@@ -157,7 +159,7 @@ export const PathCanvas = React.memo(function PathCanvas({
         }
       }
       // Collect ALL points inside the box (full batch select parity with original)
-      const hits: any[] = [];
+      const hits: PointSelection[] = [];
       if (layer) {
         const path = editingSide === "from" ? layer.from : layer.to;
         for (let si = 0; si < path.subPaths.length; si++) {
