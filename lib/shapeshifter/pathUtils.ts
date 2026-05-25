@@ -332,7 +332,7 @@ export function insertPointNear(
   pathData: PathData,
   click: Point,
   sampleCount = 50,
-): { subIdx: number; cmdIdx: number; newPoint: Point } | null {
+): { subIdx: number; cmdIdx: number; newPoint: Point; t?: number } | null {
   let bestDist = Infinity;
   let bestResult: any = null;
 
