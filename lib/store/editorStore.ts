@@ -30,8 +30,7 @@ import type {
   Point,
   VectorMetadata,
 } from "../shapeshifter/types";
-
-export type ToolMode = "select" | "pen" | "direct" | "hand";
+import type { ToolMode, CursorType } from "../shapeshifter/toolModes";
 
 export interface HoveredItem {
   type: "point" | "command" | "layer" | "block";
@@ -123,8 +122,9 @@ interface EditorState {
   timelineScrollX: number;
   timelineScrollY: number;
 
-  // Action Mode
+  // Action Mode / Gestures (now using shared enums from Phase 1)
   toolMode: ToolMode;
+  cursorType: CursorType;
   hoveredItem: HoveredItem | null;
   dragState: DragState | null;
 
@@ -189,8 +189,9 @@ interface EditorState {
   setTimelineZoom: (zoom: number) => void;
   setTimelineScroll: (x: number, y: number) => void;
 
-  // Action Mode
+  // Action Mode / Gestures (Phase 1)
   setToolMode: (mode: ToolMode) => void;
+  setCursorType: (cursor: CursorType) => void;
   setHoveredItem: (item: HoveredItem | null) => void;
   startDrag: (type: string, x: number, y: number) => void;
   updateDrag: (x: number, y: number) => void;
@@ -311,6 +312,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   timelineScrollX: 0,
   timelineScrollY: 0,
   toolMode: "select",
+  cursorType: "default",
   hoveredItem: null,
   dragState: null,
   clipboard: null,
@@ -690,6 +692,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setTimelineScroll: (x, y) => set({ timelineScrollX: x, timelineScrollY: y }),
 
   setToolMode: (mode) => set({ toolMode: mode }),
+  setCursorType: (cursor) => set({ cursorType: cursor }),
   setHoveredItem: (item) => set({ hoveredItem: item }),
   startDrag: (type, x, y) => set({ dragState: { type, startX: x, startY: y, currentX: x, currentY: y } }),
   updateDrag: (x, y) =>
@@ -953,6 +956,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       timelineScrollX: 0,
       timelineScrollY: 0,
       toolMode: "select",
+      cursorType: "default",
       hoveredItem: null,
       dragState: null,
       clipboard: null,
