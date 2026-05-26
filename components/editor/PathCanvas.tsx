@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { parsePath, pathToString, getInterpolatedPath } from "@/lib/shapeshifter/pathUtils";
 import { evaluateBlock } from "@/lib/shapeshifter/interpolators";
+import type { SubPathSelection } from "@/lib/store/editorStore";
 import type { Layer, PathData, TimelineBlock } from "@/lib/shapeshifter/types";
 
 type PointSelection = { subPathIndex: number; commandIndex: number; pointIndex: number };
@@ -47,6 +48,7 @@ export const PathCanvas = React.memo(function PathCanvas({
     editingSide,
     selection,
     selectedPoints,
+    selectedSubPaths,
     progress,
     snapToGrid,
     pushHistory,
@@ -59,6 +61,7 @@ export const PathCanvas = React.memo(function PathCanvas({
     resizeSelectedLayer,
     deleteLayer,
     setZoom,
+    selectSubPath,
     toolMode,
     isActionMode,
   } = useEditorStore();
@@ -319,10 +322,26 @@ export const PathCanvas = React.memo(function PathCanvas({
   const selectedPreviewPath = selectedPreviewLayer?.d ?? displayPath;
   const selectedPreviewTransform = selectedPreviewLayer?.transform;
   const selectedPathBounds = useMemo(() => getPathBounds(targetPathData), [targetPathData]);
+  const selectedLayerSubPathSelections = useMemo(
+    () =>
+      selectedSubPaths.filter(
+        (item) =>
+          String(item.layerId) === String(selectedLayerId) &&
+          item.side === (side === "preview" ? "from" : editingSide),
+      ),
+    [editingSide, selectedLayerId, selectedSubPaths, side],
+  );
+  const selectedSubPathBounds = useMemo(() => {
+    if (selectedLayerSubPathSelections.length === 0) return null;
+    const pathData = side === "preview" ? currentLayer.from : targetPathData;
+    return getSubPathBounds(pathData, selectedLayerSubPathSelections.map((item) => item.subPathIndex));
+  }, [currentLayer.from, selectedLayerSubPathSelections, side, targetPathData]);
   const selectedLayerBounds = useMemo(
     () => (side === "preview" ? getPathBounds(parsePath(selectedPreviewPath)) : selectedPathBounds),
     [selectedPathBounds, selectedPreviewPath, side],
   );
+  const activeSelectionBounds = selectedSubPathBounds ?? selectedLayerBounds;
+  const isEditingSubPaths = selectedLayerSubPathSelections.length > 0;
   const overlayClipPath = side === "preview" ? `url(#${gridId}-artboard-clip)` : undefined;
   const frameLabel = vector.name?.trim() || "Vector 1";
   const labelSize = Math.min(Math.max(viewBox.w * 0.008, 0.28), 0.42);
@@ -332,16 +351,16 @@ export const PathCanvas = React.memo(function PathCanvas({
   const selectionHitWidth = Math.max(viewBox.w * 0.035, 1);
   const rotationHandleDistance = Math.min(Math.max(viewBox.w * 0.04, 0.9), 1.6);
   const resizeHandles = useMemo(
-    () => (selectedLayerBounds ? getResizeHandles(selectedLayerBounds) : []),
-    [selectedLayerBounds],
+    () => (selectedLayerBounds && !isEditingSubPaths ? getResizeHandles(selectedLayerBounds) : []),
+    [isEditingSubPaths, selectedLayerBounds],
   );
   const resizeEdges = useMemo(
-    () => (selectedLayerBounds ? getResizeEdges(selectedLayerBounds) : []),
-    [selectedLayerBounds],
+    () => (selectedLayerBounds && !isEditingSubPaths ? getResizeEdges(selectedLayerBounds) : []),
+    [isEditingSubPaths, selectedLayerBounds],
   );
   const rotationHandle = useMemo(
-    () => (selectedLayerBounds ? getRotationHandle(selectedLayerBounds, rotationHandleDistance) : null),
-    [rotationHandleDistance, selectedLayerBounds],
+    () => (selectedLayerBounds && !isEditingSubPaths ? getRotationHandle(selectedLayerBounds, rotationHandleDistance) : null),
+    [isEditingSubPaths, rotationHandleDistance, selectedLayerBounds],
   );
   const axisTicks = useMemo(
     () => ({
@@ -486,6 +505,70 @@ export const PathCanvas = React.memo(function PathCanvas({
     [isActionMode, pushHistory, selectLayer, selectedLayerId, setEditingSide, side, viewBox.h, viewBox.w],
   );
 
+  const handlePreviewSubPathPointerDown = useCallback(
+    (e: React.PointerEvent<SVGPathElement>, subPathIndex: number) => {
+      if (side !== "preview" || isActionMode || e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.currentTarget.setPointerCapture(e.pointerId);
+
+      const subPathSelection: SubPathSelection = {
+        layerId: selectedLayerId,
+        side: "from",
+        subPathIndex,
+      };
+      const additive = e.shiftKey || e.metaKey;
+      const alreadySelected = selectedLayerSubPathSelections.some(
+        (item) => item.subPathIndex === subPathIndex && String(item.layerId) === String(selectedLayerId),
+      );
+      selectSubPath(subPathSelection, additive);
+      setEditingSide("from");
+      pushHistory();
+
+      let lastX = e.clientX;
+      let lastY = e.clientY;
+
+      const handleMove = (moveEvent: PointerEvent) => {
+        const rect = svgRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        let dx = ((moveEvent.clientX - lastX) / rect.width) * viewBox.w;
+        let dy = ((moveEvent.clientY - lastY) / rect.height) * viewBox.h;
+        lastX = moveEvent.clientX;
+        lastY = moveEvent.clientY;
+        if (snapToGrid) {
+          dx = Math.round(dx * 2) / 2;
+          dy = Math.round(dy * 2) / 2;
+        }
+        if (dx === 0 && dy === 0) return;
+        const state = useEditorStore.getState();
+        if (!additive && !alreadySelected) {
+          state.selectSubPath(subPathSelection);
+        }
+        state.translateSelectedSubPaths(dx, dy, { recordHistory: false });
+      };
+
+      const handleUp = () => {
+        window.removeEventListener("pointermove", handleMove);
+        window.removeEventListener("pointerup", handleUp);
+      };
+
+      window.addEventListener("pointermove", handleMove);
+      window.addEventListener("pointerup", handleUp);
+    },
+    [
+      isActionMode,
+      pushHistory,
+      selectSubPath,
+      selectedLayerId,
+      selectedLayerSubPathSelections,
+      setEditingSide,
+      side,
+      snapToGrid,
+      viewBox.h,
+      viewBox.w,
+    ],
+  );
+
   const handlePreviewPathDoubleClick = useCallback(
     (e: React.MouseEvent<SVGPathElement>, layerId: string | number) => {
       if (side !== "preview" || isActionMode) return;
@@ -584,6 +667,11 @@ export const PathCanvas = React.memo(function PathCanvas({
         return;
       }
       if (event.key === "Escape") {
+        if (useEditorStore.getState().selectedSubPaths.length > 0) {
+          event.preventDefault();
+          useEditorStore.getState().selectSubPath(null);
+          return;
+        }
         setIsVectorEditing(false);
         return;
       }
@@ -604,7 +692,9 @@ export const PathCanvas = React.memo(function PathCanvas({
       const dx = event.key === "ArrowLeft" ? -amount : event.key === "ArrowRight" ? amount : 0;
       const dy = event.key === "ArrowUp" ? -amount : event.key === "ArrowDown" ? amount : 0;
       event.preventDefault();
-      if (isVectorEditing) {
+      if (useEditorStore.getState().selectedSubPaths.length > 0) {
+        useEditorStore.getState().translateSelectedSubPaths(dx, dy);
+      } else if (isVectorEditing) {
         useEditorStore.getState().translateSelectedPoints(dx, dy);
       } else {
         useEditorStore.getState().translateSelectedLayer(dx, dy);
@@ -835,26 +925,43 @@ export const PathCanvas = React.memo(function PathCanvas({
       )}
 
       {side === "preview" && !isActionMode && (
-        <path
-          d={selectedPreviewPath}
-          transform={selectedPreviewTransform}
-          clipPath={`url(#${gridId}-artboard-clip)`}
-          fill="none"
-          stroke="transparent"
-          strokeWidth={Math.max(strokeWidth, viewBox.w * 0.02)}
-          className="cursor-move"
-          pointerEvents="stroke"
-          onPointerDown={handlePreviewPathPointerDown}
-          onDoubleClick={(event) => handlePreviewPathDoubleClick(event, selectedLayerId)}
-        />
+        <g clipPath={`url(#${gridId}-artboard-clip)`}>
+          <path
+            d={selectedPreviewPath}
+            transform={selectedPreviewTransform}
+            fill="none"
+            stroke="transparent"
+            strokeWidth={Math.max(strokeWidth, viewBox.w * 0.018)}
+            className="cursor-move"
+            pointerEvents="stroke"
+            onPointerDown={handlePreviewPathPointerDown}
+            onDoubleClick={(event) => handlePreviewPathDoubleClick(event, selectedLayerId)}
+          />
+          {currentLayer.from.subPaths.map((subPath, subPathIndex) => {
+            const d = pathToString({ subPaths: [subPath] });
+            return (
+              <path
+                key={`subpath-hit-${subPathIndex}`}
+                d={d}
+                transform={selectedPreviewTransform}
+                fill="none"
+                stroke="transparent"
+                strokeWidth={Math.max(strokeWidth * 2.4, viewBox.w * 0.026)}
+                className="cursor-move"
+                pointerEvents="stroke"
+                onPointerDown={(event) => handlePreviewSubPathPointerDown(event, subPathIndex)}
+              />
+            );
+          })}
+        </g>
       )}
 
-      {(canEditPoints || side === "preview") && selectedLayerBounds && (
+      {(canEditPoints || side === "preview") && activeSelectionBounds && (
         <rect
-          x={selectedLayerBounds.x}
-          y={selectedLayerBounds.y}
-          width={selectedLayerBounds.width}
-          height={selectedLayerBounds.height}
+          x={activeSelectionBounds.x}
+          y={activeSelectionBounds.y}
+          width={activeSelectionBounds.width}
+          height={activeSelectionBounds.height}
           transform={side === "preview" ? selectedPreviewTransform : undefined}
           clipPath={overlayClipPath}
           fill="none"
@@ -867,7 +974,57 @@ export const PathCanvas = React.memo(function PathCanvas({
 
       {side === "preview" &&
         !isActionMode &&
+        selectedLayerSubPathSelections.length > 0 && (
+          <g transform={selectedPreviewTransform} clipPath={overlayClipPath} pointerEvents="none">
+            {selectedLayerSubPathSelections.map((item) => {
+              const subPath = currentLayer.from.subPaths[item.subPathIndex];
+              if (!subPath) return null;
+              const subPathPath: PathData = { subPaths: [subPath] };
+              const bounds = getPathBounds(subPathPath);
+              if (!bounds) return null;
+              const label = compactPathLabel(subPathPath);
+              const labelX = bounds.x;
+              const labelY = Math.max(artboard.y + labelSize * 1.4, bounds.y - labelSize * 1.2);
+              const labelWidth = Math.max(label.length * labelSize * 0.58, labelSize * 3.2);
+              const labelHeight = labelSize * 1.45;
+              return (
+                <g key={`subpath-selection-${item.subPathIndex}`}>
+                  <path
+                    d={pathToString(subPathPath)}
+                    fill="none"
+                    stroke="#0d99ff"
+                    strokeWidth={Math.max(selectionStrokeWidth * 1.25, 0.08)}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <rect
+                    x={labelX}
+                    y={labelY - labelHeight + labelSize * 0.25}
+                    width={labelWidth}
+                    height={labelHeight}
+                    rx={Math.max(labelSize * 0.2, 0.04)}
+                    fill="#0d99ff"
+                    opacity="0.96"
+                  />
+                  <text
+                    x={labelX + labelSize * 0.38}
+                    y={labelY - labelSize * 0.25}
+                    fill="#ffffff"
+                    fontSize={labelSize * 0.9}
+                    fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+                    fontWeight={600}
+                  >
+                    {label}
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+        )}
+
+      {side === "preview" &&
+        !isActionMode &&
         !isVectorEditing &&
+        !isEditingSubPaths &&
         rotationHandle && (
           <g transform={selectedPreviewTransform} clipPath={overlayClipPath}>
             <line
@@ -897,6 +1054,7 @@ export const PathCanvas = React.memo(function PathCanvas({
       {side === "preview" &&
         !isActionMode &&
         !isVectorEditing &&
+        !isEditingSubPaths &&
         selectedLayerBounds && (
           <g transform={selectedPreviewTransform} clipPath={overlayClipPath}>
             {resizeEdges.map((edge) => (
@@ -920,6 +1078,7 @@ export const PathCanvas = React.memo(function PathCanvas({
       {side === "preview" &&
         !isActionMode &&
         !isVectorEditing &&
+        !isEditingSubPaths &&
         resizeHandles.map((handle) => (
           <rect
             key={handle.id}
@@ -1045,6 +1204,18 @@ function getPathBounds(path: PathData) {
     width: Math.max(0.01, maxX - minX),
     height: Math.max(0.01, maxY - minY),
   };
+}
+
+function getSubPathBounds(path: PathData, subPathIndexes: number[]) {
+  const selected = new Set(subPathIndexes);
+  return getPathBounds({
+    subPaths: path.subPaths.filter((_, index) => selected.has(index)),
+  });
+}
+
+function compactPathLabel(path: PathData) {
+  const label = pathToString(path).replace(/\s+/g, " ");
+  return label.length > 28 ? `${label.slice(0, 27)}...` : label;
 }
 
 function rectsIntersect(

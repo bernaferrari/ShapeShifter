@@ -12,7 +12,6 @@ import {
   updatePoint,
   translatePath,
   scalePathToBounds,
-  addPointAfter,
   deleteCommand,
   deleteSubPath,
   splitCommandInHalf,
@@ -65,6 +64,12 @@ export interface CanvasFrame {
   vector: VectorMetadata;
   animation: AnimationState;
   hiddenLayerIds: string[];
+}
+
+export interface SubPathSelection {
+  layerId: string | number;
+  side: "from" | "to";
+  subPathIndex: number;
 }
 
 const PATH_STYLE_DEFAULTS = {
@@ -121,6 +126,7 @@ interface EditorState {
   // Multi-point selection support for batch direct manipulation
   // (faithful port of original paper.js BatchSelectItemsGesture + multi segment selection in edit path mode)
   selectedPoints: Selection[];
+  selectedSubPaths: SubPathSelection[];
 
   // Playback
   isPlaying: boolean;
@@ -193,6 +199,7 @@ interface EditorState {
 
   // Batch direct manipulation (for multi point selection drag parity)
   translateSelectedPoints: (dx: number, dy: number, options?: { recordHistory?: boolean }) => void;
+  translateSelectedSubPaths: (dx: number, dy: number, options?: { recordHistory?: boolean }) => void;
   translateSelectedLayer: (dx: number, dy: number, options?: { recordHistory?: boolean }) => void;
   resizeSelectedLayer: (
     fromBounds: { x: number; y: number; width: number; height: number },
@@ -249,8 +256,10 @@ interface EditorState {
 
   // Selection (single primary + multi batch for direct manipulation parity)
   selectPoint: (selection: Selection | null, addToMulti?: boolean) => void;
+  selectSubPath: (selection: SubPathSelection | null, addToMulti?: boolean) => void;
   clearSelection: () => void;
   selectMultiplePoints: (points: Selection[]) => void;
+  selectMultipleSubPaths: (subPaths: SubPathSelection[]) => void;
 
   // Vector metadata + animation
   updateVector: (patch: Partial<VectorMetadata>) => void;
@@ -365,6 +374,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   isActionMode: false,
   selection: null,
   selectedPoints: [],
+  selectedSubPaths: [],
   isPlaying: false,
   progress: 0,
   speed: 1,
@@ -444,6 +454,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedLayerId: getFirstEditableLayerId(frame.layers),
       selection: null,
       selectedPoints: [],
+      selectedSubPaths: [],
       selectedBlockIds: [],
       progress: 0,
       isPlaying: false,
@@ -474,6 +485,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedLayerId: getFirstEditableLayerId(frame.layers),
       selection: null,
       selectedPoints: [],
+      selectedSubPaths: [],
       selectedBlockIds: [],
       progress: 0,
       isPlaying: false,
@@ -523,6 +535,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedLayerId: getFirstEditableLayerId(fallbackFrame.layers),
       selection: null,
       selectedPoints: [],
+      selectedSubPaths: [],
       selectedBlockIds: [],
       progress: 0,
       isPlaying: false,
@@ -545,6 +558,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedLayerId: getFirstEditableLayerId(frame.layers),
       selection: null,
       selectedPoints: [],
+      selectedSubPaths: [],
       selectedBlockIds: [],
       progress: 0,
       isPlaying: false,
@@ -589,6 +603,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedLayerId: getFirstEditableLayerId(project.layers),
       selection: null,
       selectedPoints: [],
+      selectedSubPaths: [],
       progress: 0,
       isPlaying: false,
       isActionMode: false,
@@ -606,7 +621,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       layers,
       selectedLayerId: layers[0]?.id ?? 0,
-      selection: null, selectedPoints: [],
+      selection: null, selectedPoints: [], selectedSubPaths: [],
       progress: 0,
     });
   },
@@ -618,6 +633,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       layers: [...layers, ...incomingLayers],
       selectedLayerId: incomingLayers[0]?.id ?? layers[0]?.id ?? 0,
       selection: null,
+      selectedPoints: [],
+      selectedSubPaths: [],
     });
   },
   loadProject: (project) => {
@@ -640,7 +657,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       animation: project.animation,
       hiddenLayerIds: project.hiddenLayerIds,
       selectedLayerId: getFirstEditableLayerId(project.layers),
-      selection: null, selectedPoints: [],
+      selection: null, selectedPoints: [], selectedSubPaths: [],
       progress: 0,
       isPlaying: false,
       isActionMode: false,
@@ -672,14 +689,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
     set({ layers: newLayers });
   },
-  selectLayer: (id) => set({ selectedLayerId: id, selection: null, selectedPoints: [] }),
+  selectLayer: (id) => set({ selectedLayerId: id, selection: null, selectedPoints: [], selectedSubPaths: [] }),
   setEditingSide: (side) =>
     set((state) => ({
       editingSide: side,
       selection: state.editingSide === side ? state.selection : null,
+      selectedSubPaths: state.editingSide === side ? state.selectedSubPaths : [],
     })),
-  startActionMode: () => set({ isActionMode: true, selection: null, selectedPoints: [] }),
-  closeActionMode: () => set({ isActionMode: false, selection: null, selectedPoints: [] }),
+  startActionMode: () => set({ isActionMode: true, selection: null, selectedPoints: [], selectedSubPaths: [] }),
+  closeActionMode: () => set({ isActionMode: false, selection: null, selectedPoints: [], selectedSubPaths: [] }),
 
   updateSelectedPoint: (newPoint, options) => {
     const { layers, selectedLayerId, editingSide, selection } = get();
@@ -713,7 +731,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   translateSelectedPoints: (dx, dy, options) => {
-    const { layers, selectedLayerId, editingSide, selectedPoints, selection } = get();
+    const { layers, selectedLayerId, editingSide, selectedPoints } = get();
     if (!selectedPoints || selectedPoints.length === 0 || dx === 0 && dy === 0) return;
 
     const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
@@ -745,6 +763,47 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     } else {
       newLayers[layerIndex] = { ...layer, to: targetPath };
     }
+
+    if (options?.recordHistory !== false) {
+      get().pushHistory();
+    }
+    set({ layers: newLayers });
+  },
+
+  translateSelectedSubPaths: (dx, dy, options) => {
+    const { layers, selectedSubPaths } = get();
+    if (!selectedSubPaths || selectedSubPaths.length === 0 || (dx === 0 && dy === 0)) return;
+
+    const selectedByLayer = new Map<string | number, Set<number>>();
+    for (const selection of selectedSubPaths) {
+      const existing = selectedByLayer.get(selection.layerId) ?? new Set<number>();
+      existing.add(selection.subPathIndex);
+      selectedByLayer.set(selection.layerId, existing);
+    }
+
+    const newLayers = layers.map((layer) => {
+      const subPathIndexes = selectedByLayer.get(layer.id);
+      if (!subPathIndexes || subPathIndexes.size === 0) return layer;
+
+      const movePath = (pathData: typeof layer.from) => {
+        const next = structuredClone(pathData);
+        for (const subPathIndex of subPathIndexes) {
+          const subPath = next.subPaths[subPathIndex];
+          if (!subPath) continue;
+          for (const command of subPath.commands) {
+            command.points = command.points.map((point) => ({
+              x: point.x + dx,
+              y: point.y + dy,
+            }));
+          }
+        }
+        return next;
+      };
+
+      const from = movePath(layer.from);
+      const to = movePath(layer.to);
+      return { ...layer, from, to, pathData: from };
+    });
 
     if (options?.recordHistory !== false) {
       get().pushHistory();
@@ -834,6 +893,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       layers: newLayers,
       selection: null,
+      selectedPoints: [],
+      selectedSubPaths: [],
     });
   },
 
@@ -852,7 +913,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       newLayers[layerIndex] = { ...layer, to: updatedPath };
     }
     get().pushHistory();
-    set({ layers: newLayers, selection: null, selectedPoints: [] });
+    set({ layers: newLayers, selection: null, selectedPoints: [], selectedSubPaths: [] });
   },
 
   splitSelectedCommand: () => {
@@ -946,6 +1007,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       layers: [...layers, ...pasted],
       selectedLayerId: pasted[0]?.id ?? layers[0]?.id ?? 0,
       selection: null,
+      selectedPoints: [],
+      selectedSubPaths: [],
     });
   },
   cutLayers: (layerIds) => {
@@ -958,6 +1021,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       layers: remaining,
       selectedLayerId: remaining[0]?.id ?? 0,
       selection: null,
+      selectedPoints: [],
+      selectedSubPaths: [],
     });
   },
 
@@ -1007,7 +1072,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   selectPoint: (selection, addToMulti = false) => {
     if (!selection) {
-      set({ selection: null, selectedPoints: [] });
+      set({ selection: null, selectedPoints: [], selectedSubPaths: [] });
       return;
     }
     set((state) => {
@@ -1023,14 +1088,63 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           : [...state.selectedPoints, selection];
         return { 
           selection, 
-          selectedPoints: newSelected.length > 0 ? newSelected : [selection] 
+          selectedPoints: newSelected.length > 0 ? newSelected : [selection],
+          selectedSubPaths: [],
         };
       }
-      return { selection, selectedPoints: [selection] };
+      return { selection, selectedPoints: [selection], selectedSubPaths: [] };
     });
   },
-  selectMultiplePoints: (points: Selection[]) => set({ selectedPoints: points, selection: points[0] || null }),
-  clearSelection: () => set({ selection: null, selectedPoints: [] }),
+  selectSubPath: (selection, addToMulti = false) => {
+    if (!selection) {
+      set({ selectedSubPaths: [] });
+      return;
+    }
+    set((state) => {
+      if (addToMulti) {
+        const exists = state.selectedSubPaths.some(
+          (item) =>
+            item.layerId === selection.layerId &&
+            item.side === selection.side &&
+            item.subPathIndex === selection.subPathIndex,
+        );
+        const selectedSubPaths = exists
+          ? state.selectedSubPaths.filter(
+              (item) =>
+                !(
+                  item.layerId === selection.layerId &&
+                  item.side === selection.side &&
+                  item.subPathIndex === selection.subPathIndex
+                ),
+            )
+          : [...state.selectedSubPaths, selection];
+        return {
+          selectedLayerId: selection.layerId,
+          editingSide: selection.side,
+          selection: null,
+          selectedPoints: [],
+          selectedSubPaths: selectedSubPaths.length > 0 ? selectedSubPaths : [selection],
+        };
+      }
+      return {
+        selectedLayerId: selection.layerId,
+        editingSide: selection.side,
+        selection: null,
+        selectedPoints: [],
+        selectedSubPaths: [selection],
+      };
+    });
+  },
+  selectMultiplePoints: (points: Selection[]) => set({ selectedPoints: points, selection: points[0] || null, selectedSubPaths: [] }),
+  selectMultipleSubPaths: (subPaths: SubPathSelection[]) =>
+    set({
+      selectedSubPaths: subPaths,
+      selectedLayerId: subPaths[0]?.layerId ?? get().selectedLayerId,
+      editingSide: subPaths[0]?.side ?? get().editingSide,
+      selection: null,
+      selectedPoints: [],
+    }),
+  clearSelection: () => set({ selection: null, selectedPoints: [], selectedSubPaths: [] }),
 
   getCurrentSelectedPoint: () => {
     const state = get();
@@ -1060,7 +1174,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       strokeWidth: type === "clipPath" ? 1.5 : 0,
     });
     get().pushHistory();
-    set({ layers: [...layers, newLayer], selectedLayerId: newLayer.id, selection: null, selectedPoints: [] });
+    set({ layers: [...layers, newLayer], selectedLayerId: newLayer.id, selection: null, selectedPoints: [], selectedSubPaths: [] });
   },
 
   deleteLayer: (id: string | number) => {
@@ -1073,7 +1187,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       newSelected = newLayers[0]?.id ?? 0;
     }
     get().pushHistory();
-    set({ layers: newLayers, selectedLayerId: newSelected, selection: null, selectedPoints: [] });
+    set({ layers: newLayers, selectedLayerId: newSelected, selection: null, selectedPoints: [], selectedSubPaths: [] });
   },
 
   toggleLayerVisibility: (id: string | number) => {
@@ -1173,7 +1287,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedFrameId: initialFrame.id,
       layers: cloneLayers(initialLayers),
       selectedLayerId: initialLayers[0]?.id ?? 0,
-      selection: null, selectedPoints: [],
+      selection: null, selectedPoints: [], selectedSubPaths: [],
       progress: 0,
       speed: 1,
       isSlowMotion: false,
