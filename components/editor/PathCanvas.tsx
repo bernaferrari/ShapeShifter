@@ -34,28 +34,10 @@ export const PathCanvas = React.memo(function PathCanvas({
   // For batch multi-point drag: track last known position of the primary drag point to compute uniform deltas
   const [dragSession, setDragSession] = React.useState<null | { lastX: number; lastY: number; primarySel: PointSelection | null }>(null);
 
-  useEffect(() => {
-    const scale = Math.max(0.5, Math.min(8, zoom));
-    const size = 48 / scale;
-    setViewBox({ x: 24 - size / 2, y: 24 - size / 2, w: size, h: size, scale });
-  }, [resetKey, zoom]);
-
-  const pointFromEvent = useCallback(
-    (clientX: number, clientY: number) => {
-      const rect = svgRef.current?.getBoundingClientRect();
-      if (!rect) return null;
-      return {
-        x: viewBox.x + ((clientX - rect.left) / rect.width) * viewBox.w,
-        y: viewBox.y + ((clientY - rect.top) / rect.height) * viewBox.h,
-      };
-    },
-    [viewBox],
-  );
-
-
   const {
     layers,
     animation,
+    vector,
     selectedLayerId,
     editingSide,
     selection,
@@ -72,8 +54,46 @@ export const PathCanvas = React.memo(function PathCanvas({
     isActionMode,
   } = useEditorStore();
 
-  
-  
+  const artboard = useMemo(() => {
+    const artboardWidth = Math.max(1, vector.width || 24);
+    const artboardHeight = Math.max(1, vector.height || 24);
+    const baseSize = Math.max(artboardWidth, artboardHeight);
+    return {
+      x: 0,
+      y: 0,
+      width: artboardWidth,
+      height: artboardHeight,
+      centerX: artboardWidth / 2,
+      centerY: artboardHeight / 2,
+      baseViewSize: Math.max(24, baseSize * 1.85),
+      gridMinor: baseSize <= 32 ? 1 : Math.max(4, Math.round(baseSize / 48)),
+      gridMajor: baseSize <= 32 ? 4 : Math.max(16, Math.round(baseSize / 12)),
+    };
+  }, [vector.height, vector.width]);
+
+  useEffect(() => {
+    const scale = Math.max(0.5, Math.min(8, zoom));
+    const size = artboard.baseViewSize / scale;
+    setViewBox({
+      x: artboard.centerX - size / 2,
+      y: artboard.centerY - size / 2,
+      w: size,
+      h: size,
+      scale,
+    });
+  }, [artboard.baseViewSize, artboard.centerX, artboard.centerY, resetKey, zoom]);
+
+  const pointFromEvent = useCallback(
+    (clientX: number, clientY: number) => {
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (!rect) return null;
+      return {
+        x: viewBox.x + ((clientX - rect.left) / rect.width) * viewBox.w,
+        y: viewBox.y + ((clientY - rect.top) / rect.height) * viewBox.h,
+      };
+    },
+    [viewBox],
+  );
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
@@ -83,15 +103,15 @@ export const PathCanvas = React.memo(function PathCanvas({
 
       const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9;
       const newScale = Math.max(0.5, Math.min(10, viewBox.scale * zoomFactor));
-      const newW = 48 / newScale;
-      const newH = 48 / newScale;
+      const newW = artboard.baseViewSize / newScale;
+      const newH = artboard.baseViewSize / newScale;
 
       const newX = mouse.x - (mouse.x - viewBox.x) * (newW / viewBox.w);
       const newY = mouse.y - (mouse.y - viewBox.y) * (newH / viewBox.h);
 
       setViewBox({ x: newX, y: newY, w: newW, h: newH, scale: newScale });
     },
-    [pointFromEvent, viewBox],
+    [artboard.baseViewSize, pointFromEvent, viewBox],
   );
 
   const handleSvgPointerDown = useCallback((e: React.PointerEvent) => {
@@ -414,60 +434,54 @@ export const PathCanvas = React.memo(function PathCanvas({
       onPointerMove={handleSvgPointerMove}
       onPointerUp={handleSvgPointerUp}
       onDoubleClick={() => {
-        const size = 48 / Math.max(0.5, Math.min(8, zoom));
-        setViewBox({ x: 24 - size / 2, y: 24 - size / 2, w: size, h: size, scale: zoom });
+        const scale = Math.max(0.5, Math.min(8, zoom));
+        const size = artboard.baseViewSize / scale;
+        setViewBox({
+          x: artboard.centerX - size / 2,
+          y: artboard.centerY - size / 2,
+          w: size,
+          h: size,
+          scale,
+        });
       }}
       role="img"
       aria-label={`${side} path canvas`}
     >
-      {/* Subtle infinite grid + viewport axes */}
       <defs>
-        <pattern id={`${gridId}-minor`} width="4" height="4" patternUnits="userSpaceOnUse">
-          <path d="M 4 0 L 0 0 0 4" className="stroke-muted-foreground/20" fill="none" strokeWidth="0.06" />
+        <pattern id={`${gridId}-minor`} width={artboard.gridMinor} height={artboard.gridMinor} patternUnits="userSpaceOnUse">
+          <path d={`M ${artboard.gridMinor} 0 L 0 0 0 ${artboard.gridMinor}`} stroke="#000000" strokeOpacity="0.045" fill="none" strokeWidth={viewBox.w * 0.0012} />
         </pattern>
-        <pattern id={`${gridId}-major`} width="12" height="12" patternUnits="userSpaceOnUse">
-          <path d="M 12 0 L 0 0 0 12" className="stroke-muted-foreground/30" fill="none" strokeWidth="0.08" />
+        <pattern id={`${gridId}-major`} width={artboard.gridMajor} height={artboard.gridMajor} patternUnits="userSpaceOnUse">
+          <path d={`M ${artboard.gridMajor} 0 L 0 0 0 ${artboard.gridMajor}`} stroke="#000000" strokeOpacity="0.08" fill="none" strokeWidth={viewBox.w * 0.0015} />
         </pattern>
+        <filter id={`${gridId}-artboard-shadow`} x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy={viewBox.w * 0.018} stdDeviation={viewBox.w * 0.018} floodColor="#000000" floodOpacity="0.22" />
+        </filter>
       </defs>
-      <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill={`url(#${gridId}-minor)`} />
-      <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill={`url(#${gridId}-major)`} />
-      <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={ruler.headerSize} className="fill-card/70" />
-      <rect x={viewBox.x} y={viewBox.y} width={ruler.headerSize} height={viewBox.h} className="fill-card/70" />
-      <line x1={viewBox.x} y1={viewBox.y + ruler.headerSize} x2={viewBox.x + viewBox.w} y2={viewBox.y + ruler.headerSize} className="stroke-border/70" strokeWidth={ruler.strokeWidth} />
-      <line x1={viewBox.x + ruler.headerSize} y1={viewBox.y} x2={viewBox.x + ruler.headerSize} y2={viewBox.y + viewBox.h} className="stroke-border/70" strokeWidth={ruler.strokeWidth} />
-      {ruler.xTicks.map((tick) => (
-        <g key={`x-${tick}`} aria-hidden="true">
-          <line x1={tick} y1={viewBox.y + ruler.headerSize - ruler.tickSize} x2={tick} y2={viewBox.y + ruler.headerSize} className="stroke-border/75" strokeWidth={ruler.strokeWidth} />
-          <text
-            x={tick}
-            y={viewBox.y + ruler.headerSize - ruler.labelOffset}
-            className="fill-muted-foreground opacity-70"
-            fontSize={ruler.fontSize}
-            textAnchor="middle"
-            dominantBaseline="alphabetic"
-          >
-            {formatTick(tick)}
-          </text>
-        </g>
-      ))}
-      {ruler.yTicks.map((tick) => (
-        <g key={`y-${tick}`} aria-hidden="true">
-          <line x1={viewBox.x + ruler.headerSize - ruler.tickSize} y1={tick} x2={viewBox.x + ruler.headerSize} y2={tick} className="stroke-border/75" strokeWidth={ruler.strokeWidth} />
-          <text
-            x={viewBox.x + ruler.headerSize - ruler.labelOffset}
-            y={tick}
-            className="fill-muted-foreground opacity-70"
-            fontSize={ruler.fontSize}
-            textAnchor="end"
-            dominantBaseline="middle"
-          >
-            {formatTick(tick)}
-          </text>
-        </g>
-      ))}
-      <line x1="0" y1={viewBox.y} x2="0" y2={viewBox.y + viewBox.h} className="stroke-primary/45" strokeWidth="0.14" />
-      <line x1={viewBox.x} y1="0" x2={viewBox.x + viewBox.w} y2="0" className="stroke-primary/45" strokeWidth="0.14" />
-      <rect x="0" y="0" width="48" height="48" className="fill-transparent stroke-border/70" strokeWidth="0.18" />
+
+      <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="#252525" />
+      <rect
+        x={artboard.x}
+        y={artboard.y}
+        width={artboard.width}
+        height={artboard.height}
+        rx={Math.max(viewBox.w * 0.0025, 0.04)}
+        fill="#ffffff"
+        filter={`url(#${gridId}-artboard-shadow)`}
+      />
+      <rect x={artboard.x} y={artboard.y} width={artboard.width} height={artboard.height} fill={`url(#${gridId}-minor)`} />
+      <rect x={artboard.x} y={artboard.y} width={artboard.width} height={artboard.height} fill={`url(#${gridId}-major)`} />
+      <rect
+        x={artboard.x}
+        y={artboard.y}
+        width={artboard.width}
+        height={artboard.height}
+        fill="none"
+        stroke="#d9d9d9"
+        strokeOpacity="1"
+        strokeWidth={Math.max(viewBox.w * 0.0016, 0.06)}
+        pointerEvents="none"
+      />
       {/* Box selection rect (select tool) */}
       {boxSelect && (
         <rect
@@ -476,7 +490,7 @@ export const PathCanvas = React.memo(function PathCanvas({
           width={Math.abs(boxSelect.current.x - boxSelect.start.x)}
           height={Math.abs(boxSelect.current.y - boxSelect.start.y)}
           fill="none"
-          stroke="hsl(var(--primary))"
+          stroke="#0d99ff"
           strokeWidth="0.4"
           strokeDasharray="2 1"
           opacity="0.8"
@@ -485,7 +499,7 @@ export const PathCanvas = React.memo(function PathCanvas({
 
       {/* The actual path/vector scene */}
       {side === "preview" ? (
-        <g className="text-foreground drop-shadow-sm">
+        <g className="text-foreground">
           {previewLayers.map(
             ({
               layer,
@@ -564,12 +578,11 @@ export const PathCanvas = React.memo(function PathCanvas({
           d={selectedPreviewPath}
           transform={selectedPreviewTransform}
           fill="none"
-          stroke="hsl(var(--primary))"
-          strokeWidth={Math.max(strokeWidth, 2.2) + 1.6}
-          strokeOpacity="0.22"
+          stroke="#0d99ff"
+          strokeWidth={Math.max(viewBox.w * 0.002, 0.08)}
+          strokeOpacity="1"
           strokeLinecap={currentLayer.strokeLinecap ?? "butt"}
           strokeLinejoin={currentLayer.strokeLinejoin ?? "miter"}
-          strokeDasharray="1.2 1.2"
           pointerEvents="none"
         />
       )}
@@ -582,9 +595,8 @@ export const PathCanvas = React.memo(function PathCanvas({
           height={selectedPathBounds.height}
           transform={side === "preview" ? selectedPreviewTransform : undefined}
           fill="none"
-          stroke="hsl(var(--primary))"
-          strokeWidth={Math.max(ruler.strokeWidth * 1.5, 0.08)}
-          strokeDasharray={`${Math.max(ruler.strokeWidth * 4, 0.25)} ${Math.max(ruler.strokeWidth * 3, 0.18)}`}
+          stroke="#0d99ff"
+          strokeWidth={Math.max(ruler.strokeWidth * 1.6, 0.08)}
           pointerEvents="none"
         />
       )}
@@ -601,7 +613,7 @@ export const PathCanvas = React.memo(function PathCanvas({
 
             const selected = isSelected(subPathIndex, commandIndex, pointIndex);
             const r = isHandle ? Math.max(viewBox.w * 0.006, 0.16) : Math.max(viewBox.w * 0.008, 0.22);
-            const fill = selected ? "hsl(var(--primary))" : "hsl(var(--background))";
+            const fill = selected ? "#0d99ff" : "#ffffff";
             const strokeW = Math.max(viewBox.w * 0.0022, 0.08);
 
             return (
@@ -613,7 +625,7 @@ export const PathCanvas = React.memo(function PathCanvas({
                     y1={command.points[2]?.y ?? point.y}
                     x2={point.x}
                     y2={point.y}
-                    stroke="hsl(var(--muted-foreground))"
+                    stroke="#0d99ff"
                     strokeWidth={Math.max(viewBox.w * 0.0018, 0.06)}
                     opacity={0.6}
                   />
@@ -622,12 +634,9 @@ export const PathCanvas = React.memo(function PathCanvas({
                   cx={point.x}
                   cy={point.y}
                   r={r}
-                  className={`cursor-grab transition-[fill,stroke,transform] duration-100 ${
-                    selected
-                      ? "stroke-primary"
-                      : "stroke-primary hover:fill-primary/15"
-                  }`}
+                  className="cursor-grab transition-[fill,stroke,transform] duration-100"
                   fill={fill}
+                  stroke="#0d99ff"
                   strokeWidth={strokeW}
                   onPointerDown={(e) =>
                     handlePointerDown(e, subPathIndex, commandIndex, pointIndex)
@@ -671,10 +680,6 @@ function buildTicks(min: number, max: number, interval: number) {
     ticks.push(Number(value.toFixed(4)));
   }
   return ticks;
-}
-
-function formatTick(value: number) {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 function getPathBounds(path: PathData) {
