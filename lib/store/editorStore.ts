@@ -72,6 +72,13 @@ export interface SubPathSelection {
   subPathIndex: number;
 }
 
+export interface SegmentSelection {
+  layerId: string | number;
+  side: "from" | "to";
+  subPathIndex: number;
+  commandIndex: number;
+}
+
 const PATH_STYLE_DEFAULTS = {
   fillColor: "",
   fillAlpha: 1,
@@ -192,6 +199,8 @@ interface EditorState {
   // Path manipulation (the heart of ShapeShifter)
   updateSelectedPoint: (newPoint: Point, options?: { recordHistory?: boolean }) => void;
   addPointOnPath: (clickX: number, clickY: number) => void;
+  splitSelectedLayerSegment: (segment: SegmentSelection) => void;
+  bendSelectedLayerSegment: (segment: SegmentSelection, point: Point, options?: { recordHistory?: boolean }) => void;
   deleteSelectedPoint: () => void;
   deleteSelectedSubPath: () => void;
   splitSelectedCommand: () => void;
@@ -345,6 +354,14 @@ function saveActiveFrame(state: EditorState) {
   return state.frames.map((frame) =>
     frame.id === state.selectedFrameId ? snapshotFrame(state, frame) : cloneFrame(frame),
   );
+}
+
+function cubicPointAt(start: Point, control1: Point, control2: Point, end: Point, t: number): Point {
+  const mt = 1 - t;
+  return {
+    x: mt ** 3 * start.x + 3 * mt ** 2 * t * control1.x + 3 * mt * t ** 2 * control2.x + t ** 3 * end.x,
+    y: mt ** 3 * start.y + 3 * mt ** 2 * t * control1.y + 3 * mt * t ** 2 * control2.y + t ** 3 * end.y,
+  };
 }
 
 const initialFrame: CanvasFrame = {
@@ -868,6 +885,100 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     get().pushHistory();
     set({ layers: newLayers });
+  },
+
+  splitSelectedLayerSegment: (segment) => {
+    const { layers } = get();
+    const layerIndex = layers.findIndex((l) => l.id === segment.layerId);
+    if (layerIndex === -1) return;
+
+    const layer = layers[layerIndex];
+    const splitPath = (pathData: typeof layer.from) =>
+      splitCommandInHalf(pathData, segment.subPathIndex, segment.commandIndex);
+    const from = splitPath(layer.from);
+    const to = splitPath(layer.to);
+    const newLayers = [...layers];
+    newLayers[layerIndex] = { ...layer, from, to, pathData: from };
+
+    get().pushHistory();
+    set({
+      layers: newLayers,
+      selectedLayerId: segment.layerId,
+      editingSide: segment.side,
+      selection: {
+        layerId: segment.layerId,
+        side: segment.side,
+        subPathIndex: segment.subPathIndex,
+        commandIndex: segment.commandIndex,
+        pointIndex: Math.max(0, (from.subPaths[segment.subPathIndex]?.commands[segment.commandIndex]?.points.length ?? 1) - 1),
+      },
+      selectedPoints: [],
+      selectedSubPaths: [],
+    });
+  },
+
+  bendSelectedLayerSegment: (segment, point, options) => {
+    const { layers } = get();
+    const layerIndex = layers.findIndex((l) => l.id === segment.layerId);
+    if (layerIndex === -1) return;
+
+    const layer = layers[layerIndex];
+    const bendPath = (pathData: typeof layer.from) => {
+      const next = structuredClone(pathData);
+      const subPath = next.subPaths[segment.subPathIndex];
+      const command = subPath?.commands[segment.commandIndex];
+      const prevCommand = subPath?.commands[segment.commandIndex - 1];
+      const start = prevCommand?.points.at(-1);
+      const end = command?.points.at(-1);
+      if (!subPath || !command || !start || !end || command.type === "M" || command.type === "Z") return next;
+
+      if (command.type === "L" || command.points.length === 1) {
+        const control = {
+          x: 2 * point.x - 0.5 * start.x - 0.5 * end.x,
+          y: 2 * point.y - 0.5 * start.y - 0.5 * end.y,
+        };
+        command.type = "C";
+        command.points = [
+          {
+            x: start.x + (2 / 3) * (control.x - start.x),
+            y: start.y + (2 / 3) * (control.y - start.y),
+          },
+          {
+            x: end.x + (2 / 3) * (control.x - end.x),
+            y: end.y + (2 / 3) * (control.y - end.y),
+          },
+          end,
+        ];
+        return next;
+      }
+
+      if (command.type === "C" && command.points.length >= 3) {
+        const mid = cubicPointAt(start, command.points[0], command.points[1], end, 0.5);
+        const dx = point.x - mid.x;
+        const dy = point.y - mid.y;
+        command.points = [
+          { x: command.points[0].x + dx, y: command.points[0].y + dy },
+          { x: command.points[1].x + dx, y: command.points[1].y + dy },
+          command.points[2],
+        ];
+      }
+
+      return next;
+    };
+
+    const from = bendPath(layer.from);
+    const to = bendPath(layer.to);
+    const newLayers = [...layers];
+    newLayers[layerIndex] = { ...layer, from, to, pathData: from };
+
+    if (options?.recordHistory !== false) {
+      get().pushHistory();
+    }
+    set({
+      layers: newLayers,
+      selectedLayerId: segment.layerId,
+      editingSide: segment.side,
+    });
   },
 
   deleteSelectedPoint: () => {

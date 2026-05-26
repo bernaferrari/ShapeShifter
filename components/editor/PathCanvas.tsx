@@ -4,13 +4,22 @@ import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { parsePath, pathToString, getInterpolatedPath } from "@/lib/shapeshifter/pathUtils";
 import { evaluateBlock } from "@/lib/shapeshifter/interpolators";
-import type { SubPathSelection } from "@/lib/store/editorStore";
-import type { Layer, PathData, TimelineBlock } from "@/lib/shapeshifter/types";
+import type { SegmentSelection, SubPathSelection } from "@/lib/store/editorStore";
+import type { Command, Layer, PathData, Point, TimelineBlock } from "@/lib/shapeshifter/types";
 
 type PointSelection = { subPathIndex: number; commandIndex: number; pointIndex: number };
 type ViewBox = { x: number; y: number; w: number; h: number; scale: number };
 type Bounds = { x: number; y: number; width: number; height: number };
 type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
+type SegmentTarget = {
+  subPathIndex: number;
+  commandIndex: number;
+  command: Command;
+  start: Point;
+  end: Point;
+  d: string;
+  midpoint: Point;
+};
 
 interface PathCanvasProps {
   resetKey?: number;
@@ -54,6 +63,7 @@ export const PathCanvas = React.memo(function PathCanvas({
     pushHistory,
     updateSelectedPoint,
     addPointOnPath,
+    splitSelectedLayerSegment,
     selectPoint,
     selectLayer,
     setEditingSide,
@@ -310,6 +320,8 @@ export const PathCanvas = React.memo(function PathCanvas({
       ),
     [targetPathData],
   );
+  const segmentPathData = side === "preview" ? currentLayer.from : targetPathData;
+  const segmentTargets = useMemo(() => getSegmentTargets(segmentPathData), [segmentPathData]);
   const ruler = useMemo(() => getRulerModel(viewBox), [viewBox]);
   const previewLayers = useMemo(
     () =>
@@ -342,6 +354,7 @@ export const PathCanvas = React.memo(function PathCanvas({
   );
   const activeSelectionBounds = selectedSubPathBounds ?? selectedLayerBounds;
   const isEditingSubPaths = selectedLayerSubPathSelections.length > 0;
+  const canEditSegments = canEditPoints || (side === "preview" && !isActionMode && isEditingSubPaths);
   const overlayClipPath = side === "preview" ? `url(#${gridId}-artboard-clip)` : undefined;
   const frameLabel = vector.name?.trim() || "Vector 1";
   const labelSize = Math.min(Math.max(viewBox.w * 0.008, 0.28), 0.42);
@@ -567,6 +580,80 @@ export const PathCanvas = React.memo(function PathCanvas({
       viewBox.h,
       viewBox.w,
     ],
+  );
+
+  const handleSegmentPointerDown = useCallback(
+    (e: React.PointerEvent<SVGPathElement>, segment: SegmentTarget) => {
+      if (isActionMode || e.button !== 0) return;
+      if (side === "preview" && !isVectorEditing && !isEditingSubPaths) return;
+      if (side === "preview") {
+        setEditingSide("from");
+      } else if (!isEditingThisSide) {
+        setEditingSide(side);
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      e.currentTarget.setPointerCapture(e.pointerId);
+
+      const segmentSelection: SegmentSelection = {
+        layerId: selectedLayerId,
+        side: side === "preview" ? "from" : editingSide,
+        subPathIndex: segment.subPathIndex,
+        commandIndex: segment.commandIndex,
+      };
+      pushHistory();
+
+      const handleMove = (moveEvent: PointerEvent) => {
+        const point = pointFromEvent(moveEvent.clientX, moveEvent.clientY);
+        if (!point) return;
+        const nextPoint = snapToGrid
+          ? { x: Math.round(point.x * 2) / 2, y: Math.round(point.y * 2) / 2 }
+          : point;
+        useEditorStore.getState().bendSelectedLayerSegment(segmentSelection, nextPoint, { recordHistory: false });
+      };
+
+      const handleUp = () => {
+        window.removeEventListener("pointermove", handleMove);
+        window.removeEventListener("pointerup", handleUp);
+      };
+
+      window.addEventListener("pointermove", handleMove);
+      window.addEventListener("pointerup", handleUp);
+    },
+    [
+      editingSide,
+      isActionMode,
+      isEditingSubPaths,
+      isEditingThisSide,
+      isVectorEditing,
+      pointFromEvent,
+      pushHistory,
+      selectedLayerId,
+      setEditingSide,
+      side,
+      snapToGrid,
+    ],
+  );
+
+  const handleSegmentMidpointPointerDown = useCallback(
+    (e: React.PointerEvent<SVGCircleElement>, segment: SegmentTarget) => {
+      if (isActionMode || e.button !== 0) return;
+      if (side === "preview" && !isVectorEditing && !isEditingSubPaths) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const segmentSelection: SegmentSelection = {
+        layerId: selectedLayerId,
+        side: side === "preview" ? "from" : editingSide,
+        subPathIndex: segment.subPathIndex,
+        commandIndex: segment.commandIndex,
+      };
+      splitSelectedLayerSegment(segmentSelection);
+      if (side === "preview") {
+        setEditingSide("from");
+        setIsVectorEditing(true);
+      }
+    },
+    [editingSide, isActionMode, isEditingSubPaths, isVectorEditing, selectedLayerId, setEditingSide, side, splitSelectedLayerSegment],
   );
 
   const handlePreviewPathDoubleClick = useCallback(
@@ -1098,6 +1185,44 @@ export const PathCanvas = React.memo(function PathCanvas({
           />
         ))}
 
+      {canEditSegments && (
+        <g transform={side === "preview" ? selectedPreviewTransform : undefined} clipPath={overlayClipPath}>
+          {segmentTargets.map((segment) => (
+            <g key={`segment-${segment.subPathIndex}-${segment.commandIndex}`}>
+              <path
+                d={segment.d}
+                fill="none"
+                stroke="transparent"
+                strokeWidth={Math.max(strokeWidth * 2.2, viewBox.w * 0.024)}
+                className="cursor-grab"
+                pointerEvents="stroke"
+                onPointerDown={(event) => handleSegmentPointerDown(event, segment)}
+              />
+              <path
+                d={segment.d}
+                fill="none"
+                stroke="#0d99ff"
+                strokeWidth={Math.max(selectionStrokeWidth * 0.72, 0.055)}
+                vectorEffect="non-scaling-stroke"
+                pointerEvents="none"
+                opacity={0.72}
+              />
+              <circle
+                cx={segment.midpoint.x}
+                cy={segment.midpoint.y}
+                r={Math.max(selectionHandleRadius * 0.58, 0.14)}
+                className="cursor-copy"
+                fill="#ffffff"
+                stroke="#0d99ff"
+                strokeWidth={Math.max(selectionStrokeWidth * 0.9, 0.06)}
+                vectorEffect="non-scaling-stroke"
+                onPointerDown={(event) => handleSegmentMidpointPointerDown(event, segment)}
+              />
+            </g>
+          ))}
+        </g>
+      )}
+
       {/* Control points + bezier handles (direct mode fidelity - port of original EditPath/handle rendering) */}
       {canEditPoints &&
         commands.map(({ command, subPathIndex, commandIndex }) => {
@@ -1216,6 +1341,67 @@ function getSubPathBounds(path: PathData, subPathIndexes: number[]) {
 function compactPathLabel(path: PathData) {
   const label = pathToString(path).replace(/\s+/g, " ");
   return label.length > 28 ? `${label.slice(0, 27)}...` : label;
+}
+
+function getSegmentTargets(path: PathData): SegmentTarget[] {
+  return path.subPaths.flatMap((subPath, subPathIndex) =>
+    subPath.commands.flatMap((command, commandIndex) => {
+      const previous = subPath.commands[commandIndex - 1];
+      const start = previous?.points.at(-1);
+      const end = command.points.at(-1);
+      if (!start || !end || command.type === "M" || command.type === "Z") return [];
+      const d = pathToString({
+        subPaths: [
+          {
+            commands: [
+              { id: `segment-m-${subPathIndex}-${commandIndex}`, type: "M", points: [start] },
+              command,
+            ],
+          },
+        ],
+      });
+      return [
+        {
+          subPathIndex,
+          commandIndex,
+          command,
+          start,
+          end,
+          d,
+          midpoint: getSegmentMidpoint(command, start, end),
+        },
+      ];
+    }),
+  );
+}
+
+function getSegmentMidpoint(command: Command, start: Point, end: Point): Point {
+  if (command.type === "C" && command.points.length >= 3) {
+    return cubicPointAt(start, command.points[0], command.points[1], end, 0.5);
+  }
+  if (command.type === "Q" && command.points.length >= 2) {
+    return quadraticPointAt(start, command.points[0], end, 0.5);
+  }
+  return {
+    x: start.x + (end.x - start.x) * 0.5,
+    y: start.y + (end.y - start.y) * 0.5,
+  };
+}
+
+function cubicPointAt(start: Point, control1: Point, control2: Point, end: Point, t: number): Point {
+  const mt = 1 - t;
+  return {
+    x: mt ** 3 * start.x + 3 * mt ** 2 * t * control1.x + 3 * mt * t ** 2 * control2.x + t ** 3 * end.x,
+    y: mt ** 3 * start.y + 3 * mt ** 2 * t * control1.y + 3 * mt * t ** 2 * control2.y + t ** 3 * end.y,
+  };
+}
+
+function quadraticPointAt(start: Point, control: Point, end: Point, t: number): Point {
+  const mt = 1 - t;
+  return {
+    x: mt ** 2 * start.x + 2 * mt * t * control.x + t ** 2 * end.x,
+    y: mt ** 2 * start.y + 2 * mt * t * control.y + t ** 2 * end.y,
+  };
 }
 
 function rectsIntersect(

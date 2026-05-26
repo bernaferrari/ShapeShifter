@@ -567,6 +567,65 @@ describe("editorStore", () => {
       });
     });
 
+    describe("splitSelectedLayerSegment", () => {
+      it("splits matching from and to segments and selects the inserted midpoint", () => {
+        const layer = getStore().layers[0];
+        const beforeFrom = layer.from.subPaths[0].commands.length;
+        const beforeTo = layer.to.subPaths[0].commands.length;
+        getStore().splitSelectedLayerSegment({
+          layerId: layer.id,
+          side: "from",
+          subPathIndex: 0,
+          commandIndex: 1,
+        });
+        const updated = getStore().layers.find((l) => l.id === layer.id)!;
+        expect(updated.from.subPaths[0].commands.length).toBe(beforeFrom + 1);
+        expect(updated.to.subPaths[0].commands.length).toBe(beforeTo + 1);
+        expect(getStore().selection).toMatchObject({
+          layerId: layer.id,
+          side: "from",
+          subPathIndex: 0,
+          commandIndex: 1,
+        });
+      });
+    });
+
+    describe("bendSelectedLayerSegment", () => {
+      it("converts a line segment into a cubic curve through the dragged point", () => {
+        const layer = getStore().layers[0];
+        getStore().bendSelectedLayerSegment(
+          {
+            layerId: layer.id,
+            side: "from",
+            subPathIndex: 0,
+            commandIndex: 1,
+          },
+          { x: 15, y: 12 },
+        );
+        const updated = getStore().layers.find((l) => l.id === layer.id)!;
+        expect(updated.from.subPaths[0].commands[1].type).toBe("C");
+        expect(updated.from.subPaths[0].commands[1].points).toHaveLength(3);
+        expect(updated.to.subPaths[0].commands[1].type).toBe("C");
+        expect(getStore().canUndo).toBe(true);
+      });
+
+      it("respects recordHistory=false option", () => {
+        const layer = getStore().layers[0];
+        const historyLength = getStore().history.length;
+        getStore().bendSelectedLayerSegment(
+          {
+            layerId: layer.id,
+            side: "from",
+            subPathIndex: 0,
+            commandIndex: 1,
+          },
+          { x: 15, y: 12 },
+          { recordHistory: false },
+        );
+        expect(getStore().history.length).toBe(historyLength);
+      });
+    });
+
     describe("setSelectedCommandAsFirst", () => {
       it("rotates closed path to start at selected command", () => {
         const layer = getStore().layers[0];
