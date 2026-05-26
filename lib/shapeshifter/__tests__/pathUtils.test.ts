@@ -90,7 +90,7 @@ describe("pathUtils", () => {
   describe("shiftPath", () => {
     it("shifts forward by 1 on closed path", () => {
       const result = pathToString(shiftPath(parsePath("M 19 11 L 5 11 L 5 13 L 19 13 Z"), 1));
-      expect(result).toEqual("M5 11 L5 13 L19 13 L5 11 Z");
+      expect(result).toEqual("M5 11 L5 13 L19 13 L19 11 Z");
     });
 
     it("shift by 0 returns same path data", () => {

@@ -6,6 +6,7 @@
 
 import type { Command, CommandType, PathData, Point, SubPath } from "./types";
 import { arePointsEqual } from "./mathUtils";
+import { getPoleOfInaccessibility, isSubPathClockwise } from "./geometry";
 
 let idCounter = 0;
 function generateId(): string {
@@ -234,7 +235,6 @@ export function pathToString(pathData: PathData): string {
       d += cmd.type;
 
       if (cmd.type === "Z") {
-        d += " ";
         continue;
       }
 
@@ -572,21 +572,95 @@ export function getInterpolatedPath(from: PathData, to: PathData, t: number): st
 export function reversePath(path: PathData): PathData {
   return {
     subPaths: path.subPaths.map((subPath) => {
-      const reversedCmds = [...subPath.commands].reverse().map((cmd) => {
-        const newCmd = { ...cmd, points: [...cmd.points].reverse() };
+      const cmds = subPath.commands;
+      if (cmds.length === 0) return { commands: [] };
 
-        // For arcs, flip the sweep flag on reverse (original behavior)
-        if (newCmd.type === "A" && newCmd.arcParams) {
-          newCmd.arcParams = {
-            ...newCmd.arcParams,
-            sweep: !newCmd.arcParams.sweep,
+      const firstCmd = cmds[0];
+      if (firstCmd.type !== "M") {
+        return { commands: [...cmds].reverse() };
+      }
+
+      const E0 = firstCmd.points[0];
+      let current = E0;
+
+      interface DrawingTransition {
+        type: CommandType;
+        start: Point;
+        end: Point;
+        controlPoints: Point[];
+        arcParams?: any;
+      }
+
+      const transitions: DrawingTransition[] = [];
+      let isClosed = false;
+
+      for (let i = 1; i < cmds.length; i++) {
+        const cmd = cmds[i];
+        if (cmd.type === "Z") {
+          isClosed = true;
+          break;
+        }
+
+        const end = cmd.points.at(-1)!;
+        const controlPoints = cmd.points.slice(0, -1);
+        transitions.push({
+          type: cmd.type,
+          start: current,
+          end,
+          controlPoints,
+          arcParams: cmd.arcParams,
+        });
+        current = end;
+      }
+
+      if (transitions.length === 0) {
+        if (isClosed) {
+          return {
+            commands: [
+              { id: generateId(), type: "M", points: [E0] },
+              { id: generateId(), type: "Z", points: [] }
+            ]
+          };
+        }
+        return {
+          commands: [
+            { id: generateId(), type: "M", points: [E0] }
+          ]
+        };
+      }
+
+      const newMPoint = transitions.at(-1)!.end;
+      const reversedCmds: Command[] = [
+        { id: generateId(), type: "M", points: [newMPoint] }
+      ];
+
+      for (let i = transitions.length - 1; i >= 0; i--) {
+        const t = transitions[i];
+        const newType = t.type;
+        const newEnd = t.start;
+
+        const newControlPoints = [...t.controlPoints].reverse();
+        const newPoints = [...newControlPoints, newEnd];
+
+        let newArcParams = t.arcParams;
+        if (newType === "A" && newArcParams) {
+          newArcParams = {
+            ...newArcParams,
+            sweep: !newArcParams.sweep,
           };
         }
 
-        // For cubic, the control points need correct reversal order
-        // (our point storage makes simple reverse work for most cases, but ensure)
-        return newCmd;
-      });
+        reversedCmds.push({
+          id: generateId(),
+          type: newType,
+          points: newPoints,
+          ...(newArcParams ? { arcParams: newArcParams } : {}),
+        });
+      }
+
+      if (isClosed) {
+        reversedCmds.push({ id: generateId(), type: "Z", points: [] });
+      }
 
       return { commands: reversedCmds };
     }),
@@ -600,8 +674,18 @@ export function shiftPath(path: PathData, steps: number): PathData {
   if (steps === 0) return path;
   return {
     subPaths: path.subPaths.map((subPath) => {
+      const cmds = subPath.commands;
+      if (cmds.length === 0) return subPath;
+      const lastCmd = cmds[cmds.length - 1];
+      const firstCmd = cmds[0];
+      const isClosed = lastCmd.type === "Z" || (firstCmd.points.length > 0 && lastCmd.points.length > 0 && arePointsEqual(firstCmd.points[0], lastCmd.points.at(-1)!));
+
+      if (!isClosed) {
+        return subPath;
+      }
+
       let allPoints: Point[] = [];
-      subPath.commands.forEach((cmd) => {
+      cmds.forEach((cmd) => {
         allPoints = allPoints.concat(cmd.points);
       });
       if (allPoints.length === 0) return subPath;
@@ -609,10 +693,9 @@ export function shiftPath(path: PathData, steps: number): PathData {
       const shift = ((steps % allPoints.length) + allPoints.length) % allPoints.length;
       const shiftedPoints = allPoints.slice(shift).concat(allPoints.slice(0, shift));
 
-      // Rebuild commands (simplified - keeps command types but redistributes points)
       let newCommands: Command[] = [];
       let pointIdx = 0;
-      subPath.commands.forEach((cmd) => {
+      cmds.forEach((cmd) => {
         const cmdPoints = shiftedPoints.slice(pointIdx, pointIdx + cmd.points.length);
         newCommands.push({ ...cmd, points: cmdPoints });
         pointIdx += cmd.points.length;
@@ -694,11 +777,98 @@ export function setCommandAsFirst(
 export function arePathsStructurallyCompatible(a: PathData, b: PathData): boolean {
   if (a.subPaths.length !== b.subPaths.length) return false;
   for (let i = 0; i < a.subPaths.length; i++) {
-    if (a.subPaths[i].commands.length !== b.subPaths[i].commands.length) {
+    const subA = a.subPaths[i];
+    const subB = b.subPaths[i];
+    if (subA.commands.length !== subB.commands.length) {
       return false;
+    }
+    for (let j = 0; j < subA.commands.length; j++) {
+      if (subA.commands[j].type !== subB.commands[j].type) {
+        return false;
+      }
     }
   }
   return true;
+}
+
+/**
+ * Makes two paths structurally compatible for morphing using high-fidelity
+ * Needleman-Wunsch alignment + reverse/shift search + gap-streak splits.
+ * Ported from the original Angular AutoAwesome + NeedlemanWunsch (the secret sauce
+ * for great morphs). Current version approximates some advanced Path ops but is
+ * a massive leap over naive equalizers. All previous tests + new NW behavior expected.
+ */
+function createCollapsingSubPath(targetSubPath: SubPath, pole: Point): SubPath {
+  return {
+    commands: targetSubPath.commands.map((cmd) => {
+      const points = cmd.points.map(() => ({ ...pole }));
+      let arcParams = cmd.arcParams;
+      if (cmd.type === "A" && arcParams) {
+        arcParams = {
+          ...arcParams,
+          rx: 0,
+          ry: 0,
+        };
+      }
+      return {
+        id: generateId(),
+        type: cmd.type,
+        points,
+        ...(arcParams ? { arcParams } : {}),
+      };
+    }),
+  };
+}
+
+function reversePathAtSubIndex(path: PathData, subIdx: number): PathData {
+  const result = clonePathDataForSplit(path);
+  result.subPaths[subIdx] = reversePath({ subPaths: [result.subPaths[subIdx]] }).subPaths[0];
+  return result;
+}
+
+function convertCommandType(cmd: Command, start: Point, targetType: CommandType): Command {
+  if (cmd.type === targetType) return cmd;
+  const end = cmd.points.at(-1) || start;
+  
+  if (targetType === "C") {
+    if (cmd.type === "L" || cmd.type === "M" || cmd.type === "Z") {
+      return {
+        id: cmd.id,
+        type: "C",
+        points: [
+          { ...start },
+          { ...end },
+          { ...end },
+        ],
+      };
+    }
+    if (cmd.type === "Q") {
+      const cp = cmd.points[0] || start;
+      const cp1 = {
+        x: start.x + (2 / 3) * (cp.x - start.x),
+        y: start.y + (2 / 3) * (cp.y - start.y),
+      };
+      const cp2 = {
+        x: end.x + (2 / 3) * (cp.x - end.x),
+        y: end.y + (2 / 3) * (cp.y - end.y),
+      };
+      return {
+        id: cmd.id,
+        type: "C",
+        points: [cp1, cp2, { ...end }],
+      };
+    }
+  }
+
+  if (targetType === "L") {
+    return {
+      id: cmd.id,
+      type: "L",
+      points: [{ ...end }],
+    };
+  }
+
+  return cmd;
 }
 
 /**
@@ -712,20 +882,67 @@ export function autoFixPathPair(from: PathData, to: PathData): [PathData, PathDa
   let a = clonePathDataForSplit(from);
   let b = clonePathDataForSplit(to);
 
-  // 1. Equalize top-level subpath count (simple duplication of whole subpaths as collapsing)
+  // 1. Equalize top-level subpath count using collapsing subpaths at poles of inaccessibility
   if (a.subPaths.length < b.subPaths.length) {
     while (a.subPaths.length < b.subPaths.length) {
-      a.subPaths.push({ commands: structuredClone(b.subPaths[a.subPaths.length]?.commands || []) });
+      const targetSub = b.subPaths[a.subPaths.length];
+      const pole = getPoleOfInaccessibility(targetSub);
+      a.subPaths.push(createCollapsingSubPath(targetSub, pole));
     }
   } else if (b.subPaths.length < a.subPaths.length) {
     while (b.subPaths.length < a.subPaths.length) {
-      b.subPaths.push({ commands: structuredClone(a.subPaths[b.subPaths.length]?.commands || []) });
+      const targetSub = a.subPaths[b.subPaths.length];
+      const pole = getPoleOfInaccessibility(targetSub);
+      b.subPaths.push(createCollapsingSubPath(targetSub, pole));
+    }
+  }
+
+  // 2. Reorder subpaths to minimize total distance between poles
+  const numSubs = a.subPaths.length;
+  if (numSubs > 1 && numSubs <= 8) {
+    const fromPoles = a.subPaths.map(sp => getPoleOfInaccessibility(sp));
+    const toPoles = b.subPaths.map(sp => getPoleOfInaccessibility(sp));
+    
+    let bestPermutation: number[] = [];
+    let minSum = Infinity;
+    
+    const permute = (arr: number[], m: number[] = []) => {
+      if (arr.length === 0) {
+        let sum = 0;
+        for (let i = 0; i < numSubs; i++) {
+          const dx = fromPoles[m[i]].x - toPoles[i].x;
+          const dy = fromPoles[m[i]].y - toPoles[i].y;
+          sum += dx * dx + dy * dy;
+        }
+        if (sum < minSum) {
+          minSum = sum;
+          bestPermutation = m;
+        }
+      } else {
+        for (let i = 0; i < arr.length; i++) {
+          const curr = arr.slice();
+          const next = curr.splice(i, 1);
+          permute(curr.slice(), m.concat(next));
+        }
+      }
+    };
+    
+    const indices = Array.from({ length: numSubs }, (_, i) => i);
+    permute(indices);
+    
+    if (bestPermutation.length === numSubs) {
+      a.subPaths = bestPermutation.map(idx => a.subPaths[idx]);
     }
   }
 
   const minSubs = Math.min(a.subPaths.length, b.subPaths.length);
 
   for (let s = 0; s < minSubs; s++) {
+    // 3. Align winding orders before matching/aligning
+    if (isSubPathClockwise(a.subPaths[s]) !== isSubPathClockwise(b.subPaths[s])) {
+      b = reversePathAtSubIndex(b, s);
+    }
+
     // For each subpath, try a few candidates (original + reverse + a few shifts for closed)
     const candidates = generateShiftReverseCandidates(a, s);
     let bestA = a;
@@ -761,6 +978,30 @@ export function autoFixPathPair(from: PathData, to: PathData): [PathData, PathDa
     // Then equalize remaining command counts the old (safe) way
     a = equalizeSubpathCommands(a, b, s);
     b = equalizeSubpathCommands(b, a, s);
+
+    // 4. Convert commands to matching types
+    const numCmds = a.subPaths[s].commands.length;
+    let currA = a.subPaths[s].commands[0].points[0];
+    let currB = b.subPaths[s].commands[0].points[0];
+    
+    for (let cmdIdx = 1; cmdIdx < numCmds; cmdIdx++) {
+      const cmdA = a.subPaths[s].commands[cmdIdx];
+      const cmdB = b.subPaths[s].commands[cmdIdx];
+      const nextA = cmdA.points.at(-1) || currA;
+      const nextB = cmdB.points.at(-1) || currB;
+      
+      if (cmdA.type !== cmdB.type && cmdA.type !== "Z" && cmdB.type !== "Z") {
+        if (cmdA.type === "C" || cmdB.type === "C" || cmdA.type === "Q" || cmdB.type === "Q") {
+          a.subPaths[s].commands[cmdIdx] = convertCommandType(cmdA, currA, "C");
+          b.subPaths[s].commands[cmdIdx] = convertCommandType(cmdB, currB, "C");
+        } else {
+          a.subPaths[s].commands[cmdIdx] = convertCommandType(cmdA, currA, "L");
+          b.subPaths[s].commands[cmdIdx] = convertCommandType(cmdB, currB, "L");
+        }
+      }
+      currA = nextA;
+      currB = nextB;
+    }
   }
 
   return [a, b];
@@ -779,18 +1020,13 @@ function generateShiftReverseCandidates(path: PathData, subIdx: number): PathDat
   const results: PathData[] = [base];
 
   // reverse version
-  const rev = clonePathDataForSplit(path);
-  const rcmds = rev.subPaths[subIdx].commands;
-  rev.subPaths[subIdx] = { commands: rcmds.slice().reverse().map(c => ({...c, points: c.points.slice().reverse()})) };
-  results.push(rev);
+  results.push(reversePath(path));
 
   if (isClosed) {
-    for (let k = 1; k < Math.min(5, cmds.length - 1); k++) {
-      const shifted = clonePathDataForSplit(path);
-      const scmds = shifted.subPaths[subIdx].commands;
-      const rotated = [...scmds.slice(k), ...scmds.slice(0, k)];
-      shifted.subPaths[subIdx] = { commands: rotated };
-      results.push(shifted);
+    for (let k = 1; k < cmds.length; k++) {
+      if (cmds[k].type !== "Z") {
+        results.push(setCommandAsFirst(path, subIdx, k));
+      }
     }
   }
   return results;

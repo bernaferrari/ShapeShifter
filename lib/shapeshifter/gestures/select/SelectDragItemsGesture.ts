@@ -10,8 +10,8 @@
  * This is the highest user-impact gesture and the first real concrete gesture after the Phase 1 skeleton.
  */
 
-import type { Point } from "../types";
-import { Gesture, type GestureContext, type GestureCallbacks } from "./Gesture";
+import type { Point } from "../../types";
+import { Gesture, type GestureContext, type GestureCallbacks } from "../Gesture";
 
 export class SelectDragItemsGesture extends Gesture {
   private startPoint: Point | null = null;
