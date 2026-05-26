@@ -69,7 +69,7 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
       <div className="flex min-h-0 w-[300px] shrink-0 flex-col border-r">
         <div className="flex h-10 items-center gap-0.5 border-b px-1.5">
           <DropdownMenu>
-            <DropdownMenuTrigger render={<button className="h-8 rounded px-2 text-xs font-medium hover:bg-muted" />}>File</DropdownMenuTrigger>
+            <DropdownMenuTrigger render={<button type="button" className="h-8 rounded px-2 text-xs font-medium hover:bg-muted" />}>File</DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-44">
               <DropdownMenuItem onClick={() => onLoadSample(0)}>New from Play/Pause</DropdownMenuItem>
               <DropdownMenuItem onClick={onOpenSVGImport}>Open project or asset</DropdownMenuItem>
@@ -78,7 +78,7 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
             </DropdownMenuContent>
           </DropdownMenu>
           <DropdownMenu>
-            <DropdownMenuTrigger render={<button className="h-8 rounded px-2 text-xs font-medium hover:bg-muted" />}>Import</DropdownMenuTrigger>
+            <DropdownMenuTrigger render={<button type="button" className="h-8 rounded px-2 text-xs font-medium hover:bg-muted" />}>Import</DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-44">
               <DropdownMenuItem onClick={onOpenSVGImport}>
                 <Import className="mr-2 h-4 w-4" /> SVG
@@ -89,7 +89,7 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
             </DropdownMenuContent>
           </DropdownMenu>
           <DropdownMenu>
-            <DropdownMenuTrigger render={<button className="h-8 rounded px-2 text-xs font-medium hover:bg-muted" />}>Export</DropdownMenuTrigger>
+            <DropdownMenuTrigger render={<button type="button" className="h-8 rounded px-2 text-xs font-medium hover:bg-muted" />}>Export</DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
               <DropdownMenuItem onClick={() => onExport("svg")}>Animated SVG</DropdownMenuItem>
               <DropdownMenuItem onClick={() => onExport("css")}>CSS keyframes</DropdownMenuItem>
@@ -104,7 +104,11 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
-                <Button size="icon-sm" variant="ghost" aria-label="Add layer" />
+                <button
+                  type="button"
+                  className="inline-flex shrink-0 items-center justify-center rounded-[min(var(--radius-md),12px)] size-7 border border-transparent bg-clip-padding text-sm font-medium transition-all outline-none hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 text-muted-foreground"
+                  aria-label="Add layer"
+                />
               }
             >
               <Plus className="h-4 w-4" />
@@ -166,9 +170,8 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                   <DropdownMenu>
                     <DropdownMenuTrigger
                       render={
-                        <span
-                          role="button"
-                          tabIndex={0}
+                        <button
+                          type="button"
                           className="grid h-6 w-6 place-items-center rounded hover:bg-foreground/10"
                           onClick={(event) => event.stopPropagation()}
                         />

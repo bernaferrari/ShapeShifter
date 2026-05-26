@@ -24,7 +24,6 @@ import { CanvasArea } from "@/components/editor/CanvasArea";
 import { Inspector } from "@/components/editor/Inspector";
 import { MaterialSymbol } from "@/components/editor/MaterialSymbol";
 import { LayerTimeline } from "@/components/editor/LayerTimeline";
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 
 function isEditableTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
@@ -537,48 +536,42 @@ export default function ShapeShifter2026() {
         canRedo={canRedo}
       />
 
-      <ResizablePanelGroup orientation="vertical" className="flex-1">
-        <ResizablePanel defaultSize={70} minSize={30}>
-          <div className="flex h-full w-full min-h-0 overflow-hidden bg-muted">
-            <ResizablePanelGroup orientation="horizontal">
-              <ResizablePanel defaultSize={isActionMode ? 100 : 75} minSize={40}>
-                <main className="flex h-full min-w-0 flex-1">
-                  <CanvasArea
-                    resetFrom={resetFrom}
-                    resetPreview={resetPreview}
-                    resetTo={resetTo}
-                    resetAllViews={resetAllViews}
-                  />
-                </main>
-              </ResizablePanel>
+      {/* Main Workspace Layout */}
+      <div className="flex min-h-0 flex-1 overflow-hidden bg-muted">
+        {/* Left/Center Column (Canvas + Timeline) */}
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          {/* Canvas Viewport */}
+          <main className="flex min-h-0 flex-1 overflow-hidden">
+            <CanvasArea
+              resetFrom={resetFrom}
+              resetPreview={resetPreview}
+              resetTo={resetTo}
+              resetAllViews={resetAllViews}
+            />
+          </main>
 
-              {!isActionMode && (
-                <>
-                  <ResizableHandle withHandle />
-                  <ResizablePanel defaultSize={25} minSize={15} maxSize={40}>
-                    <aside className="flex h-full w-full flex-col border-l bg-sidebar shadow-sm">
-                      <div className="flex min-h-16 items-center gap-3 border-b bg-card px-4 py-3">
-                        <MaterialSymbol name="polyline" size={30} className="shrink-0 text-muted-foreground" />
-                        <div className="flex min-w-0 flex-col">
-                          <span className="truncate text-[17px] font-semibold leading-6">{currentLayer?.name ?? "No layer"}</span>
-                          <span className="text-[13px] leading-5 text-muted-foreground">{editingSide.toUpperCase()} path</span>
-                        </div>
-                      </div>
-                      <Inspector />
-                    </aside>
-                  </ResizablePanel>
-                </>
-              )}
-            </ResizablePanelGroup>
+          {/* Bottom Timeline Section */}
+          <div className="h-[280px] shrink-0 border-t bg-card">
+            <LayerTimeline onOpenSVGImport={openSVGImport} onExport={handleExport} onLoadSample={loadSample} />
           </div>
-        </ResizablePanel>
+        </div>
 
-        <ResizableHandle withHandle />
-
-        <ResizablePanel defaultSize={30} minSize={20} maxSize={50}>
-          <LayerTimeline onOpenSVGImport={openSVGImport} onExport={handleExport} onLoadSample={loadSample} />
-        </ResizablePanel>
-      </ResizablePanelGroup>
+        {/* Right Sidebar (Figma-Style Properties Inspector) */}
+        {!isActionMode && (
+          <aside className="w-80 shrink-0 border-l bg-sidebar flex flex-col h-full overflow-hidden shadow-sm">
+            <div className="flex min-h-16 items-center gap-3 border-b bg-card px-4 py-3">
+              <MaterialSymbol name="polyline" size={30} className="shrink-0 text-muted-foreground" />
+              <div className="flex min-w-0 flex-col">
+                <span className="truncate text-[17px] font-semibold leading-6">{currentLayer?.name ?? "No layer"}</span>
+                <span className="text-[13px] leading-5 text-muted-foreground">{editingSide.toUpperCase()} path</span>
+              </div>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <Inspector />
+            </div>
+          </aside>
+        )}
+      </div>
 
       <input
         type="file"

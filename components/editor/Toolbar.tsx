@@ -165,7 +165,12 @@ export function Toolbar({
       <div className="flex items-center gap-1">
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={<Button variant="ghost" size="sm" className="gap-2 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground" />}
+            render={
+              <button
+                type="button"
+                className="inline-flex shrink-0 items-center justify-center rounded-[min(var(--radius-md),12px)] h-7 gap-2 px-2.5 text-[0.8rem] font-medium transition-all outline-none hover:bg-primary-foreground/15 text-primary-foreground hover:text-primary-foreground aria-expanded:bg-primary-foreground/15"
+              />
+            }
           >
             <Upload className="w-4 h-4" /> File
           </DropdownMenuTrigger>
@@ -459,7 +464,12 @@ export function Toolbar({
       <div className="flex items-center gap-1">
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={<Button variant="ghost" size="sm" className="gap-2 text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground" />}
+            render={
+              <button
+                type="button"
+                className="inline-flex shrink-0 items-center justify-center rounded-[min(var(--radius-md),12px)] h-7 gap-2 px-2.5 text-[0.8rem] font-medium transition-all outline-none hover:bg-primary-foreground/15 text-primary-foreground hover:text-primary-foreground aria-expanded:bg-primary-foreground/15"
+              />
+            }
           >
             Samples
           </DropdownMenuTrigger>
