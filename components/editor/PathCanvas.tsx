@@ -72,6 +72,7 @@ export const PathCanvas = React.memo(function PathCanvas({
     deleteLayer,
     setZoom,
     selectSubPath,
+    selectMultipleSubPaths,
     toolMode,
     isActionMode,
   } = useEditorStore();
@@ -202,6 +203,27 @@ export const PathCanvas = React.memo(function PathCanvas({
       const maxY = Math.max(start.y, current.y);
       if (side === "preview" && !isActionMode) {
         const selectRect = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+        const isBoxGesture = Math.abs(maxX - minX) > 0.2 || Math.abs(maxY - minY) > 0.2;
+        if (isBoxGesture) {
+          const subPathHits = layers.flatMap((candidate) => {
+            if (candidate.visible === false || candidate.locked) return [];
+            return candidate.from.subPaths.flatMap((subPath, subPathIndex) => {
+              const bounds = getPathBounds({ subPaths: [subPath] });
+              return bounds && rectsIntersect(selectRect, bounds)
+                ? [{ layerId: candidate.id, side: "from" as const, subPathIndex }]
+                : [];
+            });
+          });
+          if (subPathHits.length > 0) {
+            selectMultipleSubPaths(subPathHits);
+            setEditingSide("from");
+            setBoxSelect(null);
+            if (svgRef.current?.hasPointerCapture(e.pointerId)) {
+              svgRef.current.releasePointerCapture(e.pointerId);
+            }
+            return;
+          }
+        }
         const renderedLayers = getPreviewLayers(
           layers,
           animation.blocks,
@@ -218,7 +240,7 @@ export const PathCanvas = React.memo(function PathCanvas({
         if (hitLayer) {
           selectLayer(hitLayer.layer.id);
           setEditingSide("from");
-        } else if (Math.abs(maxX - minX) > 0.2 || Math.abs(maxY - minY) > 0.2) {
+        } else if (isBoxGesture) {
           const { clearSelection } = useEditorStore.getState();
           clearSelection();
         }
@@ -281,7 +303,7 @@ export const PathCanvas = React.memo(function PathCanvas({
     if (svgRef.current?.hasPointerCapture(e.pointerId)) {
       svgRef.current.releasePointerCapture(e.pointerId);
     }
-  }, [animation.blocks, animation.duration, boxSelect, editingSide, isActionMode, layers, progress, selectLayer, selectedLayerId, setEditingSide, side]);
+  }, [animation.blocks, animation.duration, boxSelect, editingSide, isActionMode, layers, progress, selectLayer, selectMultipleSubPaths, selectedLayerId, setEditingSide, side]);
 
   
 
@@ -289,7 +311,7 @@ export const PathCanvas = React.memo(function PathCanvas({
   if (!currentLayer) return null;
 
   const isEditingThisSide = side === editingSide;
-  const isPreviewVectorEditing = side === "preview" && isVectorEditing && !isActionMode;
+  const isPreviewVectorEditing = side === "preview" && (isVectorEditing || selectedSubPaths.length > 0) && !isActionMode;
   const canEditPoints = isEditingThisSide || isPreviewVectorEditing;
   const targetPathData = side === "to" ? currentLayer.to : currentLayer.from;
 
