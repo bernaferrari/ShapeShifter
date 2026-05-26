@@ -9,7 +9,7 @@ import { ALL_TOOL_MODES, ALL_CURSORS } from "../toolModes";
 describe("Phase 1 - Gesture Abstractions", () => {
   it("exports full ToolMode and CursorType sets", () => {
     expect(ALL_TOOL_MODES.length).toBeGreaterThan(8);
-    expect(ALL_CURSORS.length).toBe(27);
+    expect(ALL_CURSORS.length).toBe(28);
   });
 
   it("hitTestSelectionBounds detects corner handles", () => {
