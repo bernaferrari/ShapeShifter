@@ -9,7 +9,6 @@ function ThemeProvider({ children, ...props }: React.ComponentProps<typeof NextT
       attribute="class"
       defaultTheme="system"
       enableSystem
-      disableTransitionOnChange
       {...props}
     >
       {children}

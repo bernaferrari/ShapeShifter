@@ -24,6 +24,7 @@ import { CanvasArea } from "@/components/editor/CanvasArea";
 import { Inspector } from "@/components/editor/Inspector";
 import { MaterialSymbol } from "@/components/editor/MaterialSymbol";
 import { LayerTimeline } from "@/components/editor/LayerTimeline";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 
 function isEditableTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
@@ -197,6 +198,60 @@ export default function ShapeShifter2026() {
     return () => cancelAnimationFrame(frameId);
   }, []);
 
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fileUrl = params.get("url") || params.get("import");
+
+    if (fileUrl) {
+      toast.promise(
+        fetch(fileUrl)
+          .then((res) => {
+            if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+            return res.text();
+          })
+          .then((text) => {
+            const fileName = fileUrl.split("/").pop() || "imported_file";
+            if (fileName.endsWith(".json") || fileName.endsWith(".shapeshifter")) {
+              const project = JSON.parse(text);
+              if (isOriginalShapeShifterProject(project)) {
+                const flattened = flattenOriginalProject(project);
+                useEditorStore.getState().loadProject(flattened);
+                return `Loaded project: ${flattened.vector.name}`;
+              } else {
+                const importedLayers: Layer[] = Array.isArray(project.layers)
+                  ? project.layers.map((layer: Partial<Layer>, index: number) => ({
+                      ...layer,
+                      id: layer.id ?? Date.now() + index,
+                      type: layer.type ?? "path",
+                      from: typeof layer.from === "string" ? parsePath(layer.from) : layer.from,
+                      to: typeof layer.to === "string" ? parsePath(layer.to) : layer.to,
+                      pathData: typeof layer.from === "string" ? parsePath(layer.from) : layer.pathData,
+                      visible: layer.visible ?? true,
+                      locked: layer.locked ?? false,
+                    }))
+                  : [];
+                useEditorStore.getState().setLayers(importedLayers);
+                return `Loaded project with ${importedLayers.length} layers`;
+              }
+            } else if (fileName.endsWith(".xml")) {
+              const importedLayers = importLayersFromVectorDrawable(text);
+              useEditorStore.getState().importLayers(importedLayers);
+              return `Imported ${importedLayers.length} layers from Vector XML`;
+            } else {
+              const importedLayers = importLayersFromSvg(text, fileName.replace(/\.[^.]+$/, ""));
+              useEditorStore.getState().importLayers(importedLayers);
+              return `Imported ${importedLayers.length} layers from SVG`;
+            }
+          }),
+        {
+          loading: `Fetching file from URL...`,
+          success: (msg) => msg,
+          error: (err) => `Failed to load URL: ${err.message}`,
+        }
+      );
+    }
+  }, []);
+
   // Everything comes from the store (single source of truth)
   const {
     layers,
@@ -277,10 +332,33 @@ export default function ShapeShifter2026() {
     reader.readAsText(file);
   };
 
+  const [isDraggingFile, setIsDraggingFile] = React.useState(false);
+
   const openSVGImport = useCallback(() => fileInputRef.current?.click(), []);
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer.types.includes("Files")) {
+      setIsDraggingFile(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (
+      e.clientX < rect.left ||
+      e.clientX >= rect.right ||
+      e.clientY < rect.top ||
+      e.clientY >= rect.bottom
+    ) {
+      setIsDraggingFile(false);
+    }
+  };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    setIsDraggingFile(false);
     const file = e.dataTransfer.files[0];
     if (file && /\.(svg|xml|json|shapeshifter)$/i.test(file.name)) {
       handleImportFile(file);
@@ -291,6 +369,9 @@ export default function ShapeShifter2026() {
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+    if (e.dataTransfer.types.includes("Files")) {
+      setIsDraggingFile(true);
+    }
   };
 
   // Reset keys for each canvas pane (increment to trigger reset)
@@ -409,7 +490,35 @@ export default function ShapeShifter2026() {
   // Playback + animation state flows from Zustand
 
   return (
-    <div className="flex h-dvh flex-col bg-background text-foreground" onDrop={handleDrop} onDragOver={handleDragOver}>
+    <div
+      className="relative flex h-dvh flex-col bg-background text-foreground"
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+    >
+      {/* File Drag-and-Drop Overlay */}
+      {isDraggingFile && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-background/80 backdrop-blur-md transition-all duration-300 animate-in fade-in zoom-in-95">
+          <div className="flex flex-col items-center gap-6 rounded-2xl border border-primary/20 bg-card p-12 shadow-2xl max-w-md text-center">
+            <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <MaterialSymbol name="cloud_upload" size={48} className="animate-bounce" />
+            </div>
+            <div className="flex flex-col gap-2">
+              <h3 className="text-2xl font-bold tracking-tight">Import Assets & Projects</h3>
+              <p className="text-sm text-muted-foreground">
+                Drop your SVG, Vector XML, or <code>.shapeshifter</code> project files anywhere to load them instantly.
+              </p>
+            </div>
+            <div className="flex flex-wrap justify-center gap-2 text-xs font-medium text-muted-foreground border-t pt-6 w-full">
+              <span className="rounded bg-muted px-2 py-1">SVG Files (.svg)</span>
+              <span className="rounded bg-muted px-2 py-1">Vector XML (.xml)</span>
+              <span className="rounded bg-muted px-2 py-1">Project (.json / .shapeshifter)</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Toolbar
         onExport={handleExport}
         onLoadSample={loadSample}
@@ -428,31 +537,48 @@ export default function ShapeShifter2026() {
         canRedo={canRedo}
       />
 
-      <div className="flex min-h-0 flex-1 overflow-hidden bg-muted">
-        <main className="flex min-w-0 flex-1">
-          <CanvasArea
-            resetFrom={resetFrom}
-            resetPreview={resetPreview}
-            resetTo={resetTo}
-            resetAllViews={resetAllViews}
-          />
-        </main>
+      <ResizablePanelGroup orientation="vertical" className="flex-1">
+        <ResizablePanel defaultSize={70} minSize={30}>
+          <div className="flex h-full w-full min-h-0 overflow-hidden bg-muted">
+            <ResizablePanelGroup orientation="horizontal">
+              <ResizablePanel defaultSize={isActionMode ? 100 : 75} minSize={40}>
+                <main className="flex h-full min-w-0 flex-1">
+                  <CanvasArea
+                    resetFrom={resetFrom}
+                    resetPreview={resetPreview}
+                    resetTo={resetTo}
+                    resetAllViews={resetAllViews}
+                  />
+                </main>
+              </ResizablePanel>
 
-        {!isActionMode && (
-          <aside className="flex w-80 shrink-0 flex-col border-l bg-sidebar shadow-sm">
-            <div className="flex min-h-16 items-center gap-3 border-b bg-card px-4 py-3">
-              <MaterialSymbol name="polyline" size={30} className="shrink-0 text-muted-foreground" />
-              <div className="flex min-w-0 flex-col">
-                <span className="truncate text-[17px] font-semibold leading-6">{currentLayer?.name ?? "No layer"}</span>
-                <span className="text-[13px] leading-5 text-muted-foreground">{editingSide.toUpperCase()} path</span>
-              </div>
-            </div>
-            <Inspector />
-          </aside>
-        )}
-      </div>
+              {!isActionMode && (
+                <>
+                  <ResizableHandle withHandle />
+                  <ResizablePanel defaultSize={25} minSize={15} maxSize={40}>
+                    <aside className="flex h-full w-full flex-col border-l bg-sidebar shadow-sm">
+                      <div className="flex min-h-16 items-center gap-3 border-b bg-card px-4 py-3">
+                        <MaterialSymbol name="polyline" size={30} className="shrink-0 text-muted-foreground" />
+                        <div className="flex min-w-0 flex-col">
+                          <span className="truncate text-[17px] font-semibold leading-6">{currentLayer?.name ?? "No layer"}</span>
+                          <span className="text-[13px] leading-5 text-muted-foreground">{editingSide.toUpperCase()} path</span>
+                        </div>
+                      </div>
+                      <Inspector />
+                    </aside>
+                  </ResizablePanel>
+                </>
+              )}
+            </ResizablePanelGroup>
+          </div>
+        </ResizablePanel>
 
-      <LayerTimeline onOpenSVGImport={openSVGImport} onExport={handleExport} onLoadSample={loadSample} />
+        <ResizableHandle withHandle />
+
+        <ResizablePanel defaultSize={30} minSize={20} maxSize={50}>
+          <LayerTimeline onOpenSVGImport={openSVGImport} onExport={handleExport} onLoadSample={loadSample} />
+        </ResizablePanel>
+      </ResizablePanelGroup>
 
       <input
         type="file"

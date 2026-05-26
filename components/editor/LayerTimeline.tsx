@@ -237,7 +237,36 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
             <ZoomIn className="h-3.5 w-3.5" />
           </Button>
         </div>
-        <div className="grid h-7 grid-cols-11 border-b text-[11px] text-muted-foreground">
+        <div
+          className="relative grid h-7 grid-cols-11 border-b text-[11px] text-muted-foreground select-none cursor-ew-resize hover:bg-muted/40 active:bg-muted/60 transition-colors"
+          onPointerDown={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const updateProgress = (clientX: number) => {
+              const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+              const newProgress = x / rect.width;
+              useEditorStore.getState().setProgress(newProgress);
+            };
+
+            updateProgress(e.clientX);
+            const element = e.currentTarget;
+            element.setPointerCapture(e.pointerId);
+
+            const handlePointerMove = (moveEvent: PointerEvent) => {
+              updateProgress(moveEvent.clientX);
+            };
+
+            const handlePointerUp = (upEvent: PointerEvent) => {
+              try {
+                element.releasePointerCapture(upEvent.pointerId);
+              } catch (err) {}
+              window.removeEventListener("pointermove", handlePointerMove);
+              window.removeEventListener("pointerup", handlePointerUp);
+            };
+
+            window.addEventListener("pointermove", handlePointerMove);
+            window.addEventListener("pointerup", handlePointerUp);
+          }}
+        >
           {Array.from({ length: 11 }, (_, index) => (
             <span key={index} className="border-l pl-1 leading-7">
               {((durationSeconds * index) / 10).toFixed(1)}s

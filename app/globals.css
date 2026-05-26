@@ -154,3 +154,36 @@
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
+
+/* Smooth theme transition */
+html,
+body,
+header,
+main,
+aside,
+section,
+div,
+button,
+span,
+input,
+select {
+  transition-property: background-color, border-color, text-decoration-color, fill, stroke, box-shadow;
+  transition-duration: 250ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Ensure performance-sensitive elements, SVGs, absolute items (playheads), and dragging handles have no transitions */
+.no-transition,
+.no-transition *,
+svg,
+svg *,
+.absolute,
+.absolute *,
+[style*="left"],
+[style*="top"],
+[style*="transform"],
+[style*="width"],
+.cursor-grab,
+.cursor-grabbing {
+  transition: none !important;
+}
