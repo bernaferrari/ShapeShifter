@@ -61,10 +61,12 @@ export const PathCanvas = React.memo(function PathCanvas({
     snapToGrid,
     pushHistory,
     updateSelectedPoint,
+    translateSelectedLayer,
     addPointOnPath,
     selectPoint,
     setEditingSide,
     toolMode,
+    isActionMode,
   } = useEditorStore();
 
   
@@ -328,6 +330,38 @@ export const PathCanvas = React.memo(function PathCanvas({
     [addPointOnPath, isEditingThisSide, pointFromEvent, setEditingSide, side, toolMode],
   );
 
+  const handlePreviewPathPointerDown = useCallback(
+    (e: React.PointerEvent<SVGPathElement>) => {
+      if (side !== "preview" || isActionMode || e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      (e.currentTarget as SVGPathElement).setPointerCapture(e.pointerId);
+      pushHistory();
+
+      let lastX = e.clientX;
+      let lastY = e.clientY;
+
+      const handleMove = (moveEvent: PointerEvent) => {
+        const rect = svgRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const dx = ((moveEvent.clientX - lastX) / rect.width) * viewBox.w;
+        const dy = ((moveEvent.clientY - lastY) / rect.height) * viewBox.h;
+        lastX = moveEvent.clientX;
+        lastY = moveEvent.clientY;
+        translateSelectedLayer(dx, dy, { recordHistory: false });
+      };
+
+      const handleUp = () => {
+        window.removeEventListener("pointermove", handleMove);
+        window.removeEventListener("pointerup", handleUp);
+      };
+
+      window.addEventListener("pointermove", handleMove);
+      window.addEventListener("pointerup", handleUp);
+    },
+    [isActionMode, pushHistory, side, translateSelectedLayer, viewBox.h, viewBox.w],
+  );
+
   const isSelected = (subPathIndex: number, commandIndex: number, pointIndex: number) => {
     // Support multi-point selection (box select + shift)
     if (selectedPoints && selectedPoints.length > 0) {
@@ -447,7 +481,35 @@ export const PathCanvas = React.memo(function PathCanvas({
         strokeMiterlimit={currentLayer.strokeMiterLimit ?? 4}
         strokeDasharray={currentLayer.strokeDasharray && currentLayer.strokeDasharray !== "none" ? currentLayer.strokeDasharray : (side === "to" ? "4 3" : undefined)}
         fillRule={currentLayer.fillType === "evenOdd" ? "evenodd" : "nonzero"}
+        onPointerDown={handlePreviewPathPointerDown}
+        pointerEvents={side === "preview" && !isActionMode ? "visiblePainted" : undefined}
       />
+
+      {side === "preview" && !isActionMode && (
+        <path
+          d={displayPath}
+          fill="none"
+          stroke="transparent"
+          strokeWidth={Math.max(strokeWidth, 8)}
+          className="cursor-move"
+          pointerEvents="stroke"
+          onPointerDown={handlePreviewPathPointerDown}
+        />
+      )}
+
+      {side === "preview" && !isActionMode && (
+        <path
+          d={displayPath}
+          fill="none"
+          stroke="hsl(var(--primary))"
+          strokeWidth={Math.max(strokeWidth, 2.2) + 1.6}
+          strokeOpacity="0.22"
+          strokeLinecap={currentLayer.strokeLinecap ?? "butt"}
+          strokeLinejoin={currentLayer.strokeLinejoin ?? "miter"}
+          strokeDasharray="1.2 1.2"
+          pointerEvents="none"
+        />
+      )}
 
       {/* Control points + bezier handles (direct mode fidelity - port of original EditPath/handle rendering) */}
       {isEditingThisSide &&

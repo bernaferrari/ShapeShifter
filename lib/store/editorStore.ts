@@ -10,6 +10,7 @@ import {
   parsePath,
   pathToString,
   updatePoint,
+  translatePath,
   addPointAfter,
   deleteCommand,
   deleteSubPath,
@@ -168,6 +169,7 @@ interface EditorState {
 
   // Batch direct manipulation (for multi point selection drag parity)
   translateSelectedPoints: (dx: number, dy: number, options?: { recordHistory?: boolean }) => void;
+  translateSelectedLayer: (dx: number, dy: number, options?: { recordHistory?: boolean }) => void;
 
   // Playback
   togglePlayback: () => void;
@@ -555,6 +557,25 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     } else {
       newLayers[layerIndex] = { ...layer, to: targetPath };
     }
+
+    if (options?.recordHistory !== false) {
+      get().pushHistory();
+    }
+    set({ layers: newLayers });
+  },
+
+  translateSelectedLayer: (dx, dy, options) => {
+    const { layers, selectedLayerId } = get();
+    if (dx === 0 && dy === 0) return;
+
+    const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
+    if (layerIndex === -1) return;
+
+    const layer = layers[layerIndex];
+    const from = translatePath(layer.from, dx, dy);
+    const to = translatePath(layer.to, dx, dy);
+    const newLayers = [...layers];
+    newLayers[layerIndex] = { ...layer, from, to, pathData: from };
 
     if (options?.recordHistory !== false) {
       get().pushHistory();

@@ -281,6 +281,19 @@ export function updatePoint(
   return newData;
 }
 
+export function translatePath(pathData: PathData, dx: number, dy: number): PathData {
+  const newData = clonePath(pathData);
+  for (const subPath of newData.subPaths) {
+    for (const command of subPath.commands) {
+      command.points = command.points.map((point) => ({
+        x: point.x + dx,
+        y: point.y + dy,
+      }));
+    }
+  }
+  return newData;
+}
+
 /**
  * Add a new point after a specific command (very basic for MVP).
  */
