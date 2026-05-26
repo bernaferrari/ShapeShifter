@@ -320,9 +320,14 @@ export const PathCanvas = React.memo(function PathCanvas({
   const rulerOffset = Math.max(viewBox.w * 0.012, 0.42);
   const selectionStrokeWidth = side === "preview" ? 1.1 : Math.max(ruler.strokeWidth * 1.15, 0.06);
   const selectionHandleRadius = Math.min(Math.max(viewBox.w * 0.008, 0.2), 0.34);
+  const selectionHitWidth = Math.max(viewBox.w * 0.035, 1);
   const rotationHandleDistance = Math.min(Math.max(viewBox.w * 0.04, 0.9), 1.6);
   const resizeHandles = useMemo(
     () => (selectedLayerBounds ? getResizeHandles(selectedLayerBounds) : []),
+    [selectedLayerBounds],
+  );
+  const resizeEdges = useMemo(
+    () => (selectedLayerBounds ? getResizeEdges(selectedLayerBounds) : []),
     [selectedLayerBounds],
   );
   const rotationHandle = useMemo(
@@ -485,7 +490,7 @@ export const PathCanvas = React.memo(function PathCanvas({
   );
 
   const handleResizePointerDown = useCallback(
-    (e: React.PointerEvent<SVGCircleElement>, handle: ResizeHandle) => {
+    (e: React.PointerEvent<SVGElement>, handle: ResizeHandle) => {
       if (side !== "preview" || isActionMode || !selectedLayerBounds || e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
@@ -868,12 +873,37 @@ export const PathCanvas = React.memo(function PathCanvas({
       {side === "preview" &&
         !isActionMode &&
         !isVectorEditing &&
+        selectedLayerBounds && (
+          <g transform={selectedPreviewTransform} clipPath={overlayClipPath}>
+            {resizeEdges.map((edge) => (
+              <line
+                key={edge.id}
+                x1={edge.x1}
+                y1={edge.y1}
+                x2={edge.x2}
+                y2={edge.y2}
+                className={edge.cursor}
+                stroke="transparent"
+                strokeWidth={selectionHitWidth}
+                pointerEvents="stroke"
+                vectorEffect="non-scaling-stroke"
+                onPointerDown={(event) => handleResizePointerDown(event, edge.id)}
+              />
+            ))}
+          </g>
+        )}
+
+      {side === "preview" &&
+        !isActionMode &&
+        !isVectorEditing &&
         resizeHandles.map((handle) => (
-          <circle
+          <rect
             key={handle.id}
-            cx={handle.x}
-            cy={handle.y}
-            r={selectionHandleRadius}
+            x={handle.x - selectionHandleRadius}
+            y={handle.y - selectionHandleRadius}
+            width={selectionHandleRadius * 2}
+            height={selectionHandleRadius * 2}
+            rx={Math.max(selectionHandleRadius * 0.18, 0.03)}
             className={handle.cursor}
             transform={selectedPreviewTransform}
             clipPath={overlayClipPath}
@@ -1019,6 +1049,17 @@ function getResizeHandles(bounds: Bounds): Array<{ id: ResizeHandle; x: number; 
     { id: "s", x: centerX, y: bottom, cursor: "cursor-ns-resize" },
     { id: "sw", x: bounds.x, y: bottom, cursor: "cursor-nesw-resize" },
     { id: "w", x: bounds.x, y: centerY, cursor: "cursor-ew-resize" },
+  ];
+}
+
+function getResizeEdges(bounds: Bounds): Array<{ id: ResizeHandle; x1: number; y1: number; x2: number; y2: number; cursor: string }> {
+  const right = bounds.x + bounds.width;
+  const bottom = bounds.y + bounds.height;
+  return [
+    { id: "n", x1: bounds.x, y1: bounds.y, x2: right, y2: bounds.y, cursor: "cursor-ns-resize" },
+    { id: "e", x1: right, y1: bounds.y, x2: right, y2: bottom, cursor: "cursor-ew-resize" },
+    { id: "s", x1: bounds.x, y1: bottom, x2: right, y2: bottom, cursor: "cursor-ns-resize" },
+    { id: "w", x1: bounds.x, y1: bounds.y, x2: bounds.x, y2: bottom, cursor: "cursor-ew-resize" },
   ];
 }
 
