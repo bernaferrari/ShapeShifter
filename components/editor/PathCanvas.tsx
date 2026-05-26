@@ -401,6 +401,7 @@ export const PathCanvas = React.memo(function PathCanvas({
         strokeLinecap={currentLayer.strokeLinecap ?? "butt"}
         strokeLinejoin={currentLayer.strokeLinejoin ?? "miter"}
         strokeMiterlimit={currentLayer.strokeMiterLimit ?? 4}
+        strokeDasharray={currentLayer.strokeDasharray && currentLayer.strokeDasharray !== "none" ? currentLayer.strokeDasharray : (side === "to" ? "4 3" : undefined)}
         fillRule={currentLayer.fillType === "evenOdd" ? "evenodd" : "nonzero"}
       />
 

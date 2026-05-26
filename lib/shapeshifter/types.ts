@@ -61,6 +61,7 @@ export interface PathStyle {
   trimPathEnd?: number;
   trimPathOffset?: number;
   fillType?: FillType;
+  strokeDasharray?: string;
 }
 
 export interface TimelineBlock {
