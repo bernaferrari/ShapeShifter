@@ -48,7 +48,7 @@ export function CanvasArea({
           className={
             isActionMode
               ? "grid w-full max-w-6xl grid-cols-3 items-center gap-5"
-              : "grid grid-cols-[minmax(320px,560px)_104px] items-center gap-6"
+              : "w-full max-w-xl"
           }
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -79,9 +79,17 @@ export function CanvasArea({
                   {isActionMode ? "Interpolated path" : "Select a layer to edit properties"}
                 </div>
               </div>
-              <div className="flex items-center gap-1">
-                <Button size="icon-sm" variant="ghost" onClick={resetAllViews} aria-label="Reset canvas views">
-                  <RotateCcw className="h-4 w-4" />
+              <div className="flex items-center gap-1.5 bg-muted/50 rounded-lg p-0.5 border border-border">
+                <Button size="icon-xs" variant="ghost" className="h-6 w-6 text-xs text-muted-foreground hover:text-foreground" onClick={() => setZoom(Math.max(0.5, zoom - 0.25))} aria-label="Zoom out">
+                  -
+                </Button>
+                <span className="text-[10px] font-mono font-medium px-1 text-muted-foreground select-none">{Math.round(zoom * 100)}%</span>
+                <Button size="icon-xs" variant="ghost" className="h-6 w-6 text-xs text-muted-foreground hover:text-foreground" onClick={() => setZoom(Math.min(4, zoom + 0.25))} aria-label="Zoom in">
+                  +
+                </Button>
+                <div className="h-4 w-px bg-border mx-1" />
+                <Button size="icon-xs" variant="ghost" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={resetAllViews} aria-label="Reset canvas views">
+                  <RotateCcw className="h-3.5 w-3.5" />
                 </Button>
               </div>
             </div>
@@ -120,26 +128,6 @@ export function CanvasArea({
               >
                 <PathCanvas side="to" resetKey={resetTo} zoom={zoom} width={420} height={420} />
               </button>
-            </div>
-          )}
-
-          {!isActionMode && (
-            <div className="flex flex-col gap-2.5">
-              <Button variant={editingSide === "from" ? "default" : "ghost"} size="sm" onClick={() => setEditingSide("from")}>
-                From
-              </Button>
-              <Button variant={editingSide === "to" ? "default" : "ghost"} size="sm" onClick={() => setEditingSide("to")}>
-                To
-              </Button>
-              <div className="flex items-center justify-between gap-1 rounded-md border bg-card p-1 font-mono text-[11px]">
-                <Button size="icon-sm" variant="ghost" onClick={() => setZoom(Math.max(0.5, zoom - 0.25))} aria-label="Zoom out">
-                  -
-                </Button>
-                <span>{Math.round(zoom * 100)}%</span>
-                <Button size="icon-sm" variant="ghost" onClick={() => setZoom(Math.min(4, zoom + 0.25))} aria-label="Zoom in">
-                  +
-                </Button>
-              </div>
             </div>
           )}
         </motion.div>

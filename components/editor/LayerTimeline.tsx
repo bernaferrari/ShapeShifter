@@ -128,10 +128,10 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
             return (
               <div key={layer.id}>
                 <button
-                  className={`flex h-12 w-full items-center gap-2 rounded px-2 text-left ${
+                  className={`flex h-12 w-full items-center gap-2 px-2 text-left transition-all border-l-2 ${
                     isSelected
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-transparent text-foreground hover:bg-muted"
+                      ? "bg-primary/10 border-primary text-foreground font-semibold shadow-xs"
+                      : "bg-transparent border-transparent text-foreground hover:bg-muted"
                   }`}
                   onClick={() => selectLayer(layer.id)}
                   onDoubleClick={() => isExpandable && toggleLayerExpanded(layer.id)}
@@ -160,10 +160,10 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                       <span className="h-4 w-4" />
                     )}
                   </span>
-                  <FolderOpen className={`h-4 w-4 shrink-0 ${isSelected ? "text-primary-foreground/80" : "text-muted-foreground"}`} />
+                  <FolderOpen className={`h-4 w-4 shrink-0 ${isSelected ? "text-primary" : "text-muted-foreground"}`} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{layer.name}</span>
-                    <span className={`block truncate font-mono text-[10px] ${isSelected ? "text-primary-foreground/75" : "text-muted-foreground"}`}>
+                    <span className={`block truncate font-mono text-[10px] text-muted-foreground`}>
                       {layer.type === "group" ? "group layer" : pathToString(layer.from).slice(0, 52)}
                     </span>
                   </span>
@@ -359,12 +359,6 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                     />
                   );
                 })}
-              {animation.blocks.filter((block) => String(block.layerId) === String(layer.id)).length === 0 && (
-                <div
-                  className="absolute top-2.5 h-2.5 rounded-full bg-muted shadow-inner"
-                  style={{ left: `${8 + index * 10}%`, width: `${54 - index * 4}%` }}
-                />
-              )}
             </div>
           ))}
         </div>

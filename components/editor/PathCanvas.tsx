@@ -364,7 +364,7 @@ export const PathCanvas = React.memo(function PathCanvas({
       {/* Subtle grid */}
       <defs>
         <pattern id="grid" width="4" height="4" patternUnits="userSpaceOnUse">
-          <path d="M 4 0 L 0 0 0 4" className="stroke-border" fill="none" strokeWidth="0.4" />
+          <path d="M 4 0 L 0 0 0 4" className="stroke-foreground/8" fill="none" strokeWidth="0.08" />
         </pattern>
       </defs>
       <rect x="0" y="0" width="48" height="48" fill="url(#grid)" />
