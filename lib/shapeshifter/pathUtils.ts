@@ -294,6 +294,27 @@ export function translatePath(pathData: PathData, dx: number, dy: number): PathD
   return newData;
 }
 
+export function scalePathToBounds(
+  pathData: PathData,
+  fromBounds: { x: number; y: number; width: number; height: number },
+  toBounds: { x: number; y: number; width: number; height: number },
+): PathData {
+  const newData = clonePath(pathData);
+  const safeWidth = Math.abs(fromBounds.width) < 0.001 ? 1 : fromBounds.width;
+  const safeHeight = Math.abs(fromBounds.height) < 0.001 ? 1 : fromBounds.height;
+
+  for (const subPath of newData.subPaths) {
+    for (const command of subPath.commands) {
+      command.points = command.points.map((point) => ({
+        x: toBounds.x + ((point.x - fromBounds.x) / safeWidth) * toBounds.width,
+        y: toBounds.y + ((point.y - fromBounds.y) / safeHeight) * toBounds.height,
+      }));
+    }
+  }
+
+  return newData;
+}
+
 /**
  * Add a new point after a specific command (very basic for MVP).
  */

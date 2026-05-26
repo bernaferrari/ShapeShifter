@@ -11,6 +11,7 @@ import {
   pathToString,
   updatePoint,
   translatePath,
+  scalePathToBounds,
   addPointAfter,
   deleteCommand,
   deleteSubPath,
@@ -171,6 +172,11 @@ interface EditorState {
   // Batch direct manipulation (for multi point selection drag parity)
   translateSelectedPoints: (dx: number, dy: number, options?: { recordHistory?: boolean }) => void;
   translateSelectedLayer: (dx: number, dy: number, options?: { recordHistory?: boolean }) => void;
+  resizeSelectedLayer: (
+    fromBounds: { x: number; y: number; width: number; height: number },
+    toBounds: { x: number; y: number; width: number; height: number },
+    options?: { recordHistory?: boolean },
+  ) => void;
 
   // Playback
   togglePlayback: () => void;
@@ -543,6 +549,23 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const layer = layers[layerIndex];
     const from = translatePath(layer.from, dx, dy);
     const to = translatePath(layer.to, dx, dy);
+    const newLayers = [...layers];
+    newLayers[layerIndex] = { ...layer, from, to, pathData: from };
+
+    if (options?.recordHistory !== false) {
+      get().pushHistory();
+    }
+    set({ layers: newLayers });
+  },
+
+  resizeSelectedLayer: (fromBounds, toBounds, options) => {
+    const { layers, selectedLayerId } = get();
+    const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
+    if (layerIndex === -1) return;
+
+    const layer = layers[layerIndex];
+    const from = scalePathToBounds(layer.from, fromBounds, toBounds);
+    const to = scalePathToBounds(layer.to, fromBounds, toBounds);
     const newLayers = [...layers];
     newLayers[layerIndex] = { ...layer, from, to, pathData: from };
 

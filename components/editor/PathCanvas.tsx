@@ -8,6 +8,8 @@ import type { Layer, PathData, TimelineBlock } from "@/lib/shapeshifter/types";
 
 type PointSelection = { subPathIndex: number; commandIndex: number; pointIndex: number };
 type ViewBox = { x: number; y: number; w: number; h: number; scale: number };
+type Bounds = { x: number; y: number; width: number; height: number };
+type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
 interface PathCanvasProps {
   resetKey?: number;
@@ -50,6 +52,7 @@ export const PathCanvas = React.memo(function PathCanvas({
     selectPoint,
     selectLayer,
     setEditingSide,
+    resizeSelectedLayer,
     toolMode,
     isActionMode,
   } = useEditorStore();
@@ -261,7 +264,7 @@ export const PathCanvas = React.memo(function PathCanvas({
   if (!currentLayer) return null;
 
   const isEditingThisSide = side === editingSide;
-  const isPreviewVectorEditing = side === "preview" && !isActionMode;
+  const isPreviewVectorEditing = false;
   const canEditPoints = isEditingThisSide || isPreviewVectorEditing;
   const targetPathData = side === "to" ? currentLayer.to : currentLayer.from;
 
@@ -304,10 +307,20 @@ export const PathCanvas = React.memo(function PathCanvas({
   const selectedPreviewPath = selectedPreviewLayer?.d ?? displayPath;
   const selectedPreviewTransform = selectedPreviewLayer?.transform;
   const selectedPathBounds = useMemo(() => getPathBounds(targetPathData), [targetPathData]);
+  const selectedLayerBounds = useMemo(
+    () => (side === "preview" ? getPathBounds(parsePath(selectedPreviewPath)) : selectedPathBounds),
+    [selectedPathBounds, selectedPreviewPath, side],
+  );
   const overlayClipPath = side === "preview" ? `url(#${gridId}-artboard-clip)` : undefined;
   const frameLabel = vector.name?.trim() || "Vector 1";
   const labelSize = Math.min(Math.max(viewBox.w * 0.008, 0.28), 0.42);
   const rulerOffset = Math.max(viewBox.w * 0.012, 0.42);
+  const selectionStrokeWidth = side === "preview" ? 1.1 : Math.max(ruler.strokeWidth * 1.15, 0.06);
+  const selectionHandleRadius = Math.min(Math.max(viewBox.w * 0.008, 0.2), 0.34);
+  const resizeHandles = useMemo(
+    () => (selectedLayerBounds ? getResizeHandles(selectedLayerBounds) : []),
+    [selectedLayerBounds],
+  );
   const axisTicks = useMemo(
     () => ({
       x: ruler.xTicks.filter((tick) => tick >= artboard.x && tick <= artboard.x + artboard.width),
@@ -451,6 +464,57 @@ export const PathCanvas = React.memo(function PathCanvas({
     [isActionMode, pushHistory, selectLayer, selectedLayerId, setEditingSide, side, viewBox.h, viewBox.w],
   );
 
+  const handleResizePointerDown = useCallback(
+    (e: React.PointerEvent<SVGCircleElement>, handle: ResizeHandle) => {
+      if (side !== "preview" || isActionMode || !selectedLayerBounds || e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      pushHistory();
+
+      const startBounds = selectedLayerBounds;
+
+      const handleMove = (moveEvent: PointerEvent) => {
+        const point = pointFromEvent(moveEvent.clientX, moveEvent.clientY);
+        if (!point) return;
+        const nextBounds = getBoundsFromResizeHandle(startBounds, handle, point, moveEvent.shiftKey);
+        resizeSelectedLayer(startBounds, nextBounds, { recordHistory: false });
+      };
+
+      const handleUp = () => {
+        window.removeEventListener("pointermove", handleMove);
+        window.removeEventListener("pointerup", handleUp);
+      };
+
+      window.addEventListener("pointermove", handleMove);
+      window.addEventListener("pointerup", handleUp);
+    },
+    [isActionMode, pointFromEvent, pushHistory, resizeSelectedLayer, selectedLayerBounds, side],
+  );
+
+  useEffect(() => {
+    if (side !== "preview" || isActionMode) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isEditableTarget =
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.isContentEditable;
+      if (isEditableTarget) return;
+      if (!["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft"].includes(event.key)) return;
+
+      const amount = event.shiftKey ? 2 : 0.5;
+      const dx = event.key === "ArrowLeft" ? -amount : event.key === "ArrowRight" ? amount : 0;
+      const dy = event.key === "ArrowUp" ? -amount : event.key === "ArrowDown" ? amount : 0;
+      event.preventDefault();
+      useEditorStore.getState().translateSelectedLayer(dx, dy);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isActionMode, side]);
+
   const isSelected = (subPathIndex: number, commandIndex: number, pointIndex: number) => {
     // Support multi-point selection (box select + shift)
     if (selectedPoints && selectedPoints.length > 0) {
@@ -474,7 +538,9 @@ export const PathCanvas = React.memo(function PathCanvas({
       width={width}
       height={height}
       viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
-      className="h-full w-full min-w-0 cursor-crosshair touch-none select-none bg-card"
+      className={`h-full w-full min-w-0 touch-none select-none bg-card ${
+        side === "preview" && !isActionMode ? "cursor-default" : "cursor-crosshair"
+      }`}
       onClick={handleSvgClick}
       onWheel={handleWheel}
       onPointerDown={handleSvgPointerDown}
@@ -629,6 +695,7 @@ export const PathCanvas = React.memo(function PathCanvas({
                   strokeMiterlimit={layer.strokeMiterLimit ?? 4}
                   strokeDasharray={layer.strokeDasharray && layer.strokeDasharray !== "none" ? layer.strokeDasharray : undefined}
                   fillRule={layer.fillType === "evenOdd" ? "evenodd" : "nonzero"}
+                  className={!isActionMode ? "cursor-move" : undefined}
                   onPointerDown={(event) => handlePreviewPathPointerDown(event, layer.id)}
                   pointerEvents={!isActionMode ? "visiblePainted" : undefined}
                 />
@@ -669,21 +736,39 @@ export const PathCanvas = React.memo(function PathCanvas({
         />
       )}
 
-      {canEditPoints && selectedPathBounds && (
+      {(canEditPoints || side === "preview") && selectedLayerBounds && (
         <rect
-          x={selectedPathBounds.x}
-          y={selectedPathBounds.y}
-          width={selectedPathBounds.width}
-          height={selectedPathBounds.height}
+          x={selectedLayerBounds.x}
+          y={selectedLayerBounds.y}
+          width={selectedLayerBounds.width}
+          height={selectedLayerBounds.height}
           transform={side === "preview" ? selectedPreviewTransform : undefined}
           clipPath={overlayClipPath}
           fill="none"
           stroke="#0d99ff"
-          strokeWidth={Math.max(ruler.strokeWidth * 1.15, 0.06)}
+          strokeWidth={selectionStrokeWidth}
           vectorEffect="non-scaling-stroke"
           pointerEvents="none"
         />
       )}
+
+      {side === "preview" &&
+        !isActionMode &&
+        resizeHandles.map((handle) => (
+          <circle
+            key={handle.id}
+            cx={handle.x}
+            cy={handle.y}
+            r={selectionHandleRadius}
+            className={handle.cursor}
+            clipPath={overlayClipPath}
+            fill="#ffffff"
+            stroke="#0d99ff"
+            strokeWidth={selectionStrokeWidth}
+            vectorEffect="non-scaling-stroke"
+            onPointerDown={(event) => handleResizePointerDown(event, handle.id)}
+          />
+        ))}
 
       {/* Control points + bezier handles (direct mode fidelity - port of original EditPath/handle rendering) */}
       {canEditPoints &&
@@ -803,6 +888,86 @@ function rectsIntersect(
     a.y <= b.y + b.height &&
     a.y + a.height >= b.y
   );
+}
+
+function getResizeHandles(bounds: Bounds): Array<{ id: ResizeHandle; x: number; y: number; cursor: string }> {
+  const right = bounds.x + bounds.width;
+  const bottom = bounds.y + bounds.height;
+  const centerX = bounds.x + bounds.width / 2;
+  const centerY = bounds.y + bounds.height / 2;
+  return [
+    { id: "nw", x: bounds.x, y: bounds.y, cursor: "cursor-nwse-resize" },
+    { id: "n", x: centerX, y: bounds.y, cursor: "cursor-ns-resize" },
+    { id: "ne", x: right, y: bounds.y, cursor: "cursor-nesw-resize" },
+    { id: "e", x: right, y: centerY, cursor: "cursor-ew-resize" },
+    { id: "se", x: right, y: bottom, cursor: "cursor-nwse-resize" },
+    { id: "s", x: centerX, y: bottom, cursor: "cursor-ns-resize" },
+    { id: "sw", x: bounds.x, y: bottom, cursor: "cursor-nesw-resize" },
+    { id: "w", x: bounds.x, y: centerY, cursor: "cursor-ew-resize" },
+  ];
+}
+
+function getBoundsFromResizeHandle(
+  bounds: Bounds,
+  handle: ResizeHandle,
+  point: { x: number; y: number },
+  preserveAspect: boolean,
+): Bounds {
+  const minSize = 0.5;
+  const left = bounds.x;
+  const top = bounds.y;
+  const right = bounds.x + bounds.width;
+  const bottom = bounds.y + bounds.height;
+  const aspect = bounds.width / Math.max(bounds.height, minSize);
+
+  let next: Bounds;
+  if (handle === "n") {
+    next = { x: left, y: point.y, width: bounds.width, height: bottom - point.y };
+  } else if (handle === "e") {
+    next = { x: left, y: top, width: point.x - left, height: bounds.height };
+  } else if (handle === "s") {
+    next = { x: left, y: top, width: bounds.width, height: point.y - top };
+  } else if (handle === "w") {
+    next = { x: point.x, y: top, width: right - point.x, height: bounds.height };
+  } else if (handle === "nw") {
+    next = { x: point.x, y: point.y, width: right - point.x, height: bottom - point.y };
+  } else if (handle === "ne") {
+    next = { x: left, y: point.y, width: point.x - left, height: bottom - point.y };
+  } else if (handle === "sw") {
+    next = { x: point.x, y: top, width: right - point.x, height: point.y - top };
+  } else {
+    next = { x: left, y: top, width: point.x - left, height: point.y - top };
+  }
+
+  const isCornerHandle = handle === "nw" || handle === "ne" || handle === "se" || handle === "sw";
+  if (preserveAspect && isCornerHandle) {
+    const widthFromHeight = Math.abs(next.height) * aspect;
+    const heightFromWidth = Math.abs(next.width) / Math.max(aspect, 0.001);
+    if (Math.abs(widthFromHeight - Math.abs(next.width)) < Math.abs(heightFromWidth - Math.abs(next.height))) {
+      next.width = Math.sign(next.width || 1) * widthFromHeight;
+    } else {
+      next.height = Math.sign(next.height || 1) * heightFromWidth;
+    }
+    if (handle === "nw") {
+      next.x = right - next.width;
+      next.y = bottom - next.height;
+    } else if (handle === "ne") {
+      next.y = bottom - next.height;
+    } else if (handle === "sw") {
+      next.x = right - next.width;
+    }
+  }
+
+  if (next.width < minSize) {
+    if (handle === "nw" || handle === "sw" || handle === "w") next.x = right - minSize;
+    next.width = minSize;
+  }
+  if (next.height < minSize) {
+    if (handle === "nw" || handle === "ne" || handle === "n") next.y = bottom - minSize;
+    next.height = minSize;
+  }
+
+  return next;
 }
 
 type PreviewLayer = {
