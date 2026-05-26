@@ -7,22 +7,32 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Badge } from "@/components/ui/badge";
 import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { parsePath, pathToString } from "@/lib/shapeshifter/pathUtils";
 import type { FillType, Layer, StrokeLineCap, StrokeLineJoin } from "@/lib/shapeshifter/types";
 import { MaterialSymbol } from "./MaterialSymbol";
-import { ColorPicker } from "@/components/ui/color-picker";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
 
 function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[112px_minmax(0,1fr)] items-center gap-3">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
+    <div className="grid min-h-8 grid-cols-[112px_minmax(0,1fr)] items-center gap-3 px-4 py-1">
+      <Label className="select-none truncate text-xs font-normal text-muted-foreground">{label}</Label>
       {children}
     </div>
+  );
+}
+
+function InspectorSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="py-2">
+      <div className="px-4 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </div>
+      <div className="space-y-0.5">{children}</div>
+    </section>
   );
 }
 
@@ -30,7 +40,7 @@ function NumberField({
   value,
   min,
   max,
-  step = 0.01,
+  step = 1,
   onChange,
 }: {
   value: number;
@@ -46,7 +56,7 @@ function NumberField({
       min={min}
       max={max}
       step={step}
-      className="h-8 font-mono"
+      className="h-7 rounded-sm bg-background font-mono text-xs"
       onChange={(event) => {
         const next = Number(event.target.value);
         if (Number.isFinite(next)) onChange(next);
@@ -66,52 +76,78 @@ export function Inspector() {
     layers,
     updateSelectedLayer,
     startActionMode,
+    addTimelineBlock,
   } = useEditorStore();
 
   const point = getCurrentSelectedPoint ? getCurrentSelectedPoint() : null;
-  const [showAdvancedStroke, setShowAdvancedStroke] = React.useState(false);
   const currentLayer = layers.find((l) => l.id === selectedLayerId);
-  const selectedCommand =
-    currentLayer?.[editingSide].subPaths[selection?.subPathIndex ?? 0]?.commands[
-      selection?.commandIndex ?? 0
-    ];
-
   const updateLayer = (patch: Partial<Layer>) => updateSelectedLayer(patch);
 
   if (!currentLayer) {
     return (
-      <div className="flex-1 space-y-6 overflow-y-auto p-4 text-sm">
-        <div className="py-8 text-center text-muted-foreground">
+      <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
+        <div className="flex min-h-16 items-center border-b bg-card px-4 shadow-xs">
+          <span className="text-sm font-medium">Properties</span>
+        </div>
+        <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground">
           <MaterialSymbol name="touch_app" size={28} />
-          <p className="mt-2 text-sm font-medium">Select something to edit its properties</p>
+          <p className="ml-3">Select something to edit its properties</p>
         </div>
       </div>
     );
   }
 
+  const animatableProperties =
+    currentLayer.type === "group"
+      ? ["rotation", "scaleX", "scaleY", "pivotX", "pivotY", "translateX", "translateY"]
+      : ["pathData", "fillColor", "fillAlpha", "strokeColor", "strokeAlpha", "strokeWidth", "trimPathStart", "trimPathEnd", "trimPathOffset"];
+
   return (
-    <div className="flex-1 space-y-6 overflow-y-auto p-4 text-sm">
-      <div className="flex items-center gap-3 rounded-md border bg-card p-3">
-        <MaterialSymbol name={currentLayer.type === "clipPath" ? "crop" : "polyline"} size={28} className="text-muted-foreground" />
-        <div className="min-w-0">
-          <div className="truncate text-sm font-semibold">{currentLayer.name}</div>
-          <div className="text-xs text-muted-foreground">{currentLayer.type} layer</div>
+    <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
+      <div className="flex min-h-16 items-center gap-3 border-b bg-card px-4 shadow-xs">
+        <MaterialSymbol
+          name={currentLayer.type === "clipPath" ? "crop" : currentLayer.type === "group" ? "folder" : "polyline"}
+          size={32}
+          className="shrink-0 text-muted-foreground"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-lg font-medium leading-6">{currentLayer.name}</div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span>{currentLayer.type} layer</span>
+            {currentLayer.type !== "group" && <Badge variant="outline" className="h-4 rounded-sm px-1 text-[10px]">{editingSide}</Badge>}
+          </div>
         </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button size="icon-sm" variant="ghost" aria-label="Animate this layer" />
+            }
+          >
+            <MaterialSymbol name="animation" size={17} />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            {animatableProperties.map((propertyName) => (
+              <DropdownMenuItem key={propertyName} onClick={() => addTimelineBlock(currentLayer.id, propertyName)}>
+                {propertyName}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
         {currentLayer.type !== "group" && (
-          <Button size="icon-sm" variant="ghost" aria-label="Edit path morphing animation" onClick={startActionMode}>
-            <MaterialSymbol name="edit" size={18} />
+          <Button size="icon-sm" variant="ghost" onClick={startActionMode} aria-label="Edit path morphing animation">
+            <MaterialSymbol name="edit" size={17} />
           </Button>
         )}
       </div>
 
-      <section className="space-y-3">
-        <div className="text-xs font-semibold tracking-widest text-muted-foreground">LAYER</div>
+      <div className="min-h-0 flex-1 overflow-y-auto py-2 text-xs">
+        <InspectorSection title="Layer">
         <PropertyRow label="name">
-          <Input className="h-8" value={currentLayer.name} onChange={(event) => updateLayer({ name: event.target.value })} />
+          <Input className="h-7 rounded-sm bg-background text-xs" value={currentLayer.name} onChange={(event) => updateLayer({ name: event.target.value })} />
         </PropertyRow>
         <PropertyRow label="type">
           <Select value={currentLayer.type} onValueChange={(value) => updateLayer({ type: value as Layer["type"] })}>
-            <SelectTrigger className="h-8 w-full">
+            <SelectTrigger size="sm" className="h-7 w-full rounded-sm bg-background text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -121,429 +157,198 @@ export function Inspector() {
             </SelectContent>
           </Select>
         </PropertyRow>
+        </InspectorSection>
+        <Separator />
+
         {currentLayer.type !== "group" && (
-          <PropertyRow label="pathData">
-            <Textarea
-              value={pathToString(currentLayer[editingSide])}
-              className="min-h-20 resize-none font-mono text-xs"
-              onChange={(event) => {
-                try {
-                  const parsed = parsePath(event.target.value);
-                  updateLayer(
-                    editingSide === "from"
-                      ? { from: parsed, pathData: parsed }
-                      : { to: parsed },
-                  );
-                } catch {
-                  toast.error("Invalid path data");
-                }
-              }}
-            />
-          </PropertyRow>
-        )}
-      </section>
-
-      <Separator />
-
-      {currentLayer.type === "group" ? (
-        <section className="space-y-3">
-          <div className="text-xs font-semibold tracking-widest text-muted-foreground">TRANSFORM</div>
-          <PropertyRow label="rotation">
-            <NumberField value={currentLayer.rotation ?? 0} onChange={(value) => updateLayer({ rotation: value })} />
-          </PropertyRow>
-          <PropertyRow label="scaleX">
-            <NumberField value={currentLayer.scaleX ?? 1} onChange={(value) => updateLayer({ scaleX: value })} />
-          </PropertyRow>
-          <PropertyRow label="scaleY">
-            <NumberField value={currentLayer.scaleY ?? 1} onChange={(value) => updateLayer({ scaleY: value })} />
-          </PropertyRow>
-          <PropertyRow label="pivotX">
-            <NumberField value={currentLayer.pivotX ?? 0} onChange={(value) => updateLayer({ pivotX: value })} />
-          </PropertyRow>
-          <PropertyRow label="pivotY">
-            <NumberField value={currentLayer.pivotY ?? 0} onChange={(value) => updateLayer({ pivotY: value })} />
-          </PropertyRow>
-          <PropertyRow label="translateX">
-            <NumberField value={currentLayer.translateX ?? 0} onChange={(value) => updateLayer({ translateX: value })} />
-          </PropertyRow>
-          <PropertyRow label="translateY">
-            <NumberField value={currentLayer.translateY ?? 0} onChange={(value) => updateLayer({ translateY: value })} />
-          </PropertyRow>
-        </section>
-      ) : (
-        <div className="space-y-4">
-          {/* Fill Section */}
-          <section className="space-y-2">
-            <div className="flex items-center justify-between text-xs font-semibold text-foreground">
-              <span className="tracking-wide">Fill</span>
-              <div className="flex items-center gap-1.5 text-muted-foreground">
-                <Button variant="ghost" size="icon-sm" className="h-6 w-6 hover:bg-muted" disabled>
-                  <MaterialSymbol name="grid_view" size={14} />
-                </Button>
-                <Button variant="ghost" size="icon-sm" className="h-6 w-6 hover:bg-muted" onClick={() => updateLayer({ fillColor: "#000000", fillAlpha: 1 })}>
-                  <MaterialSymbol name="add" size={14} />
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <div className="flex-1 min-w-0">
-                <ColorPicker
-                  value={currentLayer.fillColor || "none"}
-                  onChange={(hex) => updateLayer({ fillColor: hex })}
-                  className="w-full justify-start h-8 px-2"
-                  placeholder="none"
-                />
-              </div>
-
-              {/* Opacity */}
-              <div className="flex h-8 w-16 items-center rounded-lg border bg-background/50 px-2 focus-within:ring-1 focus-within:ring-ring">
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={Math.round((currentLayer.fillAlpha ?? 1) * 100)}
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value);
-                    if (Number.isFinite(val)) {
-                      updateLayer({ fillAlpha: Math.max(0, Math.min(100, val)) / 100 });
-                    }
-                  }}
-                  className="min-w-0 flex-1 border-0 bg-transparent p-0 text-right font-mono text-xs outline-none"
-                />
-                <span className="text-[10px] text-muted-foreground ml-0.5">%</span>
-              </div>
-
-              {/* Visibility Toggle */}
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="h-8 w-8 hover:bg-muted"
-                onClick={() => {
-                  const isVisible = (currentLayer.fillAlpha ?? 1) > 0;
-                  updateLayer({ fillAlpha: isVisible ? 0 : 1 });
+          <>
+            <InspectorSection title="Path">
+            <PropertyRow label="pathData">
+              <Textarea
+                value={pathToString(currentLayer[editingSide])}
+                className="min-h-20 resize-none rounded-sm bg-background p-1.5 font-mono text-[10px]"
+                onChange={(event) => {
+                  try {
+                    const parsed = parsePath(event.target.value);
+                    updateLayer(
+                      editingSide === "from"
+                        ? { from: parsed, pathData: parsed }
+                        : { to: parsed },
+                    );
+                  } catch {
+                    toast.error("Invalid path data");
+                  }
                 }}
-                aria-label="Toggle fill visibility"
-              >
-                <MaterialSymbol name={(currentLayer.fillAlpha ?? 1) > 0 ? "visibility" : "visibility_off"} size={14} />
-              </Button>
+              />
+            </PropertyRow>
+            </InspectorSection>
+            <Separator />
 
-              {/* Remove Fill */}
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
-                onClick={() => updateLayer({ fillColor: "", fillAlpha: 0 })}
-                aria-label="Remove fill"
-              >
-                <MaterialSymbol name="remove" size={14} />
-              </Button>
-            </div>
-          </section>
-
-          <Separator className="my-2" />
-
-          {/* Stroke Section */}
-          <section className="space-y-2">
-            <div className="flex items-center justify-between text-xs font-semibold text-foreground">
-              <span className="tracking-wide">Stroke</span>
-              <div className="flex items-center gap-1.5 text-muted-foreground">
-                <Button variant="ghost" size="icon-sm" className="h-6 w-6 hover:bg-muted" disabled>
-                  <MaterialSymbol name="grid_view" size={14} />
-                </Button>
-                <Button variant="ghost" size="icon-sm" className="h-6 w-6 hover:bg-muted" onClick={() => updateLayer({ strokeColor: "#000000", strokeAlpha: 1, strokeWidth: 1 })}>
-                  <MaterialSymbol name="add" size={14} />
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <div className="flex-1 min-w-0">
-                <ColorPicker
-                  value={currentLayer.strokeColor || "none"}
-                  onChange={(hex) => updateLayer({ strokeColor: hex })}
-                  className="w-full justify-start h-8 px-2"
+            <InspectorSection title="Fill">
+            <PropertyRow label="fillColor">
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={currentLayer.fillColor?.startsWith("#") ? currentLayer.fillColor : "#000000"}
+                  onChange={(e) => updateLayer({ fillColor: e.target.value })}
+                  className="h-7 w-7 cursor-pointer rounded-sm border border-border bg-transparent"
+                />
+                <Input
+                  className="h-7 rounded-sm bg-background font-mono text-xs"
+                  value={currentLayer.fillColor || ""}
                   placeholder="none"
+                  onChange={(e) => updateLayer({ fillColor: e.target.value })}
                 />
               </div>
+            </PropertyRow>
 
-              {/* Opacity */}
-              <div className="flex h-8 w-16 items-center rounded-lg border bg-background/50 px-2 focus-within:ring-1 focus-within:ring-ring">
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={Math.round((currentLayer.strokeAlpha ?? 1) * 100)}
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value);
-                    if (Number.isFinite(val)) {
-                      updateLayer({ strokeAlpha: Math.max(0, Math.min(100, val)) / 100 });
-                    }
-                  }}
-                  className="min-w-0 flex-1 border-0 bg-transparent p-0 text-right font-mono text-xs outline-none"
-                />
-                <span className="text-[10px] text-muted-foreground ml-0.5">%</span>
-              </div>
-
-              {/* Visibility Toggle */}
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="h-8 w-8 hover:bg-muted"
-                onClick={() => {
-                  const isVisible = (currentLayer.strokeAlpha ?? 1) > 0;
-                  updateLayer({ strokeAlpha: isVisible ? 0 : 1 });
-                }}
-                aria-label="Toggle stroke visibility"
-              >
-                <MaterialSymbol name={(currentLayer.strokeAlpha ?? 1) > 0 ? "visibility" : "visibility_off"} size={14} />
-              </Button>
-
-              {/* Remove Stroke */}
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
-                onClick={() => updateLayer({ strokeColor: "", strokeWidth: 0 })}
-                aria-label="Remove stroke"
-              >
-                <MaterialSymbol name="remove" size={14} />
-              </Button>
-            </div>
-
-            {/* Row 2: Alignment, Width, Popover settings */}
-            <div className="grid grid-cols-[1.2fr_1fr_auto_auto] items-center gap-1.5">
-              {/* Alignment Select */}
-              <Select value="center">
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="Center" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="center">Center</SelectItem>
-                  <SelectItem value="inside">Inside (Center)</SelectItem>
-                  <SelectItem value="outside">Outside (Center)</SelectItem>
-                </SelectContent>
-              </Select>
-
-              {/* Width Input */}
-              <div className="flex h-8 items-center rounded-lg border bg-background/50 px-2 focus-within:ring-1 focus-within:ring-ring">
-                <MaterialSymbol name="line_weight" size={14} className="text-muted-foreground mr-1.5 shrink-0" />
-                <input
-                  type="number"
-                  min={0}
-                  step={0.1}
-                  value={currentLayer.strokeWidth ?? 0}
-                  onChange={(e) => {
-                    const val = parseFloat(e.target.value);
-                    if (Number.isFinite(val)) {
-                      updateLayer({ strokeWidth: val });
-                    }
-                  }}
-                  className="min-w-0 flex-1 border-0 bg-transparent p-0 text-left font-mono text-xs outline-none"
-                />
-              </div>
-
-              {/* Advanced Settings Popover */}
-              <Popover open={showAdvancedStroke} onOpenChange={setShowAdvancedStroke}>
-                <PopoverTrigger
-                  className={cn(
-                    "flex h-8 w-8 items-center justify-center rounded-md border transition-colors hover:bg-muted focus:outline-none focus:ring-1 focus:ring-ring",
-                    showAdvancedStroke ? "bg-accent text-accent-foreground border-accent" : "bg-background/50"
-                  )}
-                  aria-label="Advanced stroke settings"
-                >
-                  <MaterialSymbol name="tune" size={16} />
-                </PopoverTrigger>
-                
-                <PopoverContent className="w-[280px] rounded-xl border bg-popover/95 p-4 shadow-2xl backdrop-blur-md dark:border-white/[0.12]" align="end" sideOffset={6}>
-                  <div className="flex items-center justify-between border-b pb-2 mb-3">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Stroke settings</h4>
-                    <Button variant="ghost" size="icon-sm" className="h-6 w-6 hover:bg-muted" onClick={() => setShowAdvancedStroke(false)}>
-                      <MaterialSymbol name="close" size={16} />
-                    </Button>
-                  </div>
-                  
-                  {/* Tabs */}
-                  <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted/65 p-1 text-[11px] font-semibold mb-4">
-                    <button className="rounded px-2 py-1 bg-background shadow-sm text-center">Basic</button>
-                    <button className="rounded px-2 py-1 text-muted-foreground/60 text-center cursor-not-allowed" disabled>Dynamic</button>
-                    <button className="rounded px-2 py-1 text-muted-foreground/60 text-center cursor-not-allowed" disabled>Brush</button>
-                  </div>
-
-                  <div className="space-y-4 text-xs">
-                    {/* Style */}
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-muted-foreground font-medium">Style</span>
-                      <Select
-                        value={(currentLayer.strokeDasharray && currentLayer.strokeDasharray !== "none") ? "dashed" : "solid"}
-                        onValueChange={(val) => {
-                          updateLayer({ strokeDasharray: val === "dashed" ? "4,4" : "none" });
-                        }}
-                      >
-                        <SelectTrigger className="h-8 w-36 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="solid">─ Solid</SelectItem>
-                          <SelectItem value="dashed">--- Dashed</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {/* Width profile */}
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-muted-foreground font-medium">Width profile</span>
-                      <div className="flex items-center gap-1.5">
-                        <Select value="uniform">
-                          <SelectTrigger className="h-8 w-26 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="uniform">─ Uniform</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Button variant="outline" size="icon-sm" className="h-8 w-8 hover:bg-muted border-border/80" disabled>
-                          <MaterialSymbol name="flip" size={15} />
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Line Cap */}
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-muted-foreground font-medium">Cap</span>
-                      <div className="flex items-center gap-0.5 rounded-lg border bg-muted/40 p-0.5">
-                        {(["butt", "round", "square"] as const).map((cap) => {
-                          const isActive = (currentLayer.strokeLinecap ?? "butt") === cap;
-                          return (
-                            <Button
-                              key={cap}
-                              variant={isActive ? "secondary" : "ghost"}
-                              className="h-7 px-2.5 text-[10px] capitalize font-semibold shadow-none"
-                              onClick={() => updateLayer({ strokeLinecap: cap })}
-                            >
-                              {cap}
-                            </Button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Join Row */}
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-muted-foreground font-medium">Join</span>
-                      <div className="flex items-center gap-0.5 rounded-lg border bg-muted/40 p-0.5">
-                        {(["miter", "round", "bevel"] as const).map((join) => {
-                          const isActive = (currentLayer.strokeLinejoin ?? "miter") === join;
-                          return (
-                            <Button
-                              key={join}
-                              variant={isActive ? "secondary" : "ghost"}
-                              size="icon-sm"
-                              className="h-7 w-8"
-                              onClick={() => updateLayer({ strokeLinejoin: join })}
-                              title={`${join} join`}
-                            >
-                              <MaterialSymbol name={join === "miter" ? "square_foot" : join === "round" ? "rounded_corner" : "edgesensor_low"} size={14} />
-                            </Button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Miter limit */}
-                    {(currentLayer.strokeLinejoin ?? "miter") === "miter" && (
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-muted-foreground font-medium">Miter limit</span>
-                        <div className="flex h-8 w-24 items-center rounded-md border bg-background/50 px-2 focus-within:ring-1 focus-within:ring-ring">
-                          <MaterialSymbol name="straighten" size={14} className="text-muted-foreground mr-1.5 shrink-0" />
-                          <input
-                            type="number"
-                            min={1}
-                            step={0.1}
-                            value={currentLayer.strokeMiterLimit ?? 4}
-                            onChange={(e) => {
-                              const val = parseFloat(e.target.value);
-                              if (Number.isFinite(val)) {
-                                updateLayer({ strokeMiterLimit: val });
-                              }
-                            }}
-                            className="min-w-0 flex-1 border-0 bg-transparent p-0 text-right font-mono text-xs outline-none"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </PopoverContent>
-              </Popover>
-
-              {/* Dash settings / Cap button */}
-              <Button variant="outline" size="icon-sm" className="h-8 w-8 bg-background/50 hover:bg-muted" disabled>
-                <MaterialSymbol name="border_style" size={16} />
-              </Button>
-            </div>
-          </section>
-
-          <Separator className="my-2" />
-
-          {/* Advanced Rules */}
-          <section className="space-y-2">
-            <div className="text-xs font-semibold text-foreground tracking-wide">Advanced</div>
+            <PropertyRow label="fillAlpha">
+              <NumberField min={0} max={1} step={0.1} value={currentLayer.fillAlpha ?? 1} onChange={(val) => updateLayer({ fillAlpha: val })} />
+            </PropertyRow>
             <PropertyRow label="fillType">
-              <Select value={currentLayer.fillType ?? "nonZero"} onValueChange={(value) => updateLayer({ fillType: value as FillType })}>
-                <SelectTrigger className="h-8 w-full text-xs"><SelectValue /></SelectTrigger>
+              <Select
+                value={currentLayer.fillType ?? "nonZero"}
+                onValueChange={(val) => updateLayer({ fillType: val as FillType })}
+              >
+                <SelectTrigger size="sm" className="h-7 w-full rounded-sm bg-background text-xs">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="nonZero">nonZero</SelectItem>
                   <SelectItem value="evenOdd">evenOdd</SelectItem>
                 </SelectContent>
               </Select>
             </PropertyRow>
-          </section>
-        </div>
-      )}
+            </InspectorSection>
+            <Separator />
 
-      <Separator />
+            <InspectorSection title="Stroke">
+            <PropertyRow label="strokeColor">
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={currentLayer.strokeColor?.startsWith("#") ? currentLayer.strokeColor : "#000000"}
+                  onChange={(e) => updateLayer({ strokeColor: e.target.value })}
+                  className="h-7 w-7 cursor-pointer rounded-sm border border-border bg-transparent"
+                />
+                <Input
+                  className="h-7 rounded-sm bg-background font-mono text-xs"
+                  value={currentLayer.strokeColor || ""}
+                  placeholder="none"
+                  onChange={(e) => updateLayer({ strokeColor: e.target.value })}
+                />
+              </div>
+            </PropertyRow>
 
-      {currentLayer.type !== "group" && (
-        <section className="space-y-3">
-          <div className="text-xs font-semibold tracking-widest text-muted-foreground">TRIM PATH</div>
-          <PropertyRow label="trimPathStart">
-            <NumberField min={0} max={1} value={currentLayer.trimPathStart ?? 0} onChange={(value) => updateLayer({ trimPathStart: value })} />
-          </PropertyRow>
-          <PropertyRow label="trimPathEnd">
-            <NumberField min={0} max={1} value={currentLayer.trimPathEnd ?? 1} onChange={(value) => updateLayer({ trimPathEnd: value })} />
-          </PropertyRow>
-          <PropertyRow label="trimPathOffset">
-            <NumberField value={currentLayer.trimPathOffset ?? 0} onChange={(value) => updateLayer({ trimPathOffset: value })} />
-          </PropertyRow>
-        </section>
-      )}
+            <PropertyRow label="strokeAlpha">
+              <NumberField min={0} max={1} step={0.1} value={currentLayer.strokeAlpha ?? 1} onChange={(val) => updateLayer({ strokeAlpha: val })} />
+            </PropertyRow>
+
+            <PropertyRow label="strokeWidth">
+              <NumberField min={0} step={0.1} value={currentLayer.strokeWidth ?? 1} onChange={(val) => updateLayer({ strokeWidth: val })} />
+            </PropertyRow>
+
+            <PropertyRow label="strokeLinecap">
+              <Select
+                value={currentLayer.strokeLinecap ?? "butt"}
+                onValueChange={(val) => updateLayer({ strokeLinecap: val as StrokeLineCap })}
+              >
+                <SelectTrigger size="sm" className="h-7 w-full rounded-sm bg-background text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="butt">Butt</SelectItem>
+                  <SelectItem value="round">Round</SelectItem>
+                  <SelectItem value="square">Square</SelectItem>
+                </SelectContent>
+              </Select>
+            </PropertyRow>
+
+            <PropertyRow label="strokeLinejoin">
+              <Select
+                value={currentLayer.strokeLinejoin ?? "miter"}
+                onValueChange={(val) => updateLayer({ strokeLinejoin: val as StrokeLineJoin })}
+              >
+                <SelectTrigger size="sm" className="h-7 w-full rounded-sm bg-background text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="miter">Miter</SelectItem>
+                  <SelectItem value="round">Round</SelectItem>
+                  <SelectItem value="bevel">Bevel</SelectItem>
+                </SelectContent>
+              </Select>
+            </PropertyRow>
+
+            <PropertyRow label="strokeMiterLimit">
+              <NumberField min={1} value={currentLayer.strokeMiterLimit ?? 4} onChange={(val) => updateLayer({ strokeMiterLimit: val })} />
+            </PropertyRow>
+            </InspectorSection>
+            <Separator />
+
+            <InspectorSection title="Trim Path">
+            <PropertyRow label="trimPathStart">
+              <NumberField min={0} max={1} step={0.1} value={currentLayer.trimPathStart ?? 0} onChange={(val) => updateLayer({ trimPathStart: val })} />
+            </PropertyRow>
+
+            <PropertyRow label="trimPathEnd">
+              <NumberField min={0} max={1} step={0.1} value={currentLayer.trimPathEnd ?? 1} onChange={(val) => updateLayer({ trimPathEnd: val })} />
+            </PropertyRow>
+
+            <PropertyRow label="trimPathOffset">
+              <NumberField step={0.1} value={currentLayer.trimPathOffset ?? 0} onChange={(val) => updateLayer({ trimPathOffset: val })} />
+            </PropertyRow>
+            </InspectorSection>
+          </>
+        )}
+
+        {currentLayer.type === "group" && (
+          <InspectorSection title="Transform">
+            <PropertyRow label="rotation">
+              <NumberField value={currentLayer.rotation ?? 0} onChange={(val) => updateLayer({ rotation: val })} />
+            </PropertyRow>
+            <PropertyRow label="scaleX">
+              <NumberField value={currentLayer.scaleX ?? 1} onChange={(val) => updateLayer({ scaleX: val })} />
+            </PropertyRow>
+            <PropertyRow label="scaleY">
+              <NumberField value={currentLayer.scaleY ?? 1} onChange={(val) => updateLayer({ scaleY: val })} />
+            </PropertyRow>
+            <PropertyRow label="pivotX">
+              <NumberField value={currentLayer.pivotX ?? 0} onChange={(val) => updateLayer({ pivotX: val })} />
+            </PropertyRow>
+            <PropertyRow label="pivotY">
+              <NumberField value={currentLayer.pivotY ?? 0} onChange={(val) => updateLayer({ pivotY: val })} />
+            </PropertyRow>
+            <PropertyRow label="translateX">
+              <NumberField value={currentLayer.translateX ?? 0} onChange={(val) => updateLayer({ translateX: val })} />
+            </PropertyRow>
+            <PropertyRow label="translateY">
+              <NumberField value={currentLayer.translateY ?? 0} onChange={(val) => updateLayer({ translateY: val })} />
+            </PropertyRow>
+          </InspectorSection>
+        )}
 
       {selection && point ? (
-        <section className="space-y-3">
-          <Separator />
-          <div>
-            <div className="mb-1.5 text-xs font-semibold tracking-widest text-muted-foreground">SELECTED POINT</div>
-            <div className="rounded-md bg-muted p-3 font-mono text-xs">
-              {editingSide.toUpperCase()} command {selectedCommand?.type ?? "-"} #{selection.commandIndex}.{selection.pointIndex}
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label className="mb-1 block text-[10px] text-muted-foreground">X</Label>
+        <>
+        <Separator />
+        <InspectorSection title="Selected Point">
+          <div className="grid grid-cols-2 gap-2 px-4">
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono text-[10px] text-muted-foreground">X</span>
               <Input
                 type="number"
                 value={point.x.toFixed(2)}
-                className="h-8 font-mono"
+                className="h-7 rounded-sm bg-background font-mono text-xs"
                 step="0.1"
                 onChange={(event) => updateSelectedPoint({ x: parseFloat(event.target.value) || 0, y: point.y })}
               />
             </div>
-            <div>
-              <Label className="mb-1 block text-[10px] text-muted-foreground">Y</Label>
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono text-[10px] text-muted-foreground">Y</span>
               <Input
                 type="number"
                 value={point.y.toFixed(2)}
-                className="h-8 font-mono"
+                className="h-7 rounded-sm bg-background font-mono text-xs"
                 step="0.1"
                 onChange={(event) => updateSelectedPoint({ x: point.x, y: parseFloat(event.target.value) || 0 })}
               />
@@ -551,21 +356,23 @@ export function Inspector() {
           </div>
           <Button
             variant="outline"
-            className="w-full justify-start gap-2 text-destructive"
+            className="mx-4 mt-2 h-7 w-[calc(100%-2rem)] justify-start gap-1.5 border-destructive/20 text-xs text-destructive"
             size="sm"
             onClick={() => {
               deleteSelectedPoint();
               toast.success("Point deleted");
             }}
           >
-            <Trash2 className="h-4 w-4" /> Delete Selected Point
+            <Trash2 className="h-3.5 w-3.5" /> Delete Point
           </Button>
-        </section>
+        </InspectorSection>
+        </>
       ) : (
-        <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+        <div className="mx-4 my-3 rounded-sm border border-dashed border-border/80 p-2 text-center text-[10px] text-muted-foreground">
           Click a point on the canvas to edit its coordinates.
         </div>
       )}
+      </div>
     </div>
   );
 }

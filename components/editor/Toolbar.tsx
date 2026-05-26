@@ -6,7 +6,6 @@ import {
   Pause,
   SkipBack,
   Undo2,
-  Redo2,
   Download,
   Upload,
   Plus,
@@ -75,8 +74,6 @@ export function Toolbar({
     shiftSelectedLayer,
     autoFixSelectedLayer,
     closeActionMode,
-    toolMode,
-    setToolMode,
     splitSelectedCommand,
     setSelectedCommandAsFirst,
     deleteSelectedPoint,
@@ -90,50 +87,50 @@ export function Toolbar({
   };
 
   return (
-    <header className="flex min-h-12 shrink-0 items-center gap-2 overflow-x-auto border-b bg-card px-4 text-foreground shadow-xs [scrollbar-width:none]">
+    <header className="flex min-h-12 shrink-0 items-center gap-2 overflow-x-auto bg-primary text-primary-foreground dark:bg-card dark:text-foreground border-b border-primary-foreground/10 dark:border-border px-4 shadow-sm [scrollbar-width:none]">
       <div className="flex items-center gap-3">
         {/* Brand */}
-        <div className="flex items-center gap-2 border-r border-border pr-4">
+        <div className="flex items-center gap-2 border-r border-white/20 dark:border-border pr-4">
           {isActionMode && (
             <Button
               variant="ghost"
               size="icon"
-              className="text-foreground hover:bg-muted"
+              className="text-white hover:bg-white/10 dark:text-foreground dark:hover:bg-muted h-8 w-8"
               aria-label="Close path morphing mode"
               onClick={closeActionMode}
             >
               <MaterialSymbol name="arrow_back" size={20} />
             </Button>
           )}
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/15 dark:bg-primary/10 text-white dark:text-primary">
             <MaterialSymbol name="auto_awesome" size={18} filled weight={600} />
           </div>
           <div>
-            <div className="text-sm font-bold tracking-tight">{isActionMode ? "Path morphing" : "Shape Shifter"}</div>
-            <div className="text-[10px] text-muted-foreground -mt-0.5 leading-none">
+            <div className="text-sm font-bold tracking-tight text-white dark:text-foreground">{isActionMode ? "Path morphing" : "Shape Shifter"}</div>
+            <div className="text-[10px] text-white/70 dark:text-muted-foreground -mt-0.5 leading-none">
               {isActionMode ? "Edit start and end path compatibility" : "React 2026"}
             </div>
           </div>
         </div>
 
-        <Badge variant="secondary" className="font-mono text-[9px] tracking-widest px-1.5 py-0">
+        <Badge variant="secondary" className="font-mono text-[9px] tracking-widest px-1.5 py-0 bg-white/10 text-white hover:bg-white/10 dark:bg-muted dark:text-foreground">
           v2.0
         </Badge>
 
         {/* Shortcuts / Help */}
-        <Button variant="ghost" size="sm" className="gap-1.5 text-xs text-muted-foreground hover:text-foreground" onClick={onShowHelp}>
+        <Button variant="ghost" size="sm" className="gap-1.5 text-xs text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground h-8 px-2.5" onClick={onShowHelp}>
           <HelpCircle className="w-3.5 h-3.5" /> Shortcuts
         </Button>
       </div>
 
-      <div className="flex items-center gap-1.5 border-l border-border pl-2">
+      <div className="flex items-center gap-1.5 border-l border-white/20 dark:border-border pl-2">
         <Tooltip>
           <TooltipTrigger
             render={
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                className="h-8 w-8 text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground"
                 onClick={onResetAnim}
                 aria-label="Reset animation"
               />
@@ -149,7 +146,7 @@ export function Toolbar({
               <Button
                 variant="default"
                 size="icon"
-                className="h-8 w-8 bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+                className="h-8 w-8 bg-primary-foreground hover:bg-primary-foreground/90 text-primary dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary/90 shadow-sm"
                 onClick={onTogglePlay}
                 aria-label={isPlaying ? "Pause animation" : "Play animation"}
               />
@@ -162,19 +159,19 @@ export function Toolbar({
       </div>
 
       {/* File */}
-      <div className="flex items-center gap-1 border-l border-border pl-2">
+      <div className="flex items-center gap-1 border-l border-white/20 dark:border-border pl-2">
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
               <button
                 type="button"
-                className="inline-flex shrink-0 items-center justify-center rounded-lg h-8 gap-1.5 px-3 text-xs font-semibold hover:bg-muted text-foreground transition-all outline-none"
+                className="inline-flex shrink-0 items-center justify-center rounded-lg h-8 gap-1.5 px-3 text-xs font-semibold hover:bg-white/10 text-white dark:text-foreground dark:hover:bg-muted transition-all outline-none"
               />
             }
           >
             <Upload className="w-3.5 h-3.5" /> File
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-52">
+          <DropdownMenuContent align="start" className="w-52 text-xs">
             <DropdownMenuItem onClick={() => toast.info("New project (demo)")}>
               <Plus className="w-4 h-4 mr-2" /> New Project
             </DropdownMenuItem>
@@ -193,14 +190,14 @@ export function Toolbar({
       </div>
 
       {/* Edit (Undo/Redo) */}
-      <div className="flex items-center gap-1 border-l border-border pl-2">
+      <div className="flex items-center gap-1 border-l border-white/20 dark:border-border pl-2">
         <Tooltip>
           <TooltipTrigger
             render={
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                className="h-8 w-8 text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground"
                 onClick={undo}
                 disabled={!canUndo}
                 aria-label="Undo"
@@ -217,7 +214,7 @@ export function Toolbar({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                className="h-8 w-8 text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground"
                 onClick={redo}
                 disabled={!canRedo}
                 aria-label="Redo"
@@ -231,7 +228,7 @@ export function Toolbar({
       </div>
 
       {/* Transform / Action Mode Side Toggle */}
-      <div className="flex items-center gap-1 border-l border-border pl-2">
+      <div className="flex items-center gap-1 border-l border-white/20 dark:border-border pl-2">
         <Tooltip>
           <TooltipTrigger
             render={
@@ -241,8 +238,8 @@ export function Toolbar({
                 onClick={() => setEditingSide("from")}
                 className={`h-8 px-3 gap-1.5 text-xs font-semibold ${
                   editingSide === "from"
-                    ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    ? "bg-primary-foreground text-primary hover:bg-primary-foreground/90 dark:bg-primary dark:text-primary-foreground shadow-sm"
+                    : "text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground"
                 }`}
               />
             }
@@ -260,8 +257,8 @@ export function Toolbar({
                 onClick={() => setEditingSide("to")}
                 className={`h-8 px-3 gap-1.5 text-xs font-semibold ${
                   editingSide === "to"
-                    ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    ? "bg-primary-foreground text-primary hover:bg-primary-foreground/90 dark:bg-primary dark:text-primary-foreground shadow-sm"
+                    : "text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground"
                 }`}
               />
             }
@@ -273,19 +270,19 @@ export function Toolbar({
       </div>
 
       {/* Magic Tools */}
-      <div className="flex items-center gap-1.5 border-l border-border pl-2">
+      <div className="flex items-center gap-1.5 border-l border-white/20 dark:border-border pl-2">
         <Tooltip>
           <TooltipTrigger
             render={
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 gap-1.5 text-xs border-border bg-background text-foreground hover:bg-muted"
+                className="h-8 gap-1.5 text-xs border-white/20 bg-white/5 text-white hover:bg-white/10 dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
                 onClick={handleAutoFix}
               />
             }
           >
-            <Zap className="w-3.5 h-3.5 text-amber-500" /> Auto Fix
+            <Zap className="w-3.5 h-3.5 text-amber-300 dark:text-amber-500" /> Auto Fix
           </TooltipTrigger>
           <TooltipContent>Make paths compatible (A)</TooltipContent>
         </Tooltip>
@@ -298,7 +295,7 @@ export function Toolbar({
                   <Button
                     variant="outline"
                     size="icon"
-                    className="h-8 w-8 border-border bg-background hover:bg-muted text-foreground"
+                    className="h-8 w-8 border-white/20 bg-white/5 hover:bg-white/10 text-white dark:border-border dark:bg-background dark:hover:bg-muted dark:text-foreground"
                     onClick={() => {
                       shiftSelectedLayer(-1);
                       toast.success("Shifted back");
@@ -316,52 +313,13 @@ export function Toolbar({
 
         {isActionMode && (
           <>
-            {/* Tool Mode Switcher - Figma layout row 2 style */}
-            <div className="flex items-center gap-0.5 rounded-lg border border-border bg-muted/60 p-0.5 text-xs">
-              <button
-                type="button"
-                onClick={() => setToolMode("select")}
-                className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all ${
-                  toolMode === "select"
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "hover:bg-muted/80 text-muted-foreground hover:text-foreground"
-                }`}
-                title="Select / Move points"
-              >
-                Select
-              </button>
-              <button
-                type="button"
-                onClick={() => setToolMode("pen")}
-                className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all ${
-                  toolMode === "pen"
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "hover:bg-muted/80 text-muted-foreground hover:text-foreground"
-                }`}
-                title="Pen / Add points"
-              >
-                Pen
-              </button>
-              <button
-                type="button"
-                onClick={() => setToolMode("direct")}
-                className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all ${
-                  toolMode === "direct"
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "hover:bg-muted/80 text-muted-foreground hover:text-foreground"
-                }`}
-                title="Direct edit (handles)"
-              >
-                Direct
-              </button>
-            </div>
             <Tooltip>
               <TooltipTrigger
                 render={
                   <Button
                     variant="outline"
                     size="icon"
-                    className="h-8 w-8 border-border bg-background hover:bg-muted text-foreground"
+                    className="h-8 w-8 border-white/20 bg-white/5 hover:bg-white/10 text-white dark:border-border dark:bg-background dark:hover:bg-muted dark:text-foreground"
                     onClick={() => {
                       splitSelectedCommand();
                       toast.success("Split in half");
@@ -372,7 +330,7 @@ export function Toolbar({
               >
                 <MaterialSymbol name="call_split" size={16} />
               </TooltipTrigger>
-              <TooltipContent>Split in half</TooltipContent>
+              <TooltipContent>Split command in half</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger
@@ -380,7 +338,7 @@ export function Toolbar({
                   <Button
                     variant="outline"
                     size="icon"
-                    className="h-8 w-8 border-border bg-background hover:bg-muted text-foreground"
+                    className="h-8 w-8 border-white/20 bg-white/5 hover:bg-white/10 text-white dark:border-border dark:bg-background dark:hover:bg-muted dark:text-foreground"
                     onClick={() => {
                       setSelectedCommandAsFirst();
                       toast.success("Set as first point");
@@ -400,7 +358,7 @@ export function Toolbar({
                   <Button
                     variant="outline"
                     size="icon"
-                    className="h-8 w-8 border-border bg-background hover:bg-muted text-foreground"
+                    className="h-8 w-8 border-white/20 bg-white/5 hover:bg-white/10 text-white dark:border-border dark:bg-background dark:hover:bg-muted dark:text-foreground"
                     onClick={() => {
                       deleteSelectedPoint();
                     }}
@@ -419,7 +377,7 @@ export function Toolbar({
                   <Button
                     variant="outline"
                     size="icon"
-                    className="h-8 w-8 border-border bg-background hover:bg-muted text-foreground"
+                    className="h-8 w-8 border-white/20 bg-white/5 hover:bg-white/10 text-white dark:border-border dark:bg-background dark:hover:bg-muted dark:text-foreground"
                     onClick={() => {
                       deleteSelectedSubPath();
                     }}
@@ -438,7 +396,7 @@ export function Toolbar({
                   <Button
                     variant="outline"
                     size="icon"
-                    className="h-8 w-8 border-border bg-background hover:bg-muted text-foreground"
+                    className="h-8 w-8 border-white/20 bg-white/5 hover:bg-white/10 text-white dark:border-border dark:bg-background dark:hover:bg-muted dark:text-foreground"
                     onClick={() => {
                       // Full PairSubPaths port pending
                     }}
@@ -459,7 +417,7 @@ export function Toolbar({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 gap-1.5 text-xs border-border bg-background text-foreground hover:bg-muted"
+                className="h-8 gap-1.5 text-xs border-white/20 bg-white/5 text-white hover:bg-white/10 dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
                 onClick={() => {
                   reverseSelectedLayer();
                   toast.success("Reversed");
@@ -467,7 +425,7 @@ export function Toolbar({
               />
             }
           >
-            <RotateCw className="w-3.5 h-3.5 text-indigo-500" /> Reverse
+            <RotateCw className="w-3.5 h-3.5 text-indigo-200 dark:text-indigo-400" /> Reverse
           </TooltipTrigger>
           <TooltipContent>Reverse (R)</TooltipContent>
         </Tooltip>
@@ -477,7 +435,7 @@ export function Toolbar({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 gap-1.5 text-xs border-border bg-background text-foreground hover:bg-muted"
+                className="h-8 gap-1.5 text-xs border-white/20 bg-white/5 text-white hover:bg-white/10 dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
                 onClick={() => {
                   shiftSelectedLayer(1);
                   toast.success("Shifted");
@@ -485,26 +443,26 @@ export function Toolbar({
               />
             }
           >
-            <ArrowLeftRight className="w-3.5 h-3.5 text-emerald-500" /> Shift
+            <ArrowLeftRight className="w-3.5 h-3.5 text-emerald-300 dark:text-emerald-500" /> Shift
           </TooltipTrigger>
           <TooltipContent>Shift points (S)</TooltipContent>
         </Tooltip>
       </div>
 
       {/* Samples */}
-      <div className="flex items-center gap-1 border-l border-border pl-2">
+      <div className="flex items-center gap-1 border-l border-white/20 dark:border-border pl-2">
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
               <button
                 type="button"
-                className="inline-flex shrink-0 items-center justify-center rounded-lg h-8 gap-1.5 px-3 text-xs font-semibold hover:bg-muted text-foreground transition-all outline-none"
+                className="inline-flex shrink-0 items-center justify-center rounded-lg h-8 gap-1.5 px-3 text-xs font-semibold hover:bg-white/10 text-white dark:text-foreground dark:hover:bg-muted transition-all outline-none"
               />
             }
           >
             Samples
           </DropdownMenuTrigger>
-          <DropdownMenuContent>
+          <DropdownMenuContent className="text-xs">
             <DropdownMenuItem onClick={() => onLoadSample(0)}>Play → Pause</DropdownMenuItem>
             <DropdownMenuItem onClick={() => onLoadSample(1)}>Menu → Close</DropdownMenuItem>
             <DropdownMenuItem onClick={() => onLoadSample(2)}>Heart → Star</DropdownMenuItem>
@@ -515,16 +473,16 @@ export function Toolbar({
       </div>
 
       {/* Export */}
-      <div className="flex items-center gap-1 border-l border-border pl-2">
+      <div className="flex items-center gap-1 border-l border-white/20 dark:border-border pl-2">
         <ExportDialog>
-          <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+          <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground">
             <Download className="w-3.5 h-3.5" /> Export
           </Button>
         </ExportDialog>
       </div>
 
       {/* Reset Views */}
-      <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground border-l border-border pl-2 rounded-none" onClick={resetAllViews}>
+      <Button variant="ghost" size="sm" className="h-8 text-xs text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground border-l border-white/20 dark:border-border pl-2 rounded-none" onClick={resetAllViews}>
         Reset Views
       </Button>
 

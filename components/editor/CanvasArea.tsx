@@ -3,9 +3,8 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { Slider } from "@/components/ui/slider";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Gauge, Pause, Play, Repeat, RotateCcw, SkipBack, SkipForward } from "lucide-react";
+import { Gauge, MousePointer2, Pause, PenTool, Play, Repeat, RotateCcw, SkipBack, SkipForward } from "lucide-react";
 import { PathCanvas } from "./PathCanvas";
 import { useEditorStore } from "@/lib/store/editorStore";
 
@@ -24,7 +23,6 @@ export function CanvasArea({
 }: CanvasAreaProps) {
   const {
     isPlaying,
-    progress,
     zoom,
     setProgress,
     setZoom,
@@ -37,13 +35,69 @@ export function CanvasArea({
     isActionMode,
     isSlowMotion,
     isRepeating,
+    toolMode,
+    setToolMode,
   } = useEditorStore();
 
   const compatibility = getCompatibilityStatus();
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-muted">
-      <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden px-6 py-7">
+    <div className="flex min-w-0 flex-1 overflow-hidden bg-muted dark:bg-zinc-950">
+      {isActionMode && (
+        <div className="flex w-12 shrink-0 flex-col items-center gap-1 border-r bg-card px-1.5 py-3 shadow-xs">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon"
+                  variant={toolMode === "select" ? "secondary" : "ghost"}
+                  className="size-9"
+                  onClick={() => setToolMode("select")}
+                  aria-label="Select tool"
+                />
+              }
+            >
+              <MousePointer2 className="h-4 w-4" />
+            </TooltipTrigger>
+            <TooltipContent side="right">Select</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon"
+                  variant={toolMode === "direct" ? "secondary" : "ghost"}
+                  className="size-9"
+                  onClick={() => setToolMode("direct")}
+                  aria-label="Vector edit tool"
+                />
+              }
+            >
+              <MaterialToolIcon name="conversion_path" />
+            </TooltipTrigger>
+            <TooltipContent side="right">Vector</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon"
+                  variant={toolMode === "pen" ? "secondary" : "ghost"}
+                  className="size-9"
+                  onClick={() => setToolMode("pen")}
+                  aria-label="Pen tool"
+                />
+              }
+            >
+              <PenTool className="h-4 w-4" />
+            </TooltipTrigger>
+            <TooltipContent side="right">Pen</TooltipContent>
+          </Tooltip>
+        </div>
+      )}
+
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden px-8 py-6">
         <motion.div
           className={
             isActionMode
@@ -93,7 +147,7 @@ export function CanvasArea({
                 </Button>
               </div>
             </div>
-            <div className="aspect-square w-full overflow-hidden rounded-sm border bg-card shadow-lg">
+            <div className="aspect-square w-full overflow-hidden rounded-sm border bg-card shadow-md">
               <PathCanvas side="preview" resetKey={resetPreview} zoom={zoom} width={456} height={456} />
             </div>
             {compatibility.warning && (
@@ -133,28 +187,38 @@ export function CanvasArea({
         </motion.div>
       </div>
 
-      <div className="flex h-14 shrink-0 items-center justify-center gap-2 bg-muted px-5">
-        <Button
-          size="icon"
-          variant={isSlowMotion ? "secondary" : "ghost"}
-          aria-label="Slow motion"
-          onClick={toggleSlowMotion}
-        >
-          <Gauge className="h-4 w-4" />
-        </Button>
+      {/* Compact centered playback controls matching the original */}
+      <div className="flex h-14 shrink-0 items-center justify-center gap-2 bg-muted dark:bg-zinc-900">
         <Tooltip>
           <TooltipTrigger
             render={
               <Button
-              size="icon"
-              variant="outline"
-              onClick={() => setProgress(0)}
-              aria-label="Reset animation"
-              className="h-9 w-9"
+                size="icon"
+                variant={isSlowMotion ? "secondary" : "ghost"}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                onClick={toggleSlowMotion}
+                aria-label="Slow motion"
               />
             }
           >
-            <SkipBack className="w-4 h-4" />
+            <Gauge className="h-4 w-4" />
+          </TooltipTrigger>
+          <TooltipContent>Slow motion</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                onClick={() => setProgress(0)}
+                aria-label="Go to start"
+              />
+            }
+          >
+            <SkipBack className="h-4 w-4" />
           </TooltipTrigger>
           <TooltipContent>Go to start</TooltipContent>
         </Tooltip>
@@ -163,58 +227,50 @@ export function CanvasArea({
           size="icon"
           onClick={togglePlayback}
           aria-label="Toggle playback"
-          className="h-10 w-10 rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
+          className="h-10 w-10 rounded-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-md flex items-center justify-center transition-transform active:scale-95 shrink-0"
         >
-          {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+          {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 ml-0.5" />}
         </Button>
 
         <Tooltip>
           <TooltipTrigger
             render={
               <Button
-              size="icon"
-              variant="outline"
-              onClick={() => setProgress(1)}
-              className="h-9 w-9"
-              aria-label="Go to end"
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                onClick={() => setProgress(1)}
+                aria-label="Go to end"
               />
             }
           >
-            <SkipForward className="w-4 h-4" />
+            <SkipForward className="h-4 w-4" />
           </TooltipTrigger>
           <TooltipContent>Go to end</TooltipContent>
         </Tooltip>
 
-        <div className="w-[min(420px,40vw)] px-4">
-          <Slider
-            value={[progress * 100]}
-            max={100}
-            step={0.1}
-            onValueChange={(val) => {
-              const v = Array.isArray(val) ? val[0] : val;
-              setProgress(v / 100);
-              if (isPlaying) {
-                const { togglePlayback } = useEditorStore.getState();
-                togglePlayback();
-              }
-            }}
-            className="w-full"
-          />
-        </div>
-
-        <div className="w-12 text-right font-mono text-xs tabular-nums text-muted-foreground">
-          {(progress * 100).toFixed(0)}%
-        </div>
-
-        <Button
-          size="icon"
-          variant={isRepeating ? "secondary" : "ghost"}
-          aria-label="Repeat"
-          onClick={toggleRepeating}
-        >
-          <Repeat className="h-4 w-4" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                size="icon"
+                variant={isRepeating ? "secondary" : "ghost"}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                onClick={toggleRepeating}
+                aria-label="Repeat"
+              />
+            }
+          >
+            <Repeat className="h-4 w-4" />
+          </TooltipTrigger>
+          <TooltipContent>Repeat playback</TooltipContent>
+        </Tooltip>
+      </div>
       </div>
     </div>
   );
+}
+
+function MaterialToolIcon({ name }: { name: string }) {
+  return <span className="material-symbols text-[18px] leading-none">{name}</span>;
 }
