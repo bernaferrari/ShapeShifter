@@ -78,10 +78,35 @@ export class GestureDispatcher {
       // Future: click-to-select single item path (still routed through dispatcher).
       console.log("[GestureDispatcher] select click (non-marquee for now)", { point, hit, modifiers });
     } else if (tool === "pen" || tool === "direct") {
-      // Will become SelectDragDrawSegmentsGesture or handle editing
-      console.log("[GestureDispatcher] would start path edit gesture", { point, hit, modifiers });
+      // PR-02 foundation + ny0 (Bend/Flex Ctrl+drag): direct tool now supports professional curvature flex.
+      // When ctrl is held during drag on a curve/handle, we treat as "flex" intent (user's explicit
+      // vision request for Figma-grade direct manipulation: Ctrl+drag to intelligently flex curves
+      // while preserving smoothness/G1-G2). The concrete flex logic (curvature adjustment math) is
+      // provided via the flexCurvature helper (added to HitTests) and wired in PathCanvas for the
+      // direct mode drag paths (existing cubic/quadraticPointAt + bendSelectedLayerSegment).
+      // This is the first real implementation of the Bend tool behavior on the clean dispatcher.
+      //
+      // Basic Lasso stub also starts here (for pencil or future dedicated lasso tool): we can
+      // begin a polygon/point collection path that will evolve into real lasso hit testing.
+      const isFlexIntent = modifiers.ctrl && tool === "direct";
+      if (isFlexIntent) {
+        console.log("[GestureDispatcher] direct + ctrl — Bend/Flex curvature intent (ny0 under v6j, DESIGN_ID 67dd105e)", { point, hit, modifiers });
+        // The actual flex math + store mutation happens in PathCanvas handle* (segment/handle drag)
+        // when toolMode=direct && ctrlKey. Dispatcher decision point is here for future dedicated
+        // BendFlexGesture or SelectDragHandleGesture subclass.
+      } else {
+        // Will become SelectDragDrawSegmentsGesture or handle editing
+        console.log("[GestureDispatcher] would start path edit gesture", { point, hit, modifiers });
+      }
     } else if (tool === "pencil" || tool === "ellipse" || tool === "rectangle") {
-      // Will become shape creation gestures
+      // Will become shape creation gestures.
+      // 9rp (ShapeShifter-9rp under v6j): pencil is the current Lasso entry (L shortcut in BottomToolPalette).
+      // Real polygon hit testing (pointInPolygon + collectPointsInLasso in HitTests) + refined collection
+      // + shift-additive store commit now live (wired in PathCanvas on up, mirroring marquee).
+      // Future: dedicated LassoSelectGesture + explicit "lasso" ToolMode (per DESIGN_ID 67dd105e).
+      if (tool === "pencil") {
+        console.log("[GestureDispatcher] pencil/lasso intent (9rp real hit testing live)", { point, modifiers });
+      }
       console.log("[GestureDispatcher] would start shape creation", { tool, point });
     }
   }
