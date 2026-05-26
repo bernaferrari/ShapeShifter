@@ -32,6 +32,7 @@ import type {
   VectorMetadata,
 } from "../shapeshifter/types";
 import type { ToolMode, CursorType } from "../shapeshifter/toolModes";
+import { getDemoProject } from "../shapeshifter/demoProjects";
 
 export interface HoveredItem {
   type: "point" | "command" | "layer" | "block";
@@ -275,6 +276,8 @@ const initialLayers: Layer[] = [
 ];
 
 const cloneLayers = (layers: Layer[]) => structuredClone(layers);
+const getFirstEditableLayerId = (layers: Layer[]) =>
+  layers.find((layer) => layer.type === "path" || layer.type === "clipPath")?.id ?? layers[0]?.id ?? 0;
 
 export const useEditorStore = create<EditorState>((set, get) => ({
   layers: initialLayers,
@@ -371,61 +374,26 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   loadSample: (index: number) => {
-    const samples: { name: string; from: string; to: string; fillColor?: string; strokeColor?: string; strokeWidth?: number }[] = [
-      {
-        name: "Play → Pause",
-        from: "M 12 6 L 12 18 M 6 12 L 18 12",
-        to: "M 8 8 L 16 16 M 8 16 L 16 8",
-        strokeColor: "#000000",
-        strokeWidth: 2.4,
-      },
-      {
-        name: "Menu → Close",
-        from: "M 4 6 L 20 6 M 4 12 L 20 12 M 4 18 L 20 18",
-        to: "M 6 6 L 18 18 M 18 6 L 6 18",
-        strokeColor: "#000000",
-        strokeWidth: 2.4,
-      },
-      {
-        name: "Heart → Star",
-        from: "M 12 21 L 12 21 L 12 21 C 12 21 4 15 4 9 C 4 5 7 3 10 5 C 12 3 15 5 15 9 C 15 15 12 21 12 21 Z",
-        to: "M 12 4 L 14 9 L 19 9 L 15 12 L 17 17 L 12 14 L 7 17 L 9 12 L 5 9 L 10 9 Z",
-        fillColor: "#000000",
-      },
-      {
-        name: "Arrow → Check",
-        from: "M 4 12 L 20 12 M 14 6 L 20 12 L 14 18",
-        to: "M 6 12 L 10 16 L 18 8",
-        strokeColor: "#000000",
-        strokeWidth: 2.4,
-      },
-      {
-        name: "Circle → Square",
-        from: "M 12 4 C 16.42 4 20 7.58 20 12 C 20 16.42 16.42 20 12 20 C 7.58 20 4 16.42 4 12 C 4 7.58 7.58 4 12 4 Z",
-        to: "M 12 4 C 12 4 20 4 20 4 C 20 4 20 20 20 20 C 20 20 4 20 4 20 C 4 20 4 4 4 4 Z",
-        fillColor: "#000000",
-      },
-    ];
-    const sample = samples[index % samples.length];
-    if (!sample) return;
-
-    const { layers, selectedLayerId } = get();
-    const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
-    if (layerIndex === -1) return;
-
-    const newLayers = [...layers];
+    const { project } = getDemoProject(index);
     get().pushHistory();
-    newLayers[layerIndex] = {
-      ...newLayers[layerIndex],
-      name: sample.name,
-      from: parsePath(sample.from),
-      to: parsePath(sample.to),
-      pathData: parsePath(sample.from),
-      ...(sample.fillColor != null ? { fillColor: sample.fillColor } : {}),
-      ...(sample.strokeColor != null ? { strokeColor: sample.strokeColor } : {}),
-      ...(sample.strokeWidth != null ? { strokeWidth: sample.strokeWidth } : {}),
-    };
-    set({ layers: newLayers });
+    set({
+      layers: project.layers,
+      vector: project.vector,
+      animation: project.animation,
+      hiddenLayerIds: project.hiddenLayerIds,
+      selectedLayerId: getFirstEditableLayerId(project.layers),
+      selection: null,
+      selectedPoints: [],
+      progress: 0,
+      isPlaying: false,
+      isActionMode: false,
+      editingSide: "from",
+      selectedBlockIds: [],
+      collapsedLayerIds: [],
+      timelineZoom: 1,
+      timelineScrollX: 0,
+      timelineScrollY: 0,
+    });
   },
 
   setLayers: (layers) => {
@@ -454,9 +422,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       vector: project.vector,
       animation: project.animation,
       hiddenLayerIds: project.hiddenLayerIds,
-      selectedLayerId: project.layers[0]?.id ?? 0,
+      selectedLayerId: getFirstEditableLayerId(project.layers),
       selection: null, selectedPoints: [],
       progress: 0,
+      isPlaying: false,
       isActionMode: false,
     });
   },

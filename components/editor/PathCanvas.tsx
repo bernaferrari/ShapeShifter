@@ -2,7 +2,9 @@
 
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { useEditorStore } from "@/lib/store/editorStore";
-import { pathToString, getInterpolatedPath } from "@/lib/shapeshifter/pathUtils";
+import { parsePath, pathToString, getInterpolatedPath } from "@/lib/shapeshifter/pathUtils";
+import { evaluateBlock } from "@/lib/shapeshifter/interpolators";
+import type { Layer, TimelineBlock } from "@/lib/shapeshifter/types";
 
 type PointSelection = { subPathIndex: number; commandIndex: number; pointIndex: number };
 type ViewBox = { x: number; y: number; w: number; h: number; scale: number };
@@ -53,6 +55,7 @@ export const PathCanvas = React.memo(function PathCanvas({
 
   const {
     layers,
+    animation,
     selectedLayerId,
     editingSide,
     selection,
@@ -217,7 +220,6 @@ export const PathCanvas = React.memo(function PathCanvas({
   const fallbackStroke = side === "to" ? "hsl(var(--destructive))" : "hsl(var(--primary))";
   const hasExplicitStroke = Boolean(currentLayer.strokeColor);
   const hasExplicitFill = Boolean(currentLayer.fillColor);
-  const previewStroke = hasExplicitStroke ? currentLayer.strokeColor : "currentColor";
   const strokeWidth =
     hasExplicitStroke || !hasExplicitFill ? (currentLayer.strokeWidth && currentLayer.strokeWidth > 0 ? currentLayer.strokeWidth : 2.2) : 0;
 
@@ -233,6 +235,13 @@ export const PathCanvas = React.memo(function PathCanvas({
     [targetPathData],
   );
   const ruler = useMemo(() => getRulerModel(viewBox), [viewBox]);
+  const previewLayers = useMemo(
+    () =>
+      side === "preview"
+        ? getPreviewLayers(layers, animation.blocks, animation.duration, progress, selectedLayerId)
+        : [],
+    [animation.blocks, animation.duration, layers, progress, selectedLayerId, side],
+  );
 
   // Dragging logic
   const handlePointerDown = useCallback(
@@ -461,29 +470,68 @@ export const PathCanvas = React.memo(function PathCanvas({
         />
       )}
 
-      {/* The actual path */}
-      <path
-        d={displayPath}
-        className={
-          side === "preview"
-            ? "text-foreground drop-shadow-sm"
-            : side === "from"
-              ? "drop-shadow-sm"
-              : "opacity-85 drop-shadow-sm [stroke-dasharray:4_3]"
-        }
-        fill={currentLayer.fillColor || "none"}
-        fillOpacity={currentLayer.fillAlpha ?? 1}
-        stroke={side === "preview" ? previewStroke : currentLayer.strokeColor || fallbackStroke}
-        strokeOpacity={currentLayer.strokeAlpha ?? 1}
-        strokeWidth={side === "preview" ? Math.max(strokeWidth, 2.2) : strokeWidth}
-        strokeLinecap={currentLayer.strokeLinecap ?? "butt"}
-        strokeLinejoin={currentLayer.strokeLinejoin ?? "miter"}
-        strokeMiterlimit={currentLayer.strokeMiterLimit ?? 4}
-        strokeDasharray={currentLayer.strokeDasharray && currentLayer.strokeDasharray !== "none" ? currentLayer.strokeDasharray : (side === "to" ? "4 3" : undefined)}
-        fillRule={currentLayer.fillType === "evenOdd" ? "evenodd" : "nonzero"}
-        onPointerDown={handlePreviewPathPointerDown}
-        pointerEvents={side === "preview" && !isActionMode ? "visiblePainted" : undefined}
-      />
+      {/* The actual path/vector scene */}
+      {side === "preview" ? (
+        <g className="text-foreground drop-shadow-sm">
+          {previewLayers.map(
+            ({
+              layer,
+              d,
+              transform,
+              opacity,
+              fillColor,
+              fillAlpha,
+              strokeColor,
+              strokeAlpha,
+              strokeWidth: animatedStrokeWidth,
+            }) => {
+              const layerHasFill = Boolean(fillColor);
+              const layerHasStroke = Boolean(strokeColor);
+              const effectiveStrokeWidth =
+                layerHasStroke || !layerHasFill
+                  ? animatedStrokeWidth && animatedStrokeWidth > 0
+                    ? animatedStrokeWidth
+                    : 1
+                  : 0;
+              return (
+                <path
+                  key={layer.id}
+                  d={d}
+                  transform={transform}
+                  opacity={opacity}
+                  fill={fillColor || "none"}
+                  fillOpacity={fillAlpha}
+                  stroke={layerHasStroke ? strokeColor : "none"}
+                  strokeOpacity={strokeAlpha}
+                  strokeWidth={effectiveStrokeWidth}
+                  strokeLinecap={layer.strokeLinecap ?? "butt"}
+                  strokeLinejoin={layer.strokeLinejoin ?? "miter"}
+                  strokeMiterlimit={layer.strokeMiterLimit ?? 4}
+                  strokeDasharray={layer.strokeDasharray && layer.strokeDasharray !== "none" ? layer.strokeDasharray : undefined}
+                  fillRule={layer.fillType === "evenOdd" ? "evenodd" : "nonzero"}
+                  onPointerDown={String(layer.id) === String(selectedLayerId) ? handlePreviewPathPointerDown : undefined}
+                  pointerEvents={!isActionMode ? "visiblePainted" : undefined}
+                />
+              );
+            },
+          )}
+        </g>
+      ) : (
+        <path
+          d={displayPath}
+          className={side === "from" ? "drop-shadow-sm" : "opacity-85 drop-shadow-sm [stroke-dasharray:4_3]"}
+          fill={currentLayer.fillColor || "none"}
+          fillOpacity={currentLayer.fillAlpha ?? 1}
+          stroke={currentLayer.strokeColor || fallbackStroke}
+          strokeOpacity={currentLayer.strokeAlpha ?? 1}
+          strokeWidth={strokeWidth}
+          strokeLinecap={currentLayer.strokeLinecap ?? "butt"}
+          strokeLinejoin={currentLayer.strokeLinejoin ?? "miter"}
+          strokeMiterlimit={currentLayer.strokeMiterLimit ?? 4}
+          strokeDasharray={currentLayer.strokeDasharray && currentLayer.strokeDasharray !== "none" ? currentLayer.strokeDasharray : (side === "to" ? "4 3" : undefined)}
+          fillRule={currentLayer.fillType === "evenOdd" ? "evenodd" : "nonzero"}
+        />
+      )}
 
       {side === "preview" && !isActionMode && (
         <path
@@ -603,4 +651,138 @@ function buildTicks(min: number, max: number, interval: number) {
 
 function formatTick(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+type PreviewLayer = {
+  layer: Layer;
+  d: string;
+  transform: string;
+  opacity: number;
+  fillColor: string;
+  fillAlpha: number;
+  strokeColor: string;
+  strokeAlpha: number;
+  strokeWidth: number;
+};
+
+function getPreviewLayers(
+  layers: Layer[],
+  blocks: TimelineBlock[],
+  duration: number,
+  progress: number,
+  selectedLayerId: string | number,
+): PreviewLayer[] {
+  const sourceLayers =
+    blocks.length > 0
+      ? layers
+      : layers.filter((layer) => String(layer.id) === String(selectedLayerId));
+  return sourceLayers
+    .filter((layer) => layer.visible !== false && (layer.type === "path" || layer.type === "clipPath"))
+    .map((layer) => ({
+      layer,
+      d: getAnimatedPath(layer, blocks, duration, progress),
+      transform: getLayerTransform(layer, layers, blocks, duration, progress),
+      opacity: getAnimatedNumber(layer, "alpha", blocks, duration, progress, layer.alpha ?? 1),
+      fillColor: getAnimatedString(layer, "fillColor", blocks, duration, progress, layer.fillColor ?? ""),
+      fillAlpha: getAnimatedNumber(layer, "fillAlpha", blocks, duration, progress, layer.fillAlpha ?? 1),
+      strokeColor: getAnimatedString(layer, "strokeColor", blocks, duration, progress, layer.strokeColor ?? ""),
+      strokeAlpha: getAnimatedNumber(layer, "strokeAlpha", blocks, duration, progress, layer.strokeAlpha ?? 1),
+      strokeWidth: getAnimatedNumber(layer, "strokeWidth", blocks, duration, progress, layer.strokeWidth ?? 0),
+    }));
+}
+
+function getAnimatedPath(layer: Layer, blocks: TimelineBlock[], duration: number, progress: number) {
+  const block = getRelevantBlock(layer.id, "pathData", blocks, duration, progress);
+  if (!block) return pathToString(layer.pathData ?? layer.from);
+  const blockProgress = evaluateBlock(progress, duration, block);
+  if (blockProgress == null) {
+    return progress * duration < block.startTime ? String(block.fromValue) : String(block.toValue);
+  }
+  return getInterpolatedPath(parsePath(String(block.fromValue)), parsePath(String(block.toValue)), blockProgress);
+}
+
+function getLayerTransform(layer: Layer, layers: Layer[], blocks: TimelineBlock[], duration: number, progress: number) {
+  const chain: Layer[] = [];
+  let current: Layer | undefined = layer;
+  while (current) {
+    chain.unshift(current);
+    current =
+      current.parentId == null
+        ? undefined
+        : layers.find((candidate) => String(candidate.id) === String(current?.parentId));
+  }
+
+  return chain
+    .map((candidate) => {
+      const pivotX = getAnimatedNumber(candidate, "pivotX", blocks, duration, progress, candidate.pivotX ?? 0);
+      const pivotY = getAnimatedNumber(candidate, "pivotY", blocks, duration, progress, candidate.pivotY ?? 0);
+      const translateX = getAnimatedNumber(candidate, "translateX", blocks, duration, progress, candidate.translateX ?? 0);
+      const translateY = getAnimatedNumber(candidate, "translateY", blocks, duration, progress, candidate.translateY ?? 0);
+      const rotation = getAnimatedNumber(candidate, "rotation", blocks, duration, progress, candidate.rotation ?? 0);
+      const scaleX = getAnimatedNumber(candidate, "scaleX", blocks, duration, progress, candidate.scaleX ?? 1);
+      const scaleY = getAnimatedNumber(candidate, "scaleY", blocks, duration, progress, candidate.scaleY ?? 1);
+      return [
+        translateX || translateY ? `translate(${translateX} ${translateY})` : "",
+        pivotX || pivotY ? `translate(${pivotX} ${pivotY})` : "",
+        rotation ? `rotate(${rotation})` : "",
+        scaleX !== 1 || scaleY !== 1 ? `scale(${scaleX} ${scaleY})` : "",
+        pivotX || pivotY ? `translate(${-pivotX} ${-pivotY})` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+    })
+    .filter(Boolean)
+    .join(" ");
+}
+
+function getAnimatedNumber(
+  layer: Layer,
+  propertyName: string,
+  blocks: TimelineBlock[],
+  duration: number,
+  progress: number,
+  fallback: number,
+) {
+  const block = getRelevantBlock(layer.id, propertyName, blocks, duration, progress);
+  if (!block) return fallback;
+  const from = Number(block.fromValue);
+  const to = Number(block.toValue);
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return fallback;
+  const blockProgress = evaluateBlock(progress, duration, block);
+  if (blockProgress == null) return progress * duration < block.startTime ? from : to;
+  return from + (to - from) * blockProgress;
+}
+
+function getAnimatedString(
+  layer: Layer,
+  propertyName: string,
+  blocks: TimelineBlock[],
+  duration: number,
+  progress: number,
+  fallback: string,
+) {
+  const block = getRelevantBlock(layer.id, propertyName, blocks, duration, progress);
+  if (!block) return fallback;
+  const blockProgress = evaluateBlock(progress, duration, block);
+  if (blockProgress == null) return progress * duration < block.startTime ? String(block.fromValue) : String(block.toValue);
+  return blockProgress < 1 ? String(block.fromValue) : String(block.toValue);
+}
+
+function getRelevantBlock(
+  layerId: string | number,
+  propertyName: string,
+  blocks: TimelineBlock[],
+  duration: number,
+  progress: number,
+) {
+  const time = progress * duration;
+  const candidates = blocks
+    .filter((block) => String(block.layerId) === String(layerId) && block.propertyName === propertyName)
+    .sort((a, b) => a.startTime - b.startTime);
+  if (candidates.length === 0) return null;
+  return (
+    candidates.find((block) => time >= block.startTime && time <= block.endTime) ??
+    [...candidates].reverse().find((block) => time > block.endTime) ??
+    candidates[0]
+  );
 }

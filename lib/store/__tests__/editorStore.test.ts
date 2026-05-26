@@ -1123,27 +1123,28 @@ describe("editorStore", () => {
 
   // ─── loadSample ──────────────────────────────────────────────────────
   describe("loadSample", () => {
-    it("loads a sample onto the selected layer", () => {
-      const layer = getStore().layers[0];
-      const originalName = layer.name;
-      getStore().loadSample(3); // Arrow → Check
-      const updated = getStore().layers.find((l) => l.id === layer.id)!;
-      expect(updated.name).not.toBe(originalName);
-      expect(updated.name).toBe("Arrow → Check");
+    it("loads an original demo project and selects the first editable path", () => {
+      getStore().loadSample(0);
+
+      expect(getStore().vector.name).toBe("playtopause");
+      expect(getStore().animation.duration).toBe(300);
+      expect(getStore().animation.blocks).toHaveLength(2);
+      expect(getStore().layers.some((layer) => layer.type === "group")).toBe(true);
+      expect(getStore().layers.find((layer) => layer.id === getStore().selectedLayerId)?.type).toBe("path");
+      expect(getStore().progress).toBe(0);
+      expect(getStore().isPlaying).toBe(false);
     });
 
     it("wraps around with modulo", () => {
-      const layer = getStore().layers[0];
       getStore().loadSample(10); // 10 % 5 = 0
-      const updated = getStore().layers.find((l) => l.id === layer.id)!;
-      expect(updated.name).toBe("Play → Pause");
+      expect(getStore().vector.name).toBe("playtopause");
     });
 
-    it("no-op when selected layer not found", () => {
+    it("loads even when the current selected layer is missing", () => {
       useEditorStore.setState({ selectedLayerId: 99999 });
-      const before = getStore().layers.length;
       getStore().loadSample(0);
-      expect(getStore().layers.length).toBe(before);
+      expect(getStore().vector.name).toBe("playtopause");
+      expect(getStore().layers.find((layer) => layer.id === getStore().selectedLayerId)?.type).toBe("path");
     });
   });
 

@@ -1,11 +1,13 @@
 "use client";
 
 import React from "react";
-import { ChevronRight, Eye, EyeOff, FolderOpen, Import, MoreVertical, Plus, Timer, ZoomIn, Square, Crop } from "lucide-react";
+import { ChevronRight, Eye, EyeOff, FileCode2, FolderOpen, Import, MoreVertical, Plus, Timer, ZoomIn, Square, Crop } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEditorStore } from "@/lib/store/editorStore";
+import { DEMO_INFOS } from "@/lib/shapeshifter/demoProjects";
+import type { Layer, VectorMetadata } from "@/lib/shapeshifter/types";
 
 interface LayerTimelineProps {
   onOpenSVGImport: () => void;
@@ -27,11 +29,27 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
     updateTimelineBlock,
     progress,
     animation,
+    vector,
+    selectBlocks,
   } = useEditorStore();
-  const durationSeconds = animation.duration / 1000;
+  const formatTimeMark = (timeMs: number) =>
+    animation.duration < 1000 ? `${Math.round(timeMs)}ms` : `${(timeMs / 1000).toFixed(1)}s`;
 
   const [draggingBlock, setDraggingBlock] = React.useState<null | { id: string; startX: number; originalStart: number; originalEnd: number }>(null);
 
+  type TimelineLayer = Layer | (VectorMetadata & { type: "vector"; visible: boolean; locked: boolean; expanded?: boolean; parentId?: null });
+  type TimelineRow =
+    | { kind: "layer"; layer: TimelineLayer; depth: number }
+    | { kind: "property"; layer: TimelineLayer; propertyName: string; depth: number };
+
+  const vectorRow: TimelineLayer = {
+    ...vector,
+    type: "vector",
+    visible: true,
+    locked: false,
+    expanded: true,
+    parentId: null,
+  };
   const depthById = new Map<string, number>();
   const childCountById = new Map<string, number>();
   for (const layer of layers) {
@@ -47,6 +65,11 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
     }
     depthById.set(String(layer.id), depth);
   }
+  for (const layer of layers) {
+    if (layer.parentId == null) {
+      childCountById.set(String(vector.id), (childCountById.get(String(vector.id)) ?? 0) + 1);
+    }
+  }
   const visibleLayers = layers.filter((layer) => {
     let parentId = layer.parentId;
     while (parentId != null) {
@@ -60,9 +83,24 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
   const propertiesForLayer = (layerId: string | number) =>
     Array.from(new Set(animation.blocks.filter((block) => String(block.layerId) === String(layerId)).map((block) => block.propertyName)));
   const animatableProperties = (layerType: string) =>
-    layerType === "group"
+    layerType === "vector"
+      ? ["alpha"]
+      : layerType === "group"
       ? ["rotation", "scaleX", "scaleY", "pivotX", "pivotY", "translateX", "translateY"]
       : ["pathData", "fillColor", "fillAlpha", "strokeColor", "strokeAlpha", "strokeWidth", "trimPathStart", "trimPathEnd", "trimPathOffset"];
+  const timelineRows: TimelineRow[] = [{ kind: "layer", layer: vectorRow, depth: 0 }];
+  for (const layer of visibleLayers) {
+    const depth = (depthById.get(String(layer.id)) ?? 0) + 1;
+    timelineRows.push({ kind: "layer", layer, depth });
+    if (layer.expanded !== false) {
+      for (const propertyName of propertiesForLayer(layer.id)) {
+        timelineRows.push({ kind: "property", layer, propertyName, depth: depth + 1 });
+      }
+    }
+  }
+  for (const propertyName of propertiesForLayer(vector.id)) {
+    timelineRows.splice(1, 0, { kind: "property", layer: vectorRow, propertyName, depth: 1 });
+  }
 
   return (
     <section className="z-20 flex h-full min-h-0 shrink-0 bg-card text-card-foreground shadow-md">
@@ -71,9 +109,12 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
           <DropdownMenu>
             <DropdownMenuTrigger render={<button type="button" className="h-8 rounded px-2 text-xs font-medium hover:bg-muted" />}>File</DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-44">
-              <DropdownMenuItem onClick={() => onLoadSample(0)}>New from Play/Pause</DropdownMenuItem>
               <DropdownMenuItem onClick={onOpenSVGImport}>Open project or asset</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onLoadSample(1)}>Open Menu/Close demo</DropdownMenuItem>
+              {DEMO_INFOS.map((demo, index) => (
+                <DropdownMenuItem key={demo.id} onClick={() => onLoadSample(index)}>
+                  Demo: {demo.title}
+                </DropdownMenuItem>
+              ))}
               <DropdownMenuItem onClick={() => onExport("json")}>Save project JSON</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -121,22 +162,41 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
           </DropdownMenu>
         </div>
         <div className="min-h-0 flex-1 overflow-auto p-2">
-          {visibleLayers.map((layer) => {
+          {timelineRows.map((row) => {
+            if (row.kind === "property") {
+              const blockIds = animation.blocks
+                .filter((block) => String(block.layerId) === String(row.layer.id) && block.propertyName === row.propertyName)
+                .map((block) => block.id);
+              const isSelected = blockIds.length > 0 && blockIds.every((id) => selectedBlockIds.includes(id));
+              return (
+                <button
+                  key={`${row.layer.id}-${row.propertyName}`}
+                  className={`flex h-6 w-full items-center gap-2 rounded px-2 text-left text-[10px] ${
+                    isSelected ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/70"
+                  }`}
+                  style={{ paddingLeft: `${8 + row.depth * 18}px` }}
+                  onClick={() => selectBlocks(blockIds)}
+                >
+                  <Timer className="h-3 w-3 shrink-0" />
+                  <span className="min-w-0 truncate font-mono">{row.propertyName}</span>
+                </button>
+              );
+            }
+            const layer = row.layer;
             const isSelected = selectedLayerId === layer.id;
             const isExpandable = (childCountById.get(String(layer.id)) ?? 0) > 0;
-            const existingProperties = propertiesForLayer(layer.id);
             return (
-              <div key={layer.id}>
+              <React.Fragment key={layer.id}>
                 <button
                   className={`flex h-8 w-full items-center gap-2 px-2 text-left transition-all border-l-2 ${
                     isSelected
                       ? "bg-primary/10 border-primary text-foreground font-semibold"
                       : "bg-transparent border-transparent text-foreground hover:bg-muted/70"
                   }`}
-                  onClick={() => selectLayer(layer.id)}
+                  onClick={() => layer.type !== "vector" && selectLayer(layer.id)}
                   onDoubleClick={() => isExpandable && toggleLayerExpanded(layer.id)}
                 >
-                  <span style={{ width: `${(depthById.get(String(layer.id)) ?? 0) * 12}px` }} />
+                  <span style={{ width: `${row.depth * 12}px` }} />
                   <span
                     role="button"
                     tabIndex={0}
@@ -161,7 +221,9 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                     )}
                   </span>
                   
-                  {layer.type === "group" ? (
+                  {layer.type === "vector" ? (
+                    <FileCode2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  ) : layer.type === "group" ? (
                     <FolderOpen className={`h-3.5 w-3.5 shrink-0 ${isSelected ? "text-primary" : "text-muted-foreground"}`} />
                   ) : layer.type === "clipPath" ? (
                     <Crop className={`h-3.5 w-3.5 shrink-0 ${isSelected ? "text-primary" : "text-muted-foreground"}`} />
@@ -196,41 +258,31 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                     </DropdownMenuContent>
                   </DropdownMenu>
 
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    className="grid h-5 w-5 place-items-center rounded hover:bg-foreground/10"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      toggleLayerVisibility(layer.id);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
+                  {layer.type === "vector" ? (
+                    <span className="h-5 w-5" />
+                  ) : (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="grid h-5 w-5 place-items-center rounded hover:bg-foreground/10"
+                      onClick={(event) => {
                         event.stopPropagation();
                         toggleLayerVisibility(layer.id);
-                      }
-                    }}
-                    aria-label={layer.visible ? `Hide ${layer.name}` : `Show ${layer.name}`}
-                  >
-                    {layer.visible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-                  </span>
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          toggleLayerVisibility(layer.id);
+                        }
+                      }}
+                      aria-label={layer.visible ? `Hide ${layer.name}` : `Show ${layer.name}`}
+                    >
+                      {layer.visible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                    </span>
+                  )}
                 </button>
-                {layer.expanded !== false && existingProperties.length > 0 && (
-                  <div className="ml-7 border-l border-border/50 pl-2">
-                    {existingProperties.map((propertyName) => (
-                      <button
-                        key={propertyName}
-                        className="flex h-5 w-full items-center justify-between rounded px-2 text-left text-[10px] text-muted-foreground hover:bg-muted/70"
-                        onClick={() => addTimelineBlock(layer.id, propertyName)}
-                      >
-                        <span className="font-mono">{propertyName}</span>
-                        <Plus className="h-2.5 w-2.5" />
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              </React.Fragment>
             );
           })}
         </div>
@@ -279,7 +331,7 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
         >
           {Array.from({ length: 11 }, (_, index) => (
             <span key={index} className="border-l border-border/45 pl-1 leading-7">
-              {((durationSeconds * index) / 10).toFixed(1)}s
+              {formatTimeMark((animation.duration * index) / 10)}
             </span>
           ))}
         </div>
@@ -319,60 +371,66 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
             className="absolute bottom-0 top-0 z-10 w-0.5 bg-primary before:absolute before:-left-1 before:-top-px before:h-2.5 before:w-2.5 before:rounded-full before:bg-primary"
             style={{ left: `${Math.round(progress * 100)}%` }}
           />
-          {layers.map((layer) => (
-            <div key={layer.id} className="relative h-9 border-b border-border/45">
-              {animation.blocks
-                .filter((block) => String(block.layerId) === String(layer.id))
-                .map((block) => {
-                  const isSelected = selectedBlockIds.includes(block.id);
-                  const leftPct = (block.startTime / animation.duration) * 100;
-                  const widthPct = Math.max(1, ((block.endTime - block.startTime) / animation.duration) * 100);
-                  const handleDragStart = (e: React.PointerEvent) => {
-                    e.stopPropagation();
-                    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-                    setDraggingBlock({
-                      id: block.id,
-                      startX: e.clientX,
-                      originalStart: block.startTime,
-                      originalEnd: block.endTime,
-                    });
-                    const store = useEditorStore.getState();
-                    store.toggleBlockSelection(block.id);
-                  };
+          {timelineRows.map((row) => (
+            <div
+              key={row.kind === "property" ? `${row.layer.id}-${row.propertyName}` : row.layer.id}
+              className={`${row.kind === "property" ? "h-6" : "h-8"} relative border-b border-border/45`}
+            >
+              {row.kind === "property" &&
+                animation.blocks
+                  .filter((block) => String(block.layerId) === String(row.layer.id) && block.propertyName === row.propertyName)
+                  .map((block) => {
+                    const isSelected = selectedBlockIds.includes(block.id);
+                    const leftPct = (block.startTime / animation.duration) * 100;
+                    const widthPct = Math.max(1, ((block.endTime - block.startTime) / animation.duration) * 100);
+                    const handleDragStart = (e: React.PointerEvent) => {
+                      e.stopPropagation();
+                      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                      setDraggingBlock({
+                        id: block.id,
+                        startX: e.clientX,
+                        originalStart: block.startTime,
+                        originalEnd: block.endTime,
+                      });
+                      const store = useEditorStore.getState();
+                      store.selectBlocks([block.id]);
+                    };
 
-                  const handleDragMove = (e: React.PointerEvent) => {
-                    if (!draggingBlock || draggingBlock.id !== block.id) return;
-                    const deltaX = e.clientX - draggingBlock.startX;
-                    const deltaTime = (deltaX / 300) * animation.duration; // approximate px to ms scale
-                    let newStart = Math.max(0, Math.min(animation.duration - 50, draggingBlock.originalStart + deltaTime));
-                    let newEnd = Math.max(newStart + 50, Math.min(animation.duration, draggingBlock.originalEnd + deltaTime));
-                    newStart = Math.round(newStart / 50) * 50;
-                    newEnd = Math.round(newEnd / 50) * 50;
-                    const store = useEditorStore.getState();
-                    store.updateTimelineBlock(block.id, { startTime: newStart, endTime: newEnd });
-                  };
+                    const handleDragMove = (e: React.PointerEvent) => {
+                      if (!draggingBlock || draggingBlock.id !== block.id) return;
+                      const rect = e.currentTarget.parentElement?.getBoundingClientRect();
+                      const width = Math.max(1, rect?.width ?? 300);
+                      const deltaX = e.clientX - draggingBlock.startX;
+                      const deltaTime = (deltaX / width) * animation.duration;
+                      let newStart = Math.max(0, Math.min(animation.duration - 50, draggingBlock.originalStart + deltaTime));
+                      let newEnd = Math.max(newStart + 50, Math.min(animation.duration, draggingBlock.originalEnd + deltaTime));
+                      newStart = Math.round(newStart / 50) * 50;
+                      newEnd = Math.round(newEnd / 50) * 50;
+                      const store = useEditorStore.getState();
+                      store.updateTimelineBlock(block.id, { startTime: newStart, endTime: newEnd });
+                    };
 
-                  const handleDragEnd = (e: React.PointerEvent) => {
-                    setDraggingBlock(null);
-                    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-                  };
+                    const handleDragEnd = (e: React.PointerEvent) => {
+                      setDraggingBlock(null);
+                      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+                    };
 
-                  return (
-                    <div
-                      key={block.id}
-                      className={`absolute top-2.5 h-2.5 rounded-full shadow-inner cursor-grab active:cursor-grabbing transition-all ${isSelected ? "bg-primary ring-1 ring-primary-foreground" : "bg-primary/45 hover:bg-primary/60"}`}
-                      style={{
-                        left: `${leftPct}%`,
-                        width: `${widthPct}%`,
-                      }}
-                      title={`${block.propertyName}: ${block.startTime}-${block.endTime}ms (drag to move)`}
-                      onPointerDown={handleDragStart}
-                      onPointerMove={handleDragMove}
-                      onPointerUp={handleDragEnd}
-                      onPointerCancel={handleDragEnd}
-                    />
-                  );
-                })}
+                    return (
+                      <div
+                        key={block.id}
+                        className={`absolute top-1.5 h-3 rounded-sm cursor-grab active:cursor-grabbing transition-colors ${isSelected ? "bg-primary ring-1 ring-ring" : "bg-primary/60 hover:bg-primary/75"}`}
+                        style={{
+                          left: `${leftPct}%`,
+                          width: `${widthPct}%`,
+                        }}
+                        title={`${block.propertyName}: ${block.startTime}-${block.endTime}ms (drag to move)`}
+                        onPointerDown={handleDragStart}
+                        onPointerMove={handleDragMove}
+                        onPointerUp={handleDragEnd}
+                        onPointerCancel={handleDragEnd}
+                      />
+                    );
+                  })}
             </div>
           ))}
         </div>

@@ -29,6 +29,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editorStore";
+import { DEMO_INFOS } from "@/lib/shapeshifter/demoProjects";
 import { MaterialSymbol } from "./MaterialSymbol";
 import { ExportDialog } from "./ExportDialog";
 import { ThemeToggle } from "../ThemeToggle";
@@ -463,11 +464,11 @@ export function Toolbar({
             Samples
           </DropdownMenuTrigger>
           <DropdownMenuContent className="text-xs">
-            <DropdownMenuItem onClick={() => onLoadSample(0)}>Play → Pause</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onLoadSample(1)}>Menu → Close</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onLoadSample(2)}>Heart → Star</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onLoadSample(3)}>Arrow → Check</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onLoadSample(4)}>Circle → Square</DropdownMenuItem>
+            {DEMO_INFOS.map((demo, index) => (
+              <DropdownMenuItem key={demo.id} onClick={() => onLoadSample(index)}>
+                {demo.title}
+              </DropdownMenuItem>
+            ))}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

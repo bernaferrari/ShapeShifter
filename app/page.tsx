@@ -17,6 +17,7 @@ import {
   exportVectorDrawable,
 } from "@/lib/shapeshifter/exporter";
 import { flattenOriginalProject, isOriginalShapeShifterProject } from "@/lib/shapeshifter/project";
+import { DEMO_INFOS } from "@/lib/shapeshifter/demoProjects";
 import { importLayersFromSvg, importLayersFromVectorDrawable } from "@/lib/shapeshifter/importers";
 import type { Layer } from "@/lib/shapeshifter/types";
 import { Toolbar } from "@/components/editor/Toolbar";
@@ -467,7 +468,8 @@ export default function ShapeShifter2026() {
   const loadSample = (index: number) => {
     const { loadSample: storeLoadSample } = useEditorStore.getState();
     storeLoadSample(index);
-    toast.success("Sample loaded", { description: "Paths updated with beautiful morph preset" });
+    const demo = DEMO_INFOS[((index % DEMO_INFOS.length) + DEMO_INFOS.length) % DEMO_INFOS.length];
+    toast.success("Demo loaded", { description: demo.title });
   };
 
   const togglePlay = () => {
@@ -658,8 +660,8 @@ export default function ShapeShifter2026() {
             >
               <ArrowLeftRight className="mr-2 h-4 w-4" /> Shift Points
             </CommandItem>
-            <CommandItem onSelect={() => runCommand(() => loadSample(2))}>
-              <MaterialSymbol name="favorite" size={16} className="mr-2" /> Load Heart → Star
+            <CommandItem onSelect={() => runCommand(() => loadSample(4))}>
+              <MaterialSymbol name="favorite" size={16} className="mr-2" /> Load Heart break demo
             </CommandItem>
           </CommandGroup>
           <CommandGroup heading="Export">
