@@ -37,9 +37,12 @@ export function CanvasArea({
     isRepeating,
     toolMode,
     setToolMode,
+    layers,
+    selectedLayerId,
   } = useEditorStore();
 
   const compatibility = getCompatibilityStatus();
+  const selectedLayer = layers.find((layer) => layer.id === selectedLayerId);
   const canvasChrome = "rounded-sm border bg-card shadow-lg shadow-black/10 dark:shadow-black/35";
 
   return (
@@ -129,9 +132,9 @@ export function CanvasArea({
           <div className={isActionMode ? "relative flex h-full min-h-0 min-w-0 flex-col justify-center" : "relative flex h-full min-h-0 w-full max-w-[720px] flex-col justify-center"}>
             <div className="mb-2 flex items-center justify-between">
               <div>
-                <div className="text-[13px] font-semibold">Animated preview</div>
+                <div className="text-[13px] font-semibold">Vector canvas</div>
                 <div className="text-xs text-muted-foreground">
-                  {isActionMode ? "Interpolated path" : "Select a layer to edit properties"}
+                  {isActionMode ? "Path morph" : selectedLayer?.name ?? "SVG"}
                 </div>
               </div>
               <div className="flex items-center gap-1.5 bg-muted/50 rounded-lg p-0.5 border border-border">

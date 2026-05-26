@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { parsePath, pathToString, getInterpolatedPath } from "@/lib/shapeshifter/pathUtils";
 import { evaluateBlock } from "@/lib/shapeshifter/interpolators";
-import type { Layer, TimelineBlock } from "@/lib/shapeshifter/types";
+import type { Layer, PathData, TimelineBlock } from "@/lib/shapeshifter/types";
 
 type PointSelection = { subPathIndex: number; commandIndex: number; pointIndex: number };
 type ViewBox = { x: number; y: number; w: number; h: number; scale: number };
@@ -64,9 +64,9 @@ export const PathCanvas = React.memo(function PathCanvas({
     snapToGrid,
     pushHistory,
     updateSelectedPoint,
-    translateSelectedLayer,
     addPointOnPath,
     selectPoint,
+    selectLayer,
     setEditingSide,
     toolMode,
     isActionMode,
@@ -205,7 +205,9 @@ export const PathCanvas = React.memo(function PathCanvas({
   if (!currentLayer) return null;
 
   const isEditingThisSide = side === editingSide;
-  const targetPathData = side === "from" ? currentLayer.from : currentLayer.to;
+  const isPreviewVectorEditing = side === "preview" && !isActionMode;
+  const canEditPoints = isEditingThisSide || isPreviewVectorEditing;
+  const targetPathData = side === "to" ? currentLayer.to : currentLayer.from;
 
   // For preview, we'll use a simple lerp for now (will be replaced by real morph later)
   const getDisplayPath = () => {
@@ -242,19 +244,26 @@ export const PathCanvas = React.memo(function PathCanvas({
         : [],
     [animation.blocks, animation.duration, layers, progress, selectedLayerId, side],
   );
+  const selectedPreviewLayer = previewLayers.find((candidate) => String(candidate.layer.id) === String(selectedLayerId));
+  const selectedPreviewPath = selectedPreviewLayer?.d ?? displayPath;
+  const selectedPreviewTransform = selectedPreviewLayer?.transform;
+  const selectedPathBounds = useMemo(() => getPathBounds(targetPathData), [targetPathData]);
 
   // Dragging logic
   const handlePointerDown = useCallback(
     (e: React.PointerEvent, subPathIndex: number, commandIndex: number, pointIndex: number) => {
-      if (!isEditingThisSide) return;
+      if (!canEditPoints) return;
 
       e.stopPropagation();
       (e.target as SVGElement).setPointerCapture(e.pointerId);
       pushHistory();
+      if (side === "preview") {
+        setEditingSide("from");
+      }
 
       const newSelection = {
         layerId: selectedLayerId,
-        side: editingSide,
+        side: side === "preview" ? "from" as const : editingSide,
         subPathIndex,
         commandIndex,
         pointIndex,
@@ -313,11 +322,13 @@ export const PathCanvas = React.memo(function PathCanvas({
     },
     [
       editingSide,
-      isEditingThisSide,
+      canEditPoints,
       pointFromEvent,
       pushHistory,
       selectedLayerId,
       selectPoint,
+      setEditingSide,
+      side,
       snapToGrid,
       updateSelectedPoint,
     ],
@@ -340,11 +351,13 @@ export const PathCanvas = React.memo(function PathCanvas({
   );
 
   const handlePreviewPathPointerDown = useCallback(
-    (e: React.PointerEvent<SVGPathElement>) => {
+    (e: React.PointerEvent<SVGPathElement>, layerId: string | number = selectedLayerId) => {
       if (side !== "preview" || isActionMode || e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
       (e.currentTarget as SVGPathElement).setPointerCapture(e.pointerId);
+      selectLayer(layerId);
+      setEditingSide("from");
       pushHistory();
 
       let lastX = e.clientX;
@@ -357,7 +370,7 @@ export const PathCanvas = React.memo(function PathCanvas({
         const dy = ((moveEvent.clientY - lastY) / rect.height) * viewBox.h;
         lastX = moveEvent.clientX;
         lastY = moveEvent.clientY;
-        translateSelectedLayer(dx, dy, { recordHistory: false });
+        useEditorStore.getState().translateSelectedLayer(dx, dy, { recordHistory: false });
       };
 
       const handleUp = () => {
@@ -368,7 +381,7 @@ export const PathCanvas = React.memo(function PathCanvas({
       window.addEventListener("pointermove", handleMove);
       window.addEventListener("pointerup", handleUp);
     },
-    [isActionMode, pushHistory, side, translateSelectedLayer, viewBox.h, viewBox.w],
+    [isActionMode, pushHistory, selectLayer, selectedLayerId, setEditingSide, side, viewBox.h, viewBox.w],
   );
 
   const isSelected = (subPathIndex: number, commandIndex: number, pointIndex: number) => {
@@ -509,7 +522,7 @@ export const PathCanvas = React.memo(function PathCanvas({
                   strokeMiterlimit={layer.strokeMiterLimit ?? 4}
                   strokeDasharray={layer.strokeDasharray && layer.strokeDasharray !== "none" ? layer.strokeDasharray : undefined}
                   fillRule={layer.fillType === "evenOdd" ? "evenodd" : "nonzero"}
-                  onPointerDown={String(layer.id) === String(selectedLayerId) ? handlePreviewPathPointerDown : undefined}
+                  onPointerDown={(event) => handlePreviewPathPointerDown(event, layer.id)}
                   pointerEvents={!isActionMode ? "visiblePainted" : undefined}
                 />
               );
@@ -535,7 +548,8 @@ export const PathCanvas = React.memo(function PathCanvas({
 
       {side === "preview" && !isActionMode && (
         <path
-          d={displayPath}
+          d={selectedPreviewPath}
+          transform={selectedPreviewTransform}
           fill="none"
           stroke="transparent"
           strokeWidth={Math.max(strokeWidth, 8)}
@@ -547,7 +561,8 @@ export const PathCanvas = React.memo(function PathCanvas({
 
       {side === "preview" && !isActionMode && (
         <path
-          d={displayPath}
+          d={selectedPreviewPath}
+          transform={selectedPreviewTransform}
           fill="none"
           stroke="hsl(var(--primary))"
           strokeWidth={Math.max(strokeWidth, 2.2) + 1.6}
@@ -559,8 +574,23 @@ export const PathCanvas = React.memo(function PathCanvas({
         />
       )}
 
+      {canEditPoints && selectedPathBounds && (
+        <rect
+          x={selectedPathBounds.x}
+          y={selectedPathBounds.y}
+          width={selectedPathBounds.width}
+          height={selectedPathBounds.height}
+          transform={side === "preview" ? selectedPreviewTransform : undefined}
+          fill="none"
+          stroke="hsl(var(--primary))"
+          strokeWidth={Math.max(ruler.strokeWidth * 1.5, 0.08)}
+          strokeDasharray={`${Math.max(ruler.strokeWidth * 4, 0.25)} ${Math.max(ruler.strokeWidth * 3, 0.18)}`}
+          pointerEvents="none"
+        />
+      )}
+
       {/* Control points + bezier handles (direct mode fidelity - port of original EditPath/handle rendering) */}
-      {isEditingThisSide &&
+      {canEditPoints &&
         commands.map(({ command, subPathIndex, commandIndex }) => {
           const isCubic = command.type === "C";
           const isQuad = command.type === "Q";
@@ -569,12 +599,13 @@ export const PathCanvas = React.memo(function PathCanvas({
             const showHandles = toolMode === "direct" || toolMode === "select";
             if (isHandle && !showHandles) return null;
 
-            const r = isHandle ? 1.2 : 1.6;
-            const fill = isHandle ? "hsl(var(--accent))" : (isSelected(subPathIndex, commandIndex, pointIndex) ? "hsl(var(--primary))" : "hsl(var(--primary))");
-            const strokeW = isHandle ? 1 : 2;
+            const selected = isSelected(subPathIndex, commandIndex, pointIndex);
+            const r = isHandle ? Math.max(viewBox.w * 0.006, 0.16) : Math.max(viewBox.w * 0.008, 0.22);
+            const fill = selected ? "hsl(var(--primary))" : "hsl(var(--background))";
+            const strokeW = Math.max(viewBox.w * 0.0022, 0.08);
 
             return (
-              <g key={`${command.id}-${pointIndex}`}>
+              <g key={`${command.id}-${pointIndex}`} transform={side === "preview" ? selectedPreviewTransform : undefined}>
                 {/* Handle line for cubics (original draws point -> handleIn / handleOut) */}
                 {isCubic && showHandles && pointIndex < 2 && (
                   <line
@@ -583,8 +614,7 @@ export const PathCanvas = React.memo(function PathCanvas({
                     x2={point.x}
                     y2={point.y}
                     stroke="hsl(var(--muted-foreground))"
-                    strokeWidth="0.5"
-                    strokeDasharray="1 1"
+                    strokeWidth={Math.max(viewBox.w * 0.0018, 0.06)}
                     opacity={0.6}
                   />
                 )}
@@ -593,9 +623,9 @@ export const PathCanvas = React.memo(function PathCanvas({
                   cy={point.y}
                   r={r}
                   className={`cursor-grab transition-[fill,stroke,transform] duration-100 ${
-                    isSelected(subPathIndex, commandIndex, pointIndex)
-                      ? "stroke-background stroke-2"
-                      : isHandle ? "stroke-accent/60 hover:stroke-accent" : "stroke-background stroke-2 hover:stroke-accent"
+                    selected
+                      ? "stroke-primary"
+                      : "stroke-primary hover:fill-primary/15"
                   }`}
                   fill={fill}
                   strokeWidth={strokeW}
@@ -603,12 +633,6 @@ export const PathCanvas = React.memo(function PathCanvas({
                     handlePointerDown(e, subPathIndex, commandIndex, pointIndex)
                   }
                 />
-                {/* Small label for handles in direct mode (dev aid, matches original hit distinction) */}
-                {isHandle && toolMode === "direct" && (
-                  <text x={point.x + 2} y={point.y - 2} fontSize="3" fill="hsl(var(--muted-foreground))" opacity="0.7">
-                    {pointIndex === 0 ? "in" : "out"}
-                  </text>
-                )}
               </g>
             );
           });
@@ -651,6 +675,23 @@ function buildTicks(min: number, max: number, interval: number) {
 
 function formatTick(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function getPathBounds(path: PathData) {
+  const points = path.subPaths.flatMap((subPath) => subPath.commands.flatMap((command) => command.points));
+  if (points.length === 0) return null;
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  const maxX = Math.max(...xs);
+  const maxY = Math.max(...ys);
+  return {
+    x: minX,
+    y: minY,
+    width: Math.max(0.01, maxX - minX),
+    height: Math.max(0.01, maxY - minY),
+  };
 }
 
 type PreviewLayer = {
