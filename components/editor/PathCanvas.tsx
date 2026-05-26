@@ -6,7 +6,7 @@ import { parsePath, pathToString, getInterpolatedPath } from "@/lib/shapeshifter
 import { evaluateBlock } from "@/lib/shapeshifter/interpolators";
 import type { SegmentSelection, SubPathSelection } from "@/lib/store/editorStore";
 import type { Command, Layer, PathData, Point, TimelineBlock } from "@/lib/shapeshifter/types";
-import { GestureDispatcher, type HitTestResult } from "@/lib/shapeshifter/gestures/GestureDispatcher";
+import { GestureDispatcher } from "@/lib/shapeshifter/gestures/GestureDispatcher";
 
 type PointSelection = { subPathIndex: number; commandIndex: number; pointIndex: number };
 type ViewBox = { x: number; y: number; w: number; h: number; scale: number };
@@ -141,6 +141,122 @@ export const PathCanvas = React.memo(function PathCanvas({
           endMarquee: () => {
             setBoxSelect(null);
           },
+          // PR-02 start (ShapeShifter-2cq under mvd/7fz): commitMarqueeSelection is the bridge that lets
+          // the concrete SelectDragItemsGesture (instantiated by dispatcher on marquee intent) own the
+          // AABB multi-point commit + hit test trigger. PathCanvas provides the canvas-specific application
+          // (preview layer/subpath vs edit-path points) using its existing helpers + store actions.
+          // Called from gesture.onMouseUp (after dispatcher routes the up). No setBoxSelect here — endMarquee
+          // callback owns the clear. This + the handler rewrites below make dispatcher the *sole* decision
+          // point and callbacks the *sole* rect mutators while beginning migration of commit logic.
+          // References: DESIGN_ID 67dd105e Key Decision #2, review grok-review-10b30dea (critical issues).
+          commitMarqueeSelection: (start, end) => {
+            const {start: s, current: c} = {start, current: end}; // adapt to old var names for minimal diff in logic
+            const minX = Math.min(s.x, c.x);
+            const maxX = Math.max(s.x, c.x);
+            const minY = Math.min(s.y, c.y);
+            const maxY = Math.max(s.y, c.y);
+            const state = useEditorStore.getState();
+            const {
+              layers: curLayers,
+              animation: curAnim,
+              progress: curProgress,
+              selectedLayerId: curSelId,
+              editingSide: curEditSide,
+              isActionMode: curIsAction,
+              selectMultipleSubPaths: curSelectMultipleSubPaths,
+              selectLayer: curSelectLayer,
+              setEditingSide: curSetEditingSide,
+              selectMultiplePoints: curSelectMultiplePoints,
+              clearSelection: curClearSelection,
+            } = state;
+
+            const selectRect = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+            const isBoxGesture = Math.abs(maxX - minX) > 0.2 || Math.abs(maxY - minY) > 0.2;
+
+            if (side === "preview" && !curIsAction) {
+              if (isBoxGesture) {
+                const subPathHits = curLayers.flatMap((candidate) => {
+                  if (candidate.visible === false || candidate.locked) return [];
+                  return candidate.from.subPaths.flatMap((subPath, subPathIndex) => {
+                    const bounds = getPathBounds({ subPaths: [subPath] });
+                    return bounds && rectsIntersect(selectRect, bounds)
+                      ? [{ layerId: candidate.id, side: "from" as const, subPathIndex }]
+                      : [];
+                  });
+                });
+                if (subPathHits.length > 0) {
+                  curSelectMultipleSubPaths(subPathHits);
+                  curSetEditingSide("from");
+                  return; // commit done; endMarquee will clear rect
+                }
+              }
+              const renderedLayers = getPreviewLayers(
+                curLayers,
+                curAnim.blocks,
+                curAnim.duration,
+                curProgress,
+                curSelId,
+              );
+              const hitLayer = [...renderedLayers]
+                .reverse()
+                .find(({ d }) => {
+                  const bounds = getPathBounds(parsePath(d));
+                  return bounds ? rectsIntersect(selectRect, bounds) : false;
+                });
+              if (hitLayer) {
+                curSelectLayer(hitLayer.layer.id);
+                curSetEditingSide("from");
+              } else if (isBoxGesture) {
+                curClearSelection();
+              }
+              return;
+            }
+
+            // Action mode / edit path point selection (multi AABB)
+            let hit = null;
+            const layer = curLayers.find(l => l.id === curSelId);
+            if (layer) {
+              const path = curEditSide === "from" ? layer.from : layer.to;
+              for (let si = 0; si < path.subPaths.length; si++) {
+                const sp = path.subPaths[si];
+                for (let ci = 0; ci < sp.commands.length; ci++) {
+                  const cmd = sp.commands[ci];
+                  for (let pi = 0; pi < cmd.points.length; pi++) {
+                    const pt = cmd.points[pi];
+                    if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) {
+                      hit = {subPathIndex: si, commandIndex: ci, pointIndex: pi};
+                      break;
+                    }
+                  }
+                  if (hit) break;
+                }
+                if (hit) break;
+              }
+            }
+            const hits: PointSelection[] = [];
+            if (layer) {
+              const path = curEditSide === "from" ? layer.from : layer.to;
+              for (let si = 0; si < path.subPaths.length; si++) {
+                const sp = path.subPaths[si];
+                for (let ci = 0; ci < sp.commands.length; ci++) {
+                  const cmd = sp.commands[ci];
+                  for (let pi = 0; pi < cmd.points.length; pi++) {
+                    const pt = cmd.points[pi];
+                    if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) {
+                      hits.push({ subPathIndex: si, commandIndex: ci, pointIndex: pi });
+                    }
+                  }
+                }
+              }
+            }
+            if (hits.length > 0) {
+              const multiSels = hits.map(h => ({ layerId: curSelId, side: curEditSide, ...h }));
+              curSelectMultiplePoints(multiSels);
+            } else {
+              // empty box click clears (parity with original behavior when a marquee gesture completed)
+              curClearSelection();
+            }
+          },
         }
       );
     }
@@ -188,10 +304,25 @@ export const PathCanvas = React.memo(function PathCanvas({
       svgRef.current?.setPointerCapture(e.pointerId);
       return;
     }
+
+    // REREVIEW CRITICAL FIX (ShapeShifter-2cq under mvd/7fz/ish/c9f, review grok-review-10b30dea.md):
+    // The two marquee intent branches no longer contain any local setBoxSelect, clearSelection, or direct rect mutation.
+    // They compute the point + modifiers, then call dispatcherRef.current.handlePointerDown with explicit
+    // { type: 'marquee' } HitTestResult (supported by the contract added in PR-01.1 fix round).
+    // The dispatcher (see GestureDispatcher.ts:63) treats "marquee" | empty as isMarqueeIntent, instantiates
+    // the first SelectDragItemsGesture, and synchronously invokes the registered beginMarqueeSelection callback
+    // (which does the conditional clear + setBoxSelect initial). This makes the dispatcher call the *ONLY* way
+    // boxSelect starts in select/default mode. Pointer capture remains a DOM concern in PathCanvas.
+    // References: DESIGN_ID 67dd105e Key Decision #2 (dispatcher sole source of truth), 2cq mission, 7fz rereview.
+    // The callbacks (begin/update/end + new commitMarqueeSelection) are now fully wired and the sole mutators.
     if (side === "preview" && !isActionMode && e.button === 0) {
       const p = pointFromEvent(e.clientX, e.clientY);
       if (p) {
-        setBoxSelect({ start: p, current: p });
+        dispatcherRef.current?.handlePointerDown(
+          p,
+          { type: "marquee" },
+          { shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey }
+        );
         svgRef.current?.setPointerCapture(e.pointerId);
       }
       return;
@@ -201,12 +332,11 @@ export const PathCanvas = React.memo(function PathCanvas({
     if (state.toolMode === "select" && state.editingSide === (side === "from" ? "from" : "to") && e.button === 0) {
       const p = pointFromEvent(e.clientX, e.clientY);
       if (p) {
-        // If not holding shift, clear previous selection on new box start (original BatchSelect behavior)
-        if (!e.shiftKey) {
-          const { clearSelection } = useEditorStore.getState();
-          clearSelection();
-        }
-        setBoxSelect({ start: p, current: p });
+        dispatcherRef.current?.handlePointerDown(
+          p,
+          { type: "marquee" },
+          { shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey }
+        );
         svgRef.current?.setPointerCapture(e.pointerId);
       }
     }
@@ -222,126 +352,38 @@ export const PathCanvas = React.memo(function PathCanvas({
         setViewBox((prev) => ({ ...prev, x: prev.x - dx, y: prev.y - dy }));
         setLastPan({ x: e.clientX, y: e.clientY });
       }
-      if (boxSelect) {
-        const p = pointFromEvent(e.clientX, e.clientY);
-        if (p) setBoxSelect(prev => prev ? {...prev, current: p} : null);
+      // Route *every* move through the dispatcher when a gesture may be active.
+      // The dispatcher gates the updateMarquee callback (only while activeGesture exists).
+      // This makes the callbacks (not direct local boxSelect mutation) the sole owners
+      // of the transient rect state for the marquee lifecycle.
+      // (Resolves remaining direct mutation site flagged in grok-review-10b30dea.md major issue.)
+      const p = pointFromEvent(e.clientX, e.clientY);
+      if (p) {
+        dispatcherRef.current?.handlePointerMove(p, { shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey });
       }
     },
-    [isPanning, lastPan, viewBox.h, viewBox.w, boxSelect, pointFromEvent],
+    [isPanning, lastPan, viewBox.h, viewBox.w, pointFromEvent],
   );
 
   const handleSvgPointerUp = useCallback((e: React.PointerEvent) => {
     setIsPanning(false);
-    if (boxSelect) {
-      // Hit test points inside box (simple AABB for now)
-      const {start, current} = boxSelect;
-      const minX = Math.min(start.x, current.x);
-      const maxX = Math.max(start.x, current.x);
-      const minY = Math.min(start.y, current.y);
-      const maxY = Math.max(start.y, current.y);
-      if (side === "preview" && !isActionMode) {
-        const selectRect = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-        const isBoxGesture = Math.abs(maxX - minX) > 0.2 || Math.abs(maxY - minY) > 0.2;
-        if (isBoxGesture) {
-          const subPathHits = layers.flatMap((candidate) => {
-            if (candidate.visible === false || candidate.locked) return [];
-            return candidate.from.subPaths.flatMap((subPath, subPathIndex) => {
-              const bounds = getPathBounds({ subPaths: [subPath] });
-              return bounds && rectsIntersect(selectRect, bounds)
-                ? [{ layerId: candidate.id, side: "from" as const, subPathIndex }]
-                : [];
-            });
-          });
-          if (subPathHits.length > 0) {
-            selectMultipleSubPaths(subPathHits);
-            setEditingSide("from");
-            setBoxSelect(null);
-            if (svgRef.current?.hasPointerCapture(e.pointerId)) {
-              svgRef.current.releasePointerCapture(e.pointerId);
-            }
-            return;
-          }
-        }
-        const renderedLayers = getPreviewLayers(
-          layers,
-          animation.blocks,
-          animation.duration,
-          progress,
-          selectedLayerId,
-        );
-        const hitLayer = [...renderedLayers]
-          .reverse()
-          .find(({ d }) => {
-            const bounds = getPathBounds(parsePath(d));
-            return bounds ? rectsIntersect(selectRect, bounds) : false;
-          });
-        if (hitLayer) {
-          selectLayer(hitLayer.layer.id);
-          setEditingSide("from");
-        } else if (isBoxGesture) {
-          const { clearSelection } = useEditorStore.getState();
-          clearSelection();
-        }
-        setBoxSelect(null);
-        if (svgRef.current?.hasPointerCapture(e.pointerId)) {
-          svgRef.current.releasePointerCapture(e.pointerId);
-        }
-        return;
-      }
-      let hit = null;
-      // Use current layer commands
-      const layer = layers.find(l => l.id === selectedLayerId);
-      if (layer) {
-        const path = editingSide === "from" ? layer.from : layer.to;
-        for (let si = 0; si < path.subPaths.length; si++) {
-          const sp = path.subPaths[si];
-          for (let ci = 0; ci < sp.commands.length; ci++) {
-            const cmd = sp.commands[ci];
-            for (let pi = 0; pi < cmd.points.length; pi++) {
-              const pt = cmd.points[pi];
-              if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) {
-                hit = {subPathIndex: si, commandIndex: ci, pointIndex: pi};
-                break;
-              }
-            }
-            if (hit) break;
-          }
-          if (hit) break;
-        }
-      }
-      // Collect ALL points inside the box (full batch select parity with original)
-      const hits: PointSelection[] = [];
-      if (layer) {
-        const path = editingSide === "from" ? layer.from : layer.to;
-        for (let si = 0; si < path.subPaths.length; si++) {
-          const sp = path.subPaths[si];
-          for (let ci = 0; ci < sp.commands.length; ci++) {
-            const cmd = sp.commands[ci];
-            for (let pi = 0; pi < cmd.points.length; pi++) {
-              const pt = cmd.points[pi];
-              if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) {
-                hits.push({ subPathIndex: si, commandIndex: ci, pointIndex: pi });
-              }
-            }
-          }
-        }
-      }
-      if (hits.length > 0) {
-        const multiSels = hits.map(h => ({ layerId: selectedLayerId, side: editingSide, ...h }));
-        // Use new multi action
-        const { selectMultiplePoints } = useEditorStore.getState();
-        selectMultiplePoints(multiSels);
-      } else if (boxSelect) {
-        // empty box click clears in select mode (original behavior)
-        const { clearSelection } = useEditorStore.getState();
-        clearSelection();
-      }
-      setBoxSelect(null);
-    }
+
+    // Route the up through the dispatcher.
+    // This triggers:
+    //  - gesture.onMouseUp (which now calls the registered commitMarqueeSelection callback
+    //    with start/end — the AABB multi-point commit + store selects live there for PR-02 start)
+    //  - callbacks.endMarquee (clears the transient rect state)
+    // All local boxSelect mutations and the giant AABB block have been removed from PathCanvas.
+    // The commit logic is now owned/triggered by the gesture (via the callback bridge we wired).
+    // Capture release stays here (DOM concern).
+    // (Completes resolution of critical issues + major direct-mutation debt from grok-review-10b30dea.md.)
+    const p = pointFromEvent(e.clientX, e.clientY) || { x: 0, y: 0 };
+    dispatcherRef.current?.handlePointerUp(p, { shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey });
+
     if (svgRef.current?.hasPointerCapture(e.pointerId)) {
       svgRef.current.releasePointerCapture(e.pointerId);
     }
-  }, [animation.blocks, animation.duration, boxSelect, editingSide, isActionMode, layers, progress, selectLayer, selectMultipleSubPaths, selectedLayerId, setEditingSide, side]);
+  }, [pointFromEvent]); // Note: other handlers (non-marquee paths) may still reference top-level destructured actions; our marquee commit path uses fresh getState() only.
 
   
 

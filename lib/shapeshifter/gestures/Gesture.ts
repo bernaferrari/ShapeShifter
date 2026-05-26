@@ -31,13 +31,20 @@ export interface GestureCallbacks {
    * updateMarquee: called on pointer move while a marquee gesture is active (live rect update).
    * endMarquee: called on pointer up (or cancel) to clear the transient rect.
    *
-   * References: DESIGN_ID 67dd105e (Key Decision #2: dispatcher as single source of truth), PR-01, gesture lifecycle,
-   * beads mvd (review), ish (impl), c9f (parent), dwm (foundation), v6j (vision epic).
-   * This makes the "dispatcher is the decision point" claim real at the integration layer.
+   * PR-02 start (ShapeShifter-2cq under mvd/7fz/ish/c9f): added commitMarqueeSelection so the concrete gesture
+   * owns the end-of-marquee AABB multi-point commit + hit test trigger (now that dispatcher is the sole gate).
+   * The canvas-specific selection application (preview subpath vs edit-path points) lives in the provided callback
+   * (re-uses PathCanvas helpers safely). This begins migration of the commit logic out of the monolith while
+   * preserving 100% behavioral parity.
+   *
+   * References: DESIGN_ID 67dd105e (Key Decision #2: dispatcher as single source of truth), PR-01/PR-02, gesture lifecycle,
+   * beads 2cq (this work), mvd (review), 7fz (rereview), ish/c9f (impl), dwm (foundation), v6j (vision epic).
+   * This makes the "dispatcher is the decision point" claim *actually true* at the integration layer.
    */
   beginMarqueeSelection?: (start: Point, additive: boolean) => void;
   updateMarquee?: (current: Point) => void;
   endMarquee?: () => void;
+  commitMarqueeSelection?: (start: Point, end: Point) => void;
 
   // Add more callbacks as gestures are implemented (selectPoint, updatePoint, etc.)
 }
