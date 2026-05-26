@@ -6,6 +6,7 @@ import { parsePath, pathToString, getInterpolatedPath } from "@/lib/shapeshifter
 import { evaluateBlock } from "@/lib/shapeshifter/interpolators";
 import type { SegmentSelection, SubPathSelection } from "@/lib/store/editorStore";
 import type { Command, Layer, PathData, Point, TimelineBlock } from "@/lib/shapeshifter/types";
+import { GestureDispatcher, type HitTestResult } from "@/lib/shapeshifter/gestures/GestureDispatcher";
 
 type PointSelection = { subPathIndex: number; commandIndex: number; pointIndex: number };
 type ViewBox = { x: number; y: number; w: number; h: number; scale: number };
@@ -39,6 +40,12 @@ export const PathCanvas = React.memo(function PathCanvas({
   const svgRef = useRef<SVGSVGElement>(null);
   const gridId = React.useId();
   const suppressNextZoomSync = useRef(false);
+
+  // GestureDispatcher (PR-01.1 / ShapeShifter-ish fix round xwx under mvd).
+  // The ref that owns the decision logic for canvas interactions (Key Decision #2).
+  // Created once, context kept fresh via useEffect below so BottomToolPalette + keyboard
+  // tool switches (v/p/d) actually affect gesture behavior.
+  const dispatcherRef = useRef<GestureDispatcher | null>(null);
 
   const [viewBox, setViewBox] = React.useState<ViewBox>({ x: 0, y: 0, w: 48, h: 48, scale: 1 });
   const [isPanning, setIsPanning] = React.useState(false);
@@ -109,6 +116,37 @@ export const PathCanvas = React.memo(function PathCanvas({
       scale,
     });
   }, [artboard.baseViewSize, artboard.centerX, artboard.centerY, resetKey, zoom]);
+
+  // Create the dispatcher once (lazy, stable ref) and keep its context fresh.
+  // The 3 marquee callbacks are the bridge that lets the dispatcher/gesture own the
+  // decision + lifecycle while PathCanvas owns only the transient rect rendering.
+  // This + the handler restructure below makes the dispatcher the actual decision point.
+  useEffect(() => {
+    if (!dispatcherRef.current) {
+      dispatcherRef.current = new GestureDispatcher(
+        { toolMode, editingSide, snapToGrid, zoom },
+        {
+          setCursor: () => {}, // transient marquee does not change cursor in this slice (parity)
+          pushHistory,
+          beginMarqueeSelection: (start, additive) => {
+            if (!additive) {
+              const { clearSelection } = useEditorStore.getState();
+              clearSelection();
+            }
+            setBoxSelect({ start, current: start });
+          },
+          updateMarquee: (p) => {
+            setBoxSelect((prev) => (prev ? { ...prev, current: p } : null));
+          },
+          endMarquee: () => {
+            setBoxSelect(null);
+          },
+        }
+      );
+    }
+    // Always sync context when relevant store values change (BottomToolPalette, keyboard, etc.)
+    dispatcherRef.current?.updateContext({ toolMode, editingSide, snapToGrid, zoom });
+  }, [toolMode, editingSide, snapToGrid, zoom, pushHistory]);
 
   const pointFromEvent = useCallback(
     (clientX: number, clientY: number) => {

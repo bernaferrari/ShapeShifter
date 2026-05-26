@@ -18,6 +18,27 @@ export interface GestureContext {
 export interface GestureCallbacks {
   setCursor: (cursor: CursorType) => void;
   pushHistory: () => void;
+
+  /**
+   * Transient marquee (box select) visual lifecycle callbacks.
+   * PR-01.1 / ShapeShifter-ish (fix round under mvd/xwx): these allow the GestureDispatcher + concrete SelectDragItemsGesture
+   * to own the *decision* and lifecycle for marquee start (when toolMode is select/default), while PathCanvas retains
+   * ownership of the actual rect rendering + pointer capture (correct separation; no store pollution for transient UI).
+   * 
+   * beginMarqueeSelection: called by dispatcher on pointer down when it decides this is a marquee intent.
+   *   - start: the initial point (in artboard coords)
+   *   - additive: whether shift was held (do not clear prior selection)
+   * updateMarquee: called on pointer move while a marquee gesture is active (live rect update).
+   * endMarquee: called on pointer up (or cancel) to clear the transient rect.
+   *
+   * References: DESIGN_ID 67dd105e (Key Decision #2: dispatcher as single source of truth), PR-01, gesture lifecycle,
+   * beads mvd (review), ish (impl), c9f (parent), dwm (foundation), v6j (vision epic).
+   * This makes the "dispatcher is the decision point" claim real at the integration layer.
+   */
+  beginMarqueeSelection?: (start: Point, additive: boolean) => void;
+  updateMarquee?: (current: Point) => void;
+  endMarquee?: () => void;
+
   // Add more callbacks as gestures are implemented (selectPoint, updatePoint, etc.)
 }
 

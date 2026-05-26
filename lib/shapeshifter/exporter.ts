@@ -5,12 +5,15 @@
 
 import type { AnimationState, Layer, PathData, VectorMetadata } from "./types";
 import { getInterpolatedPath, pathToString } from "./pathUtils";
+import { evaluateInterpolator, INTERPOLATOR_KEYSPLINES } from "./interpolators";
 
 export interface ExportOptions {
   duration?: number; // in seconds
   fps?: number; // frames per second for baked animation
   width?: number;
   height?: number;
+  viewBoxWidth?: number; // coordinate-space width (default: 24)
+  viewBoxHeight?: number; // coordinate-space height (default: 24)
   loop?: boolean;
   strokeWidth?: number;
   fromColor?: string;
@@ -33,6 +36,8 @@ export function exportAnimatedSVG(
     duration = 1.2,
     width = 512,
     height = 512,
+    viewBoxWidth = 24,
+    viewBoxHeight = 24,
     loop = true,
     strokeWidth = 2.5,
     fromColor = "#3b82f6",
@@ -43,93 +48,82 @@ export function exportAnimatedSVG(
   const fromD = pathToString(fromPath);
   const toD = pathToString(toPath);
 
-  // Generate a few keyframe samples for the embedded animator
-  const keyframes = 12;
-  const keyframeData: string[] = [];
-  for (let i = 0; i <= keyframes; i++) {
-    const t = i / keyframes;
-    const interp = getInterpolatedPath(fromPath, toPath, t);
-    keyframeData.push(`"${interp}"`);
-  }
+  // Extract numeric values from both d-strings for real per-frame interpolation
+  const numRegex = /[-+]?(?:\d*\.)?\d+(?:e[-+]?\d+)?/gi;
+  const fromNums = fromD.match(numRegex)?.map(Number) ?? [];
+  const toNums = toD.match(numRegex)?.map(Number) ?? [];
+  // Build a template by replacing numbers with placeholders
+  let placeholderIdx = 0;
+  const template = fromD.replace(numRegex, () => `#${placeholderIdx++}#`);
+
+  const vbW = viewBoxWidth;
+  const vbH = viewBoxHeight;
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 48 48">
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${vbW} ${vbH}">
   <defs>
     <style>
       .path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
-      .label { font-family: system-ui, -apple-system, sans-serif; font-size: 2.2px; fill: #64748b; }
+      .label { font-family: system-ui, -apple-system, sans-serif; font-size: ${(vbH / 24) * 2.2}px; fill: #64748b; }
     </style>
   </defs>
 
   <!-- Background -->
-  <rect x="0" y="0" width="48" height="48" fill="#0f172a" rx="4"/>
+  <rect x="0" y="0" width="${vbW}" height="${vbH}" fill="#0f172a" rx="${vbW / 12}"/>
 
   <!-- From path (subtle) -->
-  <path id="from" d="${fromD}" class="path" 
+  <path id="from" d="${fromD}" class="path"
         stroke="${fromColor}" stroke-width="${strokeWidth * 0.7}" opacity="0.35"/>
 
   <!-- To path (subtle) -->
-  <path id="to" d="${toD}" class="path" 
+  <path id="to" d="${toD}" class="path"
         stroke="${toColor}" stroke-width="${strokeWidth * 0.7}" opacity="0.35"/>
 
-  <!-- Main morphing path (the star) -->
-  <path id="morph" d="${fromD}" class="path" 
+  <!-- Main morphing path -->
+  <path id="morph" d="${fromD}" class="path"
         stroke="${morphColor}" stroke-width="${strokeWidth}"/>
-
-  <!-- Labels -->
-  <text x="4" y="5.5" class="label">FROM</text>
-  <text x="22" y="5.5" class="label">MORPH</text>
-  <text x="40" y="5.5" class="label" text-anchor="end">TO</text>
 
   <script>
     (function() {
-      const svg = document.currentScript.ownerSVGElement;
-      const morph = svg.getElementById('morph');
-      
-      const keyframes = [${keyframeData.join(",")}];
-      const duration = ${duration};
-      const loop = ${loop};
-      
-      let startTime = null;
-      let frame = 0;
+      var svg = document.currentScript.ownerSVGElement;
+      var morph = svg.getElementById('morph');
+      var from = [${fromNums.join(",")}];
+      var to = [${toNums.join(",")}];
+      var tpl = ${JSON.stringify(template)};
+      var dur = ${duration};
+      var loop = ${loop};
+      var startTime = null;
 
-      function animate(timestamp) {
-        if (!startTime) startTime = timestamp;
-        const elapsed = (timestamp - startTime) / 1000;
-        let t = (elapsed % duration) / duration;
-        
-        if (!loop && elapsed > duration) t = 1;
-
-        // Smooth interpolation between keyframes
-        const progress = t * (keyframes.length - 1);
-        const index = Math.floor(progress);
-        const frac = progress - index;
-        
-        const a = keyframes[Math.min(index, keyframes.length - 1)];
-        const b = keyframes[Math.min(index + 1, keyframes.length - 1)];
-        
-        // Simple linear blend between two d strings (works well for compatible paths)
-        // For production you would use the full structured interpolator
-        morph.setAttribute('d', a); // fallback
-
-        // Better: use requestAnimationFrame with our interpolation
-        // Since we embedded the data, we use a simple lerp approximation here
-        const nextD = frac < 0.5 ? a : b;
-        morph.setAttribute('d', nextD);
-
-        if (loop || elapsed < duration) {
-          requestAnimationFrame(animate);
-        }
+      // Cubic-bezier easing (FAST_OUT_SLOW_IN)
+      function ease(t) {
+        // Attempt fast cubic-bezier(0.4, 0, 0.2, 1) via sample table
+        var x1=0.4,y1=0,x2=0.2,y2=1;
+        var lo=0,hi=1,mid;
+        for(var i=0;i<16;i++){mid=(lo+hi)/2;var x=3*(1-mid)*(1-mid)*mid*x1+3*(1-mid)*mid*mid*x2+mid*mid*mid;if(x<t)lo=mid;else hi=mid;}
+        return 3*(1-mid)*(1-mid)*mid*y1+3*(1-mid)*mid*mid*y2+mid*mid*mid;
       }
 
-      // Start animation
-      requestAnimationFrame(animate);
+      function lerp(t) {
+        var i = 0;
+        return tpl.replace(/#\\d+#/g, function() {
+          var v = from[i] + (to[i] - from[i]) * t;
+          i++;
+          return v.toFixed(3);
+        });
+      }
 
-      // Bonus: click to restart
-      svg.addEventListener('click', () => {
-        startTime = null;
-        requestAnimationFrame(animate);
-      });
+      function animate(ts) {
+        if (!startTime) startTime = ts;
+        var elapsed = (ts - startTime) / 1000;
+        var rawT = (elapsed % dur) / dur;
+        if (!loop && elapsed > dur) rawT = 1;
+        var t = ease(rawT);
+        morph.setAttribute('d', lerp(t));
+        if (loop || elapsed < dur) requestAnimationFrame(animate);
+      }
+
+      requestAnimationFrame(animate);
+      svg.addEventListener('click', function() { startTime = null; requestAnimationFrame(animate); });
     })();
   </script>
 </svg>`;
@@ -230,7 +224,7 @@ function styleAttrs(layer: Layer) {
 }
 
 export function exportStaticSVG(layers: Layer[], options: ExportOptions = {}) {
-  const { width = 512, height = 512 } = options;
+  const { width = 512, height = 512, viewBoxWidth = 24, viewBoxHeight = 24 } = options;
   const paths = layers
     .filter((layer) => layer.visible !== false && layer.type !== "group")
     .map((layer) => {
@@ -242,18 +236,18 @@ export function exportStaticSVG(layers: Layer[], options: ExportOptions = {}) {
     .join("\n");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 48 48">
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${viewBoxWidth} ${viewBoxHeight}">
 ${paths}
 </svg>
 `;
 }
 
 export function exportSvgSpritesheet(layer: Layer, options: ExportOptions = {}) {
-  const { width = 512, height = 512, fps = 10, duration = 1.2 } = options;
+  const { width = 512, height = 512, viewBoxWidth = 24, viewBoxHeight = 24, fps = 10, duration = 1.2 } = options;
   const frameCount = Math.max(2, Math.round(fps * duration));
   const frames = Array.from({ length: frameCount }, (_, index) => {
     const t = frameCount === 1 ? 0 : index / (frameCount - 1);
-    const translateX = index * 48;
+    const translateX = index * viewBoxWidth;
     const d = getInterpolatedPath(layer.from, layer.to, t);
     return `  <g id="${escapeXml(safeName(layer.name))}_frame_${index}" transform="translate(${translateX} 0)">
     <path d="${escapeXml(d)}" ${styleAttrs(layer)} />
@@ -261,22 +255,22 @@ export function exportSvgSpritesheet(layer: Layer, options: ExportOptions = {}) 
   }).join("\n");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${width * frameCount}" height="${height}" viewBox="0 0 ${48 * frameCount} 48">
+<svg xmlns="http://www.w3.org/2000/svg" width="${width * frameCount}" height="${height}" viewBox="0 0 ${viewBoxWidth * frameCount} ${viewBoxHeight}">
 ${frames}
 </svg>
 `;
 }
 
 export function exportVectorDrawable(layer: Layer, options: ExportOptions = {}) {
-  const { width = 48, height = 48 } = options;
+  const { width = 48, height = 48, viewBoxWidth = 24, viewBoxHeight = 24 } = options;
   const d = pathToString(layer.from);
   const fill = layer.fillColor || "@android:color/transparent";
   const stroke = layer.strokeColor || "";
   return `<vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="${width}dp"
     android:height="${height}dp"
-    android:viewportWidth="48"
-    android:viewportHeight="48">
+    android:viewportWidth="${viewBoxWidth}"
+    android:viewportHeight="${viewBoxHeight}">
   <path
       android:name="${escapeXml(safeName(layer.name))}"
       android:pathData="${escapeXml(d)}"
@@ -317,60 +311,116 @@ ${exportVectorDrawable(layer, options)}
     android:propertyName="pathData"
     android:valueFrom="${escapeXml(fromD)}"
     android:valueTo="${escapeXml(toD)}"
-    android:valueType="pathType" />
+    android:valueType="pathType"
+    android:interpolator="@android:interpolator/fast_out_slow_in" />
 `;
 }
 
 /**
- * Basic Lottie JSON stub for the morph (2026 format).
- * Real production Lottie would require full layer/shape structure.
+ * Lottie export with proper Bézier in/out tangent handles.
+ * Correctly distinguishes vertices (endpoints) from control points (tangents).
+ * Supports cubic bezier, quadratic (converted to cubic), and line segments.
  */
-/**
- * Production-grade Lottie export for morphing paths.
- * Generates a real shape layer with animated path data between "from" and "to".
- */
-/**
- * High-quality Lottie export for ShapeShifter morphs.
- * Produces a clean, modern Lottie file with animated shape + stroke.
- */
-export function exportLottie(fromPath: PathData, toPath: PathData, name: string, duration = 1.2) {
+function hexToLottieRgba(hex: string, alpha = 1): [number, number, number, number] {
+  const m = hex.match(/^#?([0-9a-f]{3,8})$/i);
+  if (!m) return [0, 0, 0, alpha];
+  let h = m[1];
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  const r = parseInt(h.slice(0, 2), 16) / 255;
+  const g = parseInt(h.slice(2, 4), 16) / 255;
+  const b = parseInt(h.slice(4, 6), 16) / 255;
+  return [r, g, b, alpha];
+}
+
+export function exportLottie(
+  fromPath: PathData,
+  toPath: PathData,
+  name: string,
+  duration = 1.2,
+  layer?: Layer,
+) {
   const w = 512;
   const h = 512;
   const fr = 30;
   const op = Math.round(duration * fr);
+  const sx = w / 24;
+  const sy = h / 24;
 
-  const extractVerts = (path: PathData) => {
+  const extractShape = (path: PathData) => {
     const verts: number[][] = [];
-    path.subPaths.forEach((sp) => {
-      sp.commands.forEach((cmd) => {
-        cmd.points.forEach((p) => {
-          verts.push([p.x * (w / 24), p.y * (h / 24)]);
-        });
-      });
-    });
-    return verts.length
-      ? verts
-      : [
-          [140, 140],
-          [200, 140],
-          [200, 200],
-          [140, 200],
-        ];
+    const inT: number[][] = [];
+    const outT: number[][] = [];
+    let closed = false;
+
+    for (const sp of path.subPaths) {
+      for (const cmd of sp.commands) {
+        if (cmd.type === "M" && cmd.points.length > 0) {
+          const p = cmd.points[0];
+          verts.push([p.x * sx, p.y * sy]);
+          inT.push([0, 0]);
+          outT.push([0, 0]);
+        } else if (cmd.type === "L" && cmd.points.length > 0) {
+          const p = cmd.points[cmd.points.length - 1];
+          verts.push([p.x * sx, p.y * sy]);
+          inT.push([0, 0]);
+          outT.push([0, 0]);
+        } else if (cmd.type === "C" && cmd.points.length === 3) {
+          const [cp1, cp2, end] = cmd.points;
+          const prevIdx = verts.length - 1;
+          if (prevIdx >= 0) {
+            const prev = verts[prevIdx];
+            outT[prevIdx] = [cp1.x * sx - prev[0], cp1.y * sy - prev[1]];
+          }
+          verts.push([end.x * sx, end.y * sy]);
+          inT.push([cp2.x * sx - end.x * sx, cp2.y * sy - end.y * sy]);
+          outT.push([0, 0]);
+        } else if (cmd.type === "Q" && cmd.points.length === 2) {
+          // Convert quadratic to cubic tangents
+          const [cp, end] = cmd.points;
+          const prevIdx = verts.length - 1;
+          if (prevIdx >= 0) {
+            const prev = verts[prevIdx];
+            const cp1x = prev[0] + (2 / 3) * (cp.x * sx - prev[0]);
+            const cp1y = prev[1] + (2 / 3) * (cp.y * sy - prev[1]);
+            outT[prevIdx] = [cp1x - prev[0], cp1y - prev[1]];
+          }
+          const ex = end.x * sx;
+          const ey = end.y * sy;
+          verts.push([ex, ey]);
+          inT.push([(2 / 3) * (cp.x * sx - ex), (2 / 3) * (cp.y * sy - ey)]);
+          outT.push([0, 0]);
+        } else if (cmd.type === "Z") {
+          closed = true;
+        }
+      }
+    }
+
+    if (verts.length === 0) {
+      verts.push([140, 140], [200, 140], [200, 200], [140, 200]);
+      inT.push([0, 0], [0, 0], [0, 0], [0, 0]);
+      outT.push([0, 0], [0, 0], [0, 0], [0, 0]);
+      closed = true;
+    }
+
+    return { v: verts, i: inT, o: outT, c: closed };
   };
 
-  const fromVerts = extractVerts(fromPath);
-  const toVerts = extractVerts(toPath);
+  const fromShape = extractShape(fromPath);
+  const toShape = extractShape(toPath);
 
-  // Simple padding for compatibility
-  while (fromVerts.length < toVerts.length) fromVerts.push([...fromVerts[fromVerts.length - 1]]);
-  while (toVerts.length < fromVerts.length) toVerts.push([...toVerts[toVerts.length - 1]]);
-
-  const makeShape = (verts: number[][]) => ({
-    i: verts.map(() => [0, 0]),
-    o: verts.map(() => [0, 0]),
-    v: verts,
-    c: true,
-  });
+  // Pad shorter shape for compatibility
+  while (fromShape.v.length < toShape.v.length) {
+    const last = fromShape.v[fromShape.v.length - 1];
+    fromShape.v.push([...last]);
+    fromShape.i.push([0, 0]);
+    fromShape.o.push([0, 0]);
+  }
+  while (toShape.v.length < fromShape.v.length) {
+    const last = toShape.v[toShape.v.length - 1];
+    toShape.v.push([...last]);
+    toShape.i.push([0, 0]);
+    toShape.o.push([0, 0]);
+  }
 
   return {
     v: "5.9.0",
@@ -404,27 +454,51 @@ export function exportLottie(fromPath: PathData, toPath: PathData, name: string,
                 ty: "sh",
                 nm: "Path",
                 ks: {
-                  a: 0,
+                  a: 1,
                   k: [
-                    { t: 0, s: [makeShape(fromVerts)] },
-                    { t: op, s: [makeShape(toVerts)] },
+                    { t: 0, s: [fromShape] },
+                    { t: op, s: [toShape] },
                   ],
                 },
               },
-              {
-                ty: "st",
-                nm: "Stroke",
-                c: { a: 0, k: [0.25, 0.45, 0.95, 1] },
-                w: { a: 0, k: 5 },
-                lc: 2,
-                lj: 2,
-              },
-              {
-                ty: "fl",
-                nm: "Fill",
-                c: { a: 0, k: [0.2, 0.35, 0.85, 0.15] },
-                o: { a: 0, k: 100 },
-              },
+              ...(layer?.strokeColor
+                ? [
+                    {
+                      ty: "st",
+                      nm: "Stroke",
+                      c: { a: 0, k: hexToLottieRgba(layer.strokeColor, layer.strokeAlpha ?? 1) },
+                      w: { a: 0, k: (layer.strokeWidth ?? 2) * sx },
+                      lc: layer.strokeLinecap === "round" ? 2 : layer.strokeLinecap === "square" ? 3 : 1,
+                      lj: layer.strokeLinejoin === "round" ? 2 : layer.strokeLinejoin === "bevel" ? 3 : 1,
+                    },
+                  ]
+                : [
+                    {
+                      ty: "st",
+                      nm: "Stroke",
+                      c: { a: 0, k: [0.25, 0.45, 0.95, 1] },
+                      w: { a: 0, k: 5 },
+                      lc: 2,
+                      lj: 2,
+                    },
+                  ]),
+              ...(layer?.fillColor
+                ? [
+                    {
+                      ty: "fl",
+                      nm: "Fill",
+                      c: { a: 0, k: hexToLottieRgba(layer.fillColor, 1) },
+                      o: { a: 0, k: (layer.fillAlpha ?? 1) * 100 },
+                    },
+                  ]
+                : [
+                    {
+                      ty: "fl",
+                      nm: "Fill",
+                      c: { a: 0, k: [0.2, 0.35, 0.85, 0.15] },
+                      o: { a: 0, k: 100 },
+                    },
+                  ]),
               {
                 ty: "tr",
                 p: { a: 0, k: [0, 0] },
@@ -439,8 +513,8 @@ export function exportLottie(fromPath: PathData, toPath: PathData, name: string,
   };
 }
 
-export function downloadLottie(from: PathData, to: PathData, layerName: string) {
-  const lottieObj = exportLottie(from, to, layerName);
+export function downloadLottie(from: PathData, to: PathData, layerName: string, layer?: Layer) {
+  const lottieObj = exportLottie(from, to, layerName, 1.2, layer);
   const json = JSON.stringify(lottieObj, null, 2);
   const blob = new Blob([json], { type: "application/json" });
   const url = URL.createObjectURL(blob);
