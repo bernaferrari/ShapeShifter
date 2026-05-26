@@ -33,6 +33,7 @@ export const PathCanvas = React.memo(function PathCanvas({
   const [isPanning, setIsPanning] = React.useState(false);
   const [lastPan, setLastPan] = React.useState({ x: 0, y: 0 });
   const [boxSelect, setBoxSelect] = React.useState<null | {start: {x:number; y:number}; current: {x:number; y:number}}>(null);
+  const [isVectorEditing, setIsVectorEditing] = React.useState(false);
   // For batch multi-point drag: track last known position of the primary drag point to compute uniform deltas
   const [dragSession, setDragSession] = React.useState<null | { lastX: number; lastY: number; primarySel: PointSelection | null }>(null);
 
@@ -52,7 +53,9 @@ export const PathCanvas = React.memo(function PathCanvas({
     selectPoint,
     selectLayer,
     setEditingSide,
+    updateSelectedLayer,
     resizeSelectedLayer,
+    deleteLayer,
     toolMode,
     isActionMode,
   } = useEditorStore();
@@ -264,7 +267,7 @@ export const PathCanvas = React.memo(function PathCanvas({
   if (!currentLayer) return null;
 
   const isEditingThisSide = side === editingSide;
-  const isPreviewVectorEditing = false;
+  const isPreviewVectorEditing = side === "preview" && isVectorEditing && !isActionMode;
   const canEditPoints = isEditingThisSide || isPreviewVectorEditing;
   const targetPathData = side === "to" ? currentLayer.to : currentLayer.from;
 
@@ -317,9 +320,14 @@ export const PathCanvas = React.memo(function PathCanvas({
   const rulerOffset = Math.max(viewBox.w * 0.012, 0.42);
   const selectionStrokeWidth = side === "preview" ? 1.1 : Math.max(ruler.strokeWidth * 1.15, 0.06);
   const selectionHandleRadius = Math.min(Math.max(viewBox.w * 0.008, 0.2), 0.34);
+  const rotationHandleDistance = Math.min(Math.max(viewBox.w * 0.04, 0.9), 1.6);
   const resizeHandles = useMemo(
     () => (selectedLayerBounds ? getResizeHandles(selectedLayerBounds) : []),
     [selectedLayerBounds],
+  );
+  const rotationHandle = useMemo(
+    () => (selectedLayerBounds ? getRotationHandle(selectedLayerBounds, rotationHandleDistance) : null),
+    [rotationHandleDistance, selectedLayerBounds],
   );
   const axisTicks = useMemo(
     () => ({
@@ -464,6 +472,18 @@ export const PathCanvas = React.memo(function PathCanvas({
     [isActionMode, pushHistory, selectLayer, selectedLayerId, setEditingSide, side, viewBox.h, viewBox.w],
   );
 
+  const handlePreviewPathDoubleClick = useCallback(
+    (e: React.MouseEvent<SVGPathElement>, layerId: string | number) => {
+      if (side !== "preview" || isActionMode) return;
+      e.preventDefault();
+      e.stopPropagation();
+      selectLayer(layerId);
+      setEditingSide("from");
+      setIsVectorEditing(true);
+    },
+    [isActionMode, selectLayer, setEditingSide, side],
+  );
+
   const handleResizePointerDown = useCallback(
     (e: React.PointerEvent<SVGCircleElement>, handle: ResizeHandle) => {
       if (side !== "preview" || isActionMode || !selectedLayerBounds || e.button !== 0) return;
@@ -492,6 +512,48 @@ export const PathCanvas = React.memo(function PathCanvas({
     [isActionMode, pointFromEvent, pushHistory, resizeSelectedLayer, selectedLayerBounds, side],
   );
 
+  const handleRotatePointerDown = useCallback(
+    (e: React.PointerEvent<SVGCircleElement>) => {
+      if (side !== "preview" || isActionMode || !selectedLayerBounds || e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      pushHistory();
+
+      const center = getBoundsCenter(selectedLayerBounds);
+      const baseRotation = currentLayer.rotation ?? 0;
+      const startPoint = pointFromEvent(e.clientX, e.clientY);
+      const startAngle = startPoint ? getAngle(center, startPoint) : 0;
+
+      updateSelectedLayer({
+        pivotX: center.x,
+        pivotY: center.y,
+        rotation: baseRotation,
+      }, { recordHistory: false });
+
+      const handleMove = (moveEvent: PointerEvent) => {
+        const point = pointFromEvent(moveEvent.clientX, moveEvent.clientY);
+        if (!point) return;
+        const rawRotation = baseRotation + getAngle(center, point) - startAngle;
+        const rotation = moveEvent.shiftKey ? Math.round(rawRotation / 15) * 15 : rawRotation;
+        useEditorStore.getState().updateSelectedLayer({
+          pivotX: center.x,
+          pivotY: center.y,
+          rotation,
+        }, { recordHistory: false });
+      };
+
+      const handleUp = () => {
+        window.removeEventListener("pointermove", handleMove);
+        window.removeEventListener("pointerup", handleUp);
+      };
+
+      window.addEventListener("pointermove", handleMove);
+      window.addEventListener("pointerup", handleUp);
+    },
+    [currentLayer.rotation, isActionMode, pointFromEvent, pushHistory, selectedLayerBounds, side, updateSelectedLayer],
+  );
+
   useEffect(() => {
     if (side !== "preview" || isActionMode) return;
 
@@ -502,18 +564,37 @@ export const PathCanvas = React.memo(function PathCanvas({
         target?.tagName === "TEXTAREA" ||
         target?.isContentEditable;
       if (isEditableTarget) return;
+      if (event.key === "Escape") {
+        setIsVectorEditing(false);
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        setIsVectorEditing((editing) => !editing);
+        setEditingSide("from");
+        return;
+      }
+      if ((event.key === "Backspace" || event.key === "Delete") && layers.length > 1 && !isVectorEditing) {
+        event.preventDefault();
+        deleteLayer(selectedLayerId);
+        return;
+      }
       if (!["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft"].includes(event.key)) return;
 
       const amount = event.shiftKey ? 2 : 0.5;
       const dx = event.key === "ArrowLeft" ? -amount : event.key === "ArrowRight" ? amount : 0;
       const dy = event.key === "ArrowUp" ? -amount : event.key === "ArrowDown" ? amount : 0;
       event.preventDefault();
-      useEditorStore.getState().translateSelectedLayer(dx, dy);
+      if (isVectorEditing) {
+        useEditorStore.getState().translateSelectedPoints(dx, dy);
+      } else {
+        useEditorStore.getState().translateSelectedLayer(dx, dy);
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isActionMode, side]);
+  }, [deleteLayer, isActionMode, isVectorEditing, layers.length, selectedLayerId, setEditingSide, side]);
 
   const isSelected = (subPathIndex: number, commandIndex: number, pointIndex: number) => {
     // Support multi-point selection (box select + shift)
@@ -547,6 +628,7 @@ export const PathCanvas = React.memo(function PathCanvas({
       onPointerMove={handleSvgPointerMove}
       onPointerUp={handleSvgPointerUp}
       onDoubleClick={() => {
+        if (side === "preview") return;
         const scale = Math.max(0.5, Math.min(8, zoom));
         const size = artboard.baseViewSize / scale;
         setViewBox({
@@ -697,6 +779,7 @@ export const PathCanvas = React.memo(function PathCanvas({
                   fillRule={layer.fillType === "evenOdd" ? "evenodd" : "nonzero"}
                   className={!isActionMode ? "cursor-move" : undefined}
                   onPointerDown={(event) => handlePreviewPathPointerDown(event, layer.id)}
+                  onDoubleClick={(event) => handlePreviewPathDoubleClick(event, layer.id)}
                   pointerEvents={!isActionMode ? "visiblePainted" : undefined}
                 />
               );
@@ -733,6 +816,7 @@ export const PathCanvas = React.memo(function PathCanvas({
           className="cursor-move"
           pointerEvents="stroke"
           onPointerDown={handlePreviewPathPointerDown}
+          onDoubleClick={(event) => handlePreviewPathDoubleClick(event, selectedLayerId)}
         />
       )}
 
@@ -754,6 +838,36 @@ export const PathCanvas = React.memo(function PathCanvas({
 
       {side === "preview" &&
         !isActionMode &&
+        !isVectorEditing &&
+        rotationHandle && (
+          <g transform={selectedPreviewTransform} clipPath={overlayClipPath}>
+            <line
+              x1={rotationHandle.anchorX}
+              y1={rotationHandle.anchorY}
+              x2={rotationHandle.x}
+              y2={rotationHandle.y}
+              stroke="#0d99ff"
+              strokeWidth={selectionStrokeWidth}
+              vectorEffect="non-scaling-stroke"
+              pointerEvents="none"
+            />
+            <circle
+              cx={rotationHandle.x}
+              cy={rotationHandle.y}
+              r={selectionHandleRadius * 0.92}
+              className="cursor-grab"
+              fill="#ffffff"
+              stroke="#0d99ff"
+              strokeWidth={selectionStrokeWidth}
+              vectorEffect="non-scaling-stroke"
+              onPointerDown={handleRotatePointerDown}
+            />
+          </g>
+        )}
+
+      {side === "preview" &&
+        !isActionMode &&
+        !isVectorEditing &&
         resizeHandles.map((handle) => (
           <circle
             key={handle.id}
@@ -761,6 +875,7 @@ export const PathCanvas = React.memo(function PathCanvas({
             cy={handle.y}
             r={selectionHandleRadius}
             className={handle.cursor}
+            transform={selectedPreviewTransform}
             clipPath={overlayClipPath}
             fill="#ffffff"
             stroke="#0d99ff"
@@ -905,6 +1020,27 @@ function getResizeHandles(bounds: Bounds): Array<{ id: ResizeHandle; x: number; 
     { id: "sw", x: bounds.x, y: bottom, cursor: "cursor-nesw-resize" },
     { id: "w", x: bounds.x, y: centerY, cursor: "cursor-ew-resize" },
   ];
+}
+
+function getRotationHandle(bounds: Bounds, distance: number) {
+  const centerX = bounds.x + bounds.width / 2;
+  return {
+    anchorX: centerX,
+    anchorY: bounds.y,
+    x: centerX,
+    y: bounds.y - distance,
+  };
+}
+
+function getBoundsCenter(bounds: Bounds) {
+  return {
+    x: bounds.x + bounds.width / 2,
+    y: bounds.y + bounds.height / 2,
+  };
+}
+
+function getAngle(center: { x: number; y: number }, point: { x: number; y: number }) {
+  return (Math.atan2(point.y - center.y, point.x - center.x) * 180) / Math.PI;
 }
 
 function getBoundsFromResizeHandle(

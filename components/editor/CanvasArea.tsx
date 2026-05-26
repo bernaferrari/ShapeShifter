@@ -4,7 +4,7 @@ import React from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Gauge, MousePointer2, Pause, PenTool, Play, Repeat, RotateCcw, SkipBack, SkipForward } from "lucide-react";
+import { Copy, Gauge, MousePointer2, Pause, PenTool, Play, Plus, Repeat, RotateCcw, SkipBack, SkipForward } from "lucide-react";
 import { PathCanvas } from "./PathCanvas";
 import { useEditorStore } from "@/lib/store/editorStore";
 
@@ -39,6 +39,11 @@ export function CanvasArea({
     setToolMode,
     layers,
     selectedLayerId,
+    frames,
+    selectedFrameId,
+    addFrame,
+    duplicateFrame,
+    selectFrame,
   } = useEditorStore();
 
   const compatibility = getCompatibilityStatus();
@@ -137,7 +142,41 @@ export function CanvasArea({
                   <div className="text-xs text-muted-foreground">{selectedLayer?.name ?? "Path morph"}</div>
                 </div>
               ) : (
-                <div aria-hidden="true" />
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <div className="flex max-w-[420px] min-w-0 items-center gap-1 overflow-x-auto rounded-md border bg-card/80 p-1">
+                    {frames.map((frame) => (
+                      <Button
+                        key={frame.id}
+                        size="sm"
+                        variant={frame.id === selectedFrameId ? "secondary" : "ghost"}
+                        className="h-7 shrink-0 px-2 text-xs"
+                        onClick={() => selectFrame(frame.id)}
+                      >
+                        {frame.name}
+                      </Button>
+                    ))}
+                  </div>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button size="icon-xs" variant="ghost" className="h-7 w-7" onClick={duplicateFrame} aria-label="Duplicate frame" />
+                      }
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </TooltipTrigger>
+                    <TooltipContent>Duplicate frame</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button size="icon-xs" variant="ghost" className="h-7 w-7" onClick={addFrame} aria-label="Add frame" />
+                      }
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </TooltipTrigger>
+                    <TooltipContent>Add frame</TooltipContent>
+                  </Tooltip>
+                </div>
               )}
               <div className="flex items-center gap-1.5 bg-muted/50 rounded-lg p-0.5 border border-border">
                 <Button size="icon-xs" variant="ghost" className="h-6 w-6 text-xs text-muted-foreground hover:text-foreground" onClick={() => setZoom(Math.max(0.5, zoom - 0.25))} aria-label="Zoom out">

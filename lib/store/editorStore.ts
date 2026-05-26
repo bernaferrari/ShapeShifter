@@ -56,6 +56,17 @@ export interface ClipboardData {
   timestamp: number;
 }
 
+export interface CanvasFrame {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  layers: Layer[];
+  vector: VectorMetadata;
+  animation: AnimationState;
+  hiddenLayerIds: string[];
+}
+
 const PATH_STYLE_DEFAULTS = {
   fillColor: "",
   fillAlpha: 1,
@@ -90,6 +101,10 @@ function createPathLayer(layer: Omit<Layer, "type"> & Partial<Pick<Layer, "type"
 }
 
 interface EditorState {
+  // Workspace frames
+  frames: CanvasFrame[];
+  selectedFrameId: string;
+
   // Layers
   layers: Layer[];
   selectedLayerId: string | number;
@@ -145,6 +160,11 @@ interface EditorState {
   redo: () => void;
   pushHistory: () => void; // internal
 
+  // Workspace frame actions
+  addFrame: () => void;
+  duplicateFrame: () => void;
+  selectFrame: (id: string) => void;
+
   // Actions
   setLayers: (layers: Layer[]) => void;
   importLayers: (layers: Layer[]) => void;
@@ -155,7 +175,7 @@ interface EditorState {
     hiddenLayerIds: string[];
   }) => void;
   replaceSelectedLayerPaths: (paths: Partial<Pick<Layer, "from" | "to" | "name">>) => void;
-  updateSelectedLayer: (patch: Partial<Layer>) => void;
+  updateSelectedLayer: (patch: Partial<Layer>, options?: { recordHistory?: boolean }) => void;
   selectLayer: (id: string | number) => void;
   setEditingSide: (side: "from" | "to") => void;
   startActionMode: () => void;
@@ -284,22 +304,55 @@ const initialLayers: Layer[] = [
 const cloneLayers = (layers: Layer[]) => structuredClone(layers);
 const getFirstEditableLayerId = (layers: Layer[]) =>
   layers.find((layer) => layer.type === "path" || layer.type === "clipPath")?.id ?? layers[0]?.id ?? 0;
+const initialVector: VectorMetadata = { id: "vector", name: "ShapeShifter", width: 24, height: 24, alpha: 1 };
+const initialAnimation: AnimationState = { id: "anim", name: "anim", duration: 1000, blocks: [] };
+
+function cloneFrame(frame: CanvasFrame): CanvasFrame {
+  return {
+    ...frame,
+    layers: cloneLayers(frame.layers),
+    vector: structuredClone(frame.vector),
+    animation: structuredClone(frame.animation),
+    hiddenLayerIds: [...frame.hiddenLayerIds],
+  };
+}
+
+function snapshotFrame(state: EditorState, frame?: CanvasFrame): CanvasFrame {
+  return {
+    id: frame?.id ?? state.selectedFrameId,
+    name: frame?.name ?? state.vector.name ?? "Frame",
+    x: frame?.x ?? 0,
+    y: frame?.y ?? 0,
+    layers: cloneLayers(state.layers),
+    vector: structuredClone(state.vector),
+    animation: structuredClone(state.animation),
+    hiddenLayerIds: [...state.hiddenLayerIds],
+  };
+}
+
+function saveActiveFrame(state: EditorState) {
+  return state.frames.map((frame) =>
+    frame.id === state.selectedFrameId ? snapshotFrame(state, frame) : cloneFrame(frame),
+  );
+}
+
+const initialFrame: CanvasFrame = {
+  id: "frame-1",
+  name: "ShapeShifter",
+  x: 0,
+  y: 0,
+  layers: cloneLayers(initialLayers),
+  vector: structuredClone(initialVector),
+  animation: structuredClone(initialAnimation),
+  hiddenLayerIds: [],
+};
 
 export const useEditorStore = create<EditorState>((set, get) => ({
+  frames: [initialFrame],
+  selectedFrameId: initialFrame.id,
   layers: initialLayers,
-  vector: {
-    id: "vector",
-    name: "ShapeShifter",
-    width: 24,
-    height: 24,
-    alpha: 1,
-  },
-  animation: {
-    id: "anim",
-    name: "anim",
-    duration: 1000,
-    blocks: [],
-  },
+  vector: initialVector,
+  animation: initialAnimation,
   hiddenLayerIds: [],
   history: [],
   future: [],
@@ -364,6 +417,89 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
   },
 
+  addFrame: () => {
+    const state = get();
+    const savedFrames = saveActiveFrame(state);
+    const nextIndex = savedFrames.length + 1;
+    const name = `Frame ${nextIndex}`;
+    const frame: CanvasFrame = {
+      id: `frame-${Date.now()}`,
+      name,
+      x: nextIndex * 32,
+      y: 0,
+      layers: cloneLayers(initialLayers),
+      vector: { ...initialVector, id: `vector-${Date.now()}`, name },
+      animation: { ...initialAnimation, id: `anim-${Date.now()}` },
+      hiddenLayerIds: [],
+    };
+    set({
+      frames: [...savedFrames, frame],
+      selectedFrameId: frame.id,
+      layers: cloneLayers(frame.layers),
+      vector: structuredClone(frame.vector),
+      animation: structuredClone(frame.animation),
+      hiddenLayerIds: [],
+      selectedLayerId: getFirstEditableLayerId(frame.layers),
+      selection: null,
+      selectedPoints: [],
+      selectedBlockIds: [],
+      progress: 0,
+      isPlaying: false,
+    });
+  },
+
+  duplicateFrame: () => {
+    const state = get();
+    const savedFrames = saveActiveFrame(state);
+    const activeFrame = savedFrames.find((frame) => frame.id === state.selectedFrameId);
+    if (!activeFrame) return;
+    const frame = cloneFrame({
+      ...activeFrame,
+      id: `frame-${Date.now()}`,
+      name: `${activeFrame.name} copy`,
+      x: activeFrame.x + 32,
+      y: activeFrame.y + 32,
+      vector: { ...activeFrame.vector, id: `vector-${Date.now()}`, name: `${activeFrame.name} copy` },
+      animation: { ...activeFrame.animation, id: `anim-${Date.now()}` },
+    });
+    set({
+      frames: [...savedFrames, frame],
+      selectedFrameId: frame.id,
+      layers: cloneLayers(frame.layers),
+      vector: structuredClone(frame.vector),
+      animation: structuredClone(frame.animation),
+      hiddenLayerIds: [...frame.hiddenLayerIds],
+      selectedLayerId: getFirstEditableLayerId(frame.layers),
+      selection: null,
+      selectedPoints: [],
+      selectedBlockIds: [],
+      progress: 0,
+      isPlaying: false,
+    });
+  },
+
+  selectFrame: (id) => {
+    const state = get();
+    if (id === state.selectedFrameId) return;
+    const savedFrames = saveActiveFrame(state);
+    const frame = savedFrames.find((candidate) => candidate.id === id);
+    if (!frame) return;
+    set({
+      frames: savedFrames,
+      selectedFrameId: frame.id,
+      layers: cloneLayers(frame.layers),
+      vector: structuredClone(frame.vector),
+      animation: structuredClone(frame.animation),
+      hiddenLayerIds: [...frame.hiddenLayerIds],
+      selectedLayerId: getFirstEditableLayerId(frame.layers),
+      selection: null,
+      selectedPoints: [],
+      selectedBlockIds: [],
+      progress: 0,
+      isPlaying: false,
+    });
+  },
+
   autoFixSelectedLayer: () => {
     const { layers, selectedLayerId } = get();
     const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
@@ -381,8 +517,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   loadSample: (index: number) => {
     const { project } = getDemoProject(index);
+    const frame: CanvasFrame = {
+      id: `frame-${Date.now()}`,
+      name: project.vector.name || "Sample",
+      x: 0,
+      y: 0,
+      layers: cloneLayers(project.layers),
+      vector: structuredClone(project.vector),
+      animation: structuredClone(project.animation),
+      hiddenLayerIds: [...project.hiddenLayerIds],
+    };
     get().pushHistory();
     set({
+      frames: [frame],
+      selectedFrameId: frame.id,
       layers: project.layers,
       vector: project.vector,
       animation: project.animation,
@@ -422,8 +570,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
   },
   loadProject: (project) => {
+    const frame: CanvasFrame = {
+      id: `frame-${Date.now()}`,
+      name: project.vector.name || "Imported frame",
+      x: 0,
+      y: 0,
+      layers: cloneLayers(project.layers),
+      vector: structuredClone(project.vector),
+      animation: structuredClone(project.animation),
+      hiddenLayerIds: [...project.hiddenLayerIds],
+    };
     get().pushHistory();
     set({
+      frames: [frame],
+      selectedFrameId: frame.id,
       layers: project.layers,
       vector: project.vector,
       animation: project.animation,
@@ -449,14 +609,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     get().pushHistory();
     set({ layers: newLayers });
   },
-  updateSelectedLayer: (patch) => {
+  updateSelectedLayer: (patch, options) => {
     const { layers, selectedLayerId } = get();
     const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
     if (layerIndex === -1) return;
 
     const newLayers = [...layers];
     newLayers[layerIndex] = { ...newLayers[layerIndex], ...patch };
-    get().pushHistory();
+    if (options?.recordHistory !== false) {
+      get().pushHistory();
+    }
     set({ layers: newLayers });
   },
   selectLayer: (id) => set({ selectedLayerId: id, selection: null, selectedPoints: [] }),
@@ -950,6 +1112,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   resetProject: () => {
     get().pushHistory();
     set({
+      frames: [cloneFrame(initialFrame)],
+      selectedFrameId: initialFrame.id,
       layers: cloneLayers(initialLayers),
       selectedLayerId: initialLayers[0]?.id ?? 0,
       selection: null, selectedPoints: [],
@@ -960,8 +1124,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       isPlaying: false,
       isActionMode: false,
       editingSide: "from",
-      vector: { id: "vector", name: "ShapeShifter", width: 24, height: 24, alpha: 1 },
-      animation: { id: "anim", name: "anim", duration: 1000, blocks: [] },
+      vector: structuredClone(initialVector),
+      animation: structuredClone(initialAnimation),
       hiddenLayerIds: [],
       selectedBlockIds: [],
       collapsedLayerIds: [],
