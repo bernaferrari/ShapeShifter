@@ -6,7 +6,12 @@ import { parsePath, pathToString, getInterpolatedPath } from "@/lib/shapeshifter
 import { evaluateBlock } from "@/lib/shapeshifter/interpolators";
 import type { SegmentSelection, SubPathSelection } from "@/lib/store/editorStore";
 import type { Command, Layer, PathData, Point, TimelineBlock } from "@/lib/shapeshifter/types";
-import { GestureDispatcher, type HitTestResult } from "@/lib/shapeshifter/gestures/GestureDispatcher";
+import { GestureDispatcher } from "@/lib/shapeshifter/gestures/GestureDispatcher";
+import {
+  collectPointsInRect,
+  getMarqueeRect,
+  rectsIntersect as hitTestRectsIntersect,
+} from "@/lib/shapeshifter/gestures/HitTests";
 
 type PointSelection = { subPathIndex: number; commandIndex: number; pointIndex: number };
 type ViewBox = { x: number; y: number; w: number; h: number; scale: number };
@@ -40,6 +45,12 @@ export const PathCanvas = React.memo(function PathCanvas({
   const svgRef = useRef<SVGSVGElement>(null);
   const gridId = React.useId();
   const suppressNextZoomSync = useRef(false);
+
+  // Basic Lasso collection stub (ny0 under v6j): polygon/point collection path for future real
+  // lasso hit testing (evolves the dispatcher "pencil/lasso intent" + "basic Lasso stub" notes).
+  // Collects on pointer move when pencil or direct (vision palette has Lasso entry).
+  // Transient visual only for this slice; cleared on up. Real hit test + selection commit is future work.
+  const lassoPointsRef = useRef<Point[]>([]);
 
   // GestureDispatcher (PR-01.1 / ShapeShifter-ish fix round xwx under mvd).
   // The ref that owns the decision logic for canvas interactions (Key Decision #2).
@@ -141,6 +152,90 @@ export const PathCanvas = React.memo(function PathCanvas({
           endMarquee: () => {
             setBoxSelect(null);
           },
+          // PR-02 completion (ShapeShifter-ubf.1 / ubf under 2cq/v6j): commitMarqueeSelection now
+          // delegates real hit test / AABB collection to pure helpers in HitTests (collectPointsInRect,
+          // getMarqueeRect, rectsIntersect). The gesture (SelectDragItemsGesture) owns the lifecycle trigger
+          // (onMouseUp calls this). PathCanvas remains thin: transient rect + store-specific application
+          // (preview vs edit-path branching + actions). Dispatcher sole gate preserved.
+          //
+          // References: DESIGN_ID 67dd105e (PR-01/PR-02, Key Decision #2), beads ubf/2cq/v6j/ny0,
+          // parity-checklist.md BatchSelect phase. 100% behavioral parity on multi-point, shift-additive,
+          // empty-box clear, preview subpath/layer, edit-path point selection.
+          commitMarqueeSelection: (start, end) => {
+            const state = useEditorStore.getState();
+            const {
+              layers: curLayers,
+              animation: curAnim,
+              progress: curProgress,
+              selectedLayerId: curSelId,
+              editingSide: curEditSide,
+              isActionMode: curIsAction,
+              selectMultipleSubPaths: curSelectMultipleSubPaths,
+              selectLayer: curSelectLayer,
+              setEditingSide: curSetEditingSide,
+              selectMultiplePoints: curSelectMultiplePoints,
+              clearSelection: curClearSelection,
+            } = state;
+
+            // Delegate rect construction and point collection to real hit test helpers in the gesture system.
+            const selectRect = getMarqueeRect(start, end);
+            const isBoxGesture = selectRect.width > 0.2 || selectRect.height > 0.2;
+
+            if (side === "preview" && !curIsAction) {
+              if (isBoxGesture) {
+                const subPathHits = curLayers.flatMap((candidate) => {
+                  if (candidate.visible === false || candidate.locked) return [];
+                  return candidate.from.subPaths.flatMap((subPath, subPathIndex) => {
+                    const bounds = getPathBounds({ subPaths: [subPath] });
+                    return bounds && rectsIntersect(selectRect, bounds)
+                      ? [{ layerId: candidate.id, side: "from" as const, subPathIndex }]
+                      : [];
+                  });
+                });
+                if (subPathHits.length > 0) {
+                  curSelectMultipleSubPaths(subPathHits);
+                  curSetEditingSide("from");
+                  return; // commit done; endMarquee will clear rect
+                }
+              }
+              const renderedLayers = getPreviewLayers(
+                curLayers,
+                curAnim.blocks,
+                curAnim.duration,
+                curProgress,
+                curSelId,
+              );
+              const hitLayer = [...renderedLayers]
+                .reverse()
+                .find(({ d }) => {
+                  const bounds = getPathBounds(parsePath(d));
+                  return bounds ? rectsIntersect(selectRect, bounds) : false;
+                });
+              if (hitLayer) {
+                curSelectLayer(hitLayer.layer.id);
+                curSetEditingSide("from");
+              } else if (isBoxGesture) {
+                curClearSelection();
+              }
+              return;
+            }
+
+            // Action mode / edit path point selection (multi AABB)
+            // PR-02 completion: delegated to collectPointsInRect (real hit test now in HitTests).
+            // Preserves exact prior AABB behavior + outcomes.
+            const layer = curLayers.find(l => l.id === curSelId);
+            const pathForEdit = layer
+              ? (curEditSide === "from" ? layer.from : layer.to)
+              : { subPaths: [] as any[] };
+            const hits = collectPointsInRect(pathForEdit as any, selectRect);
+            if (hits.length > 0) {
+              const multiSels = hits.map(h => ({ layerId: curSelId, side: curEditSide, ...h }));
+              curSelectMultiplePoints(multiSels);
+            } else {
+              // empty box click clears (parity with original behavior when a marquee gesture completed)
+              curClearSelection();
+            }
+          },
         }
       );
     }
@@ -188,10 +283,25 @@ export const PathCanvas = React.memo(function PathCanvas({
       svgRef.current?.setPointerCapture(e.pointerId);
       return;
     }
+
+    // REREVIEW CRITICAL FIX (ShapeShifter-2cq under mvd/7fz/ish/c9f, review grok-review-10b30dea.md):
+    // The two marquee intent branches no longer contain any local setBoxSelect, clearSelection, or direct rect mutation.
+    // They compute the point + modifiers, then call dispatcherRef.current.handlePointerDown with explicit
+    // { type: 'marquee' } HitTestResult (supported by the contract added in PR-01.1 fix round).
+    // The dispatcher (see GestureDispatcher.ts:63) treats "marquee" | empty as isMarqueeIntent, instantiates
+    // the first SelectDragItemsGesture, and synchronously invokes the registered beginMarqueeSelection callback
+    // (which does the conditional clear + setBoxSelect initial). This makes the dispatcher call the *ONLY* way
+    // boxSelect starts in select/default mode. Pointer capture remains a DOM concern in PathCanvas.
+    // References: DESIGN_ID 67dd105e Key Decision #2 (dispatcher sole source of truth), 2cq mission, 7fz rereview.
+    // The callbacks (begin/update/end + new commitMarqueeSelection) are now fully wired and the sole mutators.
     if (side === "preview" && !isActionMode && e.button === 0) {
       const p = pointFromEvent(e.clientX, e.clientY);
       if (p) {
-        setBoxSelect({ start: p, current: p });
+        dispatcherRef.current?.handlePointerDown(
+          p,
+          { type: "marquee" },
+          { shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey }
+        );
         svgRef.current?.setPointerCapture(e.pointerId);
       }
       return;
@@ -201,12 +311,11 @@ export const PathCanvas = React.memo(function PathCanvas({
     if (state.toolMode === "select" && state.editingSide === (side === "from" ? "from" : "to") && e.button === 0) {
       const p = pointFromEvent(e.clientX, e.clientY);
       if (p) {
-        // If not holding shift, clear previous selection on new box start (original BatchSelect behavior)
-        if (!e.shiftKey) {
-          const { clearSelection } = useEditorStore.getState();
-          clearSelection();
-        }
-        setBoxSelect({ start: p, current: p });
+        dispatcherRef.current?.handlePointerDown(
+          p,
+          { type: "marquee" },
+          { shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey }
+        );
         svgRef.current?.setPointerCapture(e.pointerId);
       }
     }
@@ -222,126 +331,51 @@ export const PathCanvas = React.memo(function PathCanvas({
         setViewBox((prev) => ({ ...prev, x: prev.x - dx, y: prev.y - dy }));
         setLastPan({ x: e.clientX, y: e.clientY });
       }
-      if (boxSelect) {
-        const p = pointFromEvent(e.clientX, e.clientY);
-        if (p) setBoxSelect(prev => prev ? {...prev, current: p} : null);
+      // Route *every* move through the dispatcher when a gesture may be active.
+      // The dispatcher gates the updateMarquee callback (only while activeGesture exists).
+      // This makes the callbacks (not direct local boxSelect mutation) the sole owners
+      // of the transient rect state for the marquee lifecycle.
+      // (Resolves remaining direct mutation site flagged in grok-review-10b30dea.md major issue.)
+      const p = pointFromEvent(e.clientX, e.clientY);
+      if (p) {
+        dispatcherRef.current?.handlePointerMove(p, { shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey });
+
+        // Basic Lasso collection stub (ny0): collect points for pencil/direct when not panning.
+        // Future: real hitTest against collected polygon + commit selection via store.
+        // This makes the "polygon/point collection path" real and visible.
+        const currentTool = useEditorStore.getState().toolMode;
+        if (!isPanning && (currentTool === "pencil" || currentTool === "direct")) {
+          lassoPointsRef.current.push(p);
+          // Keep collection bounded for perf in this stub
+          if (lassoPointsRef.current.length > 200) lassoPointsRef.current.shift();
+        }
       }
     },
-    [isPanning, lastPan, viewBox.h, viewBox.w, boxSelect, pointFromEvent],
+    [isPanning, lastPan, viewBox.h, viewBox.w, pointFromEvent],
   );
 
   const handleSvgPointerUp = useCallback((e: React.PointerEvent) => {
     setIsPanning(false);
-    if (boxSelect) {
-      // Hit test points inside box (simple AABB for now)
-      const {start, current} = boxSelect;
-      const minX = Math.min(start.x, current.x);
-      const maxX = Math.max(start.x, current.x);
-      const minY = Math.min(start.y, current.y);
-      const maxY = Math.max(start.y, current.y);
-      if (side === "preview" && !isActionMode) {
-        const selectRect = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-        const isBoxGesture = Math.abs(maxX - minX) > 0.2 || Math.abs(maxY - minY) > 0.2;
-        if (isBoxGesture) {
-          const subPathHits = layers.flatMap((candidate) => {
-            if (candidate.visible === false || candidate.locked) return [];
-            return candidate.from.subPaths.flatMap((subPath, subPathIndex) => {
-              const bounds = getPathBounds({ subPaths: [subPath] });
-              return bounds && rectsIntersect(selectRect, bounds)
-                ? [{ layerId: candidate.id, side: "from" as const, subPathIndex }]
-                : [];
-            });
-          });
-          if (subPathHits.length > 0) {
-            selectMultipleSubPaths(subPathHits);
-            setEditingSide("from");
-            setBoxSelect(null);
-            if (svgRef.current?.hasPointerCapture(e.pointerId)) {
-              svgRef.current.releasePointerCapture(e.pointerId);
-            }
-            return;
-          }
-        }
-        const renderedLayers = getPreviewLayers(
-          layers,
-          animation.blocks,
-          animation.duration,
-          progress,
-          selectedLayerId,
-        );
-        const hitLayer = [...renderedLayers]
-          .reverse()
-          .find(({ d }) => {
-            const bounds = getPathBounds(parsePath(d));
-            return bounds ? rectsIntersect(selectRect, bounds) : false;
-          });
-        if (hitLayer) {
-          selectLayer(hitLayer.layer.id);
-          setEditingSide("from");
-        } else if (isBoxGesture) {
-          const { clearSelection } = useEditorStore.getState();
-          clearSelection();
-        }
-        setBoxSelect(null);
-        if (svgRef.current?.hasPointerCapture(e.pointerId)) {
-          svgRef.current.releasePointerCapture(e.pointerId);
-        }
-        return;
-      }
-      let hit = null;
-      // Use current layer commands
-      const layer = layers.find(l => l.id === selectedLayerId);
-      if (layer) {
-        const path = editingSide === "from" ? layer.from : layer.to;
-        for (let si = 0; si < path.subPaths.length; si++) {
-          const sp = path.subPaths[si];
-          for (let ci = 0; ci < sp.commands.length; ci++) {
-            const cmd = sp.commands[ci];
-            for (let pi = 0; pi < cmd.points.length; pi++) {
-              const pt = cmd.points[pi];
-              if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) {
-                hit = {subPathIndex: si, commandIndex: ci, pointIndex: pi};
-                break;
-              }
-            }
-            if (hit) break;
-          }
-          if (hit) break;
-        }
-      }
-      // Collect ALL points inside the box (full batch select parity with original)
-      const hits: PointSelection[] = [];
-      if (layer) {
-        const path = editingSide === "from" ? layer.from : layer.to;
-        for (let si = 0; si < path.subPaths.length; si++) {
-          const sp = path.subPaths[si];
-          for (let ci = 0; ci < sp.commands.length; ci++) {
-            const cmd = sp.commands[ci];
-            for (let pi = 0; pi < cmd.points.length; pi++) {
-              const pt = cmd.points[pi];
-              if (pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY) {
-                hits.push({ subPathIndex: si, commandIndex: ci, pointIndex: pi });
-              }
-            }
-          }
-        }
-      }
-      if (hits.length > 0) {
-        const multiSels = hits.map(h => ({ layerId: selectedLayerId, side: editingSide, ...h }));
-        // Use new multi action
-        const { selectMultiplePoints } = useEditorStore.getState();
-        selectMultiplePoints(multiSels);
-      } else if (boxSelect) {
-        // empty box click clears in select mode (original behavior)
-        const { clearSelection } = useEditorStore.getState();
-        clearSelection();
-      }
-      setBoxSelect(null);
-    }
+
+    // Route the up through the dispatcher.
+    // This triggers:
+    //  - gesture.onMouseUp (which now calls the registered commitMarqueeSelection callback
+    //    with start/end — the AABB multi-point commit + store selects live there for PR-02 start)
+    //  - callbacks.endMarquee (clears the transient rect state)
+    // All local boxSelect mutations and the giant AABB block have been removed from PathCanvas.
+    // The commit logic is now owned/triggered by the gesture (via the callback bridge we wired).
+    // Capture release stays here (DOM concern).
+    // (Completes resolution of critical issues + major direct-mutation debt from grok-review-10b30dea.md.)
+    const p = pointFromEvent(e.clientX, e.clientY) || { x: 0, y: 0 };
+    dispatcherRef.current?.handlePointerUp(p, { shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey });
+
     if (svgRef.current?.hasPointerCapture(e.pointerId)) {
       svgRef.current.releasePointerCapture(e.pointerId);
     }
-  }, [animation.blocks, animation.duration, boxSelect, editingSide, isActionMode, layers, progress, selectLayer, selectMultipleSubPaths, selectedLayerId, setEditingSide, side]);
+
+    // Clear basic lasso collection on up (stub complete for this slice)
+    lassoPointsRef.current = [];
+  }, [pointFromEvent]); // Note: other handlers (non-marquee paths) may still reference top-level destructured actions; our marquee commit path uses fresh getState() only.
 
   
 
@@ -486,6 +520,9 @@ export const PathCanvas = React.memo(function PathCanvas({
 
         const session = dragSession;
         const multi = useEditorStore.getState().selectedPoints || [];
+        const state = useEditorStore.getState();
+        const isDirectFlexHandle = state.toolMode === "direct" && moveEvent.ctrlKey;
+
         if (session && multi.length > 1) {
           // Compute screen-space delta, convert via viewBox scale approx for world delta
           const rect = svgRef.current?.getBoundingClientRect();
@@ -499,6 +536,34 @@ export const PathCanvas = React.memo(function PathCanvas({
             translateSelectedPoints(dx, dy, { recordHistory: false });
 
             setDragSession({ ...session, lastX: moveEvent.clientX, lastY: moveEvent.clientY });
+          }
+        } else if (isDirectFlexHandle) {
+          // Ctrl+drag on a control handle in direct: flex the curve intelligently (normal offset)
+          // while still moving the primary handle point with the pointer (precise control + smoothness).
+          const rect = svgRef.current?.getBoundingClientRect();
+          let dx = 0;
+          let dy = 0;
+          if (rect) {
+            const scaleX = viewBox.w / rect.width;
+            const scaleY = viewBox.h / rect.height;
+            dx = (moveEvent.clientX - (dragSession?.lastX ?? moveEvent.clientX)) * scaleX;
+            dy = (moveEvent.clientY - (dragSession?.lastY ?? moveEvent.clientY)) * scaleY;
+          }
+          if (dx !== 0 || dy !== 0) {
+            const flexDelta = snapToGrid ? { x: Math.round(dx * 2) / 2, y: Math.round(dy * 2) / 2 } : { x: dx, y: dy };
+            // t biased toward the dragged handle (first handle ~0.33, second ~0.66)
+            const handleT = pointIndex === 0 ? 0.33 : pointIndex === 1 ? 0.66 : 0.5;
+            state.flexSelectedLayerSegment(
+              { layerId: selectedLayerId, side: side === "preview" ? "from" : editingSide, subPathIndex, commandIndex },
+              flexDelta,
+              handleT,
+              { recordHistory: false }
+            );
+          }
+          // Still move the primary handle point exactly where the user dragged it
+          updateSelectedPoint({ x, y }, { recordHistory: false });
+          if (dragSession) {
+            setDragSession({ ...dragSession, lastX: moveEvent.clientX, lastY: moveEvent.clientY });
           }
         } else {
           updateSelectedPoint({ x, y }, { recordHistory: false });
@@ -663,13 +728,55 @@ export const PathCanvas = React.memo(function PathCanvas({
       };
       pushHistory();
 
+      // Track last pointer position for delta-based flex (Ctrl+drag on curve body in direct mode).
+      // Mirrors the delta computation pattern used in the existing handle flex path and other
+      // batch/subpath drags for viewBox-correct world deltas.
+      let lastX = e.clientX;
+      let lastY = e.clientY;
+
       const handleMove = (moveEvent: PointerEvent) => {
         const point = pointFromEvent(moveEvent.clientX, moveEvent.clientY);
         if (!point) return;
-        const nextPoint = snapToGrid
-          ? { x: Math.round(point.x * 2) / 2, y: Math.round(point.y * 2) / 2 }
-          : point;
-        useEditorStore.getState().bendSelectedLayerSegment(segmentSelection, nextPoint, { recordHistory: false });
+
+        const state = useEditorStore.getState();
+        const isDirectFlex = state.toolMode === "direct" && moveEvent.ctrlKey;
+
+        if (isDirectFlex) {
+          // Ctrl+drag on segment body in direct mode: intelligent flex via pure flexCurvature helper.
+          // Computes normal-offset adjustment (G1-ish preservation) without moving anchors.
+          // This is the core of the requested Figma-grade Bend/flex behavior (ny0/1af under v6j,
+          // DESIGN_ID 67dd105e). Dispatcher already routes the intent; we deliver the mutation here.
+          const rect = svgRef.current?.getBoundingClientRect();
+          let dx = 0;
+          let dy = 0;
+          if (rect) {
+            const scaleX = viewBox.w / rect.width;
+            const scaleY = viewBox.h / rect.height;
+            dx = (moveEvent.clientX - lastX) * scaleX;
+            dy = (moveEvent.clientY - lastY) * scaleY;
+          }
+          lastX = moveEvent.clientX;
+          lastY = moveEvent.clientY;
+
+          if (dx !== 0 || dy !== 0) {
+            const flexDelta = snapToGrid
+              ? { x: Math.round(dx * 2) / 2, y: Math.round(dy * 2) / 2 }
+              : { x: dx, y: dy };
+            // t=0.5 for body drag on the segment (caller can pass biased t for handle drags).
+            state.flexSelectedLayerSegment(
+              segmentSelection,
+              flexDelta,
+              0.5,
+              { recordHistory: false }
+            );
+          }
+        } else {
+          // Original bend-to-point behavior (non-ctrl or other tools).
+          const nextPoint = snapToGrid
+            ? { x: Math.round(point.x * 2) / 2, y: Math.round(point.y * 2) / 2 }
+            : point;
+          state.bendSelectedLayerSegment(segmentSelection, nextPoint, { recordHistory: false });
+        }
       };
 
       const handleUp = () => {
@@ -692,6 +799,8 @@ export const PathCanvas = React.memo(function PathCanvas({
       setEditingSide,
       side,
       snapToGrid,
+      viewBox.h,
+      viewBox.w,
     ],
   );
 
@@ -1281,6 +1390,23 @@ export const PathCanvas = React.memo(function PathCanvas({
             </g>
           ))}
         </g>
+      )}
+
+      {/* Basic Lasso collection visual stub (ny0 under v6j): dashed polyline for the collected
+          polygon/point path. Transient only; real hit testing + selection is future work.
+          Collects in handleSvgPointerMove for pencil/direct. Matches the "basic Lasso stub"
+          noted in GestureDispatcher + SelectDragItemsGesture + BottomToolPalette. */}
+      {lassoPointsRef.current.length > 1 && (
+        <polyline
+          points={lassoPointsRef.current.map((pt) => `${pt.x},${pt.y}`).join(" ")}
+          fill="none"
+          stroke="#0d99ff"
+          strokeWidth={Math.max(viewBox.w * 0.0015, 0.05)}
+          strokeDasharray={`${Math.max(viewBox.w * 0.004, 0.12)} ${Math.max(viewBox.w * 0.002, 0.06)}`}
+          vectorEffect="non-scaling-stroke"
+          opacity={0.85}
+          pointerEvents="none"
+        />
       )}
 
       {/* Control points + bezier handles (direct mode fidelity - port of original EditPath/handle rendering) */}

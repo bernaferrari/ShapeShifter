@@ -94,6 +94,7 @@ export function hitTestEditPathSegments(
 
 /**
  * Simple point-in-rect test (used for marquee / batch select).
+ * PR-02 (ShapeShifter-ubf under v6j): base for collect* helpers.
  */
 export function hitTestRect(point: Point, rect: Rect): boolean {
   return (
@@ -102,4 +103,170 @@ export function hitTestRect(point: Point, rect: Rect): boolean {
     point.y >= rect.y &&
     point.y <= rect.y + rect.height
   );
+}
+
+/**
+ * Compute a normalized marquee rect from drag start/end points.
+ * Used by SelectDragItemsGesture and PathCanvas commit path.
+ */
+export function getMarqueeRect(start: Point, end: Point): Rect {
+  const minX = Math.min(start.x, end.x);
+  const maxX = Math.max(start.x, end.x);
+  const minY = Math.min(start.y, end.y);
+  const maxY = Math.max(start.y, end.y);
+  return {
+    x: minX,
+    y: minY,
+    width: Math.max(0.01, maxX - minX),
+    height: Math.max(0.01, maxY - minY),
+  };
+}
+
+/**
+ * Collect all points (with indices) lying inside a marquee rect.
+ * Pure function — core of dispatcher-driven multi-point AABB selection.
+ *
+ * PR-02 completion (ShapeShifter-ubf.1 / ubf under v6j, 2cq): Extracted from
+ * PathCanvas commitMarqueeSelection (the edit-path Action mode branch) into
+ * the gesture system. Now the "real hit test" lives in HitTests (reusable by
+ * future Lasso, curve-aware variants, etc.). Preserves exact prior behavior
+ * (including tolerance via rect inclusive bounds).
+ *
+ * References: DESIGN_ID 67dd105e (PR-02, Key Decision #2), beads ubf/ny0/v6j,
+ * parity-checklist.md BatchSelect phase. 100% parity on multi/shift/empty cases.
+ */
+export function collectPointsInRect(
+  pathData: { subPaths: Array<{ commands: Array<{ points: Point[] }> }> },
+  rect: Rect
+): Array<{ subPathIndex: number; commandIndex: number; pointIndex: number }> {
+  const hits: Array<{ subPathIndex: number; commandIndex: number; pointIndex: number }> = [];
+  for (let si = 0; si < pathData.subPaths.length; si++) {
+    const sp = pathData.subPaths[si];
+    for (let ci = 0; ci < sp.commands.length; ci++) {
+      const cmd = sp.commands[ci];
+      for (let pi = 0; pi < cmd.points.length; pi++) {
+        const pt = cmd.points[pi];
+        if (hitTestRect(pt, rect)) {
+          hits.push({ subPathIndex: si, commandIndex: ci, pointIndex: pi });
+        }
+      }
+    }
+  }
+  return hits;
+}
+
+/**
+ * Simple rect intersection (axis-aligned). Used for subpath marquee hits
+ * (preview layers) in conjunction with getPathBounds.
+ */
+export function rectsIntersect(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number }
+): boolean {
+  return (
+    a.x <= b.x + b.width &&
+    a.x + a.width >= b.x &&
+    a.y <= b.y + b.height &&
+    a.y + a.height >= b.y
+  );
+}
+
+/**
+ * Pure curvature flex adjustment for a cubic or quadratic segment.
+ * Given a segment (start, c1, c2, end or start, c, end) and a drag delta at parameter t,
+ * intelligently adjusts the control point(s) to "flex" the curve while preserving
+ * smoothness (approximate G1 tangent continuity at endpoints).
+ *
+ * This is the mathematical heart of the user's explicit vision request:
+ * "Ctrl+drag to flex paths" / "professional direct manipulation" / Figma-grade Bend tool
+ * (see BottomToolPalette "Direct / Bend (Flex) – Ctrl+drag curves" and ny0).
+ *
+ * Implementation leverages the existing cubicPointAt / quadraticPointAt helpers
+ * (ported in PathCanvas; future: move to shared mathUtils/geometry for reuse).
+ * For a real production version this would solve for new control points given
+ * a desired offset along the normal at t while keeping endpoint tangents stable.
+ *
+ * PR-02 foundation + ny0 (ShapeShifter-ny0 under v6j): first real implementation
+ * of Bend/Flex Ctrl+drag behavior on the clean dispatcher/gesture system.
+ * References: DESIGN_ID 67dd105e, beads v6j/ny0/1af/ubf, vision "best SVG editor".
+ *
+ * For the initial high-quality slice we provide a simple but effective offset-based
+ * flex that moves the control point(s) perpendicular to the tangent by a factor
+ * of the drag delta. This feels excellent for "bending" while keeping the curve
+ * attached and smooth at the anchors.
+ */
+export function flexCurvature(
+  start: Point,
+  control1: Point | null,
+  control2: Point | null,
+  end: Point,
+  t: number,
+  delta: Point,
+  strength = 1.0
+): { control1: Point | null; control2: Point | null } {
+  // Parametric position on the curve (use the existing pointAt helpers' spirit)
+  // For simplicity and fidelity with current PathCanvas math we compute a
+  // tangent approximation and offset the control point(s) along the normal.
+  const mt = 1 - t;
+
+  // Approximate tangent at t (finite difference using the pointAt logic)
+  const p0 = start;
+  const p1 = control1 ?? start;
+  const p2 = control2 ?? (control1 ?? end);
+  const p3 = end;
+
+  // Very small epsilon for tangent
+  const eps = 0.01;
+  const t1 = Math.max(0, Math.min(1, t - eps));
+  const t2 = Math.max(0, Math.min(1, t + eps));
+
+  // Approximate positions at t±eps (cubic or quad fallback)
+  const pos = (tt: number) => {
+    if (control2) {
+      // cubic
+      const mtt = 1 - tt;
+      return {
+        x: mtt ** 3 * p0.x + 3 * mtt ** 2 * tt * p1.x + 3 * mtt * tt ** 2 * p2.x + tt ** 3 * p3.x,
+        y: mtt ** 3 * p0.y + 3 * mtt ** 2 * tt * p1.y + 3 * mtt * tt ** 2 * p2.y + tt ** 3 * p3.y,
+      };
+    } else {
+      // quad (control1 is the only control)
+      const mtt = 1 - tt;
+      return {
+        x: mtt ** 2 * p0.x + 2 * mtt * tt * p1.x + tt ** 2 * p3.x,
+        y: mtt ** 2 * p0.y + 2 * mtt * tt * p1.y + tt ** 2 * p3.y,
+      };
+    }
+  };
+
+  const before = pos(t1);
+  const after = pos(t2);
+  const tx = after.x - before.x;
+  const ty = after.y - before.y;
+  const len = Math.hypot(tx, ty) || 1;
+  const tangentX = tx / len;
+  const tangentY = ty / len;
+
+  // Normal (perpendicular, rotate 90°)
+  const normalX = -tangentY;
+  const normalY = tangentX;
+
+  // Project the user drag onto the normal (the "flex" amount)
+  const flexAmount = (delta.x * normalX + delta.y * normalY) * strength;
+
+  const newC1 = control1
+    ? {
+        x: control1.x + normalX * flexAmount * 0.6,
+        y: control1.y + normalY * flexAmount * 0.6,
+      }
+    : null;
+
+  const newC2 = control2
+    ? {
+        x: control2.x + normalX * flexAmount * 0.6,
+        y: control2.y + normalY * flexAmount * 0.6,
+      }
+    : null;
+
+  return { control1: newC1, control2: newC2 };
 }

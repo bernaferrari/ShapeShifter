@@ -33,6 +33,7 @@ import type {
 } from "../shapeshifter/types";
 import type { ToolMode, CursorType } from "../shapeshifter/toolModes";
 import { getDemoProject } from "../shapeshifter/demoProjects";
+import { flexCurvature } from "../shapeshifter/gestures/HitTests";
 
 export interface HoveredItem {
   type: "point" | "command" | "layer" | "block";
@@ -201,6 +202,13 @@ interface EditorState {
   addPointOnPath: (clickX: number, clickY: number) => void;
   splitSelectedLayerSegment: (segment: SegmentSelection) => void;
   bendSelectedLayerSegment: (segment: SegmentSelection, point: Point, options?: { recordHistory?: boolean }) => void;
+  /**
+   * Flex curvature on a segment using the pure flexCurvature helper (normal-offset control point adjustment).
+   * Wired for direct tool + Ctrl+drag (ny0 under v6j, DESIGN_ID 67dd105e).
+   * Caller (PathCanvas) computes viewBox-aware delta from pointer move and chooses t (0.5 for segment mid, or handle-derived).
+   * Store owns the lookup + mutation so both from/to sides stay in sync.
+   */
+  flexSelectedLayerSegment: (segment: SegmentSelection, delta: Point, t?: number, options?: { recordHistory?: boolean }) => void;
   deleteSelectedPoint: () => void;
   deleteSelectedSubPath: () => void;
   splitSelectedCommand: () => void;
@@ -968,6 +976,82 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     const from = bendPath(layer.from);
     const to = bendPath(layer.to);
+    const newLayers = [...layers];
+    newLayers[layerIndex] = { ...layer, from, to, pathData: from };
+
+    if (options?.recordHistory !== false) {
+      get().pushHistory();
+    }
+    set({
+      layers: newLayers,
+      selectedLayerId: segment.layerId,
+      editingSide: segment.side,
+    });
+  },
+
+  flexSelectedLayerSegment: (segment, delta, t = 0.5, options) => {
+    const { layers } = get();
+    const layerIndex = layers.findIndex((l) => l.id === segment.layerId);
+    if (layerIndex === -1) return;
+
+    const layer = layers[layerIndex];
+    const flexPath = (pathData: typeof layer.from) => {
+      const next = structuredClone(pathData);
+      const subPath = next.subPaths[segment.subPathIndex];
+      const command = subPath?.commands[segment.commandIndex];
+      const prevCommand = subPath?.commands[segment.commandIndex - 1];
+      const start = prevCommand?.points.at(-1);
+      const end = command?.points.at(-1);
+      if (!subPath || !command || !start || !end || command.type === "M" || command.type === "Z") return next;
+
+      let c1: Point | null = null;
+      let c2: Point | null = null;
+
+      if (command.type === "C" && command.points.length >= 3) {
+        c1 = command.points[0];
+        c2 = command.points[1];
+      } else if (command.type === "Q" && command.points.length >= 2) {
+        c1 = command.points[0];
+        c2 = null;
+      } else if (command.type === "L" || command.points.length === 1) {
+        // Promote to cubic exactly as bendSelectedLayerSegment does, then flex the new controls
+        const control = {
+          x: 2 * ((start.x + end.x) / 2) - 0.5 * start.x - 0.5 * end.x,
+          y: 2 * ((start.y + end.y) / 2) - 0.5 * start.y - 0.5 * end.y,
+        };
+        command.type = "C";
+        command.points = [
+          {
+            x: start.x + (2 / 3) * (control.x - start.x),
+            y: start.y + (2 / 3) * (control.y - start.y),
+          },
+          {
+            x: end.x + (2 / 3) * (control.x - end.x),
+            y: end.y + (2 / 3) * (control.y - end.y),
+          },
+          end,
+        ];
+        c1 = command.points[0];
+        c2 = command.points[1];
+      }
+
+      if (!c1 && !c2) return next;
+
+      const safeT = Math.max(0, Math.min(1, t ?? 0.5));
+      const { control1: newC1, control2: newC2 } = flexCurvature(start, c1, c2, end, safeT, delta);
+
+      if (command.type === "C" && command.points.length >= 3) {
+        if (newC1) command.points[0] = { ...newC1 };
+        if (newC2) command.points[1] = { ...newC2 };
+      } else if (command.type === "Q" && command.points.length >= 2 && newC1) {
+        command.points[0] = { ...newC1 };
+      }
+
+      return next;
+    };
+
+    const from = flexPath(layer.from);
+    const to = flexPath(layer.to);
     const newLayers = [...layers];
     newLayers[layerIndex] = { ...layer, from, to, pathData: from };
 
