@@ -43,7 +43,7 @@ export function CanvasArea({
 
   const compatibility = getCompatibilityStatus();
   const selectedLayer = layers.find((layer) => layer.id === selectedLayerId);
-  const canvasChrome = "rounded-sm border bg-card shadow-lg shadow-black/10 dark:shadow-black/35";
+  const sideCanvasChrome = "rounded-sm border bg-card shadow-lg shadow-black/10 dark:shadow-black/35";
 
   return (
     <div className="flex min-w-0 flex-1 overflow-hidden bg-muted">
@@ -119,7 +119,7 @@ export function CanvasArea({
                 <div className="text-xs text-muted-foreground">FROM path</div>
               </div>
               <button
-                className={`aspect-square max-h-[min(100%,640px)] w-full overflow-hidden ${canvasChrome} ${
+                className={`aspect-square max-h-[min(100%,640px)] w-full overflow-hidden ${sideCanvasChrome} ${
                   editingSide === "from" ? "ring-2 ring-ring" : ""
                 }`}
                 onClick={() => setEditingSide("from")}
@@ -129,14 +129,16 @@ export function CanvasArea({
             </div>
           )}
 
-          <div className={isActionMode ? "relative flex h-full min-h-0 min-w-0 flex-col justify-center" : "relative flex h-full min-h-0 w-full max-w-[720px] flex-col justify-center"}>
+          <div className={isActionMode ? "relative flex h-full min-h-0 min-w-0 flex-col justify-center" : "relative flex h-full min-h-0 w-full max-w-[880px] flex-col justify-center"}>
             <div className="mb-2 flex items-center justify-between">
-              <div>
-                <div className="text-[13px] font-semibold">Vector canvas</div>
-                <div className="text-xs text-muted-foreground">
-                  {isActionMode ? "Path morph" : selectedLayer?.name ?? "SVG"}
+              {isActionMode ? (
+                <div>
+                  <div className="text-[13px] font-semibold">Vector canvas</div>
+                  <div className="text-xs text-muted-foreground">{selectedLayer?.name ?? "Path morph"}</div>
                 </div>
-              </div>
+              ) : (
+                <div aria-hidden="true" />
+              )}
               <div className="flex items-center gap-1.5 bg-muted/50 rounded-lg p-0.5 border border-border">
                 <Button size="icon-xs" variant="ghost" className="h-6 w-6 text-xs text-muted-foreground hover:text-foreground" onClick={() => setZoom(Math.max(0.5, zoom - 0.25))} aria-label="Zoom out">
                   -
@@ -151,7 +153,7 @@ export function CanvasArea({
                 </Button>
               </div>
             </div>
-            <div className={`aspect-square w-full max-w-[min(720px,100%)] overflow-hidden ${canvasChrome}`}>
+            <div className="aspect-square w-full max-w-[min(880px,100%)] overflow-hidden bg-muted">
               <PathCanvas side="preview" resetKey={resetPreview} zoom={zoom} width={456} height={456} />
             </div>
             {compatibility.warning && (
@@ -179,7 +181,7 @@ export function CanvasArea({
                 <div className="text-xs text-muted-foreground">TO path</div>
               </div>
               <button
-                className={`aspect-square max-h-[min(100%,640px)] w-full overflow-hidden ${canvasChrome} ${
+                className={`aspect-square max-h-[min(100%,640px)] w-full overflow-hidden ${sideCanvasChrome} ${
                   editingSide === "to" ? "ring-2 ring-ring" : ""
                 }`}
                 onClick={() => setEditingSide("to")}

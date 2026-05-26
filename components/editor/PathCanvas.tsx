@@ -65,7 +65,7 @@ export const PathCanvas = React.memo(function PathCanvas({
       height: artboardHeight,
       centerX: artboardWidth / 2,
       centerY: artboardHeight / 2,
-      baseViewSize: Math.max(24, baseSize * 1.85),
+      baseViewSize: Math.max(24, baseSize * 1.55),
       gridMinor: baseSize <= 32 ? 1 : Math.max(4, Math.round(baseSize / 48)),
       gridMajor: baseSize <= 32 ? 4 : Math.max(16, Math.round(baseSize / 12)),
     };
@@ -121,6 +121,14 @@ export const PathCanvas = React.memo(function PathCanvas({
       svgRef.current?.setPointerCapture(e.pointerId);
       return;
     }
+    if (side === "preview" && !isActionMode && e.button === 0) {
+      const p = pointFromEvent(e.clientX, e.clientY);
+      if (p) {
+        setBoxSelect({ start: p, current: p });
+        svgRef.current?.setPointerCapture(e.pointerId);
+      }
+      return;
+    }
     // Use getState to avoid declaration order issues with toolMode/isEditingThisSide (robust for Action Mode features)
     const state = useEditorStore.getState();
     if (state.toolMode === "select" && state.editingSide === (side === "from" ? "from" : "to") && e.button === 0) {
@@ -135,7 +143,7 @@ export const PathCanvas = React.memo(function PathCanvas({
         svgRef.current?.setPointerCapture(e.pointerId);
       }
     }
-  }, [pointFromEvent, side]);
+  }, [isActionMode, pointFromEvent, side]);
 
   const handleSvgPointerMove = useCallback(
     (e: React.PointerEvent) => {
@@ -164,6 +172,34 @@ export const PathCanvas = React.memo(function PathCanvas({
       const maxX = Math.max(start.x, current.x);
       const minY = Math.min(start.y, current.y);
       const maxY = Math.max(start.y, current.y);
+      if (side === "preview" && !isActionMode) {
+        const selectRect = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+        const renderedLayers = getPreviewLayers(
+          layers,
+          animation.blocks,
+          animation.duration,
+          progress,
+          selectedLayerId,
+        );
+        const hitLayer = [...renderedLayers]
+          .reverse()
+          .find(({ d }) => {
+            const bounds = getPathBounds(parsePath(d));
+            return bounds ? rectsIntersect(selectRect, bounds) : false;
+          });
+        if (hitLayer) {
+          selectLayer(hitLayer.layer.id);
+          setEditingSide("from");
+        } else if (Math.abs(maxX - minX) > 0.2 || Math.abs(maxY - minY) > 0.2) {
+          const { clearSelection } = useEditorStore.getState();
+          clearSelection();
+        }
+        setBoxSelect(null);
+        if (svgRef.current?.hasPointerCapture(e.pointerId)) {
+          svgRef.current.releasePointerCapture(e.pointerId);
+        }
+        return;
+      }
       let hit = null;
       // Use current layer commands
       const layer = layers.find(l => l.id === selectedLayerId);
@@ -217,7 +253,7 @@ export const PathCanvas = React.memo(function PathCanvas({
     if (svgRef.current?.hasPointerCapture(e.pointerId)) {
       svgRef.current.releasePointerCapture(e.pointerId);
     }
-  }, [boxSelect, layers, selectedLayerId, editingSide, selectPoint]);
+  }, [animation.blocks, animation.duration, boxSelect, editingSide, isActionMode, layers, progress, selectLayer, selectedLayerId, setEditingSide, side]);
 
   
 
@@ -268,6 +304,17 @@ export const PathCanvas = React.memo(function PathCanvas({
   const selectedPreviewPath = selectedPreviewLayer?.d ?? displayPath;
   const selectedPreviewTransform = selectedPreviewLayer?.transform;
   const selectedPathBounds = useMemo(() => getPathBounds(targetPathData), [targetPathData]);
+  const overlayClipPath = side === "preview" ? `url(#${gridId}-artboard-clip)` : undefined;
+  const frameLabel = vector.name?.trim() || "Vector 1";
+  const labelSize = Math.min(Math.max(viewBox.w * 0.008, 0.28), 0.42);
+  const rulerOffset = Math.max(viewBox.w * 0.012, 0.42);
+  const axisTicks = useMemo(
+    () => ({
+      x: ruler.xTicks.filter((tick) => tick >= artboard.x && tick <= artboard.x + artboard.width),
+      y: ruler.yTicks.filter((tick) => tick >= artboard.y && tick <= artboard.y + artboard.height),
+    }),
+    [artboard.height, artboard.width, artboard.x, artboard.y, ruler.xTicks, ruler.yTicks],
+  );
 
   // Dragging logic
   const handlePointerDown = useCallback(
@@ -457,9 +504,25 @@ export const PathCanvas = React.memo(function PathCanvas({
         <filter id={`${gridId}-artboard-shadow`} x="-20%" y="-20%" width="140%" height="140%">
           <feDropShadow dx="0" dy={viewBox.w * 0.018} stdDeviation={viewBox.w * 0.018} floodColor="#000000" floodOpacity="0.22" />
         </filter>
+        <clipPath id={`${gridId}-artboard-clip`}>
+          <rect x={artboard.x} y={artboard.y} width={artboard.width} height={artboard.height} />
+        </clipPath>
       </defs>
 
       <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="#252525" />
+      {side === "preview" && (
+        <text
+          x={artboard.x}
+          y={artboard.y - rulerOffset * 2.8}
+          fill="#0d99ff"
+          fontSize={Math.min(Math.max(viewBox.w * 0.011, 0.38), 0.58)}
+          fontFamily="Inter, ui-sans-serif, system-ui, sans-serif"
+          fontWeight={500}
+          pointerEvents="none"
+        >
+          {frameLabel}
+        </text>
+      )}
       <rect
         x={artboard.x}
         y={artboard.y}
@@ -482,6 +545,34 @@ export const PathCanvas = React.memo(function PathCanvas({
         strokeWidth={Math.max(viewBox.w * 0.0016, 0.06)}
         pointerEvents="none"
       />
+      <g
+        fill="#8e8e8e"
+        fontFamily="Inter, ui-sans-serif, system-ui, sans-serif"
+        fontSize={labelSize}
+        fontWeight={500}
+        pointerEvents="none"
+      >
+        {axisTicks.x.map((tick) => (
+          <text
+            key={`x-${tick}`}
+            x={tick}
+            y={artboard.y - rulerOffset}
+            textAnchor="middle"
+          >
+            {formatAxisTick(tick)}
+          </text>
+        ))}
+        {axisTicks.y.map((tick) => (
+          <text
+            key={`y-${tick}`}
+            x={artboard.x - rulerOffset}
+            y={tick + labelSize * 0.32}
+            textAnchor="end"
+          >
+            {formatAxisTick(tick)}
+          </text>
+        ))}
+      </g>
       {/* Box selection rect (select tool) */}
       {boxSelect && (
         <rect
@@ -489,17 +580,19 @@ export const PathCanvas = React.memo(function PathCanvas({
           y={Math.min(boxSelect.start.y, boxSelect.current.y)}
           width={Math.abs(boxSelect.current.x - boxSelect.start.x)}
           height={Math.abs(boxSelect.current.y - boxSelect.start.y)}
-          fill="none"
           stroke="#0d99ff"
-          strokeWidth="0.4"
-          strokeDasharray="2 1"
-          opacity="0.8"
+          strokeWidth={Math.max(ruler.strokeWidth, 0.04)}
+          strokeDasharray={`${Math.max(viewBox.w * 0.01, 0.35)} ${Math.max(viewBox.w * 0.006, 0.2)}`}
+          fill="#0d99ff"
+          fillOpacity="0.08"
+          opacity="0.9"
+          vectorEffect="non-scaling-stroke"
         />
       )}
 
       {/* The actual path/vector scene */}
       {side === "preview" ? (
-        <g className="text-foreground">
+        <g className="text-foreground" clipPath={`url(#${gridId}-artboard-clip)`}>
           {previewLayers.map(
             ({
               layer,
@@ -544,46 +637,35 @@ export const PathCanvas = React.memo(function PathCanvas({
           )}
         </g>
       ) : (
-        <path
-          d={displayPath}
-          className={side === "from" ? "drop-shadow-sm" : "opacity-85 drop-shadow-sm [stroke-dasharray:4_3]"}
-          fill={currentLayer.fillColor || "none"}
-          fillOpacity={currentLayer.fillAlpha ?? 1}
-          stroke={currentLayer.strokeColor || fallbackStroke}
-          strokeOpacity={currentLayer.strokeAlpha ?? 1}
-          strokeWidth={strokeWidth}
-          strokeLinecap={currentLayer.strokeLinecap ?? "butt"}
-          strokeLinejoin={currentLayer.strokeLinejoin ?? "miter"}
-          strokeMiterlimit={currentLayer.strokeMiterLimit ?? 4}
-          strokeDasharray={currentLayer.strokeDasharray && currentLayer.strokeDasharray !== "none" ? currentLayer.strokeDasharray : (side === "to" ? "4 3" : undefined)}
-          fillRule={currentLayer.fillType === "evenOdd" ? "evenodd" : "nonzero"}
-        />
+        <g clipPath={`url(#${gridId}-artboard-clip)`}>
+          <path
+            d={displayPath}
+            className={side === "from" ? "drop-shadow-sm" : "opacity-85 drop-shadow-sm [stroke-dasharray:4_3]"}
+            fill={currentLayer.fillColor || "none"}
+            fillOpacity={currentLayer.fillAlpha ?? 1}
+            stroke={currentLayer.strokeColor || fallbackStroke}
+            strokeOpacity={currentLayer.strokeAlpha ?? 1}
+            strokeWidth={strokeWidth}
+            strokeLinecap={currentLayer.strokeLinecap ?? "butt"}
+            strokeLinejoin={currentLayer.strokeLinejoin ?? "miter"}
+            strokeMiterlimit={currentLayer.strokeMiterLimit ?? 4}
+            strokeDasharray={currentLayer.strokeDasharray && currentLayer.strokeDasharray !== "none" ? currentLayer.strokeDasharray : (side === "to" ? "4 3" : undefined)}
+            fillRule={currentLayer.fillType === "evenOdd" ? "evenodd" : "nonzero"}
+          />
+        </g>
       )}
 
       {side === "preview" && !isActionMode && (
         <path
           d={selectedPreviewPath}
           transform={selectedPreviewTransform}
+          clipPath={`url(#${gridId}-artboard-clip)`}
           fill="none"
           stroke="transparent"
-          strokeWidth={Math.max(strokeWidth, 8)}
+          strokeWidth={Math.max(strokeWidth, viewBox.w * 0.02)}
           className="cursor-move"
           pointerEvents="stroke"
           onPointerDown={handlePreviewPathPointerDown}
-        />
-      )}
-
-      {side === "preview" && !isActionMode && (
-        <path
-          d={selectedPreviewPath}
-          transform={selectedPreviewTransform}
-          fill="none"
-          stroke="#0d99ff"
-          strokeWidth={Math.max(viewBox.w * 0.002, 0.08)}
-          strokeOpacity="1"
-          strokeLinecap={currentLayer.strokeLinecap ?? "butt"}
-          strokeLinejoin={currentLayer.strokeLinejoin ?? "miter"}
-          pointerEvents="none"
         />
       )}
 
@@ -594,9 +676,11 @@ export const PathCanvas = React.memo(function PathCanvas({
           width={selectedPathBounds.width}
           height={selectedPathBounds.height}
           transform={side === "preview" ? selectedPreviewTransform : undefined}
+          clipPath={overlayClipPath}
           fill="none"
           stroke="#0d99ff"
-          strokeWidth={Math.max(ruler.strokeWidth * 1.6, 0.08)}
+          strokeWidth={Math.max(ruler.strokeWidth * 1.15, 0.06)}
+          vectorEffect="non-scaling-stroke"
           pointerEvents="none"
         />
       )}
@@ -617,7 +701,11 @@ export const PathCanvas = React.memo(function PathCanvas({
             const strokeW = Math.max(viewBox.w * 0.0022, 0.08);
 
             return (
-              <g key={`${command.id}-${pointIndex}`} transform={side === "preview" ? selectedPreviewTransform : undefined}>
+              <g
+                key={`${command.id}-${pointIndex}`}
+                transform={side === "preview" ? selectedPreviewTransform : undefined}
+                clipPath={overlayClipPath}
+              >
                 {/* Handle line for cubics (original draws point -> handleIn / handleOut) */}
                 {isCubic && showHandles && pointIndex < 2 && (
                   <line
@@ -627,6 +715,7 @@ export const PathCanvas = React.memo(function PathCanvas({
                     y2={point.y}
                     stroke="#0d99ff"
                     strokeWidth={Math.max(viewBox.w * 0.0018, 0.06)}
+                    vectorEffect="non-scaling-stroke"
                     opacity={0.6}
                   />
                 )}
@@ -638,6 +727,7 @@ export const PathCanvas = React.memo(function PathCanvas({
                   fill={fill}
                   stroke="#0d99ff"
                   strokeWidth={strokeW}
+                  vectorEffect="non-scaling-stroke"
                   onPointerDown={(e) =>
                     handlePointerDown(e, subPathIndex, commandIndex, pointIndex)
                   }
@@ -682,6 +772,10 @@ function buildTicks(min: number, max: number, interval: number) {
   return ticks;
 }
 
+function formatAxisTick(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
 function getPathBounds(path: PathData) {
   const points = path.subPaths.flatMap((subPath) => subPath.commands.flatMap((command) => command.points));
   if (points.length === 0) return null;
@@ -697,6 +791,18 @@ function getPathBounds(path: PathData) {
     width: Math.max(0.01, maxX - minX),
     height: Math.max(0.01, maxY - minY),
   };
+}
+
+function rectsIntersect(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+) {
+  return (
+    a.x <= b.x + b.width &&
+    a.x + a.width >= b.x &&
+    a.y <= b.y + b.height &&
+    a.y + a.height >= b.y
+  );
 }
 
 type PreviewLayer = {
