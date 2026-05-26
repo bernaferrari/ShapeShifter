@@ -6,7 +6,7 @@
 
 import type { Command, CommandType, PathData, Point, SubPath } from "./types";
 import { arePointsEqual } from "./mathUtils";
-import { getPoleOfInaccessibility, isSubPathClockwise } from "./geometry";
+import { getPoleOfInaccessibility, isSubPathClockwise, arcToBeziers } from "./geometry";
 
 let idCounter = 0;
 function generateId(): string {
@@ -879,8 +879,8 @@ function convertCommandType(cmd: Command, start: Point, targetType: CommandType)
  * a massive leap over naive equalizers. All previous tests + new NW behavior expected.
  */
 export function autoFixPathPair(from: PathData, to: PathData): [PathData, PathData] {
-  let a = clonePathDataForSplit(from);
-  let b = clonePathDataForSplit(to);
+  let a = normalizePathData(clonePathDataForSplit(from));
+  let b = normalizePathData(clonePathDataForSplit(to));
 
   // 1. Equalize top-level subpath count using collapsing subpaths at poles of inaccessibility
   if (a.subPaths.length < b.subPaths.length) {
@@ -1091,4 +1091,140 @@ function equalizeSubpathCommands(target: PathData, ref: PathData, subIdx: number
     result = splitCommandInHalf(result, subIdx, idx);
   }
   return result;
+}
+
+/**
+ * Normalizes all path commands into absolute ones, converting smooth 'S'
+ * and smooth 'T' shorthands, as well as elliptical arcs 'A', into standard
+ * absolute 'C' and 'Q' commands.
+ */
+export function normalizeCommands(commands: Command[]): Command[] {
+  const normalized: Command[] = [];
+  let current: Point = { x: 0, y: 0 };
+  let subPathStart: Point = { x: 0, y: 0 };
+
+  for (let i = 0; i < commands.length; i++) {
+    const cmd = commands[i];
+    const type = cmd.type;
+
+    if (type === "M") {
+      const p = cmd.points[0];
+      current = p;
+      subPathStart = p;
+      normalized.push({ ...cmd });
+      continue;
+    }
+
+    if (type === "Z") {
+      current = { ...subPathStart };
+      normalized.push({ ...cmd });
+      continue;
+    }
+
+    if (type === "L") {
+      current = cmd.points[0];
+      normalized.push({ ...cmd });
+      continue;
+    }
+
+    if (type === "C") {
+      current = cmd.points[2];
+      normalized.push({ ...cmd });
+      continue;
+    }
+
+    if (type === "Q") {
+      current = cmd.points[1];
+      normalized.push({ ...cmd });
+      continue;
+    }
+
+    if (type === "S") {
+      const cp2 = cmd.points[0];
+      const to = cmd.points[1];
+
+      let cp1: Point = { ...current };
+      const prev = normalized.at(-1);
+      if (prev && prev.type === "C") {
+        const prevCp2 = prev.points[1];
+        const prevTo = prev.points[2];
+        cp1 = {
+          x: 2 * prevTo.x - prevCp2.x,
+          y: 2 * prevTo.y - prevCp2.y,
+        };
+      }
+
+      normalized.push({
+        id: cmd.id,
+        type: "C",
+        points: [cp1, cp2, to],
+      });
+      current = to;
+      continue;
+    }
+
+    if (type === "T") {
+      const to = cmd.points[0];
+
+      let cp1: Point = { ...current };
+      const prev = normalized.at(-1);
+      if (prev && prev.type === "Q") {
+        const prevCp1 = prev.points[0];
+        const prevTo = prev.points[1];
+        cp1 = {
+          x: 2 * prevTo.x - prevCp1.x,
+          y: 2 * prevTo.y - prevCp1.y,
+        };
+      }
+
+      normalized.push({
+        id: cmd.id,
+        type: "Q",
+        points: [cp1, to],
+      });
+      current = to;
+      continue;
+    }
+
+    if (type === "A" && cmd.arcParams) {
+      const ap = cmd.arcParams;
+      const to = cmd.points[0];
+      
+      const beziers = arcToBeziers(current.x, current.y, ap.rx, ap.ry, ap.xRotation, ap.largeArc, ap.sweep, to.x, to.y);
+      if (beziers.length === 0) {
+        normalized.push({
+          id: cmd.id,
+          type: "L",
+          points: [to],
+        });
+      } else {
+        beziers.forEach((bz, idx) => {
+          normalized.push({
+            id: idx === 0 ? cmd.id : generateId(),
+            type: "C",
+            points: [bz.cp1, bz.cp2, bz.to],
+          });
+        });
+      }
+      current = to;
+      continue;
+    }
+
+    normalized.push({ ...cmd });
+    if (cmd.points.length > 0) {
+      current = cmd.points.at(-1)!;
+    }
+  }
+
+  return normalized;
+}
+
+export function normalizePathData(pathData: PathData): PathData {
+  return {
+    ...pathData,
+    subPaths: pathData.subPaths.map((sp) => ({
+      ...sp,
+      commands: normalizeCommands(sp.commands),
+    })),
+  };
 }

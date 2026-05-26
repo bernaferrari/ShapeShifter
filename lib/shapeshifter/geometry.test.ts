@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isSubPathClockwise, getPoleOfInaccessibility, getCommandArea } from "./geometry";
+import { isSubPathClockwise, getPoleOfInaccessibility, getCommandArea, arcToBeziers } from "./geometry";
 import { parsePath } from "./pathUtils";
 
 describe("geometry winding (isSubPathClockwise)", () => {
@@ -43,5 +43,24 @@ describe("geometry centroid (getPoleOfInaccessibility)", () => {
     expect(pole).toBeDefined();
     expect(Number.isFinite(pole.x)).toBe(true);
     expect(Number.isFinite(pole.y)).toBe(true);
+  });
+});
+
+describe("arcToBeziers conversion", () => {
+  it("converts a standard arc into cubic Bezier segments", () => {
+    const beziers = arcToBeziers(0, 0, 5, 5, 0, false, true, 5, 5);
+    expect(beziers.length).toBeGreaterThan(0);
+    
+    // The final segment's endpoint must equal the target coordinate
+    const last = beziers.at(-1)!;
+    expect(last.to.x).toBeCloseTo(5, 1);
+    expect(last.to.y).toBeCloseTo(5, 1);
+  });
+
+  it("safely approximates zero-radius arcs as straight cubic lines", () => {
+    const beziers = arcToBeziers(0, 0, 0, 0, 0, false, true, 6, 6);
+    expect(beziers.length).toBe(1);
+    expect(beziers[0].to.x).toBe(6);
+    expect(beziers[0].to.y).toBe(6);
   });
 });

@@ -277,3 +277,142 @@ export function getPoleOfInaccessibility(subPath: SubPath, precision = 0.5): Poi
 
   return { x: bestCell.x, y: bestCell.y };
 }
+
+/**
+ * Port of SvgUtil.arcToBeziers (W1-T1).
+ * Converts an elliptical arc (rx, ry, xAxisRotation, largeArc, sweep, x2, y2)
+ * starting at (x1, y1) into a sequence of cubic Bezier curve segments.
+ */
+export function arcToBeziers(
+  x1: number,
+  y1: number,
+  rx: number,
+  ry: number,
+  xAxisRotation: number,
+  largeArc: boolean,
+  sweep: boolean,
+  x2: number,
+  y2: number
+): { cp1: Point; cp2: Point; to: Point }[] {
+  if (x1 === x2 && y1 === y2) return [];
+
+  if (rx === 0 || ry === 0) {
+    return [{
+      cp1: { x: x1 + (x2 - x1) / 3, y: y1 + (y2 - y1) / 3 },
+      cp2: { x: x1 + 2 * (x2 - x1) / 3, y: y1 + 2 * (y2 - y1) / 3 },
+      to: { x: x2, y: y2 }
+    }];
+  }
+
+  rx = Math.abs(rx);
+  ry = Math.abs(ry);
+
+  const phi = (xAxisRotation * Math.PI) / 180;
+  const cosPhi = Math.cos(phi);
+  const sinPhi = Math.sin(phi);
+
+  const dx = (x1 - x2) / 2;
+  const dy = (y1 - y2) / 2;
+  const x1p = cosPhi * dx + sinPhi * dy;
+  const y1p = -sinPhi * dx + cosPhi * dy;
+
+  let rxSq = rx * rx;
+  let rySq = ry * ry;
+  const x1pSq = x1p * x1p;
+  const y1pSq = y1p * y1p;
+
+  const radiiCheck = x1pSq / rxSq + y1pSq / rySq;
+  if (radiiCheck > 1) {
+    rx *= Math.sqrt(radiiCheck);
+    ry *= Math.sqrt(radiiCheck);
+    rxSq = rx * rx;
+    rySq = ry * ry;
+  }
+
+  const sign = largeArc === sweep ? -1 : 1;
+  const num = rxSq * rySq - rxSq * y1pSq - rySq * x1pSq;
+  const den = rxSq * y1pSq + rySq * x1pSq;
+  let sq = den === 0 ? 0 : num / den;
+  if (sq < 0) sq = 0;
+  const coef = sign * Math.sqrt(sq);
+  const cxp = coef * ((rx * y1p) / ry);
+  const cyp = coef * -((ry * x1p) / rx);
+
+  const cx = cosPhi * cxp - sinPhi * cyp + (x1 + x2) / 2;
+  const cy = sinPhi * cxp + cosPhi * cyp + (y1 + y2) / 2;
+
+  const ux = (x1p - cxp) / rx;
+  const uy = (y1p - cyp) / ry;
+  const vx = (-x1p - cxp) / rx;
+  const vy = (-y1p - cyp) / ry;
+
+  const angleBetween = (ux1: number, uy1: number, ux2: number, uy2: number) => {
+    const dot = ux1 * ux2 + uy1 * uy2;
+    const len = Math.sqrt(ux1 * ux1 + uy1 * uy1) * Math.sqrt(ux2 * ux2 + uy2 * uy2);
+    let ang = dot / len;
+    if (ang < -1) ang = -1;
+    if (ang > 1) ang = 1;
+    const angle = Math.acos(ang);
+    const sign = ux1 * uy2 - uy1 * ux2 < 0 ? -1 : 1;
+    return sign * angle;
+  };
+
+  const startAngle = angleBetween(1, 0, ux, uy);
+  let deltaAngle = angleBetween(ux, uy, vx, vy);
+
+  if (!sweep && deltaAngle > 0) {
+    deltaAngle -= 2 * Math.PI;
+  } else if (sweep && deltaAngle < 0) {
+    deltaAngle += 2 * Math.PI;
+  }
+
+  const segments = Math.ceil(Math.abs(deltaAngle) / (Math.PI / 2));
+  const beziers: { cp1: Point; cp2: Point; to: Point }[] = [];
+
+  for (let i = 0; i < segments; i++) {
+    const a1 = startAngle + (i * deltaAngle) / segments;
+    const a2 = startAngle + ((i + 1) * deltaAngle) / segments;
+    
+    const theta = a2 - a1;
+    const t = Math.tan(theta / 4);
+    const alpha = (Math.sin(theta) * (Math.sqrt(4 + 3 * t * t) - 1)) / 3;
+
+    const cosA1 = Math.cos(a1);
+    const sinA1 = Math.sin(a1);
+    const cosA2 = Math.cos(a2);
+    const sinA2 = Math.sin(a2);
+
+    const ex1 = cosA1;
+    const ey1 = sinA1;
+    const tx1 = -sinA1;
+    const ty1 = cosA1;
+
+    const ecp1x = ex1 + alpha * tx1;
+    const ecp1y = ey1 + alpha * ty1;
+
+    const ex2 = cosA2;
+    const ey2 = sinA2;
+    const tx2 = -sinA2;
+    const ty2 = cosA2;
+
+    const ecp2x = ex2 - alpha * tx2;
+    const ecp2y = ey2 - alpha * ty2;
+
+    const transformPoint = (ex: number, ey: number): Point => {
+      const x = rx * ex;
+      const y = ry * ey;
+      return {
+        x: cosPhi * x - sinPhi * y + cx,
+        y: sinPhi * x + cosPhi * y + cy,
+      };
+    };
+
+    const cp1 = transformPoint(ecp1x, ecp1y);
+    const cp2 = transformPoint(ecp2x, ecp2y);
+    const pEnd = i === segments - 1 ? { x: x2, y: y2 } : transformPoint(ex2, ey2);
+
+    beziers.push({ cp1, cp2, to: pEnd });
+  }
+
+  return beziers;
+}
