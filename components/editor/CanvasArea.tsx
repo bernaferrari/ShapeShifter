@@ -3,8 +3,9 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Copy, Gauge, MousePointer2, Pause, PenTool, Play, Plus, Repeat, RotateCcw, SkipBack, SkipForward } from "lucide-react";
+import { Copy, Gauge, MousePointer2, Pause, PenTool, Play, Plus, Repeat, RotateCcw, SkipBack, SkipForward, Trash2 } from "lucide-react";
 import { PathCanvas } from "./PathCanvas";
 import { useEditorStore } from "@/lib/store/editorStore";
 
@@ -43,11 +44,14 @@ export function CanvasArea({
     selectedFrameId,
     addFrame,
     duplicateFrame,
+    renameFrame,
+    deleteFrame,
     selectFrame,
   } = useEditorStore();
 
   const compatibility = getCompatibilityStatus();
   const selectedLayer = layers.find((layer) => layer.id === selectedLayerId);
+  const selectedFrame = frames.find((frame) => frame.id === selectedFrameId);
   const sideCanvasChrome = "rounded-sm border bg-card shadow-lg shadow-black/10 dark:shadow-black/35";
 
   return (
@@ -156,6 +160,14 @@ export function CanvasArea({
                       </Button>
                     ))}
                   </div>
+                  {selectedFrame && (
+                    <Input
+                      className="h-7 w-36 rounded-md px-2 text-xs"
+                      value={selectedFrame.name}
+                      onChange={(event) => renameFrame(selectedFrame.id, event.target.value)}
+                      aria-label="Rename selected frame"
+                    />
+                  )}
                   <Tooltip>
                     <TooltipTrigger
                       render={
@@ -175,6 +187,23 @@ export function CanvasArea({
                       <Plus className="h-3.5 w-3.5" />
                     </TooltipTrigger>
                     <TooltipContent>Add frame</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          size="icon-xs"
+                          variant="ghost"
+                          className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          onClick={() => selectedFrame && deleteFrame(selectedFrame.id)}
+                          disabled={frames.length <= 1}
+                          aria-label="Delete frame"
+                        />
+                      }
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </TooltipTrigger>
+                    <TooltipContent>Delete frame</TooltipContent>
                   </Tooltip>
                 </div>
               )}

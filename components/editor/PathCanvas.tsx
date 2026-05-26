@@ -28,9 +28,11 @@ export const PathCanvas = React.memo(function PathCanvas({
 }: PathCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const gridId = React.useId();
+  const suppressNextZoomSync = useRef(false);
 
   const [viewBox, setViewBox] = React.useState<ViewBox>({ x: 0, y: 0, w: 48, h: 48, scale: 1 });
   const [isPanning, setIsPanning] = React.useState(false);
+  const [isSpaceDown, setIsSpaceDown] = React.useState(false);
   const [lastPan, setLastPan] = React.useState({ x: 0, y: 0 });
   const [boxSelect, setBoxSelect] = React.useState<null | {start: {x:number; y:number}; current: {x:number; y:number}}>(null);
   const [isVectorEditing, setIsVectorEditing] = React.useState(false);
@@ -56,6 +58,7 @@ export const PathCanvas = React.memo(function PathCanvas({
     updateSelectedLayer,
     resizeSelectedLayer,
     deleteLayer,
+    setZoom,
     toolMode,
     isActionMode,
   } = useEditorStore();
@@ -78,7 +81,11 @@ export const PathCanvas = React.memo(function PathCanvas({
   }, [vector.height, vector.width]);
 
   useEffect(() => {
-    const scale = Math.max(0.5, Math.min(8, zoom));
+    const scale = Math.max(0.25, Math.min(8, zoom));
+    if (suppressNextZoomSync.current) {
+      suppressNextZoomSync.current = false;
+      return;
+    }
     const size = artboard.baseViewSize / scale;
     setViewBox({
       x: artboard.centerX - size / 2,
@@ -107,21 +114,23 @@ export const PathCanvas = React.memo(function PathCanvas({
       const mouse = pointFromEvent(e.clientX, e.clientY);
       if (!mouse) return;
 
-      const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9;
-      const newScale = Math.max(0.5, Math.min(10, viewBox.scale * zoomFactor));
+      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+      const newScale = Math.max(0.25, Math.min(8, viewBox.scale * zoomFactor));
       const newW = artboard.baseViewSize / newScale;
       const newH = artboard.baseViewSize / newScale;
 
       const newX = mouse.x - (mouse.x - viewBox.x) * (newW / viewBox.w);
       const newY = mouse.y - (mouse.y - viewBox.y) * (newH / viewBox.h);
 
+      suppressNextZoomSync.current = true;
+      setZoom(newScale);
       setViewBox({ x: newX, y: newY, w: newW, h: newH, scale: newScale });
     },
-    [artboard.baseViewSize, pointFromEvent, viewBox],
+    [artboard.baseViewSize, pointFromEvent, setZoom, viewBox],
   );
 
   const handleSvgPointerDown = useCallback((e: React.PointerEvent) => {
-    if (e.button === 1 || e.altKey) {
+    if (e.button === 1 || e.altKey || isSpaceDown) {
       setIsPanning(true);
       setLastPan({ x: e.clientX, y: e.clientY });
       svgRef.current?.setPointerCapture(e.pointerId);
@@ -149,7 +158,7 @@ export const PathCanvas = React.memo(function PathCanvas({
         svgRef.current?.setPointerCapture(e.pointerId);
       }
     }
-  }, [isActionMode, pointFromEvent, side]);
+  }, [isActionMode, isSpaceDown, pointFromEvent, side]);
 
   const handleSvgPointerMove = useCallback(
     (e: React.PointerEvent) => {
@@ -569,6 +578,11 @@ export const PathCanvas = React.memo(function PathCanvas({
         target?.tagName === "TEXTAREA" ||
         target?.isContentEditable;
       if (isEditableTarget) return;
+      if (event.code === "Space") {
+        event.preventDefault();
+        setIsSpaceDown(true);
+        return;
+      }
       if (event.key === "Escape") {
         setIsVectorEditing(false);
         return;
@@ -597,8 +611,18 @@ export const PathCanvas = React.memo(function PathCanvas({
       }
     };
 
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.code === "Space") {
+        setIsSpaceDown(false);
+      }
+    };
+
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
   }, [deleteLayer, isActionMode, isVectorEditing, layers.length, selectedLayerId, setEditingSide, side]);
 
   const isSelected = (subPathIndex: number, commandIndex: number, pointIndex: number) => {
@@ -625,7 +649,7 @@ export const PathCanvas = React.memo(function PathCanvas({
       height={height}
       viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
       className={`h-full w-full min-w-0 touch-none select-none bg-card ${
-        side === "preview" && !isActionMode ? "cursor-default" : "cursor-crosshair"
+        isSpaceDown || isPanning ? "cursor-grab" : side === "preview" && !isActionMode ? "cursor-default" : "cursor-crosshair"
       }`}
       onClick={handleSvgClick}
       onWheel={handleWheel}

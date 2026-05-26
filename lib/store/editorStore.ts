@@ -163,6 +163,8 @@ interface EditorState {
   // Workspace frame actions
   addFrame: () => void;
   duplicateFrame: () => void;
+  renameFrame: (id: string, name: string) => void;
+  deleteFrame: (id: string) => void;
   selectFrame: (id: string) => void;
 
   // Actions
@@ -470,6 +472,55 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       animation: structuredClone(frame.animation),
       hiddenLayerIds: [...frame.hiddenLayerIds],
       selectedLayerId: getFirstEditableLayerId(frame.layers),
+      selection: null,
+      selectedPoints: [],
+      selectedBlockIds: [],
+      progress: 0,
+      isPlaying: false,
+    });
+  },
+
+  renameFrame: (id, name) => {
+    const trimmedName = name.trim() || "Frame";
+    set((state) => {
+      const frames = saveActiveFrame(state).map((frame) =>
+        frame.id === id
+          ? {
+              ...frame,
+              name: trimmedName,
+              vector: { ...frame.vector, name: trimmedName },
+            }
+          : frame,
+      );
+
+      if (id !== state.selectedFrameId) {
+        return { frames };
+      }
+
+      return {
+        frames,
+        vector: { ...state.vector, name: trimmedName },
+      };
+    });
+  },
+
+  deleteFrame: (id) => {
+    const state = get();
+    const savedFrames = saveActiveFrame(state);
+    if (savedFrames.length <= 1) return;
+    const frameIndex = savedFrames.findIndex((frame) => frame.id === id);
+    if (frameIndex === -1) return;
+    const nextFrames = savedFrames.filter((frame) => frame.id !== id);
+    const fallbackFrame = nextFrames[Math.max(0, frameIndex - 1)] ?? nextFrames[0];
+    if (!fallbackFrame) return;
+    set({
+      frames: nextFrames,
+      selectedFrameId: fallbackFrame.id,
+      layers: cloneLayers(fallbackFrame.layers),
+      vector: structuredClone(fallbackFrame.vector),
+      animation: structuredClone(fallbackFrame.animation),
+      hiddenLayerIds: [...fallbackFrame.hiddenLayerIds],
+      selectedLayerId: getFirstEditableLayerId(fallbackFrame.layers),
       selection: null,
       selectedPoints: [],
       selectedBlockIds: [],
@@ -846,7 +897,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   toggleSlowMotion: () => set((state) => ({ isSlowMotion: !state.isSlowMotion })),
   toggleRepeating: () => set((state) => ({ isRepeating: !state.isRepeating })),
 
-  setZoom: (zoom) => set({ zoom }),
+  setZoom: (zoom) => set({ zoom: Math.max(0.25, Math.min(8, zoom)) }),
   toggleSnap: () => set((state) => ({ snapToGrid: !state.snapToGrid })),
 
   selectBlocks: (blockIds) => set({ selectedBlockIds: blockIds }),
@@ -1093,7 +1144,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   updateVector: (patch) => {
-    set((state) => ({ vector: { ...state.vector, ...patch } }));
+    set((state) => {
+      const vector = { ...state.vector, ...patch };
+      const frames = saveActiveFrame({ ...state, vector }).map((frame) =>
+        frame.id === state.selectedFrameId ? { ...frame, name: vector.name, vector } : frame,
+      );
+      return { vector, frames };
+    });
   },
 
   setAnimationDuration: (ms) => {
