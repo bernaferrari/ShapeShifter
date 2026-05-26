@@ -22,6 +22,7 @@ export const PathCanvas = React.memo(function PathCanvas({
   zoom = 1,
 }: PathCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const gridId = React.useId();
 
   const [viewBox, setViewBox] = React.useState({ x: 0, y: 0, w: 48, h: 48, scale: 1 });
   const [isPanning, setIsPanning] = React.useState(false);
@@ -361,13 +362,20 @@ export const PathCanvas = React.memo(function PathCanvas({
       role="img"
       aria-label={`${side} path canvas`}
     >
-      {/* Subtle grid */}
+      {/* Subtle infinite grid + viewport axes */}
       <defs>
-        <pattern id="grid" width="4" height="4" patternUnits="userSpaceOnUse">
-          <path d="M 4 0 L 0 0 0 4" className="stroke-foreground/8" fill="none" strokeWidth="0.08" />
+        <pattern id={`${gridId}-minor`} width="4" height="4" patternUnits="userSpaceOnUse">
+          <path d="M 4 0 L 0 0 0 4" className="stroke-muted-foreground/20" fill="none" strokeWidth="0.06" />
+        </pattern>
+        <pattern id={`${gridId}-major`} width="12" height="12" patternUnits="userSpaceOnUse">
+          <path d="M 12 0 L 0 0 0 12" className="stroke-muted-foreground/30" fill="none" strokeWidth="0.08" />
         </pattern>
       </defs>
-      <rect x="0" y="0" width="48" height="48" fill="url(#grid)" />
+      <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill={`url(#${gridId}-minor)`} />
+      <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill={`url(#${gridId}-major)`} />
+      <line x1="0" y1={viewBox.y} x2="0" y2={viewBox.y + viewBox.h} className="stroke-primary/45" strokeWidth="0.14" />
+      <line x1={viewBox.x} y1="0" x2={viewBox.x + viewBox.w} y2="0" className="stroke-primary/45" strokeWidth="0.14" />
+      <rect x="0" y="0" width="48" height="48" className="fill-transparent stroke-border/70" strokeWidth="0.18" />
       {/* Box selection rect (select tool) */}
       {boxSelect && (
         <rect

@@ -531,8 +531,8 @@ export default function ShapeShifter2026() {
       />
 
       {/* Main Workspace Layout */}
-      <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1 overflow-hidden bg-muted">
-        <ResizablePanel id="workspace" minSize={55} defaultSize={isActionMode ? 100 : 76}>
+      <div className="flex min-h-0 flex-1 overflow-hidden bg-muted">
+        <div className="min-w-0 flex-1 overflow-hidden">
           <ResizablePanelGroup orientation="vertical" className="min-h-0">
             <ResizablePanel id="canvas" minSize={38} defaultSize={66}>
               <main className="flex h-full min-h-0 overflow-hidden">
@@ -549,19 +549,14 @@ export default function ShapeShifter2026() {
               <LayerTimeline onOpenSVGImport={openSVGImport} onExport={handleExport} onLoadSample={loadSample} />
             </ResizablePanel>
           </ResizablePanelGroup>
-        </ResizablePanel>
+        </div>
 
         {!isActionMode && (
-          <>
-            <ResizableHandle className="bg-sidebar-border" />
-            <ResizablePanel id="inspector" minSize={18} maxSize={32} defaultSize={24}>
-              <aside className="flex h-full min-w-72 flex-col overflow-hidden bg-sidebar shadow-xs">
-                <Inspector />
-              </aside>
-            </ResizablePanel>
-          </>
+          <aside className="flex h-full w-80 shrink-0 flex-col overflow-hidden border-l bg-sidebar shadow-xs">
+            <Inspector />
+          </aside>
         )}
-      </ResizablePanelGroup>
+      </div>
 
       <input
         type="file"

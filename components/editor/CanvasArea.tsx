@@ -40,6 +40,7 @@ export function CanvasArea({
   } = useEditorStore();
 
   const compatibility = getCompatibilityStatus();
+  const canvasChrome = "rounded-sm border bg-card shadow-md";
 
   return (
     <div className="flex min-w-0 flex-1 overflow-hidden bg-muted dark:bg-zinc-950">
@@ -115,12 +116,14 @@ export function CanvasArea({
                 <div className="text-xs text-muted-foreground">FROM path</div>
               </div>
               <button
-                className={`aspect-square w-full overflow-hidden rounded-sm border bg-card shadow-sm ${
+                className={`aspect-square w-full overflow-hidden ${canvasChrome} ${
                   editingSide === "from" ? "ring-2 ring-ring" : ""
                 }`}
                 onClick={() => setEditingSide("from")}
               >
-                <PathCanvas side="from" resetKey={resetFrom} zoom={zoom} width={420} height={420} />
+                <CanvasWithRulers>
+                  <PathCanvas side="from" resetKey={resetFrom} zoom={zoom} width={420} height={420} />
+                </CanvasWithRulers>
               </button>
             </div>
           )}
@@ -147,8 +150,10 @@ export function CanvasArea({
                 </Button>
               </div>
             </div>
-            <div className="aspect-square w-full overflow-hidden rounded-sm border bg-card shadow-md">
-              <PathCanvas side="preview" resetKey={resetPreview} zoom={zoom} width={456} height={456} />
+            <div className={`aspect-square w-full overflow-hidden ${canvasChrome}`}>
+              <CanvasWithRulers>
+                <PathCanvas side="preview" resetKey={resetPreview} zoom={zoom} width={456} height={456} />
+              </CanvasWithRulers>
             </div>
             {compatibility.warning && (
               <div className="mt-3 flex items-center justify-between rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-foreground">
@@ -175,12 +180,14 @@ export function CanvasArea({
                 <div className="text-xs text-muted-foreground">TO path</div>
               </div>
               <button
-                className={`aspect-square w-full overflow-hidden rounded-sm border bg-card shadow-sm ${
+                className={`aspect-square w-full overflow-hidden ${canvasChrome} ${
                   editingSide === "to" ? "ring-2 ring-ring" : ""
                 }`}
                 onClick={() => setEditingSide("to")}
               >
-                <PathCanvas side="to" resetKey={resetTo} zoom={zoom} width={420} height={420} />
+                <CanvasWithRulers>
+                  <PathCanvas side="to" resetKey={resetTo} zoom={zoom} width={420} height={420} />
+                </CanvasWithRulers>
               </button>
             </div>
           )}
@@ -273,4 +280,39 @@ export function CanvasArea({
 
 function MaterialToolIcon({ name }: { name: string }) {
   return <span className="material-symbols text-[18px] leading-none">{name}</span>;
+}
+
+function CanvasWithRulers({ children }: { children: React.ReactNode }) {
+  const ticks = [0, 12, 24, 36, 48];
+
+  return (
+    <div className="relative h-full w-full overflow-hidden bg-card">
+      <div aria-hidden="true" className="pointer-events-none absolute left-8 right-0 top-0 z-10 h-8 border-b bg-card/90 text-[10px] text-muted-foreground backdrop-blur-sm">
+        {ticks.map((tick) => (
+          <span
+            key={tick}
+            className="absolute bottom-1 flex -translate-x-1/2 flex-col items-center gap-0.5 tabular-nums"
+            style={{ left: `${(tick / 48) * 100}%` }}
+          >
+            <span className="h-1.5 w-px bg-border" />
+            {tick}
+          </span>
+        ))}
+      </div>
+      <div aria-hidden="true" className="pointer-events-none absolute bottom-0 left-0 top-8 z-10 w-8 border-r bg-card/90 text-[10px] text-muted-foreground backdrop-blur-sm">
+        {ticks.map((tick) => (
+          <span
+            key={tick}
+            className="absolute right-1 flex -translate-y-1/2 items-center gap-0.5 tabular-nums"
+            style={{ top: `${(tick / 48) * 100}%` }}
+          >
+            {tick}
+            <span className="h-px w-1.5 bg-border" />
+          </span>
+        ))}
+      </div>
+      <div aria-hidden="true" className="absolute left-0 top-0 z-20 h-8 w-8 border-b border-r bg-card/95" />
+      <div className="h-full w-full pl-8 pt-8">{children}</div>
+    </div>
+  );
 }

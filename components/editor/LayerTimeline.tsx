@@ -65,9 +65,9 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
       : ["pathData", "fillColor", "fillAlpha", "strokeColor", "strokeAlpha", "strokeWidth", "trimPathStart", "trimPathEnd", "trimPathOffset"];
 
   return (
-    <section className="z-20 flex h-full min-h-0 shrink-0 bg-card shadow-md">
-      <div className="flex min-h-0 w-[300px] shrink-0 flex-col border-r">
-        <div className="flex h-10 items-center gap-0.5 border-b px-1.5">
+    <section className="z-20 flex h-full min-h-0 shrink-0 bg-card text-card-foreground shadow-md">
+      <div className="flex min-h-0 w-[300px] shrink-0 flex-col border-r border-border/60 bg-sidebar">
+        <div className="flex h-10 items-center gap-0.5 border-b border-border/60 bg-card px-1.5 shadow-xs">
           <DropdownMenu>
             <DropdownMenuTrigger render={<button type="button" className="h-8 rounded px-2 text-xs font-medium hover:bg-muted" />}>File</DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-44">
@@ -131,7 +131,7 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                   className={`flex h-8 w-full items-center gap-2 px-2 text-left transition-all border-l-2 ${
                     isSelected
                       ? "bg-primary/10 border-primary text-foreground font-semibold"
-                      : "bg-transparent border-transparent text-foreground hover:bg-muted"
+                      : "bg-transparent border-transparent text-foreground hover:bg-muted/70"
                   }`}
                   onClick={() => selectLayer(layer.id)}
                   onDoubleClick={() => isExpandable && toggleLayerExpanded(layer.id)}
@@ -217,11 +217,11 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                   </span>
                 </button>
                 {layer.expanded !== false && existingProperties.length > 0 && (
-                  <div className="ml-7 border-l border-border/80 pl-2">
+                  <div className="ml-7 border-l border-border/50 pl-2">
                     {existingProperties.map((propertyName) => (
                       <button
                         key={propertyName}
-                        className="flex h-5 w-full items-center justify-between rounded px-2 text-left text-[10px] text-muted-foreground hover:bg-muted"
+                        className="flex h-5 w-full items-center justify-between rounded px-2 text-left text-[10px] text-muted-foreground hover:bg-muted/70"
                         onClick={() => addTimelineBlock(layer.id, propertyName)}
                       >
                         <span className="font-mono">{propertyName}</span>
@@ -236,11 +236,11 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
         </div>
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex h-10 items-center gap-2 border-b px-3">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-card">
+        <div className="flex h-10 items-center gap-2 border-b border-border/60 bg-card px-3 shadow-xs">
           <div className="flex items-center gap-1.5 text-xs font-semibold">
             <Timer className="h-3.5 w-3.5" />
-            <span>anim</span><span className="ml-1 text-[10px] text-accent">(drag blocks)</span>
+            <span>anim</span><span className="ml-1 text-[10px] text-muted-foreground">(drag blocks)</span>
             <span className="text-muted-foreground">{animation.duration}ms</span>
           </div>
           <Button size="icon-xs" variant="ghost" aria-label="Zoom timeline to fit">
@@ -248,7 +248,7 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
           </Button>
         </div>
         <div
-          className="relative grid h-7 grid-cols-11 border-b text-[11px] text-muted-foreground select-none cursor-ew-resize hover:bg-muted/40 active:bg-muted/60 transition-colors"
+          className="relative grid h-7 grid-cols-11 border-b border-border/60 bg-muted/20 text-[11px] text-muted-foreground select-none cursor-ew-resize hover:bg-muted/35 active:bg-muted/50 transition-colors"
           onPointerDown={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const updateProgress = (clientX: number) => {
@@ -278,7 +278,7 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
           }}
         >
           {Array.from({ length: 11 }, (_, index) => (
-            <span key={index} className="border-l pl-1 leading-7">
+            <span key={index} className="border-l border-border/45 pl-1 leading-7">
               {((durationSeconds * index) / 10).toFixed(1)}s
             </span>
           ))}
@@ -308,13 +308,19 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
           </div>
         )}
 
-        <div className="relative min-h-0 flex-1 bg-[linear-gradient(90deg,var(--border)_1px,transparent_1px)] bg-[length:10%_100%] pt-2.5">
+        <div
+          className="relative min-h-0 flex-1 bg-muted/15 pt-2.5"
+          style={{
+            backgroundImage: "linear-gradient(90deg, color-mix(in oklab, var(--border) 45%, transparent) 1px, transparent 1px)",
+            backgroundSize: "10% 100%",
+          }}
+        >
           <div
-            className="absolute bottom-0 top-0 z-10 w-0.5 bg-destructive before:absolute before:-left-1 before:-top-px before:h-2.5 before:w-2.5 before:rounded-full before:bg-destructive"
+            className="absolute bottom-0 top-0 z-10 w-0.5 bg-primary before:absolute before:-left-1 before:-top-px before:h-2.5 before:w-2.5 before:rounded-full before:bg-primary"
             style={{ left: `${Math.round(progress * 100)}%` }}
           />
           {layers.map((layer) => (
-            <div key={layer.id} className="relative h-9 border-b">
+            <div key={layer.id} className="relative h-9 border-b border-border/45">
               {animation.blocks
                 .filter((block) => String(block.layerId) === String(layer.id))
                 .map((block) => {
@@ -354,7 +360,7 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                   return (
                     <div
                       key={block.id}
-                      className={`absolute top-2.5 h-2.5 rounded-full shadow-inner cursor-grab active:cursor-grabbing transition-all ${isSelected ? "bg-primary ring-1 ring-primary-foreground" : "bg-accent/70"}`}
+                      className={`absolute top-2.5 h-2.5 rounded-full shadow-inner cursor-grab active:cursor-grabbing transition-all ${isSelected ? "bg-primary ring-1 ring-primary-foreground" : "bg-primary/45 hover:bg-primary/60"}`}
                       style={{
                         left: `${leftPct}%`,
                         width: `${widthPct}%`,

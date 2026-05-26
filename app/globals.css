@@ -150,6 +150,12 @@
   outline-offset: 2px;
 }
 
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
 /* Smooth theme transition */
 html,
 body,
