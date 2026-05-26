@@ -5,6 +5,7 @@ import { useEditorStore } from "@/lib/store/editorStore";
 import { pathToString, getInterpolatedPath } from "@/lib/shapeshifter/pathUtils";
 
 type PointSelection = { subPathIndex: number; commandIndex: number; pointIndex: number };
+type ViewBox = { x: number; y: number; w: number; h: number; scale: number };
 
 interface PathCanvasProps {
   resetKey?: number;
@@ -24,7 +25,7 @@ export const PathCanvas = React.memo(function PathCanvas({
   const svgRef = useRef<SVGSVGElement>(null);
   const gridId = React.useId();
 
-  const [viewBox, setViewBox] = React.useState({ x: 0, y: 0, w: 48, h: 48, scale: 1 });
+  const [viewBox, setViewBox] = React.useState<ViewBox>({ x: 0, y: 0, w: 48, h: 48, scale: 1 });
   const [isPanning, setIsPanning] = React.useState(false);
   const [lastPan, setLastPan] = React.useState({ x: 0, y: 0 });
   const [boxSelect, setBoxSelect] = React.useState<null | {start: {x:number; y:number}; current: {x:number; y:number}}>(null);
@@ -229,6 +230,7 @@ export const PathCanvas = React.memo(function PathCanvas({
       ),
     [targetPathData],
   );
+  const ruler = useMemo(() => getRulerModel(viewBox), [viewBox]);
 
   // Dragging logic
   const handlePointerDown = useCallback(
@@ -373,6 +375,40 @@ export const PathCanvas = React.memo(function PathCanvas({
       </defs>
       <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill={`url(#${gridId}-minor)`} />
       <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill={`url(#${gridId}-major)`} />
+      <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={ruler.headerSize} className="fill-card/70" />
+      <rect x={viewBox.x} y={viewBox.y} width={ruler.headerSize} height={viewBox.h} className="fill-card/70" />
+      <line x1={viewBox.x} y1={viewBox.y + ruler.headerSize} x2={viewBox.x + viewBox.w} y2={viewBox.y + ruler.headerSize} className="stroke-border/70" strokeWidth={ruler.strokeWidth} />
+      <line x1={viewBox.x + ruler.headerSize} y1={viewBox.y} x2={viewBox.x + ruler.headerSize} y2={viewBox.y + viewBox.h} className="stroke-border/70" strokeWidth={ruler.strokeWidth} />
+      {ruler.xTicks.map((tick) => (
+        <g key={`x-${tick}`} aria-hidden="true">
+          <line x1={tick} y1={viewBox.y + ruler.headerSize - ruler.tickSize} x2={tick} y2={viewBox.y + ruler.headerSize} className="stroke-border/75" strokeWidth={ruler.strokeWidth} />
+          <text
+            x={tick}
+            y={viewBox.y + ruler.headerSize - ruler.labelOffset}
+            className="fill-muted-foreground opacity-70"
+            fontSize={ruler.fontSize}
+            textAnchor="middle"
+            dominantBaseline="alphabetic"
+          >
+            {formatTick(tick)}
+          </text>
+        </g>
+      ))}
+      {ruler.yTicks.map((tick) => (
+        <g key={`y-${tick}`} aria-hidden="true">
+          <line x1={viewBox.x + ruler.headerSize - ruler.tickSize} y1={tick} x2={viewBox.x + ruler.headerSize} y2={tick} className="stroke-border/75" strokeWidth={ruler.strokeWidth} />
+          <text
+            x={viewBox.x + ruler.headerSize - ruler.labelOffset}
+            y={tick}
+            className="fill-muted-foreground opacity-70"
+            fontSize={ruler.fontSize}
+            textAnchor="end"
+            dominantBaseline="middle"
+          >
+            {formatTick(tick)}
+          </text>
+        </g>
+      ))}
       <line x1="0" y1={viewBox.y} x2="0" y2={viewBox.y + viewBox.h} className="stroke-primary/45" strokeWidth="0.14" />
       <line x1={viewBox.x} y1="0" x2={viewBox.x + viewBox.w} y2="0" className="stroke-primary/45" strokeWidth="0.14" />
       <rect x="0" y="0" width="48" height="48" className="fill-transparent stroke-border/70" strokeWidth="0.18" />
@@ -470,3 +506,39 @@ export const PathCanvas = React.memo(function PathCanvas({
     </svg>
   );
 });
+
+function getRulerModel(viewBox: ViewBox) {
+  const targetTickCount = 5;
+  const rawInterval = viewBox.w / targetTickCount;
+  const interval = chooseNiceInterval(rawInterval);
+  const xTicks = buildTicks(viewBox.x, viewBox.x + viewBox.w, interval);
+  const yTicks = buildTicks(viewBox.y, viewBox.y + viewBox.h, interval);
+
+  return {
+    xTicks,
+    yTicks,
+    headerSize: viewBox.w * 0.072,
+    tickSize: viewBox.w * 0.012,
+    labelOffset: viewBox.w * 0.012,
+    fontSize: viewBox.w * 0.024,
+    strokeWidth: viewBox.w * 0.0018,
+  };
+}
+
+function chooseNiceInterval(rawInterval: number) {
+  const intervals = [0.5, 1, 2, 4, 6, 8, 12, 16, 24, 48, 96];
+  return intervals.find((interval) => interval >= rawInterval) ?? intervals[intervals.length - 1];
+}
+
+function buildTicks(min: number, max: number, interval: number) {
+  const ticks: number[] = [];
+  const start = Math.ceil(min / interval) * interval;
+  for (let value = start; value <= max; value += interval) {
+    ticks.push(Number(value.toFixed(4)));
+  }
+  return ticks;
+}
+
+function formatTick(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}

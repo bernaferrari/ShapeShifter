@@ -534,7 +534,7 @@ export default function ShapeShifter2026() {
       <div className="flex min-h-0 flex-1 overflow-hidden bg-muted">
         <div className="min-w-0 flex-1 overflow-hidden">
           <ResizablePanelGroup orientation="vertical" className="min-h-0">
-            <ResizablePanel id="canvas" minSize={38} defaultSize={66}>
+            <ResizablePanel id="canvas" minSize={58} defaultSize={76}>
               <main className="flex h-full min-h-0 overflow-hidden">
                 <CanvasArea
                   resetFrom={resetFrom}
@@ -545,7 +545,7 @@ export default function ShapeShifter2026() {
               </main>
             </ResizablePanel>
             <ResizableHandle className="bg-border/80" />
-            <ResizablePanel id="timeline" minSize={20} defaultSize={34}>
+            <ResizablePanel id="timeline" minSize={16} defaultSize={24}>
               <LayerTimeline onOpenSVGImport={openSVGImport} onExport={handleExport} onLoadSample={loadSample} />
             </ResizablePanel>
           </ResizablePanelGroup>
