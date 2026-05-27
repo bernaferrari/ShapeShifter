@@ -513,8 +513,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const frame: CanvasFrame = {
       id: `frame-${Date.now()}`,
       name,
-      x: nextIndex * 32,
-      y: 0,
+      // Place new frames in a more spread out, visible way in the freeform world.
+      x: nextIndex * 140,
+      y: 40,
       layers: cloneLayers(initialLayers),
       vector: { ...initialVector, id: `vector-${Date.now()}`, name },
       animation: { ...initialAnimation, id: `anim-${Date.now()}` },
@@ -546,8 +547,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       ...activeFrame,
       id: `frame-${Date.now()}`,
       name: `${activeFrame.name} copy`,
-      x: activeFrame.x + 32,
-      y: activeFrame.y + 32,
+      // More visible offset than the tiny previous +32. Combined with the world camera "bring into view" logic, duplicates should now appear near the user's current focus instead of disappearing diagonally offscreen.
+      x: activeFrame.x + 120,
+      y: activeFrame.y + 120,
       vector: {
         ...activeFrame.vector,
         id: `vector-${Date.now()}`,
