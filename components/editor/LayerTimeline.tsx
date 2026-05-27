@@ -11,7 +11,6 @@ import {
   MoreVertical,
   Plus,
   Timer,
-  ZoomIn,
   Square,
   Crop,
 } from "lucide-react";
@@ -453,9 +452,6 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
               className={`h-3.5 w-3.5 transition-transform ${timelineCollapsed ? "" : "rotate-90"}`}
             />
           </Button>
-          <Button size="icon-xs" variant="ghost" aria-label="Zoom timeline to fit">
-            <ZoomIn className="h-3.5 w-3.5" />
-          </Button>
         </div>
         <div
           className="relative grid h-7 grid-cols-11 border-b border-border/60 bg-muted/20 text-[11px] text-muted-foreground select-none cursor-ew-resize hover:bg-muted/35 active:bg-muted/50 transition-colors"
@@ -686,7 +682,7 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                             onPointerMove={handleResizeMove}
                             onPointerUp={handleResizeEnd}
                             onPointerCancel={handleResizeEnd}
-                            aria-label="Resize block start time"
+                            aria-hidden="true"
                           />
                           {/* Right edge resize handle */}
                           <div
@@ -695,7 +691,7 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                             onPointerMove={handleResizeMove}
                             onPointerUp={handleResizeEnd}
                             onPointerCancel={handleResizeEnd}
-                            aria-label="Resize block end time"
+                            aria-hidden="true"
                           />
                         </div>
                       );

@@ -260,6 +260,26 @@ export default function ShapeShifter2026() {
               if (isOriginalShapeShifterProject(project)) {
                 const flattened = flattenOriginalProject(project);
                 useEditorStore.getState().loadProject(flattened);
+                // vrh/24t residual: restore frames (x/y layout) from exportProjectJSON for full freeform project roundtrip fidelity (complex multi-artboard case). Uses loaded projection content + serialized metadata. Matches exporter surface. Zero regression.
+                if (
+                  (project as any).frames &&
+                  Array.isArray((project as any).frames) &&
+                  (project as any).frames.length > 0
+                ) {
+                  const st = useEditorStore.getState();
+                  const baseFrame = st.frames?.[0];
+                  const restoredFrames = (project as any).frames.map((f: any, idx: number) => ({
+                    ...baseFrame,
+                    id: String(f.id || `frame-${Date.now()}-${idx}`),
+                    name: String(f.name || baseFrame?.name || `Frame ${idx + 1}`),
+                    x: Number(f.x ?? 0),
+                    y: Number(f.y ?? 0),
+                  }));
+                  useEditorStore.setState({
+                    frames: restoredFrames as any,
+                    selectedFrameId: restoredFrames[0]?.id || st.selectedFrameId,
+                  });
+                }
                 return `Loaded project: ${flattened.vector.name}`;
               } else {
                 const importedLayers: Layer[] = Array.isArray(project.layers)
@@ -318,6 +338,26 @@ export default function ShapeShifter2026() {
               return;
             }
             useEditorStore.getState().loadProject(flattened);
+            // vrh/24t residual: restore frames (x/y layout) from exportProjectJSON for full freeform project roundtrip fidelity (complex multi-artboard case). Uses loaded projection content + serialized metadata. Matches exporter surface. Zero regression.
+            if (
+              (project as any).frames &&
+              Array.isArray((project as any).frames) &&
+              (project as any).frames.length > 0
+            ) {
+              const st = useEditorStore.getState();
+              const baseFrame = st.frames?.[0];
+              const restoredFrames = (project as any).frames.map((f: any, idx: number) => ({
+                ...baseFrame,
+                id: String(f.id || `frame-${Date.now()}-${idx}`),
+                name: String(f.name || baseFrame?.name || `Frame ${idx + 1}`),
+                x: Number(f.x ?? 0),
+                y: Number(f.y ?? 0),
+              }));
+              useEditorStore.setState({
+                frames: restoredFrames as any,
+                selectedFrameId: restoredFrames[0]?.id || st.selectedFrameId,
+              });
+            }
             toast.success(`Opened ${flattened.vector.name}`, {
               description: `${flattened.layers.length} layer(s), ${flattened.animation.blocks.length} animation block(s)`,
             });
@@ -708,9 +748,9 @@ export default function ShapeShifter2026() {
                 </div>
                 <div className="flex items-center justify-between">
                   <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">
-                    Timeline drag
+                    Timeline blocks
                   </kbd>
-                  <span className="text-muted-foreground">Scrub + block resize</span>
+                  <span className="text-muted-foreground">Drag to move + edge resize</span>
                 </div>
               </div>
             </div>
@@ -886,7 +926,8 @@ export default function ShapeShifter2026() {
                 })
               }
             >
-              <Play className="mr-2 h-4 w-4" /> Toggle Playback (Space)
+              <Play className="mr-2 h-4 w-4" /> Toggle Playback{" "}
+              <CommandShortcut>Space</CommandShortcut>
             </CommandItem>
             <CommandItem
               onSelect={() =>
@@ -896,7 +937,7 @@ export default function ShapeShifter2026() {
                 })
               }
             >
-              <Zap className="mr-2 h-4 w-4" /> Auto Fix (A)
+              <Zap className="mr-2 h-4 w-4" /> Auto Fix <CommandShortcut>A</CommandShortcut>
             </CommandItem>
             <CommandItem
               onSelect={() =>
@@ -906,7 +947,7 @@ export default function ShapeShifter2026() {
                 })
               }
             >
-              <RotateCw className="mr-2 h-4 w-4" /> Reverse (R)
+              <RotateCw className="mr-2 h-4 w-4" /> Reverse <CommandShortcut>R</CommandShortcut>
             </CommandItem>
             <CommandItem
               onSelect={() =>
@@ -916,7 +957,8 @@ export default function ShapeShifter2026() {
                 })
               }
             >
-              <ArrowLeftRight className="mr-2 h-4 w-4" /> Shift Points (S)
+              <ArrowLeftRight className="mr-2 h-4 w-4" /> Shift Points{" "}
+              <CommandShortcut>S</CommandShortcut>
             </CommandItem>
             <CommandItem
               onSelect={() =>
