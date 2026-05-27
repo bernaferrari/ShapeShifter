@@ -65,6 +65,13 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
     originalStart: number;
     originalEnd: number;
   }>(null);
+  const [resizingBlock, setResizingBlock] = React.useState<null | {
+    id: string;
+    edge: "start" | "end";
+    startX: number;
+    originalStart: number;
+    originalEnd: number;
+  }>(null);
   const [timelineCollapsed, setTimelineCollapsed] = React.useState(false); // non-intrusive collapse for optional animation vision
 
   type TimelineLayer =
@@ -574,15 +581,72 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                         (e.target as HTMLElement).releasePointerCapture(e.pointerId);
                       };
 
+                      // Resize edge handlers (Figma/Framer pro timeline block duration editing)
+                      const handleResizeStart =
+                        (edge: "start" | "end") => (e: React.PointerEvent) => {
+                          e.stopPropagation();
+                          (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                          setResizingBlock({
+                            id: block.id,
+                            edge,
+                            startX: e.clientX,
+                            originalStart: block.startTime,
+                            originalEnd: block.endTime,
+                          });
+                          const store = useEditorStore.getState();
+                          store.selectBlocks([block.id]);
+                        };
+
+                      const handleResizeMove = (e: React.PointerEvent) => {
+                        if (!resizingBlock || resizingBlock.id !== block.id) return;
+                        const rect =
+                          e.currentTarget.parentElement?.parentElement?.getBoundingClientRect() ??
+                          e.currentTarget.parentElement?.getBoundingClientRect();
+                        const width = Math.max(1, rect?.width ?? 300);
+                        const deltaX = e.clientX - resizingBlock.startX;
+                        const deltaTime = (deltaX / width) * animation.duration;
+                        const minDur = 50;
+                        let newStart = resizingBlock.originalStart;
+                        let newEnd = resizingBlock.originalEnd;
+                        if (resizingBlock.edge === "start") {
+                          newStart = Math.max(
+                            0,
+                            Math.min(
+                              resizingBlock.originalEnd - minDur,
+                              resizingBlock.originalStart + deltaTime,
+                            ),
+                          );
+                          newStart = Math.round(newStart / 50) * 50;
+                        } else {
+                          newEnd = Math.max(
+                            resizingBlock.originalStart + minDur,
+                            Math.min(animation.duration, resizingBlock.originalEnd + deltaTime),
+                          );
+                          newEnd = Math.round(newEnd / 50) * 50;
+                        }
+                        const store = useEditorStore.getState();
+                        store.updateTimelineBlock(block.id, {
+                          startTime: newStart,
+                          endTime: newEnd,
+                        });
+                      };
+
+                      const handleResizeEnd = (e: React.PointerEvent) => {
+                        setResizingBlock(null);
+                        try {
+                          (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+                        } catch {}
+                      };
+
                       return (
                         <div
                           key={block.id}
-                          className={`absolute top-1.5 h-3 rounded-sm cursor-grab active:cursor-grabbing transition-colors ${isSelected ? "bg-primary ring-1 ring-ring" : "bg-primary/60 hover:bg-primary/75"} ${interp === "LINEAR" ? "border border-dashed border-primary/70" : ""}`}
+                          className={`absolute top-1.5 h-3 rounded-sm cursor-grab active:cursor-grabbing transition-colors relative overflow-visible ${isSelected ? "bg-primary ring-1 ring-ring" : "bg-primary/60 hover:bg-primary/75"} ${interp === "LINEAR" ? "border border-dashed border-primary/70" : ""}`}
                           style={{
                             left: `${leftPct}%`,
                             width: `${widthPct}%`,
                           }}
-                          title={`${block.propertyName}: ${block.startTime}-${block.endTime}ms [${interp}] (drag to move, snaps to 50ms frames) — click to multi-select`}
+                          title={`${block.propertyName}: ${block.startTime}-${block.endTime}ms [${interp}] (drag center to move • drag edges to resize duration, snaps to 50ms) — click to multi-select`}
                           onPointerDown={handleDragStart}
                           onPointerMove={handleDragMove}
                           onPointerUp={handleDragEnd}
@@ -591,7 +655,26 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                             e.stopPropagation();
                             useEditorStore.getState().toggleBlockSelection(block.id);
                           }}
-                        />
+                        >
+                          {/* Left edge resize handle (pro timeline UX) */}
+                          <div
+                            className="absolute left-0 top-0 h-full w-2 cursor-ew-resize z-20 rounded-l-sm active:bg-primary/80 hover:bg-primary/40"
+                            onPointerDown={handleResizeStart("start")}
+                            onPointerMove={handleResizeMove}
+                            onPointerUp={handleResizeEnd}
+                            onPointerCancel={handleResizeEnd}
+                            aria-label="Resize block start time"
+                          />
+                          {/* Right edge resize handle */}
+                          <div
+                            className="absolute right-0 top-0 h-full w-2 cursor-ew-resize z-20 rounded-r-sm active:bg-primary/80 hover:bg-primary/40"
+                            onPointerDown={handleResizeStart("end")}
+                            onPointerMove={handleResizeMove}
+                            onPointerUp={handleResizeEnd}
+                            onPointerCancel={handleResizeEnd}
+                            aria-label="Resize block end time"
+                          />
+                        </div>
                       );
                     })}
               </div>

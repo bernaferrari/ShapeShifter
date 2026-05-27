@@ -485,26 +485,18 @@ export function Inspector() {
               <div className="grid grid-cols-2 gap-2 px-4">
                 <div className="flex items-center gap-1.5">
                   <span className="font-mono text-[10px] text-muted-foreground">X</span>
-                  <Input
-                    type="number"
-                    value={point.x.toFixed(2)}
-                    className="h-7 rounded-sm bg-background font-mono text-xs"
-                    step="0.1"
-                    onChange={(event) =>
-                      updateSelectedPoint({ x: parseFloat(event.target.value) || 0, y: point.y })
-                    }
+                  <NumberField
+                    value={point.x}
+                    step={0.1}
+                    onChange={(val) => updateSelectedPoint({ x: val, y: point.y })}
                   />
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="font-mono text-[10px] text-muted-foreground">Y</span>
-                  <Input
-                    type="number"
-                    value={point.y.toFixed(2)}
-                    className="h-7 rounded-sm bg-background font-mono text-xs"
-                    step="0.1"
-                    onChange={(event) =>
-                      updateSelectedPoint({ x: point.x, y: parseFloat(event.target.value) || 0 })
-                    }
+                  <NumberField
+                    value={point.y}
+                    step={0.1}
+                    onChange={(val) => updateSelectedPoint({ x: point.x, y: val })}
                   />
                 </div>
               </div>

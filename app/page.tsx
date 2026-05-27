@@ -626,6 +626,8 @@ export default function ShapeShifter2026() {
             <div>Play / Pause</div>
             <div className="font-mono">V / P / D / L</div>
             <div>Tools: Move / Pen / Direct / Lasso</div>
+            <div className="font-mono">B</div>
+            <div>Paint / Fill bucket</div>
             <div className="font-mono">A</div>
             <div>Auto Fix</div>
             <div className="font-mono">R</div>
@@ -641,17 +643,19 @@ export default function ShapeShifter2026() {
             <div className="font-mono">1 / 2</div>
             <div>Switch From / To</div>
             <div className="font-mono">⌘K</div>
-            <div>Command Palette (fuzzy tools/actions)</div>
+            <div>Command Palette (fuzzy + power)</div>
             <div className="font-mono">Esc</div>
             <div>Clear selection</div>
             <div className="font-mono">Delete / ⌫</div>
             <div>Remove point</div>
             <div className="font-mono">⌘W</div>
             <div>Close Action Mode</div>
+            <div className="font-mono">Space / Timeline</div>
+            <div>Playback scrub + block drag/resize</div>
           </div>
           <div className="text-xs text-muted-foreground mt-2">
-            Pro tip: Use Auto Fix when the compatibility warning appears. All tools also in ⌘K
-            palette. Inspector supports drag-to-scrub on numbers.
+            Pro: Inspector drag-scrub everywhere (incl. points). Timeline: center-drag blocks,
+            edge-drag to resize (snaps 50ms). All in ⌘K. Optional animation power feature.
           </div>
         </DialogContent>
       </Dialog>
@@ -787,6 +791,50 @@ export default function ShapeShifter2026() {
             >
               Add Path Layer
             </CommandItem>
+            <CommandItem
+              onSelect={() =>
+                runCommand(() => {
+                  const { toggleSlowMotion } = useEditorStore.getState();
+                  toggleSlowMotion();
+                  toast.success("Slow motion toggled");
+                })
+              }
+            >
+              <RotateCw className="mr-2 h-4 w-4" /> Toggle Slow Motion (0.25x)
+            </CommandItem>
+            <CommandItem
+              onSelect={() =>
+                runCommand(() => {
+                  const { toggleRepeating } = useEditorStore.getState();
+                  toggleRepeating();
+                  toast.success("Repeat toggled");
+                })
+              }
+            >
+              <Play className="mr-2 h-4 w-4" /> Toggle Repeat Playback
+            </CommandItem>
+            <CommandItem
+              onSelect={() =>
+                runCommand(() => {
+                  const { setProgress } = useEditorStore.getState();
+                  setProgress(0);
+                  toast.success("Playback head reset");
+                })
+              }
+            >
+              <Zap className="mr-2 h-4 w-4" /> Reset Playback Head
+            </CommandItem>
+            <CommandItem
+              onSelect={() =>
+                runCommand(() => {
+                  const s = useEditorStore.getState();
+                  s.clearBlockSelection?.();
+                  toast.success("Block selection cleared");
+                })
+              }
+            >
+              Clear Timeline Block Selection
+            </CommandItem>
           </CommandGroup>
           <CommandGroup heading="Recent">
             {DEMO_INFOS.slice(0, 4).map((demo, index) => (
@@ -804,6 +852,18 @@ export default function ShapeShifter2026() {
             </CommandItem>
             <CommandItem onSelect={() => runCommand(() => handleExport("json"))}>
               <Download className="mr-2 h-4 w-4" /> Export Project JSON
+            </CommandItem>
+            <CommandItem onSelect={() => runCommand(() => handleExport("lottie"))}>
+              <Download className="mr-2 h-4 w-4" /> Export Lottie JSON
+            </CommandItem>
+            <CommandItem onSelect={() => runCommand(() => handleExport("vector"))}>
+              <Download className="mr-2 h-4 w-4" /> Export Vector Drawable
+            </CommandItem>
+            <CommandItem onSelect={() => runCommand(() => handleExport("avd"))}>
+              <Download className="mr-2 h-4 w-4" /> Export Animated Vector Drawable
+            </CommandItem>
+            <CommandItem onSelect={() => runCommand(() => handleExport("spritesheet"))}>
+              <Download className="mr-2 h-4 w-4" /> Export SVG Spritesheet
             </CommandItem>
           </CommandGroup>
         </CommandList>
