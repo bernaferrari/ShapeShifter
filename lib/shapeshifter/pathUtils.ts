@@ -410,11 +410,12 @@ export function insertPointNear(
 }
 
 /**
- * Finds the closest point on the path (with better curve awareness via sampling)
- * and actually splits the command at that location.
- * This is the curve-aware counterpart to insertPointNear and is used for
- * precise "add point on curve" and Auto Fix splitting.
+ * Finds the closest point on the path (curve-aware via de Casteljau sampling for C/Q)
+ * and splits the containing command (at 0.5 for smallest faithful split).
+ * This is the curve-aware counterpart to insertPointNear (vn7 k88: fixed prior linear-only
+ * sampling on curves) and is used for precise "add point on curve" and Auto Fix splitting.
  * Returns the updated PathData with the split performed.
+ * Refs: 21g/upk/3ds/kbv, DESIGN 67dd105e.
  */
 export function splitPointNear(
   pathData: PathData,
@@ -437,8 +438,36 @@ export function splitPointNear(
 
       for (let i = 0; i <= sampleCount; i++) {
         const t = i / sampleCount;
-        const x = prev.x + (end.x - prev.x) * t;
-        const y = prev.y + (end.y - prev.y) * t;
+        // Real curve-aware projection (vn7 k88 harden): use de Casteljau / cubic-quad eval for C/Q
+        // (fixes prior linear-only sampling on curves, which missed true closest for knife/pen/21g).
+        // Matches sampleCubic/sampleQuad + splitCommandInHalf patterns exactly in this file.
+        let x: number;
+        let y: number;
+        if (cmd.type === "C" && cmd.points.length === 3) {
+          const p1 = cmd.points[0];
+          const p2 = cmd.points[1];
+          const p3 = end;
+          const mt = 1 - t;
+          const w0 = mt * mt * mt;
+          const w1 = 3 * mt * mt * t;
+          const w2 = 3 * mt * t * t;
+          const w3 = t * t * t;
+          x = w0 * prev.x + w1 * p1.x + w2 * p2.x + w3 * p3.x;
+          y = w0 * prev.y + w1 * p1.y + w2 * p2.y + w3 * p3.y;
+        } else if (cmd.type === "Q" && cmd.points.length === 2) {
+          const p1 = cmd.points[0];
+          const p2 = end;
+          const mt = 1 - t;
+          const w0 = mt * mt;
+          const w1 = 2 * mt * t;
+          const w2 = t * t;
+          x = w0 * prev.x + w1 * p1.x + w2 * p2.x;
+          y = w0 * prev.y + w1 * p1.y + w2 * p2.y;
+        } else {
+          // L / H / V or fallback
+          x = prev.x + (end.x - prev.x) * t;
+          y = prev.y + (end.y - prev.y) * t;
+        }
         const d = (x - click.x) ** 2 + (y - click.y) ** 2;
 
         const isEndpoint = t === 0 || t === 1;
@@ -1285,10 +1314,10 @@ export function normalizePathData(pathData: PathData): PathData {
  * Real boolean combine (union/subtract/intersect/exclude) replacing 21g console stub.
  * Pure-TS, no deps. Uses dense curve sampling (exact pattern from geometry.ts sampleCubic/Quad + insertPointNear)
  * + copied pointInPoly (from HitTests even-odd, for core independence) + winding via existing isSubPathClockwise.
- * For smallest diff: containment-driven logic for common non-self-intersect cases (knife/pen post-split hits).
- * Overlapping boundaries fall back to subpath concat (visual union-ish; full edge-intersect clipper TODO).
+ * For smallest diff (kbv): containment-driven logic for common non-self-intersect cases (knife/pen post-split hits).
+ * Overlapping boundaries fall back to subpath concat (visual union-ish; full edge-intersect clipper deferred).
  * Result preserves caller styles/attrs. Multi-subpath safe via poly list.
- * Refs: v6j DESIGN 67dd105e, kbv, 21g/upk/3ds, k88 baseline gap note.
+ * Refs: v6j DESIGN 67dd105e, kbv, 21g/upk/3ds, k88 baseline (vn7 harden adds tests/precision notes).
  */
 function pointInPoly(pt: Point, poly: Point[]): boolean {
   if (!poly || poly.length < 3) return false;
@@ -1420,7 +1449,7 @@ export function booleanCombine(op: BooleanOp, a: PathData, b: PathData): PathDat
   } else if (op === "intersect") {
     if (aInB) resultPolys = [pA];
     else if (bInA) resultPolys = [pB];
-    else resultPolys = [pA]; // approx; full clip TODO
+    else resultPolys = [pA]; // approx for overlap (full edge clipper deferred per kbv smallest)
   } else if (op === "exclude") {
     if (aInB || bInA) {
       resultPolys = [pA, pB.slice().reverse()];

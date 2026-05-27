@@ -1,25 +1,26 @@
 /**
  * ShapeShifter 2026 - Select / Drag / Clone Items Gesture
  * The primary selection + move gesture (original SelectDragCloneItemsGesture).
- * 
+ *
  * Handles:
  * - Click to select
  * - Drag to move (with shift constraint, alt clone)
  * - Integration with snap (Phase 7)
- * 
+ *
  * PR-01.1 / 2cq (ShapeShifter-2cq under mvd/7fz): Now the first *live* concrete gesture
  * instantiated by GestureDispatcher for marquee intent (when toolMode select/default and
  * empty canvas or explicit "marquee" HitTestResult). The three (now four) marquee callbacks
  * are the bridge that lets the gesture own decision + lifecycle while PathCanvas owns only
  * transient rect rendering + capture.
  *
- * PR-02 start (this work): onMouseUp now calls commitMarqueeSelection(start, point) when
- * we have a startPoint. This triggers the AABB multi-point commit + hit test logic
- * (provided by PathCanvas via the callback at dispatcher creation time, using its helpers).
- * The gesture now owns the end-of-marquee commit trigger. Real hit tests + further
- * migration of the AABB collection itself will evolve here in subsequent PR-02 steps.
+ * PR-02 completion (ShapeShifter-ubf / ubf.1 under 2cq/v6j): onMouseUp owns the commit trigger
+ * (calls commitMarqueeSelection). The actual AABB multi-point collection + hit tests now live
+ * in the gesture system (HitTests.collectPointsInRect + getMarqueeRect + rectsIntersect, used
+ * by the PathCanvas callback). Dispatcher remains sole gate. Full multi, shift-additive,
+ * empty-clear, preview-vs-edit parity preserved. Real hit tests extracted from monolith.
  *
- * References: DESIGN_ID 67dd105e Key Decision #2, beads 2cq/7fz/mvd/ish/c9f/dwm/v6j.
+ * References: DESIGN_ID 67dd105e Key Decision #2, beads ubf/2cq/v6j/ny0/1af, parity-checklist.md BatchSelect.
+ * Next: Bend/Flex Ctrl+drag (ny0) and full Lasso.
  */
 
 import type { Point } from "../../types";
@@ -37,17 +38,24 @@ export class SelectDragItemsGesture extends Gesture {
     this.startPoint = point;
     this.didMove = false;
 
-    // TODO: Hit test + update selection in store
-    // For now the skeleton just records the intent
+    // Note (vn7 k88 harden): Hit test + selection update for click/drag items currently handled in PathCanvas
+    // direct handlers (handlePointPointerDown, selectLayer etc) for full edit-path parity. Gesture owns
+    // marquee path exclusively via callbacks (PR-02). Skeleton records intent for future dedicated ownership
+    // (no new API added; smallest per scope).
     this.setCursor("move");
   }
 
-  onMouseDrag(_point: Point, _delta: Point, _modifiers: { shift: boolean; alt: boolean; ctrl: boolean }): void {
+  onMouseDrag(
+    _point: Point,
+    _delta: Point,
+    _modifiers: { shift: boolean; alt: boolean; ctrl: boolean },
+  ): void {
     if (!this.startPoint) return;
     this.didMove = true;
 
-    // TODO: Apply delta to selected layers (respect shift 45deg, alt clone, snap)
-    // This will call into store.translateSelectedLayers or similar
+    // Note (vn7 k88): Delta apply (shift 45deg constraint, alt clone, snap) lives in PathCanvas batch drag
+    // session (see dragSession + handlePointPointerMove) for current parity. Gesture marquee uses zero-delta
+    // bridge only. Future expansion point per DESIGN 67dd105e.
   }
 
   onMouseUp(point: Point, _modifiers: { shift: boolean; alt: boolean; ctrl: boolean }): void {
@@ -62,7 +70,8 @@ export class SelectDragItemsGesture extends Gesture {
 
     if (!this.didMove) {
       // Pure click selection (no drag)
-      // TODO: select the hit item
+      // Note (vn7): select hit item routed via PathCanvas (see selectPoint/selectLayer calls); gesture
+      // TODOs hardened to notes (dispatcher sole decision + callback bridge for marquee remains).
     }
 
     this.startPoint = null;

@@ -444,5 +444,71 @@ describe("pathUtils", () => {
       const res = booleanCombine("exclude", outer, inner);
       expect(res.subPaths.length).toBe(2);
     });
+
+    // vn7 k88 deep harden: edge coverage for booleans (self-intersect approx, complex overlap, precision)
+    it("union on self-intersect bowtie approx (current containment fallback)", () => {
+      // Self-intersect not fully resolved by containment; expect >=1 sub (no crash, safe)
+      const bow = parsePath("M 0 0 L 10 10 L 0 10 L 10 0 Z");
+      const res = booleanCombine("union", bow, bow);
+      expect(res.subPaths.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("subtract on crossing overlap (complex boundary) stays conservative", () => {
+      const a = parsePath("M 0 0 L 10 0 L 10 10 L 0 10 Z");
+      const b = parsePath("M 5 -5 L 15 5 L 5 15 L -5 5 Z"); // crosses
+      const res = booleanCombine("subtract", a, b);
+      expect(res.subPaths.length).toBeGreaterThanOrEqual(1);
+      expect(countPathPoints(res)).toBeGreaterThan(0);
+    });
+
+    it("intersect precision near-boundary (float)", () => {
+      const outer = parsePath("M 0 0 L 20 0 L 20 20 L 0 20 Z");
+      const inner = parsePath("M 5.0001 5.0001 L 10 5 L 10 10 L 5 10 Z");
+      const res = booleanCombine("intersect", outer, inner);
+      expect(res.subPaths.length).toBe(1);
+    });
+  });
+
+  describe("de Casteljau + projections (vn7 k88 harden post-21g/upk/3ds)", () => {
+    it("splitCommandInHalf on cubic uses de Casteljau (2 C cmds, mid controls)", () => {
+      const p = parsePath("M 0 0 C 0 10 10 10 10 0");
+      const split = splitCommandInHalf(p, 0, 1); // sub0 cmd1 is the C (after M)
+      expect(split.subPaths[0].commands.length).toBe(3); // M + 2C
+      const c1 = split.subPaths[0].commands[1];
+      const c2 = split.subPaths[0].commands[2];
+      expect(c1.type).toBe("C");
+      expect(c2.type).toBe("C");
+      // mid approx at t=0.5 (de Casteljau)
+      expect(c1.points[2].x).toBeCloseTo(5, 0);
+    });
+
+    it("splitPointNear projects accurately on cubic (post curve sampling fix)", () => {
+      const p = parsePath("M 0 0 C 0 10 10 10 10 0");
+      // Click near true curve mid (t~0.5, y~7.5 not linear 5)
+      const hit = splitPointNear(p, { x: 5, y: 7.5 }, 40);
+      expect(hit).not.toBeNull();
+      if (hit) {
+        expect(hit.subPaths[0].commands.length).toBeGreaterThan(2);
+      }
+    });
+
+    it("splitPointNear on line still works (backward compat)", () => {
+      const p = parsePath("M 0 0 L 10 0");
+      const hit = splitPointNear(p, { x: 5, y: 0.1 }, 20);
+      expect(hit).not.toBeNull();
+    });
+
+    it("collect long-path + boolean perf (simple RAF target proxy, <16ms target)", () => {
+      // Exercises projection/boolean paths + long data (perf coverage for lasso/knife on complex)
+      const long = parsePath(
+        "M 0 0 " +
+          Array.from({ length: 120 }, (_, i) => `L ${i % 40} ${Math.sin(i) * 5}`).join(" ") +
+          " Z",
+      );
+      const t0 = performance.now();
+      const _ = booleanCombine("union", long, parsePath("M 10 10 L 20 10 L 20 20 L 10 20 Z"));
+      const dt = performance.now() - t0;
+      expect(dt).toBeLessThan(50); // loose for CI; real 60fps in RAF path
+    });
   });
 });

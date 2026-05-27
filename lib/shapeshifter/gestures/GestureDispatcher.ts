@@ -14,7 +14,6 @@
  */
 
 import type { Point } from "../types";
-import type { ToolMode } from "../toolModes";
 import { Gesture, type GestureContext, type GestureCallbacks } from "./Gesture";
 import { SelectDragItemsGesture } from "./select/SelectDragItemsGesture";
 
@@ -47,7 +46,11 @@ export class GestureDispatcher {
   // as the trigger for box selection. This is the gate. The concrete SelectDragItemsGesture is instantiated
   // here for the first time in runtime. The beginMarqueeSelection callback is invoked so PathCanvas can
   // start the visual rect + capture + conditional clear (if !additive).
-  handlePointerDown(point: Point, hit: HitTestResult | null, modifiers: { shift: boolean; alt: boolean; ctrl: boolean }) {
+  handlePointerDown(
+    point: Point,
+    hit: HitTestResult | null,
+    modifiers: { shift: boolean; alt: boolean; ctrl: boolean },
+  ) {
     // Cancel any running gesture
     if (this.activeGesture) {
       this.activeGesture.cancel?.();
@@ -64,7 +67,8 @@ export class GestureDispatcher {
 
       if (isMarqueeIntent) {
         this.activeGesture = new SelectDragItemsGesture(this.context, this.callbacks);
-        console.log("[GestureDispatcher] decided marquee — instantiated first SelectDragItemsGesture (PR-01.1 / ShapeShifter-ish fix round xwx under mvd, DESIGN_ID 67dd105e Key Decision #2)", { point, hit, modifiers });
+        // (historical) [GestureDispatcher] decided marquee — instantiated first SelectDragItemsGesture (PR-01.1 / ShapeShifter-ish fix round xwx under mvd, DESIGN_ID 67dd105e Key Decision #2)
+        // Decision path hardened (vn7 k88): no console in production; refs preserved in comment only.
 
         // Let the registered callback drive the transient visual start in PathCanvas.
         // The gesture owns the lifecycle; the callback is the bridge for the rect.
@@ -76,7 +80,7 @@ export class GestureDispatcher {
       }
 
       // Future: click-to-select single item path (still routed through dispatcher).
-      console.log("[GestureDispatcher] select click (non-marquee for now)", { point, hit, modifiers });
+      // (historical) [GestureDispatcher] select click (non-marquee for now) — hardened vn7, refs in comment.
     } else if (tool === "pen" || tool === "direct") {
       // PR-02 foundation + ny0 (Bend/Flex Ctrl+drag): direct tool now supports professional curvature flex.
       // When ctrl is held during drag on a curve/handle, we treat as "flex" intent (user's explicit
@@ -90,13 +94,14 @@ export class GestureDispatcher {
       // begin a polygon/point collection path that will evolve into real lasso hit testing.
       const isFlexIntent = modifiers.ctrl && tool === "direct";
       if (isFlexIntent) {
-        console.log("[GestureDispatcher] direct + ctrl — Bend/Flex curvature intent (ny0 under v6j, DESIGN_ID 67dd105e)", { point, hit, modifiers });
+        // (historical) [GestureDispatcher] direct + ctrl — Bend/Flex curvature intent (ny0 under v6j, DESIGN_ID 67dd105e)
+        // Decision path hardened (vn7 k88): no console; refs preserved.
         // The actual flex math + store mutation happens in PathCanvas handle* (segment/handle drag)
         // when toolMode=direct && ctrlKey. Dispatcher decision point is here for future dedicated
         // BendFlexGesture or SelectDragHandleGesture subclass.
       } else {
         // Will become SelectDragDrawSegmentsGesture or handle editing
-        console.log("[GestureDispatcher] would start path edit gesture", { point, hit, modifiers });
+        // (historical) [GestureDispatcher] would start path edit gesture — hardened vn7.
       }
     } else if (tool === "pencil" || tool === "ellipse" || tool === "rectangle") {
       // Will become shape creation gestures.
@@ -105,9 +110,9 @@ export class GestureDispatcher {
       // + shift-additive store commit now live (wired in PathCanvas on up, mirroring marquee).
       // Future: dedicated LassoSelectGesture + explicit "lasso" ToolMode (per DESIGN_ID 67dd105e).
       if (tool === "pencil") {
-        console.log("[GestureDispatcher] pencil/lasso intent (9rp real hit testing live)", { point, modifiers });
+        // (historical) [GestureDispatcher] pencil/lasso intent (9rp real hit testing live)
       }
-      console.log("[GestureDispatcher] would start shape creation", { tool, point });
+      // (historical) [GestureDispatcher] would start shape creation — hardened vn7 k88, no runtime console in decision paths.
     }
   }
 

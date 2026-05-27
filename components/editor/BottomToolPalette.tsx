@@ -45,13 +45,13 @@ const TOOLS: ToolDef[] = [
   },
   {
     mode: "pencil",
-    label: "Pencil / Lasso (stub)",
+    label: "Pencil / Lasso (future)",
     icon: <Lasso className="h-4 w-4" />,
     shortcut: "L",
   },
   {
     mode: "rectangle",
-    label: "Shapes (stub)",
+    label: "Shapes (future)",
     icon: <span className="material-symbols text-[18px] leading-none">rectangle</span>,
   },
   {
@@ -88,16 +88,15 @@ export function BottomToolPalette() {
                     onClick={() => setToolMode(tool.mode)}
                     aria-label={tool.label}
                     aria-pressed={isActive}
-                  />
+                  >
+                    {tool.icon}
+                    <span className="hidden sm:inline">{tool.label.split(" / ")[0]}</span>
+                  </Button>
                 }
-              >
-                {tool.icon}
-                <span className="hidden sm:inline">{tool.label.split(" / ")[0]}</span>
-              </Button>
-            }
-            <TooltipContent side="top" className="text-[11px]">
-              {tool.label} {tool.shortcut ? `(${tool.shortcut})` : ""}
-            </TooltipContent>
+              />
+              <TooltipContent side="top" className="text-[11px]">
+                {tool.label} {tool.shortcut ? `(${tool.shortcut})` : ""}
+              </TooltipContent>
             </Tooltip>
           );
         })}

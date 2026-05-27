@@ -48,7 +48,12 @@ describe("PR-02 - Marquee / AABB Hit Tests (ShapeShifter-ubf / v6j)", () => {
       subPaths: [
         {
           commands: [
-            { points: [{ x: 0, y: 0 }, { x: 10, y: 10 }] },
+            {
+              points: [
+                { x: 0, y: 0 },
+                { x: 10, y: 10 },
+              ],
+            },
             { points: [{ x: 100, y: 100 }] },
           ],
         },
@@ -105,7 +110,12 @@ describe("9rp - Real Lasso Hit Tests (ShapeShifter-9rp / v6j)", () => {
       subPaths: [
         {
           commands: [
-            { points: [{ x: 0, y: 0 }, { x: 5, y: 5 }] },
+            {
+              points: [
+                { x: 0, y: 0 },
+                { x: 5, y: 5 },
+              ],
+            },
             { points: [{ x: 100, y: 100 }] },
           ],
         },
@@ -125,7 +135,26 @@ describe("9rp - Real Lasso Hit Tests (ShapeShifter-9rp / v6j)", () => {
 
   it("collectPointsInLasso returns empty for degenerate lasso", () => {
     const pathData = { subPaths: [{ commands: [{ points: [{ x: 1, y: 1 }] }] }] };
-    expect(collectPointsInLasso(pathData as any, [{ x: 0, y: 0 }, { x: 1, y: 0 }])).toEqual([]);
+    expect(
+      collectPointsInLasso(pathData as any, [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+      ]),
+    ).toEqual([]);
     expect(collectPointsInLasso(pathData as any, [])).toEqual([]);
+  });
+
+  // vn7 k88: perf/edge for lasso on long paths (RAF visual + collect target)
+  it("collectPointsInLasso perf on long path + dense lasso (60fps proxy)", () => {
+    const cmds = Array.from({ length: 200 }, (_, i) => ({
+      points: [{ x: i % 50, y: (i % 30) * 0.5 }],
+    }));
+    const longPath = { subPaths: [{ commands: cmds }] };
+    const dense = Array.from({ length: 120 }, (_, i) => ({ x: i * 0.4, y: i * 0.3 }));
+    const t0 = performance.now();
+    const hits = collectPointsInLasso(longPath as any, dense);
+    const dt = performance.now() - t0;
+    expect(dt).toBeLessThan(20); // exercises 9rp math path, RAF context
+    expect(Array.isArray(hits)).toBe(true);
   });
 });

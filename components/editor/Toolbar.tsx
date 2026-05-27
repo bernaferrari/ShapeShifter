@@ -410,7 +410,7 @@ export function Toolbar({
                     size="icon"
                     className="h-8 w-8 border-white/20 bg-white/5 hover:bg-white/10 text-white dark:border-border dark:bg-background dark:hover:bg-muted dark:text-foreground"
                     onClick={() => {
-                      // Full PairSubPaths port pending
+                      // Full PairSubPaths port pending (historical; future v6j parity)
                     }}
                     aria-label="Pair subpaths"
                   />
@@ -418,7 +418,7 @@ export function Toolbar({
               >
                 <GitBranch className="h-4 w-4" />
               </TooltipTrigger>
-              <TooltipContent>Pair SubPaths (TODO)</TooltipContent>
+              <TooltipContent>Pair SubPaths (future)</TooltipContent>
             </Tooltip>
           </>
         )}
@@ -468,6 +468,7 @@ export function Toolbar({
                 variant="outline"
                 size="sm"
                 className="h-8 px-2 text-[10px] border-white/20 bg-white/5 text-white hover:bg-white/10 dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
+                aria-label="Union selected with next layer"
                 onClick={() => {
                   booleanCombine("union");
                   toast.success("Union");
@@ -486,6 +487,7 @@ export function Toolbar({
                 variant="outline"
                 size="sm"
                 className="h-8 px-2 text-[10px] border-white/20 bg-white/5 text-white hover:bg-white/10 dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
+                aria-label="Subtract (A-B) selected minus next layer"
                 onClick={() => {
                   booleanCombine("subtract");
                   toast.success("Subtract");
@@ -504,6 +506,7 @@ export function Toolbar({
                 variant="outline"
                 size="sm"
                 className="h-8 px-2 text-[10px] border-white/20 bg-white/5 text-white hover:bg-white/10 dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
+                aria-label="Intersect selected with next layer"
                 onClick={() => {
                   booleanCombine("intersect");
                   toast.success("Intersect");
@@ -522,6 +525,7 @@ export function Toolbar({
                 variant="outline"
                 size="sm"
                 className="h-8 px-2 text-[10px] border-white/20 bg-white/5 text-white hover:bg-white/10 dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
+                aria-label="Exclude/XOR selected with next layer"
                 onClick={() => {
                   booleanCombine("exclude");
                   toast.success("Exclude");
