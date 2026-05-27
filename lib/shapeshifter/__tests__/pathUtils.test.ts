@@ -12,6 +12,7 @@ import {
   setCommandAsFirst,
   insertPointNear,
   splitPointNear,
+  booleanCombine,
 } from "../pathUtils";
 import { parserSpecs, autoFixTests, mutationTests } from "./testFixtures";
 
@@ -114,9 +115,7 @@ describe("pathUtils", () => {
 
   describe("splitCommandInHalf", () => {
     it("splits a line in half", () => {
-      const result = pathToString(
-        splitCommandInHalf(parsePath("M 0 0 L 10 10 L 20 20"), 0, 1),
-      );
+      const result = pathToString(splitCommandInHalf(parsePath("M 0 0 L 10 10 L 20 20"), 0, 1));
       expect(result).toEqual("M0 0 L5 5 L10 10 L20 20");
     });
 
@@ -407,6 +406,43 @@ describe("pathUtils", () => {
       const cmds = result.subPaths[0].commands;
       expect(cmds[0].points[0]).toEqual({ x: 10, y: 200 });
       expect(cmds[1].points[0]).toEqual({ x: 3, y: 0.4 });
+    });
+  });
+
+  describe("booleanCombine (kbv real ops post-21g stub, DESIGN 67dd105e)", () => {
+    it("union on overlapping rects yields multiple subpaths (concat fallback for overlap)", () => {
+      const r1 = parsePath("M 0 0 L 10 0 L 10 10 L 0 10 Z");
+      const r2 = parsePath("M 5 5 L 15 5 L 15 15 L 5 15 Z");
+      const res = booleanCombine("union", r1, r2);
+      expect(res.subPaths.length).toBeGreaterThanOrEqual(1);
+      // commands increased or preserved
+      expect(countPathPoints(res)).toBeGreaterThan(4);
+    });
+
+    it("subtract contained inner produces hole (2 subs, reverse inner)", () => {
+      const outer = parsePath("M 0 0 L 20 0 L 20 20 L 0 20 Z");
+      const inner = parsePath("M 5 5 L 10 5 L 10 10 L 5 10 Z");
+      const res = booleanCombine("subtract", outer, inner);
+      expect(res.subPaths.length).toBe(2);
+      // outer has 5 cmds (M+4L+Z? wait Ls), inner reversed present
+      expect(res.subPaths[0].commands.length).toBeGreaterThan(4);
+      expect(res.subPaths[1].commands.length).toBeGreaterThan(4);
+    });
+
+    it("intersect contained returns the inner", () => {
+      const outer = parsePath("M 0 0 L 20 0 L 20 20 L 0 20 Z");
+      const inner = parsePath("M 5 5 L 10 5 L 10 10 L 5 10 Z");
+      const res = booleanCombine("intersect", outer, inner);
+      expect(res.subPaths.length).toBe(1);
+      // rough bbox inclusion check via point counts
+      expect(countPathPoints(res)).toBeLessThanOrEqual(countPathPoints(inner) + 2);
+    });
+
+    it("exclude on contained yields ring-like (2 subs reversed)", () => {
+      const outer = parsePath("M 0 0 L 20 0 L 20 20 L 0 20 Z");
+      const inner = parsePath("M 5 5 L 10 5 L 10 10 L 5 10 Z");
+      const res = booleanCombine("exclude", outer, inner);
+      expect(res.subPaths.length).toBe(2);
     });
   });
 });

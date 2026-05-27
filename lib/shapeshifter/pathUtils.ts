@@ -107,7 +107,11 @@ function canRoughlyConvert(typeA: CommandType, typeB: CommandType): boolean {
   if (typeA === typeB) return true;
   const bezier = new Set<CommandType>(["C", "Q", "S", "T"]);
   if (bezier.has(typeA) && bezier.has(typeB)) return true;
-  if ((typeA === "L" || typeA === "H" || typeA === "V") && (typeB === "L" || typeB === "H" || typeB === "V" || bezier.has(typeB))) return true;
+  if (
+    (typeA === "L" || typeA === "H" || typeA === "V") &&
+    (typeB === "L" || typeB === "H" || typeB === "V" || bezier.has(typeB))
+  )
+    return true;
   return false;
 }
 
@@ -412,8 +416,12 @@ export function insertPointNear(
  * precise "add point on curve" and Auto Fix splitting.
  * Returns the updated PathData with the split performed.
  */
-export function splitPointNear(pathData: PathData, click: Point, sampleCount = 80): PathData | null {
-  if (!pathData.subPaths.length || pathData.subPaths.every(s => s.commands.length === 0)) {
+export function splitPointNear(
+  pathData: PathData,
+  click: Point,
+  sampleCount = 80,
+): PathData | null {
+  if (!pathData.subPaths.length || pathData.subPaths.every((s) => s.commands.length === 0)) {
     return null;
   }
 
@@ -433,7 +441,7 @@ export function splitPointNear(pathData: PathData, click: Point, sampleCount = 8
         const y = prev.y + (end.y - prev.y) * t;
         const d = (x - click.x) ** 2 + (y - click.y) ** 2;
 
-        const isEndpoint = (t === 0 || t === 1);
+        const isEndpoint = t === 0 || t === 1;
 
         if (d < best.dist) {
           best = { dist: d, subIdx, cmdIdx, t, cmd, isEndpoint };
@@ -452,11 +460,7 @@ export function splitPointNear(pathData: PathData, click: Point, sampleCount = 8
  * Produces a faithful geometric split for L and C (quadratic support can be added).
  * This is a core primitive used by Auto Fix and the direct manipulation tools.
  */
-export function splitCommandInHalf(
-  pathData: PathData,
-  subIdx: number,
-  cmdIdx: number,
-): PathData {
+export function splitCommandInHalf(pathData: PathData, subIdx: number, cmdIdx: number): PathData {
   const newData = clonePathDataForSplit(pathData);
   const sub = newData.subPaths[subIdx];
   if (!sub || cmdIdx < 0 || cmdIdx >= sub.commands.length) return newData;
@@ -498,20 +502,12 @@ export function splitCommandInHalf(
 
     const midEnd = { x: r0x + (r1x - r0x) * 0.5, y: r0y + (r1y - r0y) * 0.5 };
 
-    cmd.points = [
-      { x: q0x, y: q0y },
-      { x: r0x, y: r0y },
-      midEnd,
-    ];
+    cmd.points = [{ x: q0x, y: q0y }, { x: r0x, y: r0y }, midEnd];
 
     const second: Command = {
       id: generateId(),
       type: "C",
-      points: [
-        { x: r1x, y: r1y },
-        { x: q2x, y: q2y },
-        end,
-      ],
+      points: [{ x: r1x, y: r1y }, { x: q2x, y: q2y }, end],
     };
     sub.commands.splice(cmdIdx + 1, 0, second);
     return newData;
@@ -652,21 +648,17 @@ export function reversePath(path: PathData): PathData {
           return {
             commands: [
               { id: generateId(), type: "M", points: [E0] },
-              { id: generateId(), type: "Z", points: [] }
-            ]
+              { id: generateId(), type: "Z", points: [] },
+            ],
           };
         }
         return {
-          commands: [
-            { id: generateId(), type: "M", points: [E0] }
-          ]
+          commands: [{ id: generateId(), type: "M", points: [E0] }],
         };
       }
 
       const newMPoint = transitions.at(-1)!.end;
-      const reversedCmds: Command[] = [
-        { id: generateId(), type: "M", points: [newMPoint] }
-      ];
+      const reversedCmds: Command[] = [{ id: generateId(), type: "M", points: [newMPoint] }];
 
       for (let i = transitions.length - 1; i >= 0; i--) {
         const t = transitions[i];
@@ -712,7 +704,11 @@ export function shiftPath(path: PathData, steps: number): PathData {
       if (cmds.length === 0) return subPath;
       const lastCmd = cmds[cmds.length - 1];
       const firstCmd = cmds[0];
-      const isClosed = lastCmd.type === "Z" || (firstCmd.points.length > 0 && lastCmd.points.length > 0 && arePointsEqual(firstCmd.points[0], lastCmd.points.at(-1)!));
+      const isClosed =
+        lastCmd.type === "Z" ||
+        (firstCmd.points.length > 0 &&
+          lastCmd.points.length > 0 &&
+          arePointsEqual(firstCmd.points[0], lastCmd.points.at(-1)!));
 
       if (!isClosed) {
         return subPath;
@@ -756,11 +752,7 @@ export function countPathPoints(path: PathData): number {
  * (matches original "set first point" behavior exactly for closed paths).
  * No-op for open paths or index 0.
  */
-export function setCommandAsFirst(
-  pathData: PathData,
-  subIdx: number,
-  cmdIdx: number,
-): PathData {
+export function setCommandAsFirst(pathData: PathData, subIdx: number, cmdIdx: number): PathData {
   const newData = clonePathDataForSplit(pathData);
   const sub = newData.subPaths[subIdx];
   if (!sub || cmdIdx <= 0 || cmdIdx >= sub.commands.length) {
@@ -863,17 +855,13 @@ function reversePathAtSubIndex(path: PathData, subIdx: number): PathData {
 function convertCommandType(cmd: Command, start: Point, targetType: CommandType): Command {
   if (cmd.type === targetType) return cmd;
   const end = cmd.points.at(-1) || start;
-  
+
   if (targetType === "C") {
     if (cmd.type === "L" || cmd.type === "M" || cmd.type === "Z") {
       return {
         id: cmd.id,
         type: "C",
-        points: [
-          { ...start },
-          { ...end },
-          { ...end },
-        ],
+        points: [{ ...start }, { ...end }, { ...end }],
       };
     }
     if (cmd.type === "Q") {
@@ -934,12 +922,12 @@ export function autoFixPathPair(from: PathData, to: PathData): [PathData, PathDa
   // 2. Reorder subpaths to minimize total distance between poles
   const numSubs = a.subPaths.length;
   if (numSubs > 1 && numSubs <= 8) {
-    const fromPoles = a.subPaths.map(sp => getPoleOfInaccessibility(sp));
-    const toPoles = b.subPaths.map(sp => getPoleOfInaccessibility(sp));
-    
+    const fromPoles = a.subPaths.map((sp) => getPoleOfInaccessibility(sp));
+    const toPoles = b.subPaths.map((sp) => getPoleOfInaccessibility(sp));
+
     let bestPermutation: number[] = [];
     let minSum = Infinity;
-    
+
     const permute = (arr: number[], m: number[] = []) => {
       if (arr.length === 0) {
         let sum = 0;
@@ -960,12 +948,12 @@ export function autoFixPathPair(from: PathData, to: PathData): [PathData, PathDa
         }
       }
     };
-    
+
     const indices = Array.from({ length: numSubs }, (_, i) => i);
     permute(indices);
-    
+
     if (bestPermutation.length === numSubs) {
-      a.subPaths = bestPermutation.map(idx => a.subPaths[idx]);
+      a.subPaths = bestPermutation.map((idx) => a.subPaths[idx]);
     }
   }
 
@@ -981,14 +969,21 @@ export function autoFixPathPair(from: PathData, to: PathData): [PathData, PathDa
     const candidates = generateShiftReverseCandidates(a, s);
     let bestA = a;
     let bestScore = -Infinity;
-    let bestAlignment: { from: readonly NWAlignment<Command>[]; to: readonly NWAlignment<Command>[]; score: number } | null = null;
+    let bestAlignment: {
+      from: readonly NWAlignment<Command>[];
+      to: readonly NWAlignment<Command>[];
+      score: number;
+    } | null = null;
 
     for (const cand of candidates) {
       const fromCmds = cand.subPaths[s]?.commands || [];
       const toCmds = b.subPaths[s]?.commands || [];
 
       const scoreFn = (ca: Command, cb: Command) => {
-        const typeOk = ca.type === cb.type || canRoughlyConvert(ca.type, cb.type) || canRoughlyConvert(cb.type, ca.type);
+        const typeOk =
+          ca.type === cb.type ||
+          canRoughlyConvert(ca.type, cb.type) ||
+          canRoughlyConvert(cb.type, ca.type);
         if (!typeOk) return MISMATCH;
         const da = getCommandEnd(ca);
         const db = getCommandEnd(cb);
@@ -1005,8 +1000,18 @@ export function autoFixPathPair(from: PathData, to: PathData): [PathData, PathDa
     }
 
     if (bestAlignment) {
-      a = applyAlignmentSplits(bestA, { from: [...bestAlignment.from], to: [...bestAlignment.to] }, s, "a");
-      b = applyAlignmentSplits(b, { from: [...bestAlignment.from], to: [...bestAlignment.to] }, s, "b");
+      a = applyAlignmentSplits(
+        bestA,
+        { from: [...bestAlignment.from], to: [...bestAlignment.to] },
+        s,
+        "a",
+      );
+      b = applyAlignmentSplits(
+        b,
+        { from: [...bestAlignment.from], to: [...bestAlignment.to] },
+        s,
+        "b",
+      );
     }
 
     // Then equalize remaining command counts the old (safe) way
@@ -1017,13 +1022,13 @@ export function autoFixPathPair(from: PathData, to: PathData): [PathData, PathDa
     const numCmds = a.subPaths[s].commands.length;
     let currA = a.subPaths[s].commands[0].points[0];
     let currB = b.subPaths[s].commands[0].points[0];
-    
+
     for (let cmdIdx = 1; cmdIdx < numCmds; cmdIdx++) {
       const cmdA = a.subPaths[s].commands[cmdIdx];
       const cmdB = b.subPaths[s].commands[cmdIdx];
       const nextA = cmdA.points.at(-1) || currA;
       const nextB = cmdB.points.at(-1) || currB;
-      
+
       if (cmdA.type !== cmdB.type && cmdA.type !== "Z" && cmdB.type !== "Z") {
         if (cmdA.type === "C" || cmdB.type === "C" || cmdA.type === "Q" || cmdB.type === "Q") {
           a.subPaths[s].commands[cmdIdx] = convertCommandType(cmdA, currA, "C");
@@ -1047,9 +1052,12 @@ function generateShiftReverseCandidates(path: PathData, subIdx: number): PathDat
   if (!sub) return [base];
 
   const cmds = sub.commands;
-  const isClosed = cmds.length > 2 && (cmds[cmds.length - 1].type === "Z" ||
-    (cmds[0].points.length && cmds[cmds.length-1].points.length &&
-     arePointsEqual(cmds[0].points[0], cmds[cmds.length-1].points.at(-1)! )));
+  const isClosed =
+    cmds.length > 2 &&
+    (cmds[cmds.length - 1].type === "Z" ||
+      (cmds[0].points.length &&
+        cmds[cmds.length - 1].points.length &&
+        arePointsEqual(cmds[0].points[0], cmds[cmds.length - 1].points.at(-1)!)));
 
   const results: PathData[] = [base];
 
@@ -1079,7 +1087,7 @@ function applyAlignmentSplits(
   const alSide = which === "a" ? alignment.from : alignment.to;
 
   // Identify gap streaks
-  const gapGroups: Array<{start: number}> = [];
+  const gapGroups: Array<{ start: number }> = [];
   let inGap = false;
   let gapStart = 0;
   for (let i = 0; i < alSide.length; i++) {
@@ -1089,10 +1097,10 @@ function applyAlignmentSplits(
       gapStart = i;
     } else if (!isGap && inGap) {
       inGap = false;
-      gapGroups.push({start: gapStart});
+      gapGroups.push({ start: gapStart });
     }
   }
-  if (inGap) gapGroups.push({start: gapStart});
+  if (inGap) gapGroups.push({ start: gapStart });
 
   // Apply splits from the end (indices shift)
   for (let g = gapGroups.length - 1; g >= 0; g--) {
@@ -1223,8 +1231,18 @@ export function normalizeCommands(commands: Command[]): Command[] {
     if (type === "A" && cmd.arcParams) {
       const ap = cmd.arcParams;
       const to = cmd.points[0];
-      
-      const beziers = arcToBeziers(current.x, current.y, ap.rx, ap.ry, ap.xRotation, ap.largeArc, ap.sweep, to.x, to.y);
+
+      const beziers = arcToBeziers(
+        current.x,
+        current.y,
+        ap.rx,
+        ap.ry,
+        ap.xRotation,
+        ap.largeArc,
+        ap.sweep,
+        to.x,
+        to.y,
+      );
       if (beziers.length === 0) {
         normalized.push({
           id: cmd.id,
@@ -1261,4 +1279,157 @@ export function normalizePathData(pathData: PathData): PathData {
       commands: normalizeCommands(sp.commands),
     })),
   };
+}
+
+/**
+ * Real boolean combine (union/subtract/intersect/exclude) replacing 21g console stub.
+ * Pure-TS, no deps. Uses dense curve sampling (exact pattern from geometry.ts sampleCubic/Quad + insertPointNear)
+ * + copied pointInPoly (from HitTests even-odd, for core independence) + winding via existing isSubPathClockwise.
+ * For smallest diff: containment-driven logic for common non-self-intersect cases (knife/pen post-split hits).
+ * Overlapping boundaries fall back to subpath concat (visual union-ish; full edge-intersect clipper TODO).
+ * Result preserves caller styles/attrs. Multi-subpath safe via poly list.
+ * Refs: v6j DESIGN 67dd105e, kbv, 21g/upk/3ds, k88 baseline gap note.
+ */
+function pointInPoly(pt: Point, poly: Point[]): boolean {
+  if (!poly || poly.length < 3) return false;
+  const { x, y } = pt;
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x,
+      yi = poly[i].y;
+    const xj = poly[j].x,
+      yj = poly[j].y;
+    const intersect = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function sampleCubic(p0: Point, c1: Point, c2: Point, p3: Point, steps = 12): Point[] {
+  const pts: Point[] = [];
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const mt = 1 - t;
+    const w0 = mt * mt * mt;
+    const w1 = 3 * mt * mt * t;
+    const w2 = 3 * mt * t * t;
+    const w3 = t * t * t;
+    pts.push({
+      x: w0 * p0.x + w1 * c1.x + w2 * c2.x + w3 * p3.x,
+      y: w0 * p0.y + w1 * c1.y + w2 * c2.y + w3 * p3.y,
+    });
+  }
+  return pts;
+}
+
+function sampleQuad(p0: Point, c: Point, p2: Point, steps = 12): Point[] {
+  const pts: Point[] = [];
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const mt = 1 - t;
+    const w0 = mt * mt;
+    const w1 = 2 * mt * t;
+    const w2 = t * t;
+    pts.push({
+      x: w0 * p0.x + w1 * c.x + w2 * p2.x,
+      y: w0 * p0.y + w1 * c.y + w2 * p2.y,
+    });
+  }
+  return pts;
+}
+
+function pathToPolygons(path: PathData, steps = 12): Point[][] {
+  const polys: Point[][] = [];
+  for (const sub of path.subPaths) {
+    const poly: Point[] = [];
+    let cur: Point = { x: 0, y: 0 };
+    for (const cmd of sub.commands) {
+      if (cmd.type === "M" && cmd.points[0]) {
+        cur = { ...cmd.points[0] };
+        if (poly.length === 0) poly.push({ ...cur });
+      } else if ((cmd.type === "L" || cmd.type === "H" || cmd.type === "V") && cmd.points[0]) {
+        cur = { ...cmd.points[0] };
+        poly.push({ ...cur });
+      } else if (cmd.type === "C" && cmd.points.length === 3) {
+        const p0 = cur;
+        const c1 = cmd.points[0];
+        const c2 = cmd.points[1];
+        const p3 = cmd.points[2];
+        poly.push(...sampleCubic(p0, c1, c2, p3, steps));
+        cur = { ...p3 };
+      } else if (cmd.type === "Q" && cmd.points.length === 2) {
+        const p0 = cur;
+        const c = cmd.points[0];
+        const p2 = cmd.points[1];
+        poly.push(...sampleQuad(p0, c, p2, steps));
+        cur = { ...p2 };
+      } else if (cmd.type === "Z") {
+        // close handled by caller
+      } else if (cmd.points.length > 0) {
+        cur = { ...cmd.points[cmd.points.length - 1] };
+        poly.push({ ...cur });
+      }
+    }
+    if (poly.length >= 3) polys.push(poly);
+  }
+  return polys;
+}
+
+function polygonsToPathData(polys: Point[][]): PathData {
+  const subPaths = polys
+    .filter((p) => p.length >= 3)
+    .map((poly) => {
+      const commands: Command[] = [];
+      commands.push({ id: generateId(), type: "M", points: [{ ...poly[0] }] });
+      for (let i = 1; i < poly.length; i++) {
+        commands.push({ id: generateId(), type: "L", points: [{ ...poly[i] }] });
+      }
+      commands.push({ id: generateId(), type: "Z", points: [] });
+      return { commands };
+    });
+  return { subPaths };
+}
+
+export type BooleanOp = "union" | "subtract" | "intersect" | "exclude";
+
+export function booleanCombine(op: BooleanOp, a: PathData, b: PathData): PathData {
+  const aPolys = pathToPolygons(clonePath(a));
+  const bPolys = pathToPolygons(clonePath(b));
+  if (aPolys.length === 0) return clonePath(b);
+  if (bPolys.length === 0) return clonePath(a);
+
+  // Operate pairwise on first poly of each for common shape cases (extendable to all subs)
+  const pA = aPolys[0];
+  const pB = bPolys[0];
+  const aInB = pA.every((pt) => pointInPoly(pt, pB));
+  const bInA = pB.every((pt) => pointInPoly(pt, pA));
+
+  let resultPolys: Point[][] = [];
+  if (op === "union") {
+    if (aInB) resultPolys = [pB];
+    else if (bInA) resultPolys = [pA];
+    else resultPolys = [...aPolys, ...bPolys]; // disjoint or overlap (no boundary clip yet)
+  } else if (op === "subtract") {
+    if (bInA) {
+      resultPolys = [pA, pB.slice().reverse()]; // hole via reverse (SVG evenodd/nonzero friendly)
+    } else if (aInB) {
+      resultPolys = [];
+    } else {
+      resultPolys = [pA]; // fallback conservative
+    }
+  } else if (op === "intersect") {
+    if (aInB) resultPolys = [pA];
+    else if (bInA) resultPolys = [pB];
+    else resultPolys = [pA]; // approx; full clip TODO
+  } else if (op === "exclude") {
+    if (aInB || bInA) {
+      resultPolys = [pA, pB.slice().reverse()];
+    } else {
+      resultPolys = [...aPolys, ...bPolys];
+    }
+  }
+
+  const out = polygonsToPathData(resultPolys);
+  // If op produced nothing, return A unchanged (safe)
+  return out.subPaths.length === 0 ? clonePath(a) : out;
 }

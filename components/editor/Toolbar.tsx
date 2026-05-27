@@ -79,6 +79,7 @@ export function Toolbar({
     setSelectedCommandAsFirst,
     deleteSelectedPoint,
     deleteSelectedSubPath,
+    booleanCombine,
   } = useEditorStore();
 
   const handleAutoFix = () => {
@@ -107,19 +108,29 @@ export function Toolbar({
             <MaterialSymbol name="auto_awesome" size={18} filled weight={600} />
           </div>
           <div>
-            <div className="text-sm font-bold tracking-tight text-white dark:text-foreground">{isActionMode ? "Path morphing" : "Shape Shifter"}</div>
+            <div className="text-sm font-bold tracking-tight text-white dark:text-foreground">
+              {isActionMode ? "Path morphing" : "Shape Shifter"}
+            </div>
             <div className="text-[10px] text-white/70 dark:text-muted-foreground -mt-0.5 leading-none">
               {isActionMode ? "Edit start and end path compatibility" : "React 2026"}
             </div>
           </div>
         </div>
 
-        <Badge variant="secondary" className="font-mono text-[9px] tracking-widest px-1.5 py-0 bg-white/10 text-white hover:bg-white/10 dark:bg-muted dark:text-foreground">
+        <Badge
+          variant="secondary"
+          className="font-mono text-[9px] tracking-widest px-1.5 py-0 bg-white/10 text-white hover:bg-white/10 dark:bg-muted dark:text-foreground"
+        >
           v2.0
         </Badge>
 
         {/* Shortcuts / Help */}
-        <Button variant="ghost" size="sm" className="gap-1.5 text-xs text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground h-8 px-2.5" onClick={onShowHelp}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-1.5 text-xs text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground h-8 px-2.5"
+          onClick={onShowHelp}
+        >
           <HelpCircle className="w-3.5 h-3.5" /> Shortcuts
         </Button>
       </div>
@@ -448,6 +459,80 @@ export function Toolbar({
           </TooltipTrigger>
           <TooltipContent>Shift points (S)</TooltipContent>
         </Tooltip>
+
+        {/* Boolean ops (kbv real clipper post-21g stub; !isActionMode layer select parity with Reverse/Shift) */}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-2 text-[10px] border-white/20 bg-white/5 text-white hover:bg-white/10 dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
+                onClick={() => {
+                  booleanCombine("union");
+                  toast.success("Union");
+                }}
+              />
+            }
+          >
+            Union
+          </TooltipTrigger>
+          <TooltipContent>Union selected + next layer</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-2 text-[10px] border-white/20 bg-white/5 text-white hover:bg-white/10 dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
+                onClick={() => {
+                  booleanCombine("subtract");
+                  toast.success("Subtract");
+                }}
+              />
+            }
+          >
+            Sub
+          </TooltipTrigger>
+          <TooltipContent>Subtract (A-B) selected + next</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-2 text-[10px] border-white/20 bg-white/5 text-white hover:bg-white/10 dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
+                onClick={() => {
+                  booleanCombine("intersect");
+                  toast.success("Intersect");
+                }}
+              />
+            }
+          >
+            Inter
+          </TooltipTrigger>
+          <TooltipContent>Intersect selected + next</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-2 text-[10px] border-white/20 bg-white/5 text-white hover:bg-white/10 dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
+                onClick={() => {
+                  booleanCombine("exclude");
+                  toast.success("Exclude");
+                }}
+              />
+            }
+          >
+            Xor
+          </TooltipTrigger>
+          <TooltipContent>Exclude/XOR selected + next</TooltipContent>
+        </Tooltip>
       </div>
 
       {/* Samples */}
@@ -476,14 +561,23 @@ export function Toolbar({
       {/* Export */}
       <div className="flex items-center gap-1 border-l border-white/20 dark:border-border pl-2">
         <ExportDialog>
-          <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1.5 text-xs text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground"
+          >
             <Download className="w-3.5 h-3.5" /> Export
           </Button>
         </ExportDialog>
       </div>
 
       {/* Reset Views */}
-      <Button variant="ghost" size="sm" className="h-8 text-xs text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground border-l border-white/20 dark:border-border pl-2 rounded-none" onClick={resetAllViews}>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-8 text-xs text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground border-l border-white/20 dark:border-border pl-2 rounded-none"
+        onClick={resetAllViews}
+      >
         Reset Views
       </Button>
 
