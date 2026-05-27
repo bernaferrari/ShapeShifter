@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,10 +84,12 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const worldCameraRafRef = useRef<number | null>(null);
   const [, setWorldLassoFrame] = useState(0);
   const [worldSelectedIds, setWorldSelectedIds] = useState<string[]>([]);
+  const prevSelectedFrameRef = useRef<string | null>(null);
 
   // Stub for world artboard drag start (r5o freeform depth owns full impl; present for typecheck hygiene during parallel waves).
   // i8f touches only frame tab indicators + animation optionality — no behavior change here.
   const startWorldArtboardDrag = (_x: number, _y: number, _ids: string[]) => {};
+
 
   const worldPointFromEvent = useCallback(
     (cx: number, cy: number) => {
@@ -110,6 +112,101 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     }),
     [],
   );
+
+  // Proper camera fitting for the freeform world (fixes "super far away on open" + 8ri)
+  const computeFitView = useCallback((frameList: any[]) => {
+    if (!frameList || frameList.length === 0) {
+      return { x: -80, y: -80, w: 320, h: 320, scale: 1 };
+    }
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    frameList.forEach((f) => {
+      const b = getFrameBounds(f);
+      minX = Math.min(minX, b.x);
+      minY = Math.min(minY, b.y);
+      maxX = Math.max(maxX, b.x + b.w);
+      maxY = Math.max(maxY, b.y + b.h);
+    });
+
+    const contentW = maxX - minX;
+    const contentH = maxY - minY;
+    const pad = Math.max(contentW, contentH) * 0.3 + 40;
+
+    const vw = Math.max(200, contentW + pad * 2);
+    const vh = Math.max(200, contentH + pad * 2);
+
+    return {
+      x: minX - pad,
+      y: minY - pad,
+      w: vw,
+      h: vh,
+      scale: 1,
+    };
+  }, [getFrameBounds]);
+
+  // Auto-fit world camera when frames load or change significantly (fixes "super far away on open" + 8ri)
+  useEffect(() => {
+    if (frames.length > 0) {
+      const fit = computeFitView(frames);
+      const isDefaultBad = worldView.x === -80 && worldView.y === -80;
+      if (isDefaultBad) {
+        setWorldView(fit);
+      }
+    }
+  }, [frames, computeFitView]);
+
+  // When a new frame is selected (e.g. after duplicate), gently bring it into view (helps 425)
+  useEffect(() => {
+    if (selectedFrameId && selectedFrameId !== prevSelectedFrameRef.current) {
+      const f = frames.find((fr) => fr.id === selectedFrameId);
+      if (f) {
+        const b = getFrameBounds(f);
+        const pad = Math.max(b.w, b.h) * 0.6;
+        const target = {
+          x: b.x - pad,
+          y: b.y - pad,
+          w: b.w + pad * 2,
+          h: b.h + pad * 2,
+          scale: 1,
+        };
+
+        const vb = worldView;
+        const isVisible =
+          b.x > vb.x && b.x + b.w < vb.x + vb.w &&
+          b.y > vb.y && b.y + b.h < vb.y + vb.h;
+
+        if (!isVisible) {
+          const st = { ...worldView };
+          const dur = 220;
+          const t0 = performance.now();
+          if (worldCameraRafRef.current) cancelAnimationFrame(worldCameraRafRef.current);
+
+          const step = () => {
+            const t = Math.min(1, (performance.now() - t0) / dur);
+            const e = 1 - Math.pow(1 - t, 3);
+            setWorldView({
+              x: st.x + (target.x - st.x) * e,
+              y: st.y + (target.y - st.y) * e,
+              w: st.w + (target.w - st.w) * e,
+              h: st.h + (target.h - st.h) * e,
+              scale: 1,
+            });
+            if (t < 1) {
+              worldCameraRafRef.current = requestAnimationFrame(step);
+            } else {
+              worldCameraRafRef.current = null;
+            }
+          };
+          worldCameraRafRef.current = requestAnimationFrame(step);
+        }
+      }
+    }
+    prevSelectedFrameRef.current = selectedFrameId;
+  }, [selectedFrameId, frames, getFrameBounds, worldView]);
 
   // Performance culling for large/complex docs (AABB vs world viewport)
   const culledFrames = useMemo(() => {
@@ -546,7 +643,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                     size="icon-xs"
                     variant="ghost"
                     className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                    onClick={resetAllViews}
+                    onClick={() => {
+                      const fit = computeFitView(frames.length ? frames : []);
+                      setWorldView(fit);
+                      resetAllViews();
+                    }}
                     aria-label="Reset canvas views"
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
