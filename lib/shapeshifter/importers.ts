@@ -103,9 +103,9 @@ function transformPathData(path: PathData, matrix: Matrix): PathData {
         points: cmd.points.map((p) => transformPoint(matrix, p)),
         arcParams: cmd.arcParams
           ? {
-              rx: cmd.arcParams.rx * sx,
-              ry: cmd.arcParams.ry * sy,
-              rotation: cmd.arcParams.rotation + rotDeg,
+              rx: (cmd.arcParams.rx ?? 0) * sx,
+              ry: (cmd.arcParams.ry ?? 0) * sy,
+              xRotation: (cmd.arcParams.xRotation ?? (cmd.arcParams as any).rotation ?? 0) + rotDeg,
               largeArc: cmd.arcParams.largeArc,
               sweep: det < 0 ? !cmd.arcParams.sweep : cmd.arcParams.sweep,
             }
@@ -196,9 +196,7 @@ function getStyle(element: Element) {
     strokeLinecap: (get("stroke-linecap") || "butt") as StrokeLineCap,
     strokeLinejoin: (get("stroke-linejoin") || "miter") as StrokeLineJoin,
     strokeMiterLimit: Number(get("stroke-miterlimit") || 4),
-    fillType: ((get("fill-rule") || "nonzero") === "evenodd"
-      ? "evenOdd"
-      : "nonZero") as FillType,
+    fillType: ((get("fill-rule") || "nonzero") === "evenodd" ? "evenOdd" : "nonZero") as FillType,
   };
 }
 
@@ -234,7 +232,8 @@ export function importLayersFromSvg(svgText: string, namePrefix = "svg") {
 
   // ── Resolve <use> references ──
   for (const use of Array.from(doc.querySelectorAll("use"))) {
-    const href = use.getAttribute("href") ?? use.getAttributeNS("http://www.w3.org/1999/xlink", "href") ?? "";
+    const href =
+      use.getAttribute("href") ?? use.getAttributeNS("http://www.w3.org/1999/xlink", "href") ?? "";
     if (!href.startsWith("#")) continue;
     const referenced = doc.getElementById(href.slice(1));
     if (!referenced) continue;
@@ -262,24 +261,48 @@ export function importLayersFromSvg(svgText: string, namePrefix = "svg") {
   ).filter((el) => !isInsideDefs(el));
 
   return elements.flatMap((element, index) => {
-    const tag = element.tagName.toLowerCase();
-    const pathData =
-      tag === "path"
-        ? element.getAttribute("d") ?? ""
-        : tag === "rect"
-          ? pathFromRect(element)
-          : tag === "circle" || tag === "ellipse"
-            ? pathFromCircle(element)
-            : tag === "line"
-              ? pathFromLine(element)
-              : tag === "polygon"
-                ? pathFromPoints(element, true)
-                : pathFromPoints(element, false);
+    try {
+      const tag = element.tagName.toLowerCase();
+      const pathData =
+        tag === "path"
+          ? (element.getAttribute("d") ?? "")
+          : tag === "rect"
+            ? pathFromRect(element)
+            : tag === "circle" || tag === "ellipse"
+              ? pathFromCircle(element)
+              : tag === "line"
+                ? pathFromLine(element)
+                : tag === "polygon"
+                  ? pathFromPoints(element, true)
+                  : pathFromPoints(element, false);
 
-    if (!pathData.trim()) return [];
-    const name = element.getAttribute("id") || `${namePrefix}_${tag}_${index + 1}`;
-    const matrix = getAccumulatedTransform(element);
-    return [layerFromPathData(name, pathData, `${Date.now()}_${index}`, matrix, getStyle(element))];
+      if (!pathData.trim()) return [];
+      const name = element.getAttribute("id") || `${namePrefix}_${tag}_${index + 1}`;
+      const matrix = getAccumulatedTransform(element);
+      const layer = layerFromPathData(
+        name,
+        pathData,
+        `${Date.now()}_${index}`,
+        matrix,
+        getStyle(element),
+      );
+      // Harden: skip any layer whose parsed geometry contains non-finite coords (bad path data, NaN from malformed arcs/nums, complex edge cases)
+      const hasNaN = layer.from.subPaths.some((sp) =>
+        sp.commands.some(
+          (c) =>
+            c.points.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y)) ||
+            (c.arcParams &&
+              (!Number.isFinite(c.arcParams.rx) ||
+                !Number.isFinite(c.arcParams.ry) ||
+                !Number.isFinite(c.arcParams.xRotation))),
+        ),
+      );
+      if (hasNaN) return [];
+      return [layer];
+    } catch {
+      // Graceful fallback: never crash on bad element in pro SVG (partial load recovery)
+      return [];
+    }
   });
 }
 
@@ -354,8 +377,8 @@ function parseVdPath(el: Element, parentId: string | null, counter: { n: number 
     strokeColor: vdAttr(el, "strokeColor"),
     strokeAlpha: Number(vdAttr(el, "strokeAlpha", "1")),
     strokeWidth: Number(vdAttr(el, "strokeWidth", "0")),
-    strokeLinecap: (vdAttr(el, "strokeLineCap", "butt")) as StrokeLineCap,
-    strokeLinejoin: (vdAttr(el, "strokeLineJoin", "miter")) as StrokeLineJoin,
+    strokeLinecap: vdAttr(el, "strokeLineCap", "butt") as StrokeLineCap,
+    strokeLinejoin: vdAttr(el, "strokeLineJoin", "miter") as StrokeLineJoin,
     strokeMiterLimit: Number(vdAttr(el, "strokeMiterLimit", "4")),
     trimPathStart: Number(vdAttr(el, "trimPathStart", "0")),
     trimPathEnd: Number(vdAttr(el, "trimPathEnd", "1")),
@@ -364,7 +387,11 @@ function parseVdPath(el: Element, parentId: string | null, counter: { n: number 
   } satisfies Layer;
 }
 
-function parseVdClipPath(el: Element, parentId: string | null, counter: { n: number }): Layer | null {
+function parseVdClipPath(
+  el: Element,
+  parentId: string | null,
+  counter: { n: number },
+): Layer | null {
   const pathData = vdAttr(el, "pathData");
   if (!pathData.trim()) return null;
   const parsed = parsePath(pathData);
@@ -414,7 +441,12 @@ export function importLayersFromVectorDrawable(xmlText: string): Layer[] {
 }
 
 /** Extract viewport metadata from a VectorDrawable root element. */
-export function extractVectorDrawableMetadata(xmlText: string): { viewportWidth: number; viewportHeight: number; width: number; height: number } {
+export function extractVectorDrawableMetadata(xmlText: string): {
+  viewportWidth: number;
+  viewportHeight: number;
+  width: number;
+  height: number;
+} {
   const doc = new DOMParser().parseFromString(xmlText, "application/xml");
   const root = doc.documentElement;
   return {

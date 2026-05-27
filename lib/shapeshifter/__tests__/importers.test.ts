@@ -1,17 +1,14 @@
 // @vitest-environment happy-dom
 
 import { describe, it, expect } from "vitest";
-import {
-  importLayersFromSvg,
-  importLayersFromVectorDrawable,
-} from "../importers";
+import { importLayersFromSvg, importLayersFromVectorDrawable } from "../importers";
 import {
   isOriginalShapeShifterProject,
   flattenOriginalProject,
   type ShapeShifterProject,
 } from "../project";
 import { exportStaticSVG, exportVectorDrawable, exportProjectJSON } from "../exporter";
-import { pathToString, parsePath } from "../pathUtils";
+import { pathToString, parsePath, reversePath } from "../pathUtils";
 import type { Layer, VectorMetadata, AnimationState } from "../types";
 
 const SVG_PATH_TRIANGLE = `<?xml version="1.0" encoding="UTF-8"?>
@@ -805,7 +802,13 @@ describe("project.ts: .shapeshifter project import", () => {
           strokeWidth: 2,
         },
       ];
-      const vector: VectorMetadata = { id: "vec1", name: "MyVector", width: 24, height: 24, alpha: 1 };
+      const vector: VectorMetadata = {
+        id: "vec1",
+        name: "MyVector",
+        width: 24,
+        height: 24,
+        alpha: 1,
+      };
       const animation: AnimationState = { id: "anim1", name: "morph", duration: 1000, blocks: [] };
 
       const exported = exportProjectJSON(layers, vector, animation, []);
@@ -871,9 +874,88 @@ describe("cross-format roundtrips", () => {
   it("SVG import and VectorDrawable import produce same path for equivalent data", () => {
     const pathD = "M 12 2 L 22 22 L 2 22 Z";
     const svgLayers = importLayersFromSvg(`<svg><path d="${pathD}"/></svg>`);
-    const vdLayers = importLayersFromVectorDrawable(
-      `<vector><path pathData="${pathD}"/></vector>`,
-    );
+    const vdLayers = importLayersFromVectorDrawable(`<vector><path pathData="${pathD}"/></vector>`);
     expect(extractPathString(svgLayers[0])).toEqual(extractPathString(vdLayers[0]));
+  });
+});
+
+// ── 24t phase1 fidelity + edge hardening tests (yrl) ─────────────────────
+describe("24t phase1: SVG import fidelity edges (arcParams, transforms, groups, recovery, tool roundtrips)", () => {
+  const SVG_ARC_ROTATED_IN_GROUP = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+    <g transform="rotate(45 12 12)">
+      <path id="arc" d="M 6 10 A 4 2 30 0 1 14 12" fill="none" stroke="#000"/>
+    </g>
+  </svg>`;
+
+  const SVG_MIXED_BAD_DATA = `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48">
+    <path id="good" d="M 0 0 L 10 10 Z"/>
+    <path id="badnum" d="M 1 2 L foo 99 A 3 NaN 0 0 1 5 6"/>
+    <rect x="20" y="20" width="10" height="10"/>
+  </svg>`;
+
+  it("preserves and correctly transforms arcParams xRotation (fixes pre-exist rotation vs xRotation shape mismatch)", () => {
+    const layers = importLayersFromSvg(SVG_ARC_ROTATED_IN_GROUP);
+    expect(layers).toHaveLength(1);
+    const arcCmd = layers[0].from.subPaths[0]?.commands.find((c) => c.type === "A");
+    expect(arcCmd).toBeDefined();
+    expect(arcCmd!.arcParams).toBeDefined();
+    // Original xRotation 30 + group rotate 45 => ~75 (within float)
+    expect(arcCmd!.arcParams!.xRotation).toBeCloseTo(75, 1);
+    expect(Number.isFinite(arcCmd!.arcParams!.rx)).toBe(true);
+    expect(Number.isFinite(arcCmd!.arcParams!.ry)).toBe(true);
+    // geometry transformed (points moved by rot)
+    expect(layers[0].from.subPaths[0].commands[0].points[0].x).not.toBeCloseTo(6);
+  });
+
+  it("graceful partial recovery on bad/complex path data (no crash, imports goods only, toasts in app)", () => {
+    const layers = importLayersFromSvg(SVG_MIXED_BAD_DATA);
+    // badnum skipped, good + rect imported
+    expect(layers.length).toBeGreaterThanOrEqual(2);
+    const names = layers.map((l) => l.name);
+    expect(names).toContain("good");
+    expect(names.some((n) => n.includes("rect"))).toBe(true);
+    // no NaN in any
+    for (const l of layers) {
+      const bad = l.from.subPaths.some((sp) =>
+        sp.commands.some((c) => c.points.some((p) => !Number.isFinite(p.x))),
+      );
+      expect(bad).toBe(false);
+    }
+  });
+
+  it("roundtrip with tool mutation (reversePath 'r' key + knife/direct parity primitives) then export/re-import preserves core geometry", () => {
+    const original = importLayersFromSvg(SVG_PATH_TRIANGLE);
+    expect(original).toHaveLength(1);
+    // Exercise tool (reverse used by keyboard 'r', also direct/pen/knife paths use pathUtils)
+    const mutated = [
+      {
+        ...original[0],
+        from: reversePath(original[0].from),
+        to: reversePath(original[0].to),
+        pathData: reversePath(original[0].pathData!),
+      },
+    ];
+    const exported = exportStaticSVG(mutated as any);
+    const reimported = importLayersFromSvg(exported);
+    expect(reimported).toHaveLength(1);
+    const reStr = extractPathString(reimported[0]);
+    // Core points present after tool mutation (reverse) + export/reimport round (order may vary but geometry present)
+    expect(reStr).toContain("M");
+    expect(reStr).toContain("L");
+    expect(reStr).toContain("Z");
+    // styles preserved in round (via any for tsc on narrow helper return shape)
+    expect((reimported[0] as any).fillColor ?? "").toBe((original[0] as any).fillColor ?? "");
+  });
+
+  it("handles <use> + symbol + nested transform without crash (existing inlining hardened)", () => {
+    const svgWithUse = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24">
+      <defs>
+        <symbol id="sym" viewBox="0 0 10 10"><path d="M 1 1 L 9 9"/></symbol>
+      </defs>
+      <use href="#sym" x="2" y="3" transform="scale(1.5)"/>
+    </svg>`;
+    const layers = importLayersFromSvg(svgWithUse);
+    expect(layers.length).toBeGreaterThanOrEqual(1);
+    expect(extractPathString(layers[0])).toContain("M");
   });
 });

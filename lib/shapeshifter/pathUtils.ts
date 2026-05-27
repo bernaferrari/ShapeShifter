@@ -225,7 +225,17 @@ export function parsePath(d: string): PathData {
     }
   }
 
-  return { subPaths: subPaths.filter((subPath) => subPath.commands.length > 0) };
+  // Harden against malformed/complex path data (NaNs from bad nums, scientific edge, unbalanced arcs etc): drop bad commands for graceful recovery everywhere (importers, direct edits)
+  return {
+    subPaths: subPaths
+      .map((sp) => ({
+        commands: sp.commands.filter((c) => {
+          if (c.points.length === 0) return true;
+          return c.points.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+        }),
+      }))
+      .filter((sp) => sp.commands.length > 0),
+  };
 }
 
 /**
