@@ -156,6 +156,7 @@ interface EditorState {
   timelineZoom: number;
   timelineScrollX: number;
   timelineScrollY: number;
+  timelineCollapsed: boolean;
 
   // Action Mode / Gestures (now using shared enums from Phase 1)
   toolMode: ToolMode;
@@ -183,6 +184,8 @@ interface EditorState {
   renameFrame: (id: string, name: string) => void;
   deleteFrame: (id: string) => void;
   selectFrame: (id: string) => void;
+  moveFrame: (id: string, dx: number, dy: number) => void;
+  moveFrames: (ids: string[], dx: number, dy: number) => void;
 
   // Actions
   setLayers: (layers: Layer[]) => void;
@@ -262,6 +265,7 @@ interface EditorState {
   toggleLayerCollapsed: (layerId: string | number) => void;
   setTimelineZoom: (zoom: number) => void;
   setTimelineScroll: (x: number, y: number) => void;
+  toggleTimelineCollapsed: () => void;
 
   // Action Mode / Gestures (Phase 1)
   setToolMode: (mode: ToolMode) => void;
@@ -458,6 +462,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   timelineZoom: 1,
   timelineScrollX: 0,
   timelineScrollY: 0,
+  timelineCollapsed: false,
   toolMode: "select",
   cursorType: "default",
   hoveredItem: null,
@@ -640,6 +645,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
   },
 
+  moveFrame: (id, dx, dy) => {
+    if (dx === 0 && dy === 0) return;
+    set((state) => ({
+      frames: state.frames.map((f) => (f.id === id ? { ...f, x: f.x + dx, y: f.y + dy } : f)),
+    }));
+  },
+  moveFrames: (ids, dx, dy) => {
+    if (!ids.length || (dx === 0 && dy === 0)) return;
+    const idSet = new Set(ids);
+    set((state) => ({
+      frames: state.frames.map((f) => (idSet.has(f.id) ? { ...f, x: f.x + dx, y: f.y + dy } : f)),
+    }));
+  },
+
   autoFixSelectedLayer: () => {
     const { layers, selectedLayerId } = get();
     const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
@@ -688,6 +707,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       timelineZoom: 1,
       timelineScrollX: 0,
       timelineScrollY: 0,
+      timelineCollapsed: false,
     });
   },
 
@@ -1243,6 +1263,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     })),
   setTimelineZoom: (zoom) => set({ timelineZoom: Math.max(0.1, Math.min(10, zoom)) }),
   setTimelineScroll: (x, y) => set({ timelineScrollX: x, timelineScrollY: y }),
+  toggleTimelineCollapsed: () => set((state) => ({ timelineCollapsed: !state.timelineCollapsed })),
 
   setToolMode: (mode) => set({ toolMode: mode }),
   setCursorType: (cursor) => set({ cursorType: cursor }),
@@ -1635,6 +1656,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       timelineZoom: 1,
       timelineScrollX: 0,
       timelineScrollY: 0,
+      timelineCollapsed: false,
       toolMode: "select",
       cursorType: "default",
       hoveredItem: null,

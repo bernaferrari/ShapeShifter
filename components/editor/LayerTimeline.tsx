@@ -55,6 +55,8 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
     animation,
     vector,
     selectBlocks,
+    timelineCollapsed,
+    toggleTimelineCollapsed,
   } = useEditorStore();
   const formatTimeMark = (timeMs: number) =>
     animation.duration < 1000 ? `${Math.round(timeMs)}ms` : `${(timeMs / 1000).toFixed(1)}s`;
@@ -72,7 +74,6 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
     originalStart: number;
     originalEnd: number;
   }>(null);
-  const [timelineCollapsed, setTimelineCollapsed] = React.useState(false); // non-intrusive collapse for optional animation vision
 
   type TimelineLayer =
     | Layer
@@ -423,18 +424,30 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
           <div className="flex items-center gap-1.5 text-xs font-semibold">
             <Timer className="h-3.5 w-3.5" />
             <span>anim</span>
-            <span className="ml-1 text-[10px] text-muted-foreground">(drag blocks)</span>
+            <span className="ml-1 text-[10px] text-muted-foreground">
+              {animation.blocks.length === 0
+                ? "optional"
+                : `${animation.blocks.length} block${animation.blocks.length === 1 ? "" : "s"}`}
+            </span>
             <span className="text-muted-foreground">{animation.duration}ms</span>
+            {animation.blocks.length > 0 && (
+              <span
+                className="ml-0.5 rounded-sm bg-primary/10 px-1 py-px text-[9px] font-mono text-primary/90"
+                title="Animation power feature active — zero friction when collapsed"
+              >
+                ANIM
+              </span>
+            )}
           </div>
           <Button
             size="icon-xs"
             variant="ghost"
             aria-label={
               timelineCollapsed
-                ? "Expand timeline tracks"
-                : "Collapse timeline tracks (keep scrub/playhead)"
+                ? "Expand timeline tracks (optional animation power feature)"
+                : "Collapse timeline tracks (keep scrub/playhead for zero-friction static editing)"
             }
-            onClick={() => setTimelineCollapsed((c) => !c)}
+            onClick={toggleTimelineCollapsed}
           >
             <ChevronRight
               className={`h-3.5 w-3.5 transition-transform ${timelineCollapsed ? "" : "rotate-90"}`}
@@ -520,6 +533,12 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
             className="absolute bottom-0 top-0 z-10 w-0.5 bg-primary before:absolute before:-left-1 before:-top-px before:h-2.5 before:w-2.5 before:rounded-full before:bg-primary"
             style={{ left: `${Math.round(progress * 100)}%` }}
           />
+          {!timelineCollapsed && animation.blocks.length === 0 && (
+            <div className="px-3 py-1 text-[10px] text-muted-foreground/60 italic select-none pointer-events-none">
+              Animation is an optional power feature — add blocks via layer menus or inspector.
+              Collapse to hide for pure vector work.
+            </div>
+          )}
           {!timelineCollapsed &&
             timelineRows.map((row) => (
               <div

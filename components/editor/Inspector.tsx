@@ -130,6 +130,7 @@ export function Inspector() {
     updateSelectedLayer,
     startActionMode,
     addTimelineBlock,
+    animation,
   } = useEditorStore();
 
   const point = getCurrentSelectedPoint ? getCurrentSelectedPoint() : null;
@@ -188,11 +189,26 @@ export function Inspector() {
                 {editingSide}
               </Badge>
             )}
+            {animation.blocks.some((b) => String(b.layerId) === String(currentLayer.id)) && (
+              <Badge
+                variant="secondary"
+                className="h-4 rounded-sm px-1 text-[9px] bg-primary/10 text-primary border-0"
+                title="This layer has animation blocks (optional power feature)"
+              >
+                anim
+              </Badge>
+            )}
           </div>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={<Button size="icon-sm" variant="ghost" aria-label="Animate this layer" />}
+            render={
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Optional animation power feature: add or edit timeline blocks for this layer (see LayerTimeline)"
+              />
+            }
           >
             <MaterialSymbol name="animation" size={17} />
           </DropdownMenuTrigger>
