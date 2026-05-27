@@ -188,7 +188,7 @@ export function Toolbar({
               <Plus className="w-4 h-4 mr-2" /> New Project
             </DropdownMenuItem>
             <DropdownMenuItem onClick={onOpenSVGImport}>
-              <Upload className="w-4 h-4 mr-2" /> Import from SVG
+              <Upload className="w-4 h-4 mr-2" /> Import SVG / XML / Project
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => addLayer("path")}>
               <Plus className="w-4 h-4 mr-2" /> Add Layer
