@@ -393,6 +393,99 @@ export function updatePoint(
   return newData;
 }
 
+/**
+ * Update a specific point inside a specific command (for the editable command list).
+ * Used by the beautiful PathCommandsList when user scrubs or types a value.
+ */
+export function updateCommandPoint(
+  pathData: PathData,
+  subIdx: number,
+  cmdIdx: number,
+  pointIdx: number,
+  newPoint: Point,
+): PathData {
+  return updatePoint(pathData, subIdx, cmdIdx, pointIdx, newPoint);
+}
+
+/**
+ * Change the type of a command while doing a best-effort geometry preservation.
+ * Very useful for the editable command surface (user can cycle M/L/C etc.).
+ * For v1 we keep it simple and safe:
+ *  - M/L/H/V <-> each other: keep the endpoint
+ *  - Anything <-> C: create reasonable control points or take endpoint
+ *  - Z is special (no points)
+ */
+export function changeCommandType(
+  pathData: PathData,
+  subIdx: number,
+  cmdIdx: number,
+  newType: CommandType,
+): PathData {
+  const newData = clonePath(pathData);
+  const sub = newData.subPaths[subIdx];
+  if (!sub || !sub.commands[cmdIdx]) return newData;
+
+  const oldCmd = sub.commands[cmdIdx];
+  if (oldCmd.type === newType) return newData;
+
+  const endPoint = oldCmd.points.length > 0 ? oldCmd.points[oldCmd.points.length - 1] : { x: 0, y: 0 };
+
+  let newPoints: Point[] = [];
+
+  switch (newType) {
+    case "M":
+    case "L":
+    case "T":
+      newPoints = [endPoint];
+      break;
+    case "H":
+      newPoints = [{ x: endPoint.x, y: 0 }];
+      break;
+    case "V":
+      newPoints = [{ x: 0, y: endPoint.y }];
+      break;
+    case "C":
+      // Create a gentle cubic using the old end as final point
+      const prev = oldCmd.points[0] || endPoint;
+      const dx = (endPoint.x - prev.x) * 0.3;
+      const dy = (endPoint.y - prev.y) * 0.3;
+      newPoints = [
+        { x: prev.x + dx, y: prev.y + dy },
+        { x: endPoint.x - dx, y: endPoint.y - dy },
+        endPoint,
+      ];
+      break;
+    case "Q":
+      const mid = oldCmd.points[0] || endPoint;
+      newPoints = [
+        { x: (mid.x + endPoint.x) / 2, y: (mid.y + endPoint.y) / 2 },
+        endPoint,
+      ];
+      break;
+    case "S":
+      newPoints = [endPoint, endPoint]; // will be interpreted with previous context
+      break;
+    case "A":
+      newPoints = [endPoint];
+      break;
+    case "Z":
+      newPoints = [];
+      break;
+    default:
+      newPoints = oldCmd.points.length ? [endPoint] : [];
+  }
+
+  sub.commands[cmdIdx] = {
+    ...oldCmd,
+    type: newType,
+    points: newPoints,
+    // arcParams only kept if still A
+    arcParams: newType === "A" ? oldCmd.arcParams : undefined,
+  };
+
+  return newData;
+}
+
 export function translatePath(pathData: PathData, dx: number, dy: number): PathData {
   const newData = clonePath(pathData);
   for (const subPath of newData.subPaths) {

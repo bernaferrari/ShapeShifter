@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editorStore";
-import { parsePath, pathToString } from "@/lib/shapeshifter/pathUtils";
+import { changeCommandType, parsePath, pathToString, updateCommandPoint } from "@/lib/shapeshifter/pathUtils";
 import type { FillType, Layer, StrokeLineCap, StrokeLineJoin } from "@/lib/shapeshifter/types";
 import { MaterialSymbol } from "./MaterialSymbol";
 import { PathCommandsList } from "./PathCommandsList";
@@ -308,6 +308,30 @@ export function Inspector() {
                       commandIndex,
                       pointIndex: 0,
                     });
+                  }}
+                  onUpdateCommandPoint={(subPathIndex, commandIndex, pointIndex, newPoint) => {
+                    const currentPath = currentLayer[editingSide];
+                    const updated = updateCommandPoint(
+                      currentPath,
+                      subPathIndex,
+                      commandIndex,
+                      pointIndex,
+                      newPoint,
+                    );
+                    updateLayer(
+                      editingSide === "from"
+                        ? { from: updated, pathData: updated }
+                        : { to: updated },
+                    );
+                  }}
+                  onChangeCommandType={(subPathIndex, commandIndex, newType) => {
+                    const currentPath = currentLayer[editingSide];
+                    const updated = changeCommandType(currentPath, subPathIndex, commandIndex, newType);
+                    updateLayer(
+                      editingSide === "from"
+                        ? { from: updated, pathData: updated }
+                        : { to: updated },
+                    );
                   }}
                 />
               </div>

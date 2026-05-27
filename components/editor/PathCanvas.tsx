@@ -1335,7 +1335,7 @@ export const PathCanvas = React.memo(function PathCanvas({
           <path
             d={`M ${artboard.gridMinor} 0 L 0 0 0 ${artboard.gridMinor}`}
             stroke="#000000"
-            strokeOpacity="0.045"
+            strokeOpacity="0.07"
             fill="none"
             strokeWidth={viewBox.w * 0.0012}
           />
@@ -1349,7 +1349,7 @@ export const PathCanvas = React.memo(function PathCanvas({
           <path
             d={`M ${artboard.gridMajor} 0 L 0 0 0 ${artboard.gridMajor}`}
             stroke="#000000"
-            strokeOpacity="0.08"
+            strokeOpacity="0.12"
             fill="none"
             strokeWidth={viewBox.w * 0.0015}
           />
@@ -1510,6 +1510,21 @@ export const PathCanvas = React.memo(function PathCanvas({
         </g>
       ) : (
         <g clipPath={`url(#${gridId}-artboard-clip)`}>
+          {/* Subtle body/silhouette treatment for the main path (inspired by reference image arrow) */}
+          {side === "from" && (
+            <path
+              d={displayPath}
+              fill="none"
+              stroke="#e5e5e5"
+              strokeOpacity={0.6}
+              strokeWidth={strokeWidth + 2.5}
+              strokeLinecap={currentLayer.strokeLinecap ?? "butt"}
+              strokeLinejoin={currentLayer.strokeLinejoin ?? "miter"}
+              strokeMiterlimit={currentLayer.strokeMiterLimit ?? 4}
+              fillRule={currentLayer.fillType === "evenOdd" ? "evenodd" : "nonzero"}
+              pointerEvents="none"
+            />
+          )}
           <path
             d={displayPath}
             className={
