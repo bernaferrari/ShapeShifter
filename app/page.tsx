@@ -1,9 +1,27 @@
 "use client";
 
 import React, { useCallback } from "react";
-import { Play, Zap, RotateCw, ArrowLeftRight, HelpCircle, Download } from "lucide-react";
+import {
+  Play,
+  Zap,
+  RotateCw,
+  ArrowLeftRight,
+  HelpCircle,
+  Download,
+  MousePointer2,
+  PenTool,
+  Lasso,
+} from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
+import {
+  CommandDialog,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+  CommandShortcut,
+} from "@/components/ui/command";
 import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { parsePath } from "@/lib/shapeshifter/pathUtils";
@@ -99,36 +117,52 @@ export default function ShapeShifter2026() {
         return;
       }
 
-
       // Tool mode switches (original Action Mode toolbar parity)
-      if (e.key.toLowerCase() === "v" && !e.metaKey) { // Select / move
+      if (e.key.toLowerCase() === "v" && !e.metaKey) {
+        // Select / move
         e.preventDefault();
         store.setToolMode("select");
         return;
       }
-      if (e.key.toLowerCase() === "p" && !e.metaKey) { // Pen
+      if (e.key.toLowerCase() === "p" && !e.metaKey) {
+        // Pen
         e.preventDefault();
         store.setToolMode("pen");
         return;
       }
-      if (e.key.toLowerCase() === "d" && !e.metaKey) { // Direct / handles
+      if (e.key.toLowerCase() === "d" && !e.metaKey) {
+        // Direct / handles + Bend/Flex (Ctrl+drag curves)
         e.preventDefault();
         store.setToolMode("direct");
         return;
       }
 
+      // Palette keyboard parity for Lasso (9rp under v6j): 'L' activates pencil (current Lasso tool entry
+      // in BottomToolPalette with Lasso icon + L shortcut). Matches the vision reference (Figma-style
+      // bottom toolbar: Move/Lasso/Bend/Cut/Paint + More) and ensures muscle memory parity with the
+      // rendered tooltips. Direct/Bend already covered by 'D'.
+      // References: DESIGN_ID 67dd105e, beads 9rp/v6j, BottomToolPalette.tsx.
+      if (e.key.toLowerCase() === "l" && !e.metaKey) {
+        e.preventDefault();
+        store.setToolMode("pencil");
+        return;
+      }
+
       // More original actions
-      if (e.key.toLowerCase() === "x" && !e.metaKey) { // Split (like onSplitInHalfClick)
+      if (e.key.toLowerCase() === "x" && !e.metaKey) {
+        // Split (like onSplitInHalfClick)
         e.preventDefault();
         store.splitSelectedCommand?.();
         return;
       }
-      if (e.key.toLowerCase() === "f" && !e.metaKey) { // Set as first
+      if (e.key.toLowerCase() === "f" && !e.metaKey) {
+        // Set as first
         e.preventDefault();
         store.setSelectedCommandAsFirst?.();
         return;
       }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w") { // Close action mode
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w") {
+        // Close action mode
         e.preventDefault();
         store.closeActionMode?.();
         return;
@@ -136,7 +170,7 @@ export default function ShapeShifter2026() {
 
       // Arrow nudges (extend if needed)
 
-            // Nudge selected point with arrows (very useful)
+      // Nudge selected point with arrows (very useful)
       if (store.selection && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
         e.preventDefault();
         const point = store.getCurrentSelectedPoint();
@@ -226,7 +260,8 @@ export default function ShapeShifter2026() {
                       type: layer.type ?? "path",
                       from: typeof layer.from === "string" ? parsePath(layer.from) : layer.from,
                       to: typeof layer.to === "string" ? parsePath(layer.to) : layer.to,
-                      pathData: typeof layer.from === "string" ? parsePath(layer.from) : layer.pathData,
+                      pathData:
+                        typeof layer.from === "string" ? parsePath(layer.from) : layer.pathData,
                       visible: layer.visible ?? true,
                       locked: layer.locked ?? false,
                     }))
@@ -248,22 +283,14 @@ export default function ShapeShifter2026() {
           loading: `Fetching file from URL...`,
           success: (msg) => msg,
           error: (err) => `Failed to load URL: ${err.message}`,
-        }
+        },
       );
     }
   }, []);
 
   // Everything comes from the store (single source of truth)
-  const {
-    editingSide,
-    isPlaying,
-    isActionMode,
-    setEditingSide,
-    undo,
-    redo,
-    canUndo,
-    canRedo,
-  } = useEditorStore();
+  const { editingSide, isPlaying, isActionMode, setEditingSide, undo, redo, canUndo, canRedo } =
+    useEditorStore();
 
   // Hidden file input for original SVG/XML/project import
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -318,7 +345,9 @@ export default function ShapeShifter2026() {
           return;
         }
         useEditorStore.getState().importLayers(importedLayers);
-        toast.success(`Imported ${importedLayers.length} layer(s) from ${file.name.endsWith(".xml") ? "Vector Drawable" : "SVG"}`);
+        toast.success(
+          `Imported ${importedLayers.length} layer(s) from ${file.name.endsWith(".xml") ? "Vector Drawable" : "SVG"}`,
+        );
       } catch (error) {
         toast.error("Failed to parse file", { description: String(error) });
       }
@@ -431,7 +460,9 @@ export default function ShapeShifter2026() {
             : type === "avd"
               ? exportAnimatedVectorDrawable(layer)
               : exportSvgSpritesheet(layer);
-        const blob = new Blob([content], { type: type === "spritesheet" ? "image/svg+xml" : "application/xml" });
+        const blob = new Blob([content], {
+          type: type === "spritesheet" ? "image/svg+xml" : "application/xml",
+        });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
@@ -502,7 +533,8 @@ export default function ShapeShifter2026() {
             <div className="flex flex-col gap-2">
               <h3 className="text-2xl font-bold tracking-tight">Import Assets & Projects</h3>
               <p className="text-sm text-muted-foreground">
-                Drop your SVG, Vector XML, or <code>.shapeshifter</code> project files anywhere to load them instantly.
+                Drop your SVG, Vector XML, or <code>.shapeshifter</code> project files anywhere to
+                load them instantly.
               </p>
             </div>
             <div className="flex flex-wrap justify-center gap-2 text-xs font-medium text-muted-foreground border-t pt-6 w-full">
@@ -548,7 +580,11 @@ export default function ShapeShifter2026() {
             </ResizablePanel>
             <ResizableHandle className="bg-border/80" />
             <ResizablePanel id="timeline" minSize={16} defaultSize={24}>
-              <LayerTimeline onOpenSVGImport={openSVGImport} onExport={handleExport} onLoadSample={loadSample} />
+              <LayerTimeline
+                onOpenSVGImport={openSVGImport}
+                onExport={handleExport}
+                onLoadSample={loadSample}
+              />
             </ResizablePanel>
           </ResizablePanelGroup>
         </div>
@@ -572,7 +608,7 @@ export default function ShapeShifter2026() {
         }}
       />
 
-      {/* Help / Shortcuts Modal */}
+      {/* Help / Shortcuts Modal - comprehensive audit for professional excellence */}
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -581,36 +617,87 @@ export default function ShapeShifter2026() {
           <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm py-4">
             <div className="font-mono">Space</div>
             <div>Play / Pause</div>
+            <div className="font-mono">V / P / D / L</div>
+            <div>Tools: Move / Pen / Direct / Lasso</div>
             <div className="font-mono">A</div>
             <div>Auto Fix</div>
             <div className="font-mono">R</div>
             <div>Reverse</div>
             <div className="font-mono">S</div>
             <div>Shift Points</div>
+            <div className="font-mono">X / F</div>
+            <div>Split / Set First (Action)</div>
             <div className="font-mono">⌘Z / ⌘⇧Z</div>
             <div>Undo / Redo</div>
-            <div className="font-mono">Arrows</div>
-            <div>Nudge point</div>
+            <div className="font-mono">Arrows (+Shift)</div>
+            <div>Nudge point (coarse/fine)</div>
             <div className="font-mono">1 / 2</div>
             <div>Switch From / To</div>
             <div className="font-mono">⌘K</div>
-            <div>Command Palette</div>
+            <div>Command Palette (fuzzy tools/actions)</div>
             <div className="font-mono">Esc</div>
             <div>Clear selection</div>
-            <div className="font-mono">Delete</div>
+            <div className="font-mono">Delete / ⌫</div>
             <div>Remove point</div>
+            <div className="font-mono">⌘W</div>
+            <div>Close Action Mode</div>
           </div>
           <div className="text-xs text-muted-foreground mt-2">
-            Pro tip: Use Auto Fix when the compatibility warning appears.
+            Pro tip: Use Auto Fix when the compatibility warning appears. All tools also in ⌘K
+            palette. Inspector supports drag-to-scrub on numbers.
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Command Palette - 2026 delight */}
+      {/* Command Palette - professional Cmd+K (fuzzy, all tools/actions/recent, keyboard nav, toasts) */}
       <CommandDialog open={commandOpen} onOpenChange={setCommandOpen}>
         <CommandInput placeholder="Type a command or search..." />
         <CommandList>
           <CommandEmpty>No results found.</CommandEmpty>
+          <CommandGroup heading="Tools">
+            <CommandItem
+              onSelect={() =>
+                runCommand(() => {
+                  useEditorStore.getState().setToolMode("select");
+                  toast.success("Move/Select tool");
+                })
+              }
+            >
+              <MousePointer2 className="mr-2 h-4 w-4" /> Move / Select{" "}
+              <CommandShortcut>V</CommandShortcut>
+            </CommandItem>
+            <CommandItem
+              onSelect={() =>
+                runCommand(() => {
+                  useEditorStore.getState().setToolMode("pen");
+                  toast.success("Pen tool");
+                })
+              }
+            >
+              <PenTool className="mr-2 h-4 w-4" /> Pen <CommandShortcut>P</CommandShortcut>
+            </CommandItem>
+            <CommandItem
+              onSelect={() =>
+                runCommand(() => {
+                  useEditorStore.getState().setToolMode("direct");
+                  toast.success("Direct / Bend Flex");
+                })
+              }
+            >
+              <span className="mr-2 material-symbols text-[16px]">conversion_path</span> Direct /
+              Bend (Ctrl+drag) <CommandShortcut>D</CommandShortcut>
+            </CommandItem>
+            <CommandItem
+              onSelect={() =>
+                runCommand(() => {
+                  useEditorStore.getState().setToolMode("pencil");
+                  toast.success("Lasso / Pencil");
+                })
+              }
+            >
+              <Lasso className="mr-2 h-4 w-4" /> Lasso / Pencil <CommandShortcut>L</CommandShortcut>
+            </CommandItem>
+          </CommandGroup>
           <CommandGroup heading="Actions">
             <CommandItem
               onSelect={() => {
@@ -658,11 +745,37 @@ export default function ShapeShifter2026() {
                 })
               }
             >
-              <ArrowLeftRight className="mr-2 h-4 w-4" /> Shift Points
+              <ArrowLeftRight className="mr-2 h-4 w-4" /> Shift Points (S)
             </CommandItem>
-            <CommandItem onSelect={() => runCommand(() => loadSample(4))}>
-              <MaterialSymbol name="favorite" size={16} className="mr-2" /> Load Heart break demo
+            <CommandItem
+              onSelect={() =>
+                runCommand(() => {
+                  const s = useEditorStore.getState();
+                  s.booleanCombine?.("union");
+                  toast.success("Union");
+                })
+              }
+            >
+              Union (selected + next)
             </CommandItem>
+            <CommandItem
+              onSelect={() =>
+                runCommand(() => {
+                  const s = useEditorStore.getState();
+                  s.addLayer?.("path");
+                  toast.success("Layer added");
+                })
+              }
+            >
+              Add Path Layer
+            </CommandItem>
+          </CommandGroup>
+          <CommandGroup heading="Recent">
+            {DEMO_INFOS.slice(0, 4).map((demo, index) => (
+              <CommandItem key={demo.id} onSelect={() => runCommand(() => loadSample(index))}>
+                <MaterialSymbol name="favorite" size={16} className="mr-2" /> {demo.title}
+              </CommandItem>
+            ))}
           </CommandGroup>
           <CommandGroup heading="Export">
             <CommandItem onSelect={() => runCommand(() => handleExport("svg"))}>
@@ -670,6 +783,9 @@ export default function ShapeShifter2026() {
             </CommandItem>
             <CommandItem onSelect={() => runCommand(() => handleExport("css"))}>
               <Download className="mr-2 h-4 w-4" /> Export CSS Keyframes
+            </CommandItem>
+            <CommandItem onSelect={() => runCommand(() => handleExport("json"))}>
+              <Download className="mr-2 h-4 w-4" /> Export Project JSON
             </CommandItem>
           </CommandGroup>
         </CommandList>

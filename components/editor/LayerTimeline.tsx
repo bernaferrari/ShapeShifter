@@ -1,10 +1,34 @@
 "use client";
 
 import React from "react";
-import { ChevronRight, Eye, EyeOff, FileCode2, FolderOpen, Import, MoreVertical, Plus, Timer, ZoomIn, Square, Crop } from "lucide-react";
+import {
+  ChevronRight,
+  Eye,
+  EyeOff,
+  FileCode2,
+  FolderOpen,
+  Import,
+  MoreVertical,
+  Plus,
+  Timer,
+  ZoomIn,
+  Square,
+  Crop,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { DEMO_INFOS } from "@/lib/shapeshifter/demoProjects";
 import type { Layer, VectorMetadata } from "@/lib/shapeshifter/types";
@@ -35,9 +59,23 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
   const formatTimeMark = (timeMs: number) =>
     animation.duration < 1000 ? `${Math.round(timeMs)}ms` : `${(timeMs / 1000).toFixed(1)}s`;
 
-  const [draggingBlock, setDraggingBlock] = React.useState<null | { id: string; startX: number; originalStart: number; originalEnd: number }>(null);
+  const [draggingBlock, setDraggingBlock] = React.useState<null | {
+    id: string;
+    startX: number;
+    originalStart: number;
+    originalEnd: number;
+  }>(null);
+  const [timelineCollapsed, setTimelineCollapsed] = React.useState(false); // non-intrusive collapse for optional animation vision
 
-  type TimelineLayer = Layer | (VectorMetadata & { type: "vector"; visible: boolean; locked: boolean; expanded?: boolean; parentId?: null });
+  type TimelineLayer =
+    | Layer
+    | (VectorMetadata & {
+        type: "vector";
+        visible: boolean;
+        locked: boolean;
+        expanded?: boolean;
+        parentId?: null;
+      });
   type TimelineRow =
     | { kind: "layer"; layer: TimelineLayer; depth: number }
     | { kind: "property"; layer: TimelineLayer; propertyName: string; depth: number };
@@ -81,13 +119,29 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
     return true;
   });
   const propertiesForLayer = (layerId: string | number) =>
-    Array.from(new Set(animation.blocks.filter((block) => String(block.layerId) === String(layerId)).map((block) => block.propertyName)));
+    Array.from(
+      new Set(
+        animation.blocks
+          .filter((block) => String(block.layerId) === String(layerId))
+          .map((block) => block.propertyName),
+      ),
+    );
   const animatableProperties = (layerType: string) =>
     layerType === "vector"
       ? ["alpha"]
       : layerType === "group"
-      ? ["rotation", "scaleX", "scaleY", "pivotX", "pivotY", "translateX", "translateY"]
-      : ["pathData", "fillColor", "fillAlpha", "strokeColor", "strokeAlpha", "strokeWidth", "trimPathStart", "trimPathEnd", "trimPathOffset"];
+        ? ["rotation", "scaleX", "scaleY", "pivotX", "pivotY", "translateX", "translateY"]
+        : [
+            "pathData",
+            "fillColor",
+            "fillAlpha",
+            "strokeColor",
+            "strokeAlpha",
+            "strokeWidth",
+            "trimPathStart",
+            "trimPathEnd",
+            "trimPathOffset",
+          ];
   const timelineRows: TimelineRow[] = [{ kind: "layer", layer: vectorRow, depth: 0 }];
   for (const layer of visibleLayers) {
     const depth = (depthById.get(String(layer.id)) ?? 0) + 1;
@@ -107,7 +161,16 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
       <div className="flex min-h-0 w-[300px] shrink-0 flex-col border-r border-border/60 bg-sidebar">
         <div className="flex h-10 items-center gap-0.5 border-b border-border/60 bg-card px-1.5 shadow-xs">
           <DropdownMenu>
-            <DropdownMenuTrigger render={<button type="button" className="h-8 rounded px-2 text-xs font-medium hover:bg-muted" />}>File</DropdownMenuTrigger>
+            <DropdownMenuTrigger
+              render={
+                <button
+                  type="button"
+                  className="h-8 rounded px-2 text-xs font-medium hover:bg-muted"
+                />
+              }
+            >
+              File
+            </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-44">
               <DropdownMenuItem onClick={onOpenSVGImport}>Open project or asset</DropdownMenuItem>
               {DEMO_INFOS.map((demo, index) => (
@@ -115,11 +178,22 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                   Demo: {demo.title}
                 </DropdownMenuItem>
               ))}
-              <DropdownMenuItem onClick={() => onExport("json")}>Save project JSON</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onExport("json")}>
+                Save project JSON
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           <DropdownMenu>
-            <DropdownMenuTrigger render={<button type="button" className="h-8 rounded px-2 text-xs font-medium hover:bg-muted" />}>Import</DropdownMenuTrigger>
+            <DropdownMenuTrigger
+              render={
+                <button
+                  type="button"
+                  className="h-8 rounded px-2 text-xs font-medium hover:bg-muted"
+                />
+              }
+            >
+              Import
+            </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-44">
               <DropdownMenuItem onClick={onOpenSVGImport}>
                 <Import className="mr-2 h-4 w-4" /> SVG
@@ -130,14 +204,29 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
             </DropdownMenuContent>
           </DropdownMenu>
           <DropdownMenu>
-            <DropdownMenuTrigger render={<button type="button" className="h-8 rounded px-2 text-xs font-medium hover:bg-muted" />}>Export</DropdownMenuTrigger>
+            <DropdownMenuTrigger
+              render={
+                <button
+                  type="button"
+                  className="h-8 rounded px-2 text-xs font-medium hover:bg-muted"
+                />
+              }
+            >
+              Export
+            </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
               <DropdownMenuItem onClick={() => onExport("svg")}>Animated SVG</DropdownMenuItem>
               <DropdownMenuItem onClick={() => onExport("css")}>CSS keyframes</DropdownMenuItem>
               <DropdownMenuItem onClick={() => onExport("lottie")}>Lottie JSON</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onExport("vector")}>Vector Drawable</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onExport("avd")}>Animated Vector Drawable</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onExport("spritesheet")}>SVG spritesheet</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onExport("vector")}>
+                Vector Drawable
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onExport("avd")}>
+                Animated Vector Drawable
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onExport("spritesheet")}>
+                SVG spritesheet
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onExport("json")}>Project JSON</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -156,7 +245,9 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
               <DropdownMenuItem onClick={() => addLayer("path")}>New path</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => addLayer("clipPath")}>New clip path</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => addLayer("clipPath")}>
+                New clip path
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => addLayer("group")}>New group layer</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -165,14 +256,21 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
           {timelineRows.map((row) => {
             if (row.kind === "property") {
               const blockIds = animation.blocks
-                .filter((block) => String(block.layerId) === String(row.layer.id) && block.propertyName === row.propertyName)
+                .filter(
+                  (block) =>
+                    String(block.layerId) === String(row.layer.id) &&
+                    block.propertyName === row.propertyName,
+                )
                 .map((block) => block.id);
-              const isSelected = blockIds.length > 0 && blockIds.every((id) => selectedBlockIds.includes(id));
+              const isSelected =
+                blockIds.length > 0 && blockIds.every((id) => selectedBlockIds.includes(id));
               return (
                 <button
                   key={`${row.layer.id}-${row.propertyName}`}
                   className={`flex h-6 w-full items-center gap-2 rounded px-2 text-left text-[10px] ${
-                    isSelected ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/70"
+                    isSelected
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-muted/70"
                   }`}
                   style={{ paddingLeft: `${8 + row.depth * 18}px` }}
                   onClick={() => selectBlocks(blockIds)}
@@ -212,29 +310,39 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                         toggleLayerExpanded(layer.id);
                       }
                     }}
-                    aria-label={layer.expanded === false ? `Expand ${layer.name}` : `Collapse ${layer.name}`}
+                    aria-label={
+                      layer.expanded === false ? `Expand ${layer.name}` : `Collapse ${layer.name}`
+                    }
                   >
                     {isExpandable ? (
-                      <ChevronRight className={`h-3 w-3 transition-transform ${layer.expanded === false ? "" : "rotate-90"}`} />
+                      <ChevronRight
+                        className={`h-3 w-3 transition-transform ${layer.expanded === false ? "" : "rotate-90"}`}
+                      />
                     ) : (
                       <span className="h-3 w-3" />
                     )}
                   </span>
-                  
+
                   {layer.type === "vector" ? (
                     <FileCode2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   ) : layer.type === "group" ? (
-                    <FolderOpen className={`h-3.5 w-3.5 shrink-0 ${isSelected ? "text-primary" : "text-muted-foreground"}`} />
+                    <FolderOpen
+                      className={`h-3.5 w-3.5 shrink-0 ${isSelected ? "text-primary" : "text-muted-foreground"}`}
+                    />
                   ) : layer.type === "clipPath" ? (
-                    <Crop className={`h-3.5 w-3.5 shrink-0 ${isSelected ? "text-primary" : "text-muted-foreground"}`} />
+                    <Crop
+                      className={`h-3.5 w-3.5 shrink-0 ${isSelected ? "text-primary" : "text-muted-foreground"}`}
+                    />
                   ) : (
-                    <Square className={`h-3.5 w-3.5 shrink-0 ${isSelected ? "text-primary" : "text-muted-foreground"}`} />
+                    <Square
+                      className={`h-3.5 w-3.5 shrink-0 ${isSelected ? "text-primary" : "text-muted-foreground"}`}
+                    />
                   )}
 
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium text-[11px]">{layer.name}</span>
                   </span>
-                  
+
                   <DropdownMenu>
                     <DropdownMenuTrigger
                       render={
@@ -248,10 +356,21 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                       <MoreVertical className="h-3 w-3" />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-44 text-xs">
-                      {layer.type === "path" && <DropdownMenuItem onClick={() => convertLayerType(layer.id, "clipPath")}>Convert to clip path</DropdownMenuItem>}
-                      {layer.type === "clipPath" && <DropdownMenuItem onClick={() => convertLayerType(layer.id, "path")}>Convert to path</DropdownMenuItem>}
+                      {layer.type === "path" && (
+                        <DropdownMenuItem onClick={() => convertLayerType(layer.id, "clipPath")}>
+                          Convert to clip path
+                        </DropdownMenuItem>
+                      )}
+                      {layer.type === "clipPath" && (
+                        <DropdownMenuItem onClick={() => convertLayerType(layer.id, "path")}>
+                          Convert to path
+                        </DropdownMenuItem>
+                      )}
                       {animatableProperties(layer.type).map((propertyName) => (
-                        <DropdownMenuItem key={propertyName} onClick={() => addTimelineBlock(layer.id, propertyName)}>
+                        <DropdownMenuItem
+                          key={propertyName}
+                          onClick={() => addTimelineBlock(layer.id, propertyName)}
+                        >
                           Animate {propertyName}
                         </DropdownMenuItem>
                       ))}
@@ -292,9 +411,24 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
         <div className="flex h-10 items-center gap-2 border-b border-border/60 bg-card px-3 shadow-xs">
           <div className="flex items-center gap-1.5 text-xs font-semibold">
             <Timer className="h-3.5 w-3.5" />
-            <span>anim</span><span className="ml-1 text-[10px] text-muted-foreground">(drag blocks)</span>
+            <span>anim</span>
+            <span className="ml-1 text-[10px] text-muted-foreground">(drag blocks)</span>
             <span className="text-muted-foreground">{animation.duration}ms</span>
           </div>
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            aria-label={
+              timelineCollapsed
+                ? "Expand timeline tracks"
+                : "Collapse timeline tracks (keep scrub/playhead)"
+            }
+            onClick={() => setTimelineCollapsed((c) => !c)}
+          >
+            <ChevronRight
+              className={`h-3.5 w-3.5 transition-transform ${timelineCollapsed ? "" : "rotate-90"}`}
+            />
+          </Button>
           <Button size="icon-xs" variant="ghost" aria-label="Zoom timeline to fit">
             <ZoomIn className="h-3.5 w-3.5" />
           </Button>
@@ -340,7 +474,10 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
           <div className="flex h-9 items-center gap-2 border-b bg-muted/50 px-3 text-[10px]">
             <span>Selected block interpolator:</span>
             <Select
-              value={animation.blocks.find(b => selectedBlockIds.includes(b.id))?.interpolator || "FAST_OUT_SLOW_IN"}
+              value={
+                animation.blocks.find((b) => selectedBlockIds.includes(b.id))?.interpolator ||
+                "FAST_OUT_SLOW_IN"
+              }
               onValueChange={(value) => {
                 const selId = selectedBlockIds[0];
                 if (selId && value) updateTimelineBlock(selId, { interpolator: value });
@@ -363,7 +500,8 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
         <div
           className="relative min-h-0 flex-1 bg-muted/15 pt-2.5"
           style={{
-            backgroundImage: "linear-gradient(90deg, color-mix(in oklab, var(--border) 45%, transparent) 1px, transparent 1px)",
+            backgroundImage:
+              "linear-gradient(90deg, color-mix(in oklab, var(--border) 45%, transparent) 1px, transparent 1px)",
             backgroundSize: "10% 100%",
           }}
         >
@@ -371,68 +509,93 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
             className="absolute bottom-0 top-0 z-10 w-0.5 bg-primary before:absolute before:-left-1 before:-top-px before:h-2.5 before:w-2.5 before:rounded-full before:bg-primary"
             style={{ left: `${Math.round(progress * 100)}%` }}
           />
-          {timelineRows.map((row) => (
-            <div
-              key={row.kind === "property" ? `${row.layer.id}-${row.propertyName}` : row.layer.id}
-              className={`${row.kind === "property" ? "h-6" : "h-8"} relative border-b border-border/45`}
-            >
-              {row.kind === "property" &&
-                animation.blocks
-                  .filter((block) => String(block.layerId) === String(row.layer.id) && block.propertyName === row.propertyName)
-                  .map((block) => {
-                    const isSelected = selectedBlockIds.includes(block.id);
-                    const leftPct = (block.startTime / animation.duration) * 100;
-                    const widthPct = Math.max(1, ((block.endTime - block.startTime) / animation.duration) * 100);
-                    const handleDragStart = (e: React.PointerEvent) => {
-                      e.stopPropagation();
-                      (e.target as HTMLElement).setPointerCapture(e.pointerId);
-                      setDraggingBlock({
-                        id: block.id,
-                        startX: e.clientX,
-                        originalStart: block.startTime,
-                        originalEnd: block.endTime,
-                      });
-                      const store = useEditorStore.getState();
-                      store.selectBlocks([block.id]);
-                    };
+          {!timelineCollapsed &&
+            timelineRows.map((row) => (
+              <div
+                key={row.kind === "property" ? `${row.layer.id}-${row.propertyName}` : row.layer.id}
+                className={`${row.kind === "property" ? "h-6" : "h-8"} relative border-b border-border/45`}
+              >
+                {row.kind === "property" &&
+                  animation.blocks
+                    .filter(
+                      (block) =>
+                        String(block.layerId) === String(row.layer.id) &&
+                        block.propertyName === row.propertyName,
+                    )
+                    .map((block) => {
+                      const isSelected = selectedBlockIds.includes(block.id);
+                      const leftPct = (block.startTime / animation.duration) * 100;
+                      const widthPct = Math.max(
+                        1,
+                        ((block.endTime - block.startTime) / animation.duration) * 100,
+                      );
+                      const interp = block.interpolator || "FAST_OUT_SLOW_IN";
+                      const handleDragStart = (e: React.PointerEvent) => {
+                        e.stopPropagation();
+                        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                        setDraggingBlock({
+                          id: block.id,
+                          startX: e.clientX,
+                          originalStart: block.startTime,
+                          originalEnd: block.endTime,
+                        });
+                        const store = useEditorStore.getState();
+                        store.selectBlocks([block.id]);
+                      };
 
-                    const handleDragMove = (e: React.PointerEvent) => {
-                      if (!draggingBlock || draggingBlock.id !== block.id) return;
-                      const rect = e.currentTarget.parentElement?.getBoundingClientRect();
-                      const width = Math.max(1, rect?.width ?? 300);
-                      const deltaX = e.clientX - draggingBlock.startX;
-                      const deltaTime = (deltaX / width) * animation.duration;
-                      let newStart = Math.max(0, Math.min(animation.duration - 50, draggingBlock.originalStart + deltaTime));
-                      let newEnd = Math.max(newStart + 50, Math.min(animation.duration, draggingBlock.originalEnd + deltaTime));
-                      newStart = Math.round(newStart / 50) * 50;
-                      newEnd = Math.round(newEnd / 50) * 50;
-                      const store = useEditorStore.getState();
-                      store.updateTimelineBlock(block.id, { startTime: newStart, endTime: newEnd });
-                    };
+                      const handleDragMove = (e: React.PointerEvent) => {
+                        if (!draggingBlock || draggingBlock.id !== block.id) return;
+                        const rect = e.currentTarget.parentElement?.getBoundingClientRect();
+                        const width = Math.max(1, rect?.width ?? 300);
+                        const deltaX = e.clientX - draggingBlock.startX;
+                        const deltaTime = (deltaX / width) * animation.duration;
+                        let newStart = Math.max(
+                          0,
+                          Math.min(
+                            animation.duration - 50,
+                            draggingBlock.originalStart + deltaTime,
+                          ),
+                        );
+                        let newEnd = Math.max(
+                          newStart + 50,
+                          Math.min(animation.duration, draggingBlock.originalEnd + deltaTime),
+                        );
+                        newStart = Math.round(newStart / 50) * 50;
+                        newEnd = Math.round(newEnd / 50) * 50;
+                        const store = useEditorStore.getState();
+                        store.updateTimelineBlock(block.id, {
+                          startTime: newStart,
+                          endTime: newEnd,
+                        });
+                      };
 
-                    const handleDragEnd = (e: React.PointerEvent) => {
-                      setDraggingBlock(null);
-                      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-                    };
+                      const handleDragEnd = (e: React.PointerEvent) => {
+                        setDraggingBlock(null);
+                        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+                      };
 
-                    return (
-                      <div
-                        key={block.id}
-                        className={`absolute top-1.5 h-3 rounded-sm cursor-grab active:cursor-grabbing transition-colors ${isSelected ? "bg-primary ring-1 ring-ring" : "bg-primary/60 hover:bg-primary/75"}`}
-                        style={{
-                          left: `${leftPct}%`,
-                          width: `${widthPct}%`,
-                        }}
-                        title={`${block.propertyName}: ${block.startTime}-${block.endTime}ms (drag to move)`}
-                        onPointerDown={handleDragStart}
-                        onPointerMove={handleDragMove}
-                        onPointerUp={handleDragEnd}
-                        onPointerCancel={handleDragEnd}
-                      />
-                    );
-                  })}
-            </div>
-          ))}
+                      return (
+                        <div
+                          key={block.id}
+                          className={`absolute top-1.5 h-3 rounded-sm cursor-grab active:cursor-grabbing transition-colors ${isSelected ? "bg-primary ring-1 ring-ring" : "bg-primary/60 hover:bg-primary/75"} ${interp === "LINEAR" ? "border border-dashed border-primary/70" : ""}`}
+                          style={{
+                            left: `${leftPct}%`,
+                            width: `${widthPct}%`,
+                          }}
+                          title={`${block.propertyName}: ${block.startTime}-${block.endTime}ms [${interp}] (drag to move, snaps to 50ms frames) — click to multi-select`}
+                          onPointerDown={handleDragStart}
+                          onPointerMove={handleDragMove}
+                          onPointerUp={handleDragEnd}
+                          onPointerCancel={handleDragEnd}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            useEditorStore.getState().toggleBlockSelection(block.id);
+                          }}
+                        />
+                      );
+                    })}
+              </div>
+            ))}
         </div>
       </div>
     </section>
