@@ -1,8 +1,14 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editorStore";
-import { parsePath, pathToString, getInterpolatedPath } from "@/lib/shapeshifter/pathUtils";
+import {
+  parsePath,
+  pathToString,
+  getInterpolatedPath,
+  isPointInFillRegion,
+} from "@/lib/shapeshifter/pathUtils";
 import { evaluateBlock } from "@/lib/shapeshifter/interpolators";
 import type { SegmentSelection, SubPathSelection } from "@/lib/store/editorStore";
 import type { Command, Layer, PathData, Point, TimelineBlock } from "@/lib/shapeshifter/types";
@@ -66,6 +72,14 @@ export const PathCanvas = React.memo(function PathCanvas({
   // Benchmarks in tests confirm <16ms for collect on 500+pt paths.
   const lassoRafRef = useRef<number | null>(null);
   const [, setLassoFrame] = React.useState(0);
+
+  // Paint bucket / fill preview (rsn under v6j): hit region via isPointInFillRegion (sampling + odd parity for holes).
+  // 60fps raf like lasso for live semi-transparent fill overlay (dashed) on hover when tool==='paint'.
+  // Apply on pointer down (click UX). Uses current selected layer's fill style as paint source (via updateSelectedLayer after select).
+  // Refs for perf (no re-render spam during move); clear on tool exit / up. Preview respects detail/preview sides + world.
+  const paintPreviewRafRef = useRef<number | null>(null);
+  const [, setPaintPreviewFrame] = React.useState(0);
+  const paintHitRef = useRef<{ layerId: string | number } | null>(null);
 
   // GestureDispatcher (PR-01.1 / ShapeShifter-ish fix round xwx under mvd).
   // The ref that owns the decision logic for canvas interactions (Key Decision #2).
@@ -263,6 +277,16 @@ export const PathCanvas = React.memo(function PathCanvas({
     }
     // Always sync context when relevant store values change (BottomToolPalette, keyboard, etc.)
     dispatcherRef.current?.updateContext({ toolMode, editingSide, snapToGrid, zoom });
+
+    // Paint bucket hygiene: clear hover preview when leaving paint tool (prevents stale overlay)
+    if (toolMode !== "paint" && paintHitRef.current) {
+      paintHitRef.current = null;
+      if (paintPreviewRafRef.current) {
+        cancelAnimationFrame(paintPreviewRafRef.current);
+        paintPreviewRafRef.current = null;
+      }
+      setPaintPreviewFrame((f) => (f + 1) % 10000);
+    }
   }, [toolMode, editingSide, snapToGrid, zoom, pushHistory]);
 
   const pointFromEvent = useCallback(
@@ -296,6 +320,56 @@ export const PathCanvas = React.memo(function PathCanvas({
       setViewBox({ x: newX, y: newY, w: newW, h: newH, scale: newScale });
     },
     [artboard.baseViewSize, pointFromEvent, setZoom, viewBox],
+  );
+
+  // Paint bucket helpers (rsn): pure hit via imported isPointInFillRegion (pathUtils sampling + parity for holes).
+  // Compute respects current editingSide (detail) or from (world/preview). Topmost layer first (reverse z).
+  // Apply: select target + updateSelectedLayer with fill style from currently selected source layer (or default black).
+  // This keeps style source in inspector parity, undo via push inside update, selection update, no new store action.
+  const computePaintHitAt = useCallback(
+    (pt: Point): string | number | null => {
+      const state = useEditorStore.getState();
+      const testSide = side === "preview" ? "from" : state.editingSide;
+      // reverse for topmost visual hit
+      for (let i = state.layers.length - 1; i >= 0; i--) {
+        const layer = state.layers[i];
+        if (!layer.visible || layer.locked) continue;
+        if (layer.type !== "path" && layer.type !== "clipPath") continue;
+        const pathForTest = testSide === "from" ? layer.from : layer.to || layer.from;
+        if (isPointInFillRegion(pt, pathForTest)) {
+          return layer.id;
+        }
+      }
+      return null;
+    },
+    [side],
+  );
+
+  const applyPaintFill = useCallback(
+    (targetId: string | number) => {
+      const state = useEditorStore.getState();
+      const src = state.layers.find((l) => l.id === state.selectedLayerId) || state.layers[0];
+      const tgt = state.layers.find((l) => l.id === targetId);
+      if (!tgt) return;
+
+      const fillPatch = {
+        fillColor: src?.fillColor || "#000000",
+        fillAlpha: src?.fillAlpha ?? 1,
+        fillType: (src?.fillType || "nonZero") as "nonZero" | "evenOdd",
+      };
+
+      // Select target first so updateSelectedLayer targets it; update pushes history (undoable).
+      selectLayer(targetId);
+      // Fresh get for safety post-select
+      useEditorStore.getState().updateSelectedLayer(fillPatch);
+
+      toast.success(`Filled ${tgt.name || "layer"}`);
+
+      // Clear preview
+      paintHitRef.current = null;
+      setPaintPreviewFrame((f) => f + 1);
+    },
+    [selectLayer],
   );
 
   const handleSvgPointerDown = useCallback(
@@ -346,8 +420,26 @@ export const PathCanvas = React.memo(function PathCanvas({
           svgRef.current?.setPointerCapture(e.pointerId);
         }
       }
+
+      // Paint bucket / fill tool (rsn): dispatcher owns route decision (see GestureDispatcher paint case).
+      // On down (click UX, not drag): compute hit region at point (sampling+parity), apply immediately if hit.
+      // Preview lives on move (below). No capture needed long term. Uses exact existing patterns (fresh getState, compute+apply).
+      const downTool = useEditorStore.getState().toolMode;
+      if (downTool === "paint" && e.button === 0) {
+        const p = pointFromEvent(e.clientX, e.clientY);
+        if (p) {
+          const hitId = computePaintHitAt(p);
+          if (hitId != null) {
+            applyPaintFill(hitId);
+          } else {
+            toast.info("No fill region under cursor");
+          }
+          svgRef.current?.setPointerCapture(e.pointerId);
+          return;
+        }
+      }
     },
-    [isActionMode, isSpaceDown, pointFromEvent, side],
+    [isActionMode, isSpaceDown, pointFromEvent, side, computePaintHitAt, applyPaintFill],
   );
 
   const handleSvgPointerMove = useCallback(
@@ -406,9 +498,26 @@ export const PathCanvas = React.memo(function PathCanvas({
             });
           }
         }
+
+        // Paint bucket hover preview (rsn): on move with paint tool, hit test point, update ref + raf trigger for 60fps overlay.
+        // Mirrors lasso exactly for perf (ref holds hit, cheap state flip causes re-render of overlay only).
+        if (!isPanning && currentTool === "paint") {
+          const hitId = computePaintHitAt(p);
+          const prevHit = paintHitRef.current?.layerId ?? null;
+          const newHit = hitId ?? null;
+          if (newHit !== prevHit) {
+            paintHitRef.current = newHit != null ? { layerId: newHit } : null;
+            if (!paintPreviewRafRef.current) {
+              paintPreviewRafRef.current = requestAnimationFrame(() => {
+                paintPreviewRafRef.current = null;
+                setPaintPreviewFrame((f) => (f + 1) % 10000);
+              });
+            }
+          }
+        }
       }
     },
-    [isPanning, lastPan, viewBox.h, viewBox.w, pointFromEvent],
+    [isPanning, lastPan, viewBox.h, viewBox.w, pointFromEvent, computePaintHitAt],
   );
 
   const handleSvgPointerUp = useCallback(
@@ -492,6 +601,17 @@ export const PathCanvas = React.memo(function PathCanvas({
       }
       setLassoFrame(0);
       lassoPointsRef.current = [];
+
+      // Paint preview clear on up (bucket is instant on-down apply; clear any hover state)
+      const upTool = useEditorStore.getState().toolMode;
+      if (upTool === "paint") {
+        if (paintPreviewRafRef.current) {
+          cancelAnimationFrame(paintPreviewRafRef.current);
+          paintPreviewRafRef.current = null;
+        }
+        paintHitRef.current = null;
+        setPaintPreviewFrame((f) => (f + 1) % 10000);
+      }
     },
     [pointFromEvent],
   ); // Note: other handlers (non-marquee paths) may still reference top-level destructured actions; our marquee commit path uses fresh getState() only. The lasso commit above follows the exact same fresh-getState + callback bridge pattern for reviewability.
@@ -1183,7 +1303,7 @@ export const PathCanvas = React.memo(function PathCanvas({
       className={`h-full w-full min-w-0 touch-none select-none bg-card ${
         isSpaceDown || isPanning
           ? "cursor-grab"
-          : side === "preview" && !isActionMode
+          : side === "preview" && !isActionMode && toolMode !== "paint"
             ? "cursor-default"
             : "cursor-crosshair"
       }`}
@@ -1649,6 +1769,40 @@ export const PathCanvas = React.memo(function PathCanvas({
           pointerEvents="none"
         />
       )}
+
+      {/* Paint bucket / fill preview overlay (rsn v6j):
+          Semi-transparent fill using current source layer style (from inspector/selected) + dashed blue stroke like lasso.
+          Triggered by paintHitRef + raf at 60fps on hover. Hole-aware (isPointInFillRegion parity).
+          Click applies via down handler (mutates hit layer fill, undoable, selects it).
+          Works for detail (editingSide) + world/preview. Cursor crosshair for precision. */}
+      {toolMode === "paint" &&
+        paintHitRef.current &&
+        (() => {
+          const hid = paintHitRef.current!.layerId;
+          const hlayer = layers.find((l) => l.id === hid);
+          if (!hlayer || !hlayer.visible) return null;
+          const srcLayer = layers.find((l) => l.id === selectedLayerId) || hlayer;
+          const fillC = srcLayer.fillColor || "#000000";
+          const fillA = Math.max(0.15, Math.min(0.5, (srcLayer.fillAlpha ?? 1) * 0.55));
+          const targetP =
+            side === "preview" || editingSide === "from" ? hlayer.from : hlayer.to || hlayer.from;
+          const previewD = pathToString(targetP);
+          if (!previewD) return null;
+          const sw = Math.max(viewBox.w * 0.0018, 0.08);
+          return (
+            <path
+              d={previewD}
+              fill={fillC}
+              fillOpacity={fillA}
+              stroke="#0d99ff"
+              strokeWidth={sw}
+              strokeDasharray={`${sw * 2.5} ${sw * 1.2}`}
+              vectorEffect="non-scaling-stroke"
+              opacity={0.92}
+              pointerEvents="none"
+            />
+          );
+        })()}
 
       {/* Control points + bezier handles (direct mode fidelity - port of original EditPath/handle rendering) */}
       {canEditPoints &&

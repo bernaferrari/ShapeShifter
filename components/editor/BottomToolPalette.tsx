@@ -9,7 +9,7 @@ import type { ToolMode } from "@/lib/shapeshifter/toolModes";
 
 /**
  * Bottom tool palette — first visible artifact of the 2026 vision.
- * Matches the spirit of the user's reference (Move/Lasso/Paint/Bend/Cut + More).
+ * Matches the spirit of the user's reference (Move/Lasso/Bend/Cut/Paint/Pen/Direct + More) per v6j DESIGN 67dd105e. Paint completes the professional palette (rsn).
  * Initially a clean, modern bar that drives toolMode.
  *
  * This is the start of PR-01 foundation work under ShapeShifter-v6j (P0).
@@ -48,6 +48,12 @@ const TOOLS: ToolDef[] = [
     label: "Pencil / Lasso (future)",
     icon: <Lasso className="h-4 w-4" />,
     shortcut: "L",
+  },
+  {
+    mode: "paint",
+    label: "Paint / Fill (bucket)",
+    icon: <PaintBucket className="h-4 w-4" />,
+    shortcut: "B",
   },
   {
     mode: "rectangle",

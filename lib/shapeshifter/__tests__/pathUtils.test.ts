@@ -13,6 +13,7 @@ import {
   insertPointNear,
   splitPointNear,
   booleanCombine,
+  isPointInFillRegion,
 } from "../pathUtils";
 import { parserSpecs, autoFixTests, mutationTests } from "./testFixtures";
 
@@ -509,6 +510,31 @@ describe("pathUtils", () => {
       const _ = booleanCombine("union", long, parsePath("M 10 10 L 20 10 L 20 20 L 10 20 Z"));
       const dt = performance.now() - t0;
       expect(dt).toBeLessThan(50); // loose for CI; real 60fps in RAF path
+    });
+  });
+
+  describe("Paint bucket / fill hit region (rsn under v6j - 3 cases for excellence)", () => {
+    it("simple closed path: point inside is hit, outside not (basic fill region)", () => {
+      const square = parsePath("M 0 0 L 10 0 L 10 10 L 0 10 Z");
+      expect(isPointInFillRegion({ x: 5, y: 5 }, square)).toBe(true);
+      expect(isPointInFillRegion({ x: 15, y: 5 }, square)).toBe(false);
+      expect(isPointInFillRegion({ x: -1, y: 0 }, square)).toBe(false);
+    });
+
+    it("hole preservation: point in outer yes, point inside hole subpath no (parity count)", () => {
+      // Outer rect + inner reversed hole (like boolean subtract / evenodd SVG)
+      const withHole = parsePath("M 0 0 L 20 0 L 20 20 L 0 20 Z M 5 5 L 15 5 L 15 15 L 5 15 Z");
+      // Note: sampling + odd count treats inner as flip (in outer+inner = even = outside fill region)
+      expect(isPointInFillRegion({ x: 10, y: 10 }, withHole)).toBe(false); // in hole
+      expect(isPointInFillRegion({ x: 2, y: 2 }, withHole)).toBe(true); // in fill ring
+      expect(isPointInFillRegion({ x: 10, y: 1 }, withHole)).toBe(true);
+    });
+
+    it("multi-path / multi-sub: hits correct polys independently (union-like sampling)", () => {
+      const multi = parsePath("M 0 0 L 4 0 L 4 4 L 0 4 Z M 10 10 L 14 10 L 14 14 L 10 14 Z");
+      expect(isPointInFillRegion({ x: 2, y: 2 }, multi)).toBe(true);
+      expect(isPointInFillRegion({ x: 12, y: 12 }, multi)).toBe(true);
+      expect(isPointInFillRegion({ x: 6, y: 6 }, multi)).toBe(false);
     });
   });
 });

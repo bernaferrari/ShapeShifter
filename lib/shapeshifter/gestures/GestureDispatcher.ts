@@ -113,6 +113,13 @@ export class GestureDispatcher {
         // (historical) [GestureDispatcher] pencil/lasso intent (9rp real hit testing live)
       }
       // (historical) [GestureDispatcher] would start shape creation — hardened vn7 k88, no runtime console in decision paths.
+    } else if (tool === "paint") {
+      // Paint bucket / fill (rsn under v6j DESIGN 67dd105e): dispatcher sole decision point.
+      // On pointerDown in PathCanvas (when tool=paint): compute hit region via path sampling (pathToPolygons)
+      // + pointInPolygon (odd count for holes) from HitTests/pathUtils. Preview: semi fill overlay on hover
+      // (60fps raf like lasso). Commit on click: mutate hit layer fill* (copy current style via updateSelectedLayer),
+      // pushHistory, select, toast. Works detail+world preview. Undoable, no regressions.
+      // (historical) [GestureDispatcher] paint bucket intent (rsn completeness for professional palette)
     }
   }
 

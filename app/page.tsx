@@ -11,6 +11,7 @@ import {
   MousePointer2,
   PenTool,
   Lasso,
+  PaintBucket,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -139,12 +140,18 @@ export default function ShapeShifter2026() {
 
       // Palette keyboard parity for Lasso (9rp under v6j): 'L' activates pencil (current Lasso tool entry
       // in BottomToolPalette with Lasso icon + L shortcut). Matches the vision reference (Figma-style
-      // bottom toolbar: Move/Lasso/Bend/Cut/Paint + More) and ensures muscle memory parity with the
-      // rendered tooltips. Direct/Bend already covered by 'D'.
-      // References: DESIGN_ID 67dd105e, beads 9rp/v6j, BottomToolPalette.tsx.
+      // bottom toolbar: Move/Lasso/Bend/Cut/Paint/Pen/Direct + More) and ensures muscle memory parity with the
+      // rendered tooltips. Direct/Bend already covered by 'D'. Paint bucket (rsn / v6j completeness) uses 'B'.
+      // References: DESIGN_ID 67dd105e, beads 9rp/v6j/rsn, BottomToolPalette.tsx.
       if (e.key.toLowerCase() === "l" && !e.metaKey) {
         e.preventDefault();
         store.setToolMode("pencil");
+        return;
+      }
+      if (e.key.toLowerCase() === "b" && !e.metaKey) {
+        // Paint / Fill bucket (v6j rsn)
+        e.preventDefault();
+        store.setToolMode("paint");
         return;
       }
 
@@ -696,6 +703,17 @@ export default function ShapeShifter2026() {
               }
             >
               <Lasso className="mr-2 h-4 w-4" /> Lasso / Pencil <CommandShortcut>L</CommandShortcut>
+            </CommandItem>
+            <CommandItem
+              onSelect={() =>
+                runCommand(() => {
+                  useEditorStore.getState().setToolMode("paint");
+                  toast.success("Paint / Fill");
+                })
+              }
+            >
+              <PaintBucket className="mr-2 h-4 w-4" /> Paint / Fill (bucket){" "}
+              <CommandShortcut>B</CommandShortcut>
             </CommandItem>
           </CommandGroup>
           <CommandGroup heading="Actions">

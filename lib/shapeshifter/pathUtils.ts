@@ -1367,7 +1367,7 @@ function sampleQuad(p0: Point, c: Point, p2: Point, steps = 12): Point[] {
   return pts;
 }
 
-function pathToPolygons(path: PathData, steps = 12): Point[][] {
+export function pathToPolygons(path: PathData, steps = 12): Point[][] {
   const polys: Point[][] = [];
   for (const sub of path.subPaths) {
     const poly: Point[] = [];
@@ -1461,4 +1461,22 @@ export function booleanCombine(op: BooleanOp, a: PathData, b: PathData): PathDat
   const out = polygonsToPathData(resultPolys);
   // If op produced nothing, return A unchanged (safe)
   return out.subPaths.length === 0 ? clonePath(a) : out;
+}
+
+/**
+ * Paint bucket / fill hit region test (rsn under v6j).
+ * Uses pathToPolygons sampling (exact from booleanCombine) + even-odd parity count over sub-polys
+ * for correct inside/hole detection (hole subpaths reverse contribute to parity flip like SVG evenodd).
+ * Pure, zero DOM, 60fps cheap. Re-exports pathToPolygons for PathCanvas preview/hit + tests.
+ * Covers: simple closed, holes preserved (click in hole = not in region), multi-subpath.
+ * Refs: rsn, v6j DESIGN 67dd105e, kbv booleans, 9rp pointInPoly parity.
+ */
+export function isPointInFillRegion(point: Point, pathData: PathData): boolean {
+  if (!pathData?.subPaths?.length) return false;
+  const polys = pathToPolygons(pathData, 12);
+  let containing = 0;
+  for (const poly of polys) {
+    if (poly.length >= 3 && pointInPoly(point, poly)) containing++;
+  }
+  return containing % 2 === 1;
 }
