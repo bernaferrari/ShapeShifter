@@ -77,6 +77,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const worldSvgRef = useRef<SVGSVGElement>(null);
   const worldLassoRef = useRef<Array<{ x: number; y: number }>>([]);
   const worldLassoRafRef = useRef<number | null>(null);
+  // Zero-friction polish (19u): ref to cancel prior in-flight world camera lerp on rapid dblclicks
+  // or repeated focus gestures. Prevents concurrent RAFs from fighting and causing camera jank
+  // during world<->detail transitions on complex multi-frame docs. Exact pattern match to
+  // lassoRafRef / paintPreviewRafRef in PathCanvas + worldLassoRafRef here.
+  const worldCameraRafRef = useRef<number | null>(null);
   const [, setWorldLassoFrame] = useState(0);
   const [worldSelectedIds, setWorldSelectedIds] = useState<string[]>([]);
 
@@ -114,6 +119,22 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       return !(b.x + b.w < vb.x || b.x > vb.x + vb.w || b.y + b.h < vb.y || b.y > vb.y + vb.h);
     });
   }, [frames, worldView, getFrameBounds]);
+
+  // Zero-friction polish (19u): memoized cheap static previews for culled world artboards.
+  // Eliminates repeated .find + pathToString on every world pan/zoom/selection change
+  // for large multi-frame docs. Recomputes only when frames change (correct). Exact
+  // pattern + location as culledFrames useMemo immediately above.
+  const framePreviews = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const f of frames) {
+      const previewLayer = f.layers?.find((l: any) => l && (l.from || l.pathData));
+      const previewD = previewLayer
+        ? pathToString(previewLayer.from || previewLayer.pathData || { subPaths: [] })
+        : "";
+      m.set(f.id, previewD);
+    }
+    return m;
+  }, [frames]);
 
   const handleWorldWheel = useCallback(
     (e: React.WheelEvent) => {
@@ -279,6 +300,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       const st = { ...worldView };
       const dur = 260;
       const t0 = performance.now();
+      // Cancel any prior lerp (19u polish): guarantees single active camera animation, zero jank on repeated dblclick focus.
+      if (worldCameraRafRef.current) {
+        cancelAnimationFrame(worldCameraRafRef.current);
+        worldCameraRafRef.current = null;
+      }
       const step = () => {
         const t = Math.min(1, (performance.now() - t0) / dur);
         const e = 1 - Math.pow(1 - t, 3);
@@ -289,9 +315,13 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
           h: st.h + (tgt.h - st.h) * e,
           scale: 1,
         });
-        if (t < 1) requestAnimationFrame(step);
+        if (t < 1) {
+          worldCameraRafRef.current = requestAnimationFrame(step);
+        } else {
+          worldCameraRafRef.current = null;
+        }
       };
-      requestAnimationFrame(step);
+      worldCameraRafRef.current = requestAnimationFrame(step);
     },
     [worldPointFromEvent, hitArtboard, selectFrame, frames, getFrameBounds, worldView],
   );
@@ -565,15 +595,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       const b = getFrameBounds(frame);
                       const isSel =
                         worldSelectedIds.includes(frame.id) || frame.id === selectedFrameId;
-                      // cheap preview: first path layer's from (or empty)
-                      const previewLayer = frame.layers?.find(
-                        (l: any) => l && (l.from || l.pathData),
-                      );
-                      const previewD = previewLayer
-                        ? pathToString(
-                            previewLayer.from || previewLayer.pathData || { subPaths: [] },
-                          )
-                        : "";
+                      // cheap preview: first path layer's from (or empty) — now from memo for large doc perf
+                      const previewD = framePreviews.get(frame.id) || "";
                       return (
                         <g key={frame.id} transform={`translate(${b.x} ${b.y})`}>
                           <rect

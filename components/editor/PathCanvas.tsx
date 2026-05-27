@@ -627,16 +627,16 @@ export const PathCanvas = React.memo(function PathCanvas({
   const canEditPoints = isEditingThisSide || isPreviewVectorEditing;
   const targetPathData = side === "to" ? currentLayer.to : currentLayer.from;
 
-  // For preview, we'll use a simple lerp for now (will be replaced by real morph later)
-  const getDisplayPath = () => {
+  // Memoized display path (zero friction polish 19u): avoids repeated getInterpolatedPath work
+  // on non-progress re-renders of preview canvas (e.g. selection changes elsewhere) while
+  // preserving exact prior behavior + deps pattern used by all other memos in this file.
+  const displayPath = useMemo(() => {
     if (side === "preview") {
       // Real interpolation using the new engine
       return getInterpolatedPath(currentLayer.from, currentLayer.to, progress);
     }
     return pathToString(targetPathData);
-  };
-
-  const displayPath = getDisplayPath();
+  }, [side, currentLayer.from, currentLayer.to, progress, targetPathData]);
   const fallbackStroke = side === "to" ? "hsl(var(--destructive))" : "hsl(var(--primary))";
   const hasExplicitStroke = Boolean(currentLayer.strokeColor);
   const hasExplicitFill = Boolean(currentLayer.fillColor);
