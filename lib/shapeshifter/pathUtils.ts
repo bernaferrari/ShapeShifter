@@ -1130,6 +1130,24 @@ function convertCommandType(cmd: Command, start: Point, targetType: CommandType)
  * for great morphs). Current version approximates some advanced Path ops but is
  * a massive leap over naive equalizers. All previous tests + new NW behavior expected.
  */
+/**
+ * New v2 capability (preserves all the magic from the original autoFix).
+ * Given two geometries, returns normalized versions + a MorphMapping that
+ * can be used by the renderer for high-quality interpolation.
+ * This is the bridge that lets us keep the excellent NW + pole logic while moving to a better model.
+ */
+export function prepareForMorph(from: PathData, to: PathData): {
+  from: PathData;
+  to: PathData;
+  mapping: any; // Will be replaced by real MorphMapping interface once v2 types land
+} {
+  const [a, b] = autoFixPathPair(from, to);
+  // For now, the mapping is implicit in the aligned output.
+  // Future: serialize the alignments, poles, permutations into a proper MorphMapping object.
+  return { from: a, to: b, mapping: { version: 1, note: "placeholder - real mapping coming with v2 types" } };
+}
+
+// Original kept for backward compat during migration
 export function autoFixPathPair(from: PathData, to: PathData): [PathData, PathData] {
   let a = normalizePathData(clonePathDataForSplit(from));
   let b = normalizePathData(clonePathDataForSplit(to));

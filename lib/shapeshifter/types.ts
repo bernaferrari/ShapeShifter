@@ -31,7 +31,6 @@ export interface Command {
   };
 }
 
-
 export interface SubPath {
   commands: Command[];
 }
@@ -115,6 +114,103 @@ export interface Layer extends PathStyle {
   pivotY?: number;
   duration?: number; // per-layer duration override
   timeline?: TimelineBlock[];
+}
+
+/**
+ * =============================================
+ * SHAPESHIFTER 2.0 - FIRST-PRINCIPLES MODEL (vdeq / sogt)
+ * Parallel to v1 during migration. Do not break existing behavior.
+ * =============================================
+ */
+
+export type NodeId = string;
+export type GeometryVersionId = string;
+export type MorphMappingId = string;
+export type TrackId = string;
+export type KeyframeId = string;
+export type FrameId = string;
+export type ComponentId = string;
+
+/** Immutable versioned geometry. Commands keep stable IDs. */
+export interface GeometryVersion {
+  id: GeometryVersionId;
+  pathData: PathData;
+  sourceHash?: string;
+  createdAt: number;
+}
+
+/** Explicit morph correspondence (output of prepareForMorph). */
+export interface MorphMapping {
+  id: MorphMappingId;
+  fromGeometryId: GeometryVersionId;
+  toGeometryId: GeometryVersionId;
+  // Serialized result of NW + pole collapse, winding fixes, etc.
+  alignments: any;
+  polePositions: Point[];
+  createdAt: number;
+}
+
+/** Scene graph node (replaces much of the old Layer role). */
+export interface Node {
+  id: NodeId;
+  name: string;
+  type: 'group' | 'path' | 'boolean' | 'componentInstance';
+  parentId?: NodeId;
+  childrenIds?: NodeId[];
+  visible: boolean;
+  locked: boolean;
+  transform: any; // matrix or decomposed
+  style: PathStyle;
+  alpha: number;
+  geometryVersionId?: GeometryVersionId; // for path nodes
+}
+
+/** Frame = positioned container on the infinite canvas (evolution of CanvasFrame). */
+export interface Frame {
+  id: FrameId;
+  name: string;
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  childrenNodeIds: NodeId[];
+}
+
+/** Unified animation primitive. */
+export interface Track {
+  id: TrackId;
+  target: { nodeId: NodeId; property: string };
+  keyframeIds: KeyframeId[];
+}
+
+export interface Keyframe {
+  id: KeyframeId;
+  time: number;
+  value: any;
+  interpolator?: InterpolatorName;
+  morphMappingId?: MorphMappingId; // only for geometry tracks
+}
+
+export interface AnimationClip {
+  id: string;
+  name: string;
+  duration: number;
+  trackIds: TrackId[];
+}
+
+/** Top level v2 document (future replacement for current project + frames). */
+export interface DocumentV2 {
+  id: string;
+  name: string;
+  version: 2;
+  frameIds: FrameId[];
+  nodeIds: NodeId[]; // root nodes
+  geometryVersions: Record<GeometryVersionId, GeometryVersion>;
+  morphMappings: Record<MorphMappingId, MorphMapping>;
+  clips: Record<string, AnimationClip>;
+  tracks: Record<TrackId, Track>;
+  keyframes: Record<KeyframeId, Keyframe>;
+  components?: any; // future
 }
 
 /**
