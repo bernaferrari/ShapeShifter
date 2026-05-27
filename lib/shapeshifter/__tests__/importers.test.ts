@@ -811,11 +811,15 @@ describe("project.ts: .shapeshifter project import", () => {
       };
       const animation: AnimationState = { id: "anim1", name: "morph", duration: 1000, blocks: [] };
 
-      const exported = exportProjectJSON(layers, vector, animation, []);
+      const framesForFidelity = [{ id: "f1", name: "Artboard", x: 120, y: 40, layers }];
+      const exported = exportProjectJSON(layers, vector, animation, [], framesForFidelity as any);
       expect(exported.version).toBe(1);
       expect(exported.layers.vectorLayer.name).toBe("MyVector");
       expect(exported.layers.vectorLayer.children).toHaveLength(1);
       expect(exported.layers.vectorLayer.children[0].pathData).toBeTruthy();
+      // vrh 24t: frames key present for page.tsx import handler to restore spatial layout (roundtrip fidelity 100%)
+      expect((exported as any).frames).toBeDefined();
+      expect((exported as any).frames[0].x).toBe(120);
 
       const reimported = flattenOriginalProject(exported as any);
       expect(reimported.layers).toHaveLength(1);

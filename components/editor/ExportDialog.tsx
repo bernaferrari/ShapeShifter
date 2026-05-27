@@ -34,7 +34,7 @@ interface ExportDialogProps {
 }
 
 export function ExportDialog({ children }: ExportDialogProps) {
-  const { layers, selectedLayerId, vector, animation, hiddenLayerIds } = useEditorStore();
+  const { layers, selectedLayerId, vector, animation, hiddenLayerIds, frames } = useEditorStore();
   const currentLayer = layers.find((l) => l.id === selectedLayerId) || layers[0];
 
   const [open, setOpen] = useState(false);
@@ -186,13 +186,7 @@ export function ExportDialog({ children }: ExportDialogProps) {
           break;
 
         case "json":
-          const project = exportProjectJSON(
-            layers,
-            vector,
-            animation,
-            hiddenLayerIds,
-            (useEditorStore.getState() as any).frames,
-          );
+          const project = exportProjectJSON(layers, vector, animation, hiddenLayerIds, frames);
           blob = new Blob([JSON.stringify(project, null, 2)], { type: "application/json" });
           filename = `${vector.name || "shapeshifter"}.shapeshifter`;
           break;
