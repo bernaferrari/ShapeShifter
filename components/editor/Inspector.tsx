@@ -20,7 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
-import { Trash2 } from "lucide-react";
+import { Trash2, Maximize2, Minimize2 } from "lucide-react";
 import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { changeCommandType, parsePath, pathToString, updateCommandPoint } from "@/lib/shapeshifter/pathUtils";
@@ -140,6 +140,23 @@ export function Inspector() {
   const currentLayer = layers.find((l) => l.id === selectedLayerId);
   const updateLayer = (patch: Partial<Layer>) => updateSelectedLayer(patch);
 
+  // bql: Dedicated "Focus Commands" mode — gives the beautiful reference-style command list
+  // almost the full height of the sidebar when the user wants breathing room for complex paths.
+  const [isCommandsFocused, setIsCommandsFocused] = React.useState(false);
+
+  // Escape exits focus mode (very intuitive)
+  React.useEffect(() => {
+    if (!isCommandsFocused) return;
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setIsCommandsFocused(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isCommandsFocused]);
+
   if (!currentLayer) {
     return (
       <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
@@ -168,6 +185,74 @@ export function Inspector() {
           "trimPathEnd",
           "trimPathOffset",
         ];
+
+  // bql dedicated focus mode — the final piece of "do all of them"
+  if (isCommandsFocused) {
+    return (
+      <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
+        {/* Calm, generous dedicated header — reference image spirit */}
+        <div className="flex items-center gap-3 border-b bg-card px-4 py-3 shadow-xs">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              Path Commands
+              <span className="rounded bg-muted px-1.5 py-px font-mono text-[10px] text-muted-foreground">d</span>
+            </div>
+            <div className="text-[10px] text-muted-foreground truncate">{currentLayer.name}</div>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setIsCommandsFocused(false)}
+            className="gap-1.5 text-xs"
+          >
+            <Minimize2 className="h-3.5 w-3.5" /> Exit focus <span className="text-muted-foreground">(Esc)</span>
+          </Button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-hidden p-2">
+          <PathCommandsList
+            pathData={currentLayer[editingSide]}
+            selectedPoints={selectedPoints}
+            onSelectCommand={(subPathIndex, commandIndex) => {
+              if (!currentLayer || !selectPoint) return;
+              selectPoint({
+                layerId: selectedLayerId,
+                side: editingSide,
+                subPathIndex,
+                commandIndex,
+                pointIndex: 0,
+              });
+            }}
+            onUpdateCommandPoint={(subPathIndex, commandIndex, pointIndex, newPoint) => {
+              const currentPath = currentLayer[editingSide];
+              const updated = updateCommandPoint(
+                currentPath,
+                subPathIndex,
+                commandIndex,
+                pointIndex,
+                newPoint,
+              );
+              updateLayer(
+                editingSide === "from"
+                  ? { from: updated, pathData: updated }
+                  : { to: updated },
+              );
+            }}
+            onChangeCommandType={(subPathIndex, commandIndex, newType) => {
+              const currentPath = currentLayer[editingSide];
+              const updated = changeCommandType(currentPath, subPathIndex, commandIndex, newType);
+              updateLayer(
+                editingSide === "from"
+                  ? { from: updated, pathData: updated }
+                  : { to: updated },
+              );
+            }}
+            className="h-full text-xs" // extra breathing room in dedicated mode
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
@@ -295,6 +380,16 @@ export function Inspector() {
                 <div className="mb-1 flex items-center gap-2 text-[9px] uppercase tracking-widest text-muted-foreground">
                   <span>Commands</span>
                   <span className="rounded bg-muted px-1 py-px font-mono text-[8px] text-muted-foreground/70">d</span>
+                  {/* bql — the final piece: optional dedicated full-height mode for the beautiful list */}
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="ml-auto h-5 w-5 text-muted-foreground hover:text-foreground"
+                    onClick={() => setIsCommandsFocused(true)}
+                    title="Focus Commands (dedicated view for complex paths)"
+                  >
+                    <Maximize2 className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
                 <PathCommandsList
                   pathData={currentLayer[editingSide]}
