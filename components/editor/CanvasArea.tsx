@@ -148,14 +148,32 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     };
   }, [getFrameBounds]);
 
-  // Auto-fit world camera when frames load or change significantly (fixes "super far away on open" + 8ri)
+  // Auto-fit world camera when frames load or change significantly.
+  // Removed the fragile single-use "isDefaultBad" exact-match guard (root cause of persistent "super far away" after any interaction).
+  // Now applies a reasonable fit when the current view has no overlap with any frame content.
   useEffect(() => {
-    if (frames.length > 0) {
-      const fit = computeFitView(frames);
-      const isDefaultBad = worldView.x === -80 && worldView.y === -80;
-      if (isDefaultBad) {
-        setWorldView(fit);
-      }
+    if (frames.length === 0) return;
+
+    const fit = computeFitView(frames);
+    const vb = worldView;
+
+    // Check if current view has any overlap with the content bounding box
+    const contentBounds = frames.reduce((acc, f) => {
+      const b = getFrameBounds(f);
+      return {
+        minX: Math.min(acc.minX, b.x),
+        minY: Math.min(acc.minY, b.y),
+        maxX: Math.max(acc.maxX, b.x + b.w),
+        maxY: Math.max(acc.maxY, b.y + b.h),
+      };
+    }, { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+
+    const hasOverlap =
+      !(vb.x + vb.w < contentBounds.minX || vb.x > contentBounds.maxX ||
+        vb.y + vb.h < contentBounds.minY || vb.y > contentBounds.maxY);
+
+    if (!hasOverlap) {
+      setWorldView(fit);
     }
   }, [frames, computeFitView]);
 
@@ -166,12 +184,13 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       if (f) {
         const b = getFrameBounds(f);
         const pad = Math.max(b.w, b.h) * 0.6;
+        const currentScale = worldView.scale;
         const target = {
           x: b.x - pad,
           y: b.y - pad,
-          w: b.w + pad * 2,
-          h: b.h + pad * 2,
-          scale: 1,
+          w: (b.w + pad * 2) / currentScale,  // preserve user's current zoom level
+          h: (b.h + pad * 2) / currentScale,
+          scale: currentScale,
         };
 
         const vb = worldView;
@@ -193,7 +212,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
               y: st.y + (target.y - st.y) * e,
               w: st.w + (target.w - st.w) * e,
               h: st.h + (target.h - st.h) * e,
-              scale: 1,
+              scale: target.scale,
             });
             if (t < 1) {
               worldCameraRafRef.current = requestAnimationFrame(step);
@@ -240,8 +259,12 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       if (!m) return;
       const zf = e.deltaY > 0 ? 0.9 : 1.1;
       const ns = Math.max(0.05, Math.min(10, worldView.scale * zf));
-      const nw = 320 / ns;
-      const nh = 320 / ns;
+
+      // Derive new visible world size from *current* view dimensions instead of hardcoding 320.
+      // This prevents violent teleports after computeFitView or user panning.
+      const nw = worldView.w / (ns / worldView.scale);
+      const nh = worldView.h / (ns / worldView.scale);
+
       const nx = m.x - (m.x - worldView.x) * (nw / worldView.w);
       const ny = m.y - (m.y - worldView.y) * (nh / worldView.h);
       setWorldView({ x: nx, y: ny, w: nw, h: nh, scale: ns });
