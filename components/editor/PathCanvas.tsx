@@ -16,12 +16,10 @@ import { GestureDispatcher } from "@/lib/shapeshifter/gestures/GestureDispatcher
 import {
   collectPointsInRect,
   getMarqueeRect,
-  rectsIntersect as hitTestRectsIntersect,
   // 9rp real Lasso hit testing (ShapeShifter-9rp under v6j): polygon inclusion + curve tolerance.
   // Pure helpers (pointInPolygon + collectPointsInLasso) extend the PR-02 AABB collectPointsInRect
   // pattern exactly for reviewability and reuse by future LassoSelectGesture.
   // References: DESIGN_ID 67dd105e, beads 9rp/ny0/ubf/v6j.
-  pointInPolygon,
   collectPointsInLasso,
 } from "@/lib/shapeshifter/gestures/HitTests";
 
@@ -126,7 +124,6 @@ export const PathCanvas = React.memo(function PathCanvas({
     deleteLayer,
     setZoom,
     selectSubPath,
-    selectMultipleSubPaths,
     toolMode,
     isActionMode,
   } = useEditorStore();
@@ -562,7 +559,6 @@ export const PathCanvas = React.memo(function PathCanvas({
           layers: curLayers,
           selectedLayerId: curSelId,
           editingSide: curEditSide,
-          isActionMode: curIsAction,
           selectMultiplePoints: curSelectMultiplePoints,
           clearSelection: curClearSelection,
         } = state;
@@ -1327,7 +1323,7 @@ export const PathCanvas = React.memo(function PathCanvas({
         });
       }}
       role="img"
-      aria-label={`${side} path canvas`}
+      aria-label={`${side} path canvas — interactive vector editor (pan/zoom, handles, lasso, paint, direct). Keyboard: V/P/D/L/B or bottom palette.`}
     >
       <defs>
         <pattern

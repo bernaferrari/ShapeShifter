@@ -57,7 +57,10 @@ function binarySubdivide(x: number, lo: number, hi: number, x1: number, x2: numb
     const est = calcBezier(mid, x1, x2) - x;
     if (est > 0) hi = mid;
     else lo = mid;
-  } while (Math.abs(calcBezier(mid, x1, x2) - x) > SUBDIVISION_PRECISION && ++i < SUBDIVISION_MAX_ITERATIONS);
+  } while (
+    Math.abs(calcBezier(mid, x1, x2) - x) > SUBDIVISION_PRECISION &&
+    ++i < SUBDIVISION_MAX_ITERATIONS
+  );
   return mid;
 }
 
@@ -84,7 +87,6 @@ function cubicBezier(x1: number, y1: number, x2: number, y2: number): (t: number
   }
 
   function getTForX(x: number) {
-    let lo = 0;
     let cur = 1;
     const last = TABLE_SIZE - 1;
     while (cur !== last && sampleTable[cur] <= x) ++cur;

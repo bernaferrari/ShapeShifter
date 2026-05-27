@@ -204,7 +204,6 @@ export function flexCurvature(
   // Parametric position on the curve (use the existing pointAt helpers' spirit)
   // For simplicity and fidelity with current PathCanvas math we compute a
   // tangent approximation and offset the control point(s) along the normal.
-  const mt = 1 - t;
 
   // Approximate tangent at t (finite difference using the pointAt logic)
   const p0 = start;
