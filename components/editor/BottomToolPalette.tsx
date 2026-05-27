@@ -3,7 +3,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { MousePointer2, Lasso, PaintBucket, Scissors, PenTool, MoreHorizontal } from "lucide-react";
+import { MousePointer2, Lasso, PaintBucket, PenTool, MoreHorizontal } from "lucide-react";
 import { useEditorStore } from "@/lib/store/editorStore";
 import type { ToolMode } from "@/lib/shapeshifter/toolModes";
 

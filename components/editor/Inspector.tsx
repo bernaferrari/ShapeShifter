@@ -226,6 +226,7 @@ export function Inspector() {
               className="h-7 rounded-sm bg-background text-xs"
               value={currentLayer.name}
               onChange={(event) => updateLayer({ name: event.target.value })}
+              aria-label="Layer name"
             />
           </PropertyRow>
           <PropertyRow label="type">
@@ -280,12 +281,14 @@ export function Inspector() {
                     }
                     onChange={(e) => updateLayer({ fillColor: e.target.value })}
                     className="h-7 w-7 cursor-pointer rounded-sm border border-border bg-transparent"
+                    aria-label="Fill color picker"
                   />
                   <Input
                     className="h-7 rounded-sm bg-background font-mono text-xs"
                     value={currentLayer.fillColor || ""}
                     placeholder="none"
                     onChange={(e) => updateLayer({ fillColor: e.target.value })}
+                    aria-label="Fill color hex value"
                   />
                 </div>
               </PropertyRow>
@@ -328,12 +331,14 @@ export function Inspector() {
                     }
                     onChange={(e) => updateLayer({ strokeColor: e.target.value })}
                     className="h-7 w-7 cursor-pointer rounded-sm border border-border bg-transparent"
+                    aria-label="Stroke color picker"
                   />
                   <Input
                     className="h-7 rounded-sm bg-background font-mono text-xs"
                     value={currentLayer.strokeColor || ""}
                     placeholder="none"
                     onChange={(e) => updateLayer({ strokeColor: e.target.value })}
+                    aria-label="Stroke color hex value"
                   />
                 </div>
               </PropertyRow>

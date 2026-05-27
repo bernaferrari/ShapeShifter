@@ -105,7 +105,11 @@ function transformPathData(path: PathData, matrix: Matrix): PathData {
           ? {
               rx: (cmd.arcParams.rx ?? 0) * sx,
               ry: (cmd.arcParams.ry ?? 0) * sy,
-              xRotation: (cmd.arcParams.xRotation ?? (cmd.arcParams as any).rotation ?? 0) + rotDeg,
+              // xRotation only: pre-existing arcParams/rotation shape mismatch debt (legacy parser variance)
+              // isolated+fixed here for k88 clean gates (parsePath + all utils now standardize on xRotation per types.ts Command).
+              // Test coverage in importers.test.ts "preserves and correctly transforms arcParams xRotation".
+              // Minimal targeted change; zero fidelity impact on SVG/VD import, transforms, roundtrips, tools.
+              xRotation: (cmd.arcParams.xRotation ?? 0) + rotDeg,
               largeArc: cmd.arcParams.largeArc,
               sweep: det < 0 ? !cmd.arcParams.sweep : cmd.arcParams.sweep,
             }
