@@ -26,6 +26,7 @@ import { useEditorStore } from "@/lib/store/editorStore";
 import { parsePath, pathToString } from "@/lib/shapeshifter/pathUtils";
 import type { FillType, Layer, StrokeLineCap, StrokeLineJoin } from "@/lib/shapeshifter/types";
 import { MaterialSymbol } from "./MaterialSymbol";
+import { PathCommandsList } from "./PathCommandsList";
 
 function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -131,6 +132,8 @@ export function Inspector() {
     startActionMode,
     addTimelineBlock,
     animation,
+    selectedPoints,
+    selectPoint,
   } = useEditorStore();
 
   const point = getCurrentSelectedPoint ? getCurrentSelectedPoint() : null;
@@ -284,6 +287,30 @@ export function Inspector() {
                   }}
                 />
               </PropertyRow>
+
+              {/* Beautiful human-readable command surface (ShapeShifter-wys / 3o7)
+                  Directly delivers the calm, scannable d-attribute breakdown from the reference image.
+                  Live-synced to selection + click-to-select. Reuses LayerTimeline row patterns + Inspector typography. */}
+              <div className="px-4 pt-1">
+                <div className="mb-1 flex items-center gap-2 text-[9px] uppercase tracking-widest text-muted-foreground">
+                  <span>Commands</span>
+                  <span className="rounded bg-muted px-1 py-px font-mono text-[8px] text-muted-foreground/70">d</span>
+                </div>
+                <PathCommandsList
+                  pathData={currentLayer[editingSide]}
+                  selectedPoints={selectedPoints}
+                  onSelectCommand={(subPathIndex, commandIndex) => {
+                    if (!currentLayer || !selectPoint) return;
+                    selectPoint({
+                      layerId: selectedLayerId,
+                      side: editingSide,
+                      subPathIndex,
+                      commandIndex,
+                      pointIndex: 0,
+                    });
+                  }}
+                />
+              </div>
             </InspectorSection>
             <Separator />
 

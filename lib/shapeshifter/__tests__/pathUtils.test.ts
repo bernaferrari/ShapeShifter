@@ -14,6 +14,7 @@ import {
   splitPointNear,
   booleanCombine,
   isPointInFillRegion,
+  getCommandDescription,
 } from "../pathUtils";
 import { parserSpecs, autoFixTests, mutationTests } from "./testFixtures";
 
@@ -535,6 +536,55 @@ describe("pathUtils", () => {
       expect(isPointInFillRegion({ x: 2, y: 2 }, multi)).toBe(true);
       expect(isPointInFillRegion({ x: 12, y: 12 }, multi)).toBe(true);
       expect(isPointInFillRegion({ x: 6, y: 6 }, multi)).toBe(false);
+    });
+  });
+
+  describe("getCommandDescription (wys / 3o7 beautiful command surface)", () => {
+    it("produces human labels and short coords matching reference style", () => {
+      // Explicit construction to avoid any parser normalization surprises on H/V after curves
+      const explicit: any = {
+        subPaths: [{
+          commands: [
+            { id: "m", type: "M", points: [{ x: 17, y: 3 }] },
+            { id: "l", type: "L", points: [{ x: 20, y: 6 }] },
+            { id: "c", type: "C", points: [{ x: 7, y: 6 }, { x: 4, y: 9 }, { x: 4, y: 12.5 }] },
+            { id: "h", type: "H", points: [{ x: 10, y: 12.5 }] },
+            { id: "v", type: "V", points: [{ x: 10, y: 20 }] },
+            { id: "z", type: "Z", points: [] },
+          ]
+        }]
+      };
+
+      const cmds = explicit.subPaths[0].commands;
+
+      const m = getCommandDescription(cmds[0]);
+      expect(m.label).toBe("move to");
+      expect(m.shortCoords).toBe("17 3");
+
+      const l = getCommandDescription(cmds[1]);
+      expect(l.label).toBe("line to");
+      expect(l.shortCoords).toBe("20 6");
+
+      const c = getCommandDescription(cmds[2]);
+      expect(c.label).toBe("cubic curve to");
+      expect(c.shortCoords.length).toBeGreaterThan(5);
+
+      const h = getCommandDescription(cmds[3]);
+      expect(h.label).toBe("horizontal line to");
+      expect(h.shortCoords).toBe("10");
+
+      const v = getCommandDescription(cmds[4]);
+      expect(v.label).toBe("vertical line to");
+      expect(v.shortCoords).toBe("20");
+
+      const z = getCommandDescription(cmds[5]);
+      expect(z.label).toBe("close path");
+      expect(z.shortCoords).toBe("");
+    });
+
+    it("is resilient to edge cases", () => {
+      expect(getCommandDescription({ id: "x", type: "M", points: [] } as any).label).toBe("move to");
+      expect(getCommandDescription(null as any).label).toBe("unknown");
     });
   });
 });

@@ -7,14 +7,24 @@ interface EditPathOverlayProps {
   pathData: PathData;
   selectedPoints?: Array<{ subPathIndex: number; commandIndex: number; pointIndex: number }>;
   showHandles?: boolean; // direct vs select mode
-  onPointPointerDown?: (subPathIndex: number, commandIndex: number, pointIndex: number, e: React.PointerEvent) => void;
-  onHandlePointerDown?: (subPathIndex: number, commandIndex: number, isIn: boolean, e: React.PointerEvent) => void;
+  onPointPointerDown?: (
+    subPathIndex: number,
+    commandIndex: number,
+    pointIndex: number,
+    e: React.PointerEvent,
+  ) => void;
+  onHandlePointerDown?: (
+    subPathIndex: number,
+    commandIndex: number,
+    isIn: boolean,
+    e: React.PointerEvent,
+  ) => void;
 }
 
 /**
  * Renders segment points, bezier handles, and handle lines for direct/edit-path mode.
  * Port of original EditPathRaster + handle rendering in PaperLayer.
- * 
+ *
  * This is the second major overlay of Phase 2.
  */
 export const EditPathOverlay: React.FC<EditPathOverlayProps> = ({
@@ -26,7 +36,7 @@ export const EditPathOverlay: React.FC<EditPathOverlayProps> = ({
 }) => {
   const isSelected = (si: number, ci: number, pi: number) =>
     selectedPoints.some(
-      (s) => s.subPathIndex === si && s.commandIndex === ci && s.pointIndex === pi
+      (s) => s.subPathIndex === si && s.commandIndex === ci && s.pointIndex === pi,
     );
 
   return (
@@ -59,7 +69,9 @@ export const EditPathOverlay: React.FC<EditPathOverlayProps> = ({
                     fill="none"
                     stroke="currentColor"
                     strokeWidth={1}
-                    onPointerDown={(e) => onHandlePointerDown?.(subPathIndex, commandIndex, true, e)}
+                    onPointerDown={(e) =>
+                      onHandlePointerDown?.(subPathIndex, commandIndex, true, e)
+                    }
                     style={{ cursor: "move" }}
                   />
 
@@ -82,29 +94,40 @@ export const EditPathOverlay: React.FC<EditPathOverlayProps> = ({
                     fill="none"
                     stroke="currentColor"
                     strokeWidth={1}
-                    onPointerDown={(e) => onHandlePointerDown?.(subPathIndex, commandIndex, false, e)}
+                    onPointerDown={(e) =>
+                      onHandlePointerDown?.(subPathIndex, commandIndex, false, e)
+                    }
                     style={{ cursor: "move" }}
                   />
                 </>
               )}
 
-              {/* Actual segment points */}
-              {command.points.map((pt, pointIndex) => (
-                <circle
-                  key={pointIndex}
-                  cx={pt.x}
-                  cy={pt.y}
-                  r={isSelected(subPathIndex, commandIndex, pointIndex) ? 4.5 : 3.5}
-                  fill={isSelected(subPathIndex, commandIndex, pointIndex) ? "currentColor" : "white"}
-                  stroke="currentColor"
-                  strokeWidth={isSelected(subPathIndex, commandIndex, pointIndex) ? 2 : 1.5}
-                  onPointerDown={(e) => onPointPointerDown?.(subPathIndex, commandIndex, pointIndex, e)}
-                  style={{ cursor: "move" }}
-                />
-              ))}
+              {/* Actual segment points — reference-aligned crisp squares (wys / 3o7) */}
+              {command.points.map((pt, pointIndex) => {
+                const selected = isSelected(subPathIndex, commandIndex, pointIndex);
+                const size = selected ? 7 : 5.5;
+                const half = size / 2;
+                return (
+                  <rect
+                    key={pointIndex}
+                    x={pt.x - half}
+                    y={pt.y - half}
+                    width={size}
+                    height={size}
+                    rx={1}
+                    fill={selected ? "currentColor" : "white"}
+                    stroke="currentColor"
+                    strokeWidth={selected ? 2 : 1.5}
+                    onPointerDown={(e) =>
+                      onPointPointerDown?.(subPathIndex, commandIndex, pointIndex, e)
+                    }
+                    style={{ cursor: "move" }}
+                  />
+                );
+              })}
             </g>
           );
-        })
+        }),
       )}
     </g>
   );

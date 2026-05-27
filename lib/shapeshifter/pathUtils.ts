@@ -294,6 +294,88 @@ export function getAllCommands(pathData: PathData): Command[] {
 }
 
 /**
+ * Human-friendly description for a single path command.
+ * Designed to power the beautiful command surface (ShapeShifter-wys / 3o7)
+ * matching the calm, scannable table aesthetic from the reference image
+ * (e.g. "M 17 3" → label "move to", short coords).
+ * Pure and stable — safe to call on every render.
+ */
+export function getCommandDescription(cmd: Command): { label: string; shortCoords: string } {
+  if (!cmd || !cmd.type) {
+    return { label: "unknown", shortCoords: "" };
+  }
+
+  const type = cmd.type;
+  const pts = cmd.points || [];
+  const end = pts.at(-1);
+
+  let label = "";
+  switch (type) {
+    case "M":
+      label = "move to";
+      break;
+    case "L":
+      label = "line to";
+      break;
+    case "H":
+      label = "horizontal line to";
+      break;
+    case "V":
+      label = "vertical line to";
+      break;
+    case "C":
+      label = "cubic curve to";
+      break;
+    case "Q":
+      label = "quadratic curve to";
+      break;
+    case "S":
+      label = "smooth cubic to";
+      break;
+    case "T":
+      label = "smooth quadratic to";
+      break;
+    case "A":
+      label = "arc to";
+      break;
+    case "Z":
+      label = "close path";
+      break;
+    default:
+      label = String(type).toLowerCase();
+  }
+
+  let shortCoords = "";
+  if (type === "Z") {
+    shortCoords = "";
+  } else if (type === "H" && pts[0]) {
+    shortCoords = `${safeRound(pts[0].x)}`;
+  } else if (type === "V" && pts[0]) {
+    shortCoords = `${safeRound(pts[0].y)}`;
+  } else if (end) {
+    const ex = safeRound(end.x);
+    const ey = safeRound(end.y);
+    if (type === "C" && pts.length >= 3) {
+      // Abbreviated but informative for the beautiful list (control + end)
+      const c1x = safeRound(pts[1].x);
+      const c1y = safeRound(pts[1].y);
+      const c2x = safeRound(pts[2].x);
+      const c2y = safeRound(pts[2].y);
+      shortCoords = `${c1x} ${c1y} ${c2x} ${c2y} ${ex} ${ey}`;
+    } else {
+      shortCoords = `${ex} ${ey}`;
+    }
+  }
+
+  return { label, shortCoords: shortCoords.trim() };
+}
+
+/** Internal safe round (mirrors the hardened one used in pathToString for export fidelity). */
+function safeRound(value: number): number {
+  return Number.isFinite(value) ? Number(value.toFixed(2)) : 0;
+}
+
+/**
  * Simple point update helper.
  */
 export function updatePoint(
