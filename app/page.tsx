@@ -391,9 +391,14 @@ export default function ShapeShifter2026() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDraggingFile(false);
-    const file = e.dataTransfer.files[0];
-    if (file && /\.(svg|xml|json|shapeshifter)$/i.test(file.name)) {
-      handleImportFile(file);
+    const files = Array.from(e.dataTransfer.files).filter((f) =>
+      /\.(svg|xml|json|shapeshifter)$/i.test(f.name),
+    );
+    if (files.length > 0) {
+      files.forEach((file) => handleImportFile(file));
+      if (files.length > 1) {
+        toast.info(`Importing ${files.length} files...`);
+      }
     } else {
       toast.error("Please drop an SVG, Vector Drawable XML, or project file");
     }
@@ -434,6 +439,37 @@ export default function ShapeShifter2026() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  // Paste SVG (and basic VD) support for pro import UX (xjw gap, matches drag/toolbar/file surfaces)
+  React.useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (isEditableTarget(e.target)) return;
+      const text = e.clipboardData?.getData("text/plain")?.trim();
+      if (!text) return;
+      const isSvgLike = text.startsWith("<svg") || text.includes("<svg") || text.includes("<path ");
+      const isXmlLike = text.startsWith("<?xml") || text.includes("<vector");
+      if (isSvgLike || isXmlLike) {
+        e.preventDefault();
+        try {
+          const importedLayers = isXmlLike
+            ? importLayersFromVectorDrawable(text)
+            : importLayersFromSvg(text, "pasted");
+          if (importedLayers.length === 0) {
+            toast.error("No path data found in pasted content");
+            return;
+          }
+          useEditorStore.getState().importLayers(importedLayers);
+          toast.success(
+            `Pasted ${importedLayers.length} layer(s) from ${isXmlLike ? "Vector Drawable" : "SVG"}`,
+          );
+        } catch (err) {
+          toast.error("Failed to import pasted content", { description: String(err) });
+        }
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, []);
+
   const runCommand = (action: () => void) => {
     action();
     setCommandOpen(false);
@@ -450,7 +486,7 @@ export default function ShapeShifter2026() {
 
     const fromPath = layer.from;
     const toPath = layer.to;
-    const name = layer.name.replace(/\s+/g, "_");
+    const name = layer.name.replace(/\s+/g, "-").toLowerCase();
 
     try {
       if (type === "svg" || type === "animated") {
@@ -460,7 +496,7 @@ export default function ShapeShifter2026() {
         downloadCSSKeyframes(fromPath, toPath, name);
         toast.success("CSS Keyframes exported");
       } else if (type === "lottie") {
-        downloadLottie(fromPath, toPath, name);
+        downloadLottie(fromPath, toPath, name, layer);
         toast.success("Lottie exported");
       } else if (type === "vector" || type === "avd" || type === "spritesheet") {
         const content =
@@ -533,7 +569,9 @@ export default function ShapeShifter2026() {
         toast.info(`Export type "${type}" (use Export dialog for full options)`);
       }
     } catch (e) {
-      toast.error("Export failed", { description: String(e) });
+      toast.error("Export failed", {
+        description: String(e) || "Partial export may have succeeded; check downloads.",
+      });
     }
   };
 
@@ -564,24 +602,24 @@ export default function ShapeShifter2026() {
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
     >
-      {/* File Drag-and-Drop Overlay */}
+      {/* File Drag-and-Drop Overlay — pro Figma drop target polish (dashed target + refined elevation) */}
       {isDraggingFile && (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-background/80 backdrop-blur-md transition-all duration-300 animate-in fade-in zoom-in-95">
-          <div className="flex flex-col items-center gap-6 rounded-2xl border border-primary/20 bg-card p-12 shadow-2xl max-w-md text-center">
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-background/80 backdrop-blur-md transition-all duration-200 animate-in fade-in zoom-in-95">
+          <div className="flex flex-col items-center gap-6 rounded-2xl border-2 border-dashed border-primary/40 bg-card/95 p-12 shadow-2xl ring-1 ring-primary/10 max-w-md text-center">
             <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <MaterialSymbol name="cloud_upload" size={48} className="animate-bounce" />
             </div>
             <div className="flex flex-col gap-2">
-              <h3 className="text-2xl font-bold tracking-tight">Import Assets & Projects</h3>
+              <h3 className="text-2xl font-bold tracking-tight">Drop to Import</h3>
               <p className="text-sm text-muted-foreground">
-                Drop your SVG, Vector XML, or <code>.shapeshifter</code> project files anywhere to
-                load them instantly.
+                SVG, Vector Drawable XML, or <code className="font-mono">.shapeshifter</code>{" "}
+                project
               </p>
             </div>
-            <div className="flex flex-wrap justify-center gap-2 text-xs font-medium text-muted-foreground border-t pt-6 w-full">
-              <span className="rounded bg-muted px-2 py-1">SVG Files (.svg)</span>
-              <span className="rounded bg-muted px-2 py-1">Vector XML (.xml)</span>
-              <span className="rounded bg-muted px-2 py-1">Project (.json / .shapeshifter)</span>
+            <div className="flex flex-wrap justify-center gap-2 text-[10px] font-medium text-muted-foreground border-t pt-5 w-full tracking-wide">
+              <span className="rounded bg-muted px-2 py-0.5">.svg</span>
+              <span className="rounded bg-muted px-2 py-0.5">.xml</span>
+              <span className="rounded bg-muted px-2 py-0.5">.json / .shapeshifter</span>
             </div>
           </div>
         </div>
@@ -641,55 +679,132 @@ export default function ShapeShifter2026() {
         type="file"
         ref={fileInputRef}
         accept=".svg,.xml,.json,.shapeshifter"
+        multiple
         className="hidden"
         onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) handleImportFile(f);
+          const files = e.target.files;
+          if (files) {
+            Array.from(files).forEach((f) => handleImportFile(f));
+          }
           e.target.value = "";
         }}
       />
 
-      {/* Help / Shortcuts Modal - comprehensive audit for professional excellence */}
+      {/* Help / Shortcuts Modal — Figma-grade polish: sectioned + kbd visuals for pro delight */}
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Keyboard Shortcuts</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm py-4">
-            <div className="font-mono">Space</div>
-            <div>Play / Pause</div>
-            <div className="font-mono">V / P / D / L</div>
-            <div>Tools: Move / Pen / Direct / Lasso</div>
-            <div className="font-mono">B</div>
-            <div>Paint / Fill bucket</div>
-            <div className="font-mono">A</div>
-            <div>Auto Fix</div>
-            <div className="font-mono">R</div>
-            <div>Reverse</div>
-            <div className="font-mono">S</div>
-            <div>Shift Points</div>
-            <div className="font-mono">X / F</div>
-            <div>Split / Set First (Action)</div>
-            <div className="font-mono">⌘Z / ⌘⇧Z</div>
-            <div>Undo / Redo</div>
-            <div className="font-mono">Arrows (+Shift)</div>
-            <div>Nudge point (coarse/fine)</div>
-            <div className="font-mono">1 / 2</div>
-            <div>Switch From / To</div>
-            <div className="font-mono">⌘K</div>
-            <div>Command Palette (fuzzy + power)</div>
-            <div className="font-mono">Esc</div>
-            <div>Clear selection</div>
-            <div className="font-mono">Delete / ⌫</div>
-            <div>Remove point</div>
-            <div className="font-mono">⌘W</div>
-            <div>Close Action Mode</div>
-            <div className="font-mono">Space / Timeline</div>
-            <div>Playback scrub + block drag/resize</div>
+          <div className="py-2 text-sm space-y-4">
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1.5">
+                Playback &amp; Timeline
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">Space</kbd>
+                  <span className="text-muted-foreground">Play / Pause</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">
+                    Timeline drag
+                  </kbd>
+                  <span className="text-muted-foreground">Scrub + block resize</span>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1.5">
+                Tools
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">V</kbd>
+                  <span className="text-muted-foreground">Move / Select</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">P</kbd>
+                  <span className="text-muted-foreground">Pen</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">D</kbd>
+                  <span className="text-muted-foreground">Direct / Bend (Ctrl+drag flex)</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">L</kbd>
+                  <span className="text-muted-foreground">Lasso / Pencil</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">B</kbd>
+                  <span className="text-muted-foreground">Paint / Fill bucket</span>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1.5">
+                Editing
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">A</kbd>
+                  <span className="text-muted-foreground">Auto Fix</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">R</kbd>
+                  <span className="text-muted-foreground">Reverse path</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">S</kbd>
+                  <span className="text-muted-foreground">Shift points</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">X / F</kbd>
+                  <span className="text-muted-foreground">Split / Set first (Action)</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">Delete / ⌫</kbd>
+                  <span className="text-muted-foreground">Remove point</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">
+                    Arrows (+Shift)
+                  </kbd>
+                  <span className="text-muted-foreground">Nudge (fine/coarse)</span>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1.5">
+                Navigation &amp; Power
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">⌘K</kbd>
+                  <span className="text-muted-foreground">Command palette</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">⌘Z / ⌘⇧Z</kbd>
+                  <span className="text-muted-foreground">Undo / Redo</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">1 / 2</kbd>
+                  <span className="text-muted-foreground">From / To side</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">Esc</kbd>
+                  <span className="text-muted-foreground">Clear selection</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">⌘W</kbd>
+                  <span className="text-muted-foreground">Close Action Mode</span>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="text-xs text-muted-foreground mt-2">
-            Pro: Inspector drag-scrub everywhere (incl. points). Timeline: center-drag blocks,
-            edge-drag to resize (snaps 50ms). All in ⌘K. Optional animation power feature.
+          <div className="text-[10px] text-muted-foreground border-t pt-3">
+            Pro: Inspector number drag-scrub • Timeline block edge-resize • All power in ⌘K •
+            Animation is optional
           </div>
         </DialogContent>
       </Dialog>

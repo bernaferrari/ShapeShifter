@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { Download, Film } from "lucide-react";
+import { Download, Film, FileCode2, FileJson, FileImage, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editorStore";
 import {
@@ -51,6 +51,64 @@ export function ExportDialog({ children }: ExportDialogProps) {
   });
 
   const [isExporting, setIsExporting] = useState(false);
+
+  // Pro Figma-grade format config (smallest addition for visual scan + icons, consistent w/ 5xa polish)
+  const formats = [
+    {
+      key: "svg" as const,
+      label: "Animated SVG",
+      hint: "JS • best quality",
+      icon: <FileCode2 className="h-3.5 w-3.5" />,
+    },
+    {
+      key: "css" as const,
+      label: "CSS",
+      hint: "Pure keyframes",
+      icon: <FileCode2 className="h-3.5 w-3.5" />,
+    },
+    {
+      key: "lottie" as const,
+      label: "Lottie",
+      hint: "JSON for apps",
+      icon: <FileJson className="h-3.5 w-3.5" />,
+    },
+    {
+      key: "vector" as const,
+      label: "Vector XML",
+      hint: "Android static",
+      icon: <FileText className="h-3.5 w-3.5" />,
+    },
+    {
+      key: "avd" as const,
+      label: "AVD",
+      hint: "Animated XML",
+      icon: <FileCode2 className="h-3.5 w-3.5" />,
+    },
+    {
+      key: "spritesheet" as const,
+      label: "Spritesheet",
+      hint: "Frame SVG",
+      icon: <FileImage className="h-3.5 w-3.5" />,
+    },
+    {
+      key: "json" as const,
+      label: "Project",
+      hint: "Full backup",
+      icon: <FileJson className="h-3.5 w-3.5" />,
+    },
+    {
+      key: "pdf" as const,
+      label: "PDF",
+      hint: "Print fidelity",
+      icon: <FileText className="h-3.5 w-3.5" />,
+    },
+    {
+      key: "static" as const,
+      label: "Static SVG",
+      hint: "High-fidelity",
+      icon: <FileImage className="h-3.5 w-3.5" />,
+    },
+  ] as const;
 
   const handleExport = async () => {
     if (!currentLayer && format !== "json" && format !== "static" && format !== "pdf") {
@@ -100,9 +158,10 @@ export function ExportDialog({ children }: ExportDialogProps) {
             currentLayer!.to,
             currentLayer!.name,
             options.duration,
+            currentLayer!,
           );
           blob = new Blob([JSON.stringify(lottieContent, null, 2)], { type: "application/json" });
-          filename = `${baseName}.lottie.json`;
+          filename = `${baseName}.json`;
           break;
 
         case "vector":
@@ -200,45 +259,31 @@ export function ExportDialog({ children }: ExportDialogProps) {
         </DialogHeader>
 
         <div className="space-y-6 py-4">
-          {/* Format Selection */}
+          {/* Format Selection — Figma/Framer pro visual picker (icons + hints for instant scan) */}
           <div>
             <Label className="text-xs font-medium tracking-widest">FORMAT</Label>
             <div className="mt-2 grid grid-cols-3 gap-2">
-              {(
-                [
-                  "svg",
-                  "css",
-                  "lottie",
-                  "vector",
-                  "avd",
-                  "spritesheet",
-                  "json",
-                  "pdf",
-                  "static",
-                ] as const
-              ).map((f) => (
+              {formats.map((f) => (
                 <Button
-                  key={f}
-                  variant={format === f ? "default" : "outline"}
+                  key={f.key}
+                  variant={format === f.key ? "default" : "outline"}
                   size="sm"
-                  onClick={() => setFormat(f)}
-                  className="font-mono text-xs capitalize"
+                  onClick={() => setFormat(f.key)}
+                  className="h-auto flex-col items-start gap-0.5 py-2 text-left font-normal"
+                  aria-pressed={format === f.key}
                 >
-                  {f === "static" ? "static svg" : f}
+                  <div className="flex w-full items-center gap-1.5 text-xs font-mono">
+                    {f.icon}
+                    <span className="capitalize">{f.label}</span>
+                  </div>
+                  <div className="text-[10px] opacity-70 font-normal normal-case tracking-tight">
+                    {f.hint}
+                  </div>
                 </Button>
               ))}
             </div>
-            <div className="text-[10px] text-muted-foreground mt-1.5">
-              {format === "svg" && "Self-contained animated SVG with JS • Best quality"}
-              {format === "css" && "Pure CSS keyframes • Zero JS"}
-              {format === "lottie" && "Lottie JSON for apps and motion pipelines"}
-              {format === "vector" && "Android Vector Drawable XML"}
-              {format === "avd" && "Animated Vector Drawable XML bundle"}
-              {format === "spritesheet" && "Frame-by-frame SVG spritesheet"}
-              {format === "json" && "Full project backup (all layers + frames for freeform)"}
-              {format === "pdf" && "Vector PDF (professional print/roundtrip fidelity)"}
-              {format === "static" &&
-                "High-fidelity static SVG (groups, transforms, clips, current edits)"}
+            <div className="text-[10px] text-muted-foreground mt-1.5 pl-0.5">
+              {formats.find((f) => f.key === format)?.hint || "Production-ready export"}
             </div>
           </div>
 
@@ -310,7 +355,11 @@ export function ExportDialog({ children }: ExportDialogProps) {
             Cancel
           </Button>
           <Button onClick={handleExport} className="gap-2" disabled={isExporting}>
-            <Film className="w-4 h-4" />
+            {isExporting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Film className="w-4 h-4" />
+            )}
             {isExporting
               ? "Exporting..."
               : `Export ${format === "static" ? "STATIC SVG" : format.toUpperCase()}`}
