@@ -29,7 +29,7 @@ export function hitTestSelectionBounds(
   point: Point,
   bounds: Rect,
   handleSize = 8,
-  pivotRadius = 10
+  pivotRadius = 10,
 ): HitTestResult | null {
   const hs = handleSize / 2;
   const cx = bounds.x + bounds.width / 2;
@@ -68,7 +68,7 @@ export function hitTestSelectionBounds(
 export function hitTestEditPathSegments(
   point: Point,
   pathData: { subPaths: Array<{ commands: Array<{ points: Point[] }> }> },
-  threshold = 6
+  threshold = 6,
 ): HitTestResult | null {
   for (let si = 0; si < pathData.subPaths.length; si++) {
     const sub = pathData.subPaths[si];
@@ -137,7 +137,7 @@ export function getMarqueeRect(start: Point, end: Point): Rect {
  */
 export function collectPointsInRect(
   pathData: { subPaths: Array<{ commands: Array<{ points: Point[] }> }> },
-  rect: Rect
+  rect: Rect,
 ): Array<{ subPathIndex: number; commandIndex: number; pointIndex: number }> {
   const hits: Array<{ subPathIndex: number; commandIndex: number; pointIndex: number }> = [];
   for (let si = 0; si < pathData.subPaths.length; si++) {
@@ -161,13 +161,10 @@ export function collectPointsInRect(
  */
 export function rectsIntersect(
   a: { x: number; y: number; width: number; height: number },
-  b: { x: number; y: number; width: number; height: number }
+  b: { x: number; y: number; width: number; height: number },
 ): boolean {
   return (
-    a.x <= b.x + b.width &&
-    a.x + a.width >= b.x &&
-    a.y <= b.y + b.height &&
-    a.y + a.height >= b.y
+    a.x <= b.x + b.width && a.x + a.width >= b.x && a.y <= b.y + b.height && a.y + a.height >= b.y
   );
 }
 
@@ -202,7 +199,7 @@ export function flexCurvature(
   end: Point,
   t: number,
   delta: Point,
-  strength = 1.0
+  strength = 1.0,
 ): { control1: Point | null; control2: Point | null } {
   // Parametric position on the curve (use the existing pointAt helpers' spirit)
   // For simplicity and fidelity with current PathCanvas math we compute a
@@ -212,7 +209,7 @@ export function flexCurvature(
   // Approximate tangent at t (finite difference using the pointAt logic)
   const p0 = start;
   const p1 = control1 ?? start;
-  const p2 = control2 ?? (control1 ?? end);
+  const p2 = control2 ?? control1 ?? end;
   const p3 = end;
 
   // Very small epsilon for tangent
@@ -292,9 +289,7 @@ export function pointInPolygon(point: Point, polygon: Point[]): boolean {
     const yi = polygon[i].y;
     const xj = polygon[j].x;
     const yj = polygon[j].y;
-    const intersect =
-      ((yi > y) !== (yj > y)) &&
-      (x < ((xj - xi) * (y - yi)) / (yj - yi) + xi);
+    const intersect = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
     if (intersect) inside = !inside;
   }
   return inside;
@@ -326,7 +321,7 @@ export function pointInPolygon(point: Point, polygon: Point[]): boolean {
 export function collectPointsInLasso(
   pathData: { subPaths: Array<{ commands: Array<{ points: Point[]; type?: string }> }> },
   lassoPoints: Point[],
-  options: { tolerance?: number; sampleCurves?: boolean } = {}
+  options: { tolerance?: number; sampleCurves?: boolean } = {},
 ): Array<{ subPathIndex: number; commandIndex: number; pointIndex: number }> {
   if (!lassoPoints || lassoPoints.length < 3) return [];
 
@@ -368,16 +363,8 @@ export function collectPointsInLasso(
             let sx: number;
             let sy: number;
             if (isCubic && p2) {
-              sx =
-                mt ** 3 * p0.x +
-                3 * mt ** 2 * t * p1.x +
-                3 * mt * t ** 2 * p2.x +
-                t ** 3 * p3.x;
-              sy =
-                mt ** 3 * p0.y +
-                3 * mt ** 2 * t * p1.y +
-                3 * mt * t ** 2 * p2.y +
-                t ** 3 * p3.y;
+              sx = mt ** 3 * p0.x + 3 * mt ** 2 * t * p1.x + 3 * mt * t ** 2 * p2.x + t ** 3 * p3.x;
+              sy = mt ** 3 * p0.y + 3 * mt ** 2 * t * p1.y + 3 * mt * t ** 2 * p2.y + t ** 3 * p3.y;
             } else {
               // quad
               sx = mt ** 2 * p0.x + 2 * mt * t * p1.x + t ** 2 * p3.x;
@@ -392,12 +379,20 @@ export function collectPointsInLasso(
             // Include the command's on-curve anchors (conservative, UX-friendly)
             // Avoids duplicates via later Set if caller wants strict unique.
             const endIdx = cmd.points.length - 1;
-            if (!hits.some((h) => h.subPathIndex === si && h.commandIndex === ci && h.pointIndex === endIdx)) {
+            if (
+              !hits.some(
+                (h) => h.subPathIndex === si && h.commandIndex === ci && h.pointIndex === endIdx,
+              )
+            ) {
               hits.push({ subPathIndex: si, commandIndex: ci, pointIndex: endIdx });
             }
             // For cubic also consider the first control-adjacent if useful (rarely needed)
             if (isCubic && cmd.points.length >= 3) {
-              if (!hits.some((h) => h.subPathIndex === si && h.commandIndex === ci && h.pointIndex === 2)) {
+              if (
+                !hits.some(
+                  (h) => h.subPathIndex === si && h.commandIndex === ci && h.pointIndex === 2,
+                )
+              ) {
                 hits.push({ subPathIndex: si, commandIndex: ci, pointIndex: 2 });
               }
             }
@@ -407,4 +402,31 @@ export function collectPointsInLasso(
     }
   }
   return hits;
+}
+
+// 1td advanced (14l): advanced curvature beyond flexCurvature (tension-aware for professional direct manipulation).
+// Builds directly on existing flex impl (no dup math). Smallest delta for "advanced curvature tools".
+// Refs: 1td, 14l, v6j DESIGN 67dd105e, y5q.
+export function advancedCurvature(
+  start: Point,
+  control1: Point | null,
+  control2: Point | null,
+  end: Point,
+  t: number,
+  delta: Point,
+  options: { strength?: number; tension?: number } = {},
+): { control1: Point | null; control2: Point | null } {
+  const { strength = 1.0, tension = 0.5 } = options;
+  const base = flexCurvature(start, control1, control2, end, t, delta, strength);
+  // Tension modulates flex toward chord (0.5=neutral, < pulls smoother, > more dramatic) for curvature beyond basic flex.
+  if ((base.control1 || base.control2) && tension !== 0.5) {
+    const adj = (tension - 0.5) * 0.4;
+    if (base.control1) {
+      base.control1 = { x: base.control1.x * (1 - adj), y: base.control1.y * (1 - adj) };
+    }
+    if (base.control2) {
+      base.control2 = { x: base.control2.x * (1 - adj), y: base.control2.y * (1 - adj) };
+    }
+  }
+  return base;
 }

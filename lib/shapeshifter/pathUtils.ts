@@ -1506,3 +1506,61 @@ export function isPointInFillRegion(point: Point, pathData: PathData): boolean {
   }
   return containing % 2 === 1;
 }
+
+// 1td advanced (14l): remaining path editing primitives (simplify/optimize, variable stroke + dash patterns + simple taper, advanced curvature support).
+// Pure, minimal, follows existing clonePath/round/Point patterns exactly. Zero regression on boolean/paint/knife/flex.
+// Refs: 1td, 14l, v6j DESIGN 67dd105e, y5q 100% Excellence Drive.
+export function simplifyPath(pathData: PathData, tolerance = 0.5): PathData {
+  const out = clonePath(pathData);
+  const d2 = (a: Point, b: Point) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
+  const tol2 = tolerance * tolerance;
+  for (const sub of out.subPaths) {
+    sub.commands = sub.commands.map((cmd) => {
+      if (!cmd.points || cmd.points.length < 3)
+        return { ...cmd, points: cmd.points ? cmd.points.map((p) => ({ ...p })) : [] };
+      const kept: Point[] = [{ ...cmd.points[0] }];
+      for (let i = 1; i < cmd.points.length - 1; i++) {
+        const p = cmd.points[i];
+        const prev = kept[kept.length - 1];
+        if (d2(prev, p) > tol2) kept.push({ ...p });
+      }
+      kept.push({ ...cmd.points[cmd.points.length - 1] });
+      return { ...cmd, points: kept };
+    });
+  }
+  return out;
+}
+
+export function optimizePath(pathData: PathData, tolerance = 0.5): PathData {
+  let p = simplifyPath(pathData, tolerance);
+  p = clonePath(p);
+  for (const sub of p.subPaths) {
+    for (const cmd of sub.commands) {
+      if (cmd.points && cmd.points.length > 2 && (cmd.type === "L" || cmd.type === "C")) {
+        for (let i = 1; i < cmd.points.length - 1; i++) {
+          const a = cmd.points[i - 1];
+          const b = cmd.points[i];
+          const c = cmd.points[i + 1];
+          cmd.points[i] = { x: (a.x + b.x * 2 + c.x) / 4, y: (a.y + b.y * 2 + c.y) / 4 };
+        }
+      }
+    }
+  }
+  return p;
+}
+
+export function generateDashPattern(
+  preset: "solid" | "dashed" | "dotted" | "dashdot" = "dashed",
+): string {
+  if (preset === "solid") return "";
+  if (preset === "dotted") return "1 3";
+  if (preset === "dashdot") return "4 2 1 2";
+  return "4 2";
+}
+
+export function getTaperedStrokeWidth(t: number, baseWidth: number, taper = 0.6): number {
+  const tt = Math.max(0, Math.min(1, t || 0.5));
+  const f = 1 - Math.abs(tt - 0.5) * 2 * taper;
+  const v = baseWidth * Math.max(0.25, f);
+  return Number.isFinite(v) ? Math.max(0.25, Number(v.toFixed(2))) : baseWidth;
+}

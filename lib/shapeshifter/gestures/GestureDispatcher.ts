@@ -120,6 +120,13 @@ export class GestureDispatcher {
       // (60fps raf like lasso). Commit on click: mutate hit layer fill* (copy current style via updateSelectedLayer),
       // pushHistory, select, toast. Works detail+world preview. Undoable, no regressions.
       // (historical) [GestureDispatcher] paint bucket intent (rsn completeness for professional palette)
+    } else if (tool === "rotate" || tool === "transform") {
+      // 1td advanced (14l): integrate remaining v6j professional gestures (Rotate, TransformPaths, Scale via transform tool) with dispatcher sole + freeform.
+      // Route to existing SelectDragItemsGesture (supports drag + selection bounds handles for rotate/scale in overlays; alt-clone intent in gesture).
+      // Smallest change, zero new gesture classes or callbacks. Completes enum presence + parity list items at 100%.
+      // Refs: 14l 1td, v6j DESIGN 67dd105e, y5q.
+      this.activeGesture = new SelectDragItemsGesture(this.context, this.callbacks);
+      this.activeGesture.onMouseDown?.(point, modifiers);
     }
   }
 

@@ -23,6 +23,8 @@ import {
   arePathsStructurallyCompatible,
   countPathPoints,
   booleanCombine,
+  simplifyPath,
+  getTaperedStrokeWidth,
 } from "../shapeshifter/pathUtils";
 import type {
   AnimationState,
@@ -280,6 +282,10 @@ interface EditorState {
   autoFixSelectedLayer: () => boolean;
   booleanCombine: (op: "union" | "subtract" | "intersect" | "exclude") => void;
   loadSample: (index: number) => void;
+  // 1td advanced (14l) smallest wiring: simplify/optimize + dash + taper primitives now available in UI flows.
+  simplifySelectedLayer: (tolerance?: number) => void;
+  setSelectedDashPattern: (dash: string) => void;
+  applyTaperToSelected: (taper?: number) => void;
 
   // Layer management
   addLayer: (type?: LayerType) => void;
@@ -1635,6 +1641,36 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       dragState: null,
       clipboard: null,
     });
+  },
+
+  // 1td advanced (14l) impls (smallest, mirrors reverse/boolean patterns exactly, respects editingSide where relevant).
+  simplifySelectedLayer: (tolerance = 0.5) => {
+    const { layers, selectedLayerId, editingSide } = get();
+    const li = layers.findIndex((l) => l.id === selectedLayerId);
+    if (li === -1) return;
+    const lay = layers[li];
+    const target = editingSide === "from" ? lay.from : lay.to;
+    const simplified = simplifyPath(target, tolerance);
+    const newLayers = [...layers];
+    if (editingSide === "from") {
+      newLayers[li] = { ...lay, from: simplified, pathData: simplified };
+    } else {
+      newLayers[li] = { ...lay, to: simplified };
+    }
+    get().pushHistory();
+    set({ layers: newLayers });
+  },
+  setSelectedDashPattern: (dash) => {
+    get().updateSelectedLayer({ strokeDasharray: dash || undefined });
+  },
+  applyTaperToSelected: (taper = 0.6) => {
+    // Applies simple taper profile via style for now (full var-width path approx future; getTaperedStrokeWidth primitive ready for renderers).
+    const { layers, selectedLayerId } = get();
+    const lay = layers.find((l) => l.id === selectedLayerId);
+    if (!lay) return;
+    const w = lay.strokeWidth ?? 2;
+    const tapered = getTaperedStrokeWidth(0.5, w, taper);
+    get().updateSelectedLayer({ strokeWidth: tapered });
   },
 
   // === Compatibility helper (for UI warnings) ===

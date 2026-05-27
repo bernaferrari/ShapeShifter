@@ -406,7 +406,9 @@ export const PathCanvas = React.memo(function PathCanvas({
       // Use getState to avoid declaration order issues with toolMode/isEditingThisSide (robust for Action Mode features)
       const state = useEditorStore.getState();
       if (
-        state.toolMode === "select" &&
+        (state.toolMode === "select" ||
+          state.toolMode === "rotate" ||
+          state.toolMode === "transform") &&
         state.editingSide === (side === "from" ? "from" : "to") &&
         e.button === 0
       ) {
