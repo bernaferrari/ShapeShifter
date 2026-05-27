@@ -86,9 +86,22 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const [worldSelectedIds, setWorldSelectedIds] = useState<string[]>([]);
   const prevSelectedFrameRef = useRef<string | null>(null);
 
-  // Stub for world artboard drag start (r5o freeform depth owns full impl; present for typecheck hygiene during parallel waves).
-  // i8f touches only frame tab indicators + animation optionality — no behavior change here.
-  const startWorldArtboardDrag = (_x: number, _y: number, _ids: string[]) => {};
+  // Real artboard dragging state (replaces the previous no-op stub)
+  const [isDraggingArtboards, setIsDraggingArtboards] = useState(false);
+  const [draggingArtboardIds, setDraggingArtboardIds] = useState<string[]>([]);
+  const [artboardDragStart, setArtboardDragStart] = useState<{ x: number; y: number } | null>(null);
+
+  // Real implementation for world artboard dragging (fixes the previous no-op stub).
+  // Called from pointer down when artboards are hit in select mode.
+  const startWorldArtboardDrag = (clientX: number, clientY: number, ids: string[]) => {
+    if (!ids.length) return;
+    const p = worldPointFromEvent(clientX, clientY);
+    if (!p) return;
+
+    setIsDraggingArtboards(true);
+    setDraggingArtboardIds(ids);
+    setArtboardDragStart(p);
+  };
 
 
   const worldPointFromEvent = useCallback(
@@ -344,6 +357,19 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       }
       const p = worldPointFromEvent(e.clientX, e.clientY);
       if (!p) return;
+
+      // Artboard dragging in world (select mode)
+      if (isDraggingArtboards && draggingArtboardIds.length > 0 && artboardDragStart) {
+        const dx = p.x - artboardDragStart.x;
+        const dy = p.y - artboardDragStart.y;
+        if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
+          // Use the store's moveFrames (it handles the projection correctly)
+          useEditorStore.getState().moveFrames(draggingArtboardIds, dx, dy);
+          setArtboardDragStart(p); // update start for next delta
+        }
+        return;
+      }
+
       const curTool = toolMode;
       if (curTool === "pencil") {
         const pts = worldLassoRef.current;
@@ -365,7 +391,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         }
       }
     },
-    [isWorldPanning, lastWorldPan, worldPointFromEvent, toolMode, worldView],
+    [isWorldPanning, lastWorldPan, worldPointFromEvent, toolMode, worldView, isDraggingArtboards, draggingArtboardIds, artboardDragStart],
   );
 
   const handleWorldPointerUp = useCallback(
@@ -401,8 +427,17 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       }
       setWorldLassoFrame(0);
       worldLassoRef.current = [];
+
+      // Commit artboard drag
+      if (isDraggingArtboards) {
+        // Push a single history step for the whole drag
+        useEditorStore.getState().pushHistory?.();
+        setIsDraggingArtboards(false);
+        setDraggingArtboardIds([]);
+        setArtboardDragStart(null);
+      }
     },
-    [toolMode, frames, getFrameBounds],
+    [toolMode, frames, getFrameBounds, isDraggingArtboards],
   );
 
   // Double-click focus (select + camera lerp to artboard rect) - seamless world to detail transition
