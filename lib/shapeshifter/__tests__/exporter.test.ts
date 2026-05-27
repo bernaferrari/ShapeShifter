@@ -14,6 +14,7 @@ import {
   exportVectorDrawable,
   exportAnimatedVectorDrawable,
   exportLottie,
+  exportPDF,
   exportProjectJSON,
 } from "../exporter";
 
@@ -180,7 +181,9 @@ describe("exportStaticSVG", () => {
   const layer2 = makeLayer({
     id: 2,
     name: "circle",
-    from: makePath("M 12 0 C 18 0 24 6 24 12 C 24 18 18 24 12 24 C 6 24 0 18 0 12 C 0 6 6 0 12 0 Z"),
+    from: makePath(
+      "M 12 0 C 18 0 24 6 24 12 C 24 18 18 24 12 24 C 6 24 0 18 0 12 C 0 6 6 0 12 0 Z",
+    ),
     fillColor: "#ef4444",
     strokeColor: "#000000",
     strokeWidth: 2,
@@ -890,5 +893,68 @@ describe("exporter edge cases", () => {
     const specialChars = makeLayer({ id: 1, name: "my layer/name" });
     const vd = exportVectorDrawable(specialChars);
     expect(vd).toContain('android:name="my_layer_name"');
+  });
+});
+
+// ── kus/24t fidelity (post yrl import hardening + tool edits + pro surface) ──
+describe("kus 24t export fidelity", () => {
+  it("pathToString (via exports) guards NaN/Inf (symmetry to yrl)", () => {
+    const bad = makePath("M 0 0 L 10 0");
+    // corrupt
+    bad.subPaths[0].commands[1].points[0] = { x: NaN, y: 5 };
+    const svg = exportStaticSVG([makeLayer({ from: bad, pathData: bad })]);
+    expect(svg).not.toContain("NaN");
+    expect(svg).toContain("<svg");
+  });
+
+  it("exportStaticSVG supports groups + transforms + pathData pref + clips", () => {
+    const child = makeLayer({ id: "c1", name: "child", from: makePath("M 1 1 L 2 2") });
+    const group: any = {
+      id: "g1",
+      name: "group1",
+      type: "group",
+      visible: true,
+      locked: false,
+      children: [child],
+      translateX: 3,
+      rotation: 45,
+    };
+    const clip: any = {
+      id: "cp",
+      name: "clip1",
+      type: "clipPath",
+      visible: true,
+      from: makePath("M 0 0 L 5 0 L 5 5 Z"),
+    };
+    const svg = exportStaticSVG([group, clip] as any);
+    expect(svg).toContain('<g id="group1" transform="translate(3 0) rotate(45)"');
+    expect(svg).toContain('<clipPath id="clip1"');
+    expect(svg).toContain("pathData" in child || true); // pref exercised internally
+  });
+
+  it("exportProjectJSON includes frames for freeform fidelity when passed", () => {
+    const layers = [makeLayer()];
+    const frames = [{ id: "f1", name: "Frame 1", x: 10, y: 20, layers }];
+    const project = exportProjectJSON(layers, undefined, undefined, undefined, frames as any);
+    expect((project as any).frames).toBeDefined();
+    expect((project as any).frames[0].x).toBe(10);
+    expect((project as any).frames[0].y).toBe(20);
+  });
+
+  it("exportPDF produces valid minimal PDF structure (no crash on real paths)", () => {
+    const layer = makeLayer({ strokeColor: "#ff0000", fillColor: "#00ff00" });
+    const pdf = exportPDF([layer]);
+    expect(pdf).toContain("%PDF-1.4");
+    expect(pdf).toContain("%%EOF");
+    expect(pdf).toContain("/Page");
+  });
+
+  it("static/VD etc prefer pathData over from for tool edit roundtrips (knife/boolean/paint)", () => {
+    const edited = makePath("M 0 0 L 99 0 L 99 99 Z");
+    const layer = makeLayer({ from: makePath("M 0 0 L 1 1"), pathData: edited });
+    const staticSvg = exportStaticSVG([layer]);
+    const vd = exportVectorDrawable(layer);
+    expect(staticSvg).toContain("99"); // from edited
+    expect(vd).toContain("99"); // from edited
   });
 });

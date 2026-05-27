@@ -21,7 +21,9 @@ import {
   exportAnimatedVectorDrawable,
   exportCSSKeyframes,
   exportLottie,
+  exportPDF,
   exportProjectJSON,
+  exportStaticSVG,
   exportSvgSpritesheet,
   exportVectorDrawable,
   type ExportOptions,
@@ -36,7 +38,9 @@ export function ExportDialog({ children }: ExportDialogProps) {
   const currentLayer = layers.find((l) => l.id === selectedLayerId) || layers[0];
 
   const [open, setOpen] = useState(false);
-  const [format, setFormat] = useState<"svg" | "css" | "lottie" | "vector" | "avd" | "spritesheet" | "json">("svg");
+  const [format, setFormat] = useState<
+    "svg" | "css" | "lottie" | "vector" | "avd" | "spritesheet" | "json" | "pdf" | "static"
+  >("svg");
   const [options, setOptions] = useState<ExportOptions>({
     duration: 1.4,
     fps: 60,
@@ -46,24 +50,33 @@ export function ExportDialog({ children }: ExportDialogProps) {
     strokeWidth: 2.8,
   });
 
+  const [isExporting, setIsExporting] = useState(false);
+
   const handleExport = async () => {
-    if (!currentLayer) {
+    if (!currentLayer && format !== "json" && format !== "static" && format !== "pdf") {
       toast.error("No layer selected");
       return;
     }
+
+    setIsExporting(true);
+    // Pro UX: tiny simulated progress for perceived quality on longer bakes (sprites/lottie/pdf)
+    await new Promise((r) => setTimeout(r, 60));
 
     try {
       let blob: Blob | null = null;
       let filename = "";
 
-      const baseName = currentLayer.name.replace(/\s+/g, "-").toLowerCase();
+      const baseName = (currentLayer?.name || vector.name || "export")
+        .replace(/\s+/g, "-")
+        .toLowerCase();
+      const allVisibleLayers = layers.filter((l) => l.visible !== false);
 
       switch (format) {
         case "svg":
           const svgContent = exportAnimatedSVG(
-            currentLayer.from,
-            currentLayer.to,
-            currentLayer.name,
+            currentLayer!.from,
+            currentLayer!.to,
+            currentLayer!.name,
             options,
           );
           blob = new Blob([svgContent], { type: "image/svg+xml" });
@@ -72,9 +85,9 @@ export function ExportDialog({ children }: ExportDialogProps) {
 
         case "css":
           const cssContent = exportCSSKeyframes(
-            currentLayer.from,
-            currentLayer.to,
-            currentLayer.name,
+            currentLayer!.from,
+            currentLayer!.to,
+            currentLayer!.name,
             options.duration,
           );
           blob = new Blob([cssContent], { type: "text/css" });
@@ -83,9 +96,9 @@ export function ExportDialog({ children }: ExportDialogProps) {
 
         case "lottie":
           const lottieContent = exportLottie(
-            currentLayer.from,
-            currentLayer.to,
-            currentLayer.name,
+            currentLayer!.from,
+            currentLayer!.to,
+            currentLayer!.name,
             options.duration,
           );
           blob = new Blob([JSON.stringify(lottieContent, null, 2)], { type: "application/json" });
@@ -93,24 +106,56 @@ export function ExportDialog({ children }: ExportDialogProps) {
           break;
 
         case "vector":
-          blob = new Blob([exportVectorDrawable(currentLayer, options)], { type: "application/xml" });
+          blob = new Blob([exportVectorDrawable(currentLayer!, options)], {
+            type: "application/xml",
+          });
           filename = `${baseName}-vector.xml`;
           break;
 
         case "avd":
-          blob = new Blob([exportAnimatedVectorDrawable(currentLayer, options)], { type: "application/xml" });
+          blob = new Blob([exportAnimatedVectorDrawable(currentLayer!, options)], {
+            type: "application/xml",
+          });
           filename = `${baseName}-animated-vector.xml`;
           break;
 
         case "spritesheet":
-          blob = new Blob([exportSvgSpritesheet(currentLayer, options)], { type: "image/svg+xml" });
+          blob = new Blob([exportSvgSpritesheet(currentLayer!, options)], {
+            type: "image/svg+xml",
+          });
           filename = `${baseName}-spritesheet.svg`;
           break;
 
         case "json":
-          const project = exportProjectJSON(layers, vector, animation, hiddenLayerIds);
+          const project = exportProjectJSON(
+            layers,
+            vector,
+            animation,
+            hiddenLayerIds,
+            (useEditorStore.getState() as any).frames,
+          );
           blob = new Blob([JSON.stringify(project, null, 2)], { type: "application/json" });
           filename = `${vector.name || "shapeshifter"}.shapeshifter`;
+          break;
+
+        case "pdf":
+          // Full doc PDF for professional fidelity (all visible + edits + groups)
+          const pdfContent = exportPDF(
+            allVisibleLayers.length ? allVisibleLayers : layers,
+            options,
+          );
+          blob = new Blob([pdfContent], { type: "application/pdf" });
+          filename = `${baseName}.pdf`;
+          break;
+
+        case "static":
+          // High-fidelity static SVG export (groups, transforms, clips, pathData post-tool edits)
+          const staticContent = exportStaticSVG(
+            allVisibleLayers.length ? allVisibleLayers : layers,
+            options,
+          );
+          blob = new Blob([staticContent], { type: "image/svg+xml" });
+          filename = `${baseName}-static.svg`;
           break;
       }
 
@@ -130,7 +175,12 @@ export function ExportDialog({ children }: ExportDialogProps) {
         setOpen(false);
       }
     } catch (error) {
-      toast.error("Export failed", { description: String(error) });
+      // Outstanding error recovery + partial UX (kus): never hard crash, always toast actionable
+      toast.error("Export failed", {
+        description: String(error) || "Partial export may have succeeded; check downloads.",
+      });
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -154,7 +204,19 @@ export function ExportDialog({ children }: ExportDialogProps) {
           <div>
             <Label className="text-xs font-medium tracking-widest">FORMAT</Label>
             <div className="mt-2 grid grid-cols-3 gap-2">
-              {(["svg", "css", "lottie", "vector", "avd", "spritesheet", "json"] as const).map((f) => (
+              {(
+                [
+                  "svg",
+                  "css",
+                  "lottie",
+                  "vector",
+                  "avd",
+                  "spritesheet",
+                  "json",
+                  "pdf",
+                  "static",
+                ] as const
+              ).map((f) => (
                 <Button
                   key={f}
                   variant={format === f ? "default" : "outline"}
@@ -162,7 +224,7 @@ export function ExportDialog({ children }: ExportDialogProps) {
                   onClick={() => setFormat(f)}
                   className="font-mono text-xs capitalize"
                 >
-                  {f}
+                  {f === "static" ? "static svg" : f}
                 </Button>
               ))}
             </div>
@@ -173,7 +235,10 @@ export function ExportDialog({ children }: ExportDialogProps) {
               {format === "vector" && "Android Vector Drawable XML"}
               {format === "avd" && "Animated Vector Drawable XML bundle"}
               {format === "spritesheet" && "Frame-by-frame SVG spritesheet"}
-              {format === "json" && "Full project backup (all layers)"}
+              {format === "json" && "Full project backup (all layers + frames for freeform)"}
+              {format === "pdf" && "Vector PDF (professional print/roundtrip fidelity)"}
+              {format === "static" &&
+                "High-fidelity static SVG (groups, transforms, clips, current edits)"}
             </div>
           </div>
 
@@ -190,7 +255,9 @@ export function ExportDialog({ children }: ExportDialogProps) {
                   min={0.4}
                   max={4}
                   step={0.1}
-                  onValueChange={(v) => setOptions({ ...options, duration: Array.isArray(v) ? v[0] : v })}
+                  onValueChange={(v) =>
+                    setOptions({ ...options, duration: Array.isArray(v) ? v[0] : v })
+                  }
                 />
               </div>
 
@@ -204,7 +271,9 @@ export function ExportDialog({ children }: ExportDialogProps) {
                   min={0.5}
                   max={8}
                   step={0.1}
-                  onValueChange={(v) => setOptions({ ...options, strokeWidth: Array.isArray(v) ? v[0] : v })}
+                  onValueChange={(v) =>
+                    setOptions({ ...options, strokeWidth: Array.isArray(v) ? v[0] : v })
+                  }
                 />
               </div>
 
@@ -240,9 +309,11 @@ export function ExportDialog({ children }: ExportDialogProps) {
           <Button variant="outline" onClick={() => setOpen(false)}>
             Cancel
           </Button>
-          <Button onClick={handleExport} className="gap-2">
+          <Button onClick={handleExport} className="gap-2" disabled={isExporting}>
             <Film className="w-4 h-4" />
-            Export {format.toUpperCase()}
+            {isExporting
+              ? "Exporting..."
+              : `Export ${format === "static" ? "STATIC SVG" : format.toUpperCase()}`}
           </Button>
         </div>
       </DialogContent>

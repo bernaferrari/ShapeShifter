@@ -27,7 +27,9 @@ const COMMAND_POINT_COUNTS: Partial<Record<CommandType, number>> = {
 
 const clonePath = (pathData: PathData): PathData => structuredClone(pathData);
 
-const round = (value: number) => Number(value.toFixed(3));
+// Hardened round for export fidelity (kus/24t/yrl symmetry): never emit NaN/Inf in d= strings.
+// Bad coords from prior edits, import edge arcs, or math drift now safely drop to 0 (matching importer recovery).
+const round = (value: number) => (Number.isFinite(value) ? Number(value.toFixed(3)) : 0);
 
 // === Needleman-Wunsch Alignment (ported from original Angular AutoAwesome + NeedlemanWunsch) ===
 // This is CORE to high-quality auto-fix morphing. The previous implementation was a naive
@@ -242,10 +244,24 @@ export function parsePath(d: string): PathData {
  * Convert structured PathData back to SVG 'd' string.
  */
 export function pathToString(pathData: PathData): string {
+  if (!pathData?.subPaths?.length) return "";
+
   let d = "";
 
   for (const subPath of pathData.subPaths) {
-    for (const cmd of subPath.commands) {
+    // yrl/kus symmetry: harden export against any residual non-finite (post knife/boolean/paint/direct edits or complex arcs)
+    const safeCommands = subPath.commands.filter((c) => {
+      if (!c?.points?.length) return true;
+      const ptsOk = c.points.every((p) => Number.isFinite(p?.x) && Number.isFinite(p?.y));
+      if (c.arcParams) {
+        const ap = c.arcParams;
+        return (
+          ptsOk && Number.isFinite(ap.rx) && Number.isFinite(ap.ry) && Number.isFinite(ap.xRotation)
+        );
+      }
+      return ptsOk;
+    });
+    for (const cmd of safeCommands) {
       d += cmd.type;
 
       if (cmd.type === "Z") {

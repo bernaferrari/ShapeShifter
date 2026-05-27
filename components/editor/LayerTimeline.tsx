@@ -235,6 +235,10 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                 SVG spritesheet
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => onExport("json")}>Project JSON</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onExport("static")}>
+                High-Fidelity Static SVG
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onExport("pdf")}>Vector PDF</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           <div className="flex-1" />

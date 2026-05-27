@@ -31,7 +31,9 @@ import {
   downloadCSSKeyframes,
   downloadLottie,
   exportAnimatedVectorDrawable,
+  exportPDF,
   exportProjectJSON,
+  exportStaticSVG,
   exportSvgSpritesheet,
   exportVectorDrawable,
 } from "@/lib/shapeshifter/exporter";
@@ -481,7 +483,13 @@ export default function ShapeShifter2026() {
         toast.success(`${type.toUpperCase()} exported`);
       } else if (type === "json") {
         const payload = JSON.stringify(
-          exportProjectJSON(state.layers, state.vector, state.animation, state.hiddenLayerIds),
+          exportProjectJSON(
+            state.layers,
+            state.vector,
+            state.animation,
+            state.hiddenLayerIds,
+            state.frames,
+          ),
           null,
           2,
         );
@@ -495,8 +503,34 @@ export default function ShapeShifter2026() {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         toast.success("Project exported");
+      } else if (type === "pdf") {
+        const all = state.layers.filter((l: any) => l.visible !== false);
+        const pdf = exportPDF(all.length ? all : state.layers);
+        const blob = new Blob([pdf], { type: "application/pdf" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${name}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success("PDF exported");
+      } else if (type === "static") {
+        const all = state.layers.filter((l: any) => l.visible !== false);
+        const svg = exportStaticSVG(all.length ? all : state.layers);
+        const blob = new Blob([svg], { type: "image/svg+xml" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${name}-static.svg`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success("High-fidelity static SVG exported");
       } else {
-        toast.info(`Export type "${type}" coming soon`);
+        toast.info(`Export type "${type}" (use Export dialog for full options)`);
       }
     } catch (e) {
       toast.error("Export failed", { description: String(e) });
@@ -847,11 +881,14 @@ export default function ShapeShifter2026() {
             <CommandItem onSelect={() => runCommand(() => handleExport("svg"))}>
               <Download className="mr-2 h-4 w-4" /> Export Animated SVG
             </CommandItem>
+            <CommandItem onSelect={() => runCommand(() => handleExport("static"))}>
+              <Download className="mr-2 h-4 w-4" /> Export High-Fidelity Static SVG
+            </CommandItem>
             <CommandItem onSelect={() => runCommand(() => handleExport("css"))}>
               <Download className="mr-2 h-4 w-4" /> Export CSS Keyframes
             </CommandItem>
             <CommandItem onSelect={() => runCommand(() => handleExport("json"))}>
-              <Download className="mr-2 h-4 w-4" /> Export Project JSON
+              <Download className="mr-2 h-4 w-4" /> Export Project JSON (frames)
             </CommandItem>
             <CommandItem onSelect={() => runCommand(() => handleExport("lottie"))}>
               <Download className="mr-2 h-4 w-4" /> Export Lottie JSON
@@ -864,6 +901,9 @@ export default function ShapeShifter2026() {
             </CommandItem>
             <CommandItem onSelect={() => runCommand(() => handleExport("spritesheet"))}>
               <Download className="mr-2 h-4 w-4" /> Export SVG Spritesheet
+            </CommandItem>
+            <CommandItem onSelect={() => runCommand(() => handleExport("pdf"))}>
+              <Download className="mr-2 h-4 w-4" /> Export Vector PDF
             </CommandItem>
           </CommandGroup>
         </CommandList>
