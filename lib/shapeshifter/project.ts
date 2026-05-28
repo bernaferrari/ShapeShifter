@@ -1,4 +1,4 @@
-import { parsePath } from "./pathUtils";
+import { parsePath, ensureStableCommandIds } from "./pathUtils";
 import type {
   AnimationState,
   FillType,
@@ -93,7 +93,7 @@ export function flattenOriginalProject(project: ShapeShifterProject): FlattenedS
   const walk = (layer: ShapeShifterProjectLayer, parentId: string | null) => {
     const children = layer.children ?? [];
     if (layer.type === "group") {
-      const emptyPath = parsePath("");
+      const emptyPath = ensureStableCommandIds(parsePath(""));
       result.push({
         id: layer.id,
         name: layer.name,
@@ -126,9 +126,9 @@ export function flattenOriginalProject(project: ShapeShifterProject): FlattenedS
         id: layer.id,
         name: layer.name,
         type: isLayerType(layer.type) ? layer.type : "path",
-        from: parsePath(from),
-        to: parsePath(to),
-        pathData: parsePath(layer.pathData),
+        from: ensureStableCommandIds(parsePath(from)),
+        to: ensureStableCommandIds(parsePath(to)),
+        pathData: ensureStableCommandIds(parsePath(layer.pathData)),
         parentId,
         visible: !hiddenIds.has(layer.id),
         locked: false,

@@ -1,4 +1,4 @@
-import { parsePath } from "./pathUtils";
+import { parsePath, ensureStableCommandIds } from "./pathUtils";
 import type { FillType, Layer, PathData, Point, StrokeLineCap, StrokeLineJoin } from "./types";
 
 // ── 2D affine transform matrix [a, b, c, d, e, f] ──────────────────────
@@ -207,6 +207,9 @@ function getStyle(element: Element) {
 function layerFromPathData(name: string, pathData: string, id: string, matrix: Matrix, style = {}) {
   let parsed = parsePath(pathData);
   parsed = transformPathData(parsed, matrix);
+  // k7zp/3t0c: guarantee stable ULID command IDs even for freshly parsed imported geometry.
+  // Harmless no-op on already-good data; upgrades any legacy cmd_ patterns.
+  parsed = ensureStableCommandIds(parsed);
   return {
     id,
     name,
@@ -326,7 +329,7 @@ function parseVdGroup(groupEl: Element, parentId: string | null, counter: { n: n
   const layers: Layer[] = [];
   const groupId = `vd_${Date.now()}_g${counter.n++}`;
   const name = vdAttr(groupEl, "name", `group_${counter.n}`);
-  const emptyPath = parsePath("");
+  const emptyPath = ensureStableCommandIds(parsePath(""));
 
   layers.push({
     id: groupId,
@@ -365,7 +368,8 @@ function parseVdGroup(groupEl: Element, parentId: string | null, counter: { n: n
 function parseVdPath(el: Element, parentId: string | null, counter: { n: number }): Layer | null {
   const pathData = vdAttr(el, "pathData");
   if (!pathData.trim()) return null;
-  const parsed = parsePath(pathData);
+  let parsed = parsePath(pathData);
+  parsed = ensureStableCommandIds(parsed);
   return {
     id: `vd_${Date.now()}_p${counter.n++}`,
     name: vdAttr(el, "name", `path_${counter.n}`),
@@ -398,7 +402,8 @@ function parseVdClipPath(
 ): Layer | null {
   const pathData = vdAttr(el, "pathData");
   if (!pathData.trim()) return null;
-  const parsed = parsePath(pathData);
+  let parsed = parsePath(pathData);
+  parsed = ensureStableCommandIds(parsed);
   return {
     id: `vd_${Date.now()}_cp${counter.n++}`,
     name: vdAttr(el, "name", `clip_${counter.n}`),

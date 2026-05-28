@@ -25,6 +25,7 @@ import {
   booleanCombine,
   simplifyPath,
   getTaperedStrokeWidth,
+  ensureStableCommandIds,
 } from "../shapeshifter/pathUtils";
 import type {
   AnimationState,
@@ -358,6 +359,24 @@ const initialLayers: Layer[] = [
 ];
 
 const cloneLayers = (layers: Layer[]) => structuredClone(layers);
+
+function normalizeLayerPaths(layer: Layer): Layer {
+  // 3t0c: last line of defense. Any Layer arriving at the store boundary (from demos,
+  // JSON deserialization, tests, paste, etc.) gets its PathData command IDs hardened.
+  // Safe, pure, early-exits on already-good data.
+  return {
+    ...layer,
+    from: ensureStableCommandIds(layer.from),
+    to: ensureStableCommandIds(layer.to),
+    ...(layer.pathData && { pathData: ensureStableCommandIds(layer.pathData) }),
+    // Note: children recursion not needed today (groups carry empty paths); future-proof if added.
+  };
+}
+
+function normalizeLayers(layers: Layer[]): Layer[] {
+  return layers.map(normalizeLayerPaths);
+}
+
 const getFirstEditableLayerId = (layers: Layer[]) =>
   layers.find((layer) => layer.type === "path" || layer.type === "clipPath")?.id ??
   layers[0]?.id ??
@@ -678,12 +697,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   loadSample: (index: number) => {
     const { project } = getDemoProject(index);
+    const normalized = normalizeLayers(project.layers);
     const frame: CanvasFrame = {
       id: `frame-${Date.now()}`,
       name: project.vector.name || "Sample",
       x: 0,
       y: 0,
-      layers: cloneLayers(project.layers),
+      layers: cloneLayers(normalized),
       vector: structuredClone(project.vector),
       animation: structuredClone(project.animation),
       hiddenLayerIds: [...project.hiddenLayerIds],
@@ -692,11 +712,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       frames: [frame],
       selectedFrameId: frame.id,
-      layers: cloneLayers(project.layers),
+      layers: cloneLayers(normalized),
       vector: structuredClone(project.vector),
       animation: structuredClone(project.animation),
       hiddenLayerIds: [...project.hiddenLayerIds],
-      selectedLayerId: getFirstEditableLayerId(project.layers),
+      selectedLayerId: getFirstEditableLayerId(normalized),
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -724,10 +744,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   setLayers: (layers) => {
+    const normalized = normalizeLayers(layers);
     get().pushHistory();
     set({
-      layers,
-      selectedLayerId: layers[0]?.id ?? 0,
+      layers: normalized,
+      selectedLayerId: normalized[0]?.id ?? 0,
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -737,22 +758,24 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   importLayers: (incomingLayers) => {
     if (!incomingLayers.length) return;
     const { layers } = get();
+    const normalizedIncoming = normalizeLayers(incomingLayers);
     get().pushHistory();
     set({
-      layers: [...layers, ...incomingLayers],
-      selectedLayerId: incomingLayers[0]?.id ?? layers[0]?.id ?? 0,
+      layers: [...layers, ...normalizedIncoming],
+      selectedLayerId: normalizedIncoming[0]?.id ?? layers[0]?.id ?? 0,
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
     });
   },
   loadProject: (project) => {
+    const normalized = normalizeLayers(project.layers);
     const frame: CanvasFrame = {
       id: `frame-${Date.now()}`,
       name: project.vector.name || "Imported frame",
       x: 0,
       y: 0,
-      layers: cloneLayers(project.layers),
+      layers: cloneLayers(normalized),
       vector: structuredClone(project.vector),
       animation: structuredClone(project.animation),
       hiddenLayerIds: [...project.hiddenLayerIds],
@@ -761,11 +784,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       frames: [frame],
       selectedFrameId: frame.id,
-      layers: cloneLayers(project.layers),
+      layers: cloneLayers(normalized),
       vector: structuredClone(project.vector),
       animation: structuredClone(project.animation),
       hiddenLayerIds: [...project.hiddenLayerIds],
-      selectedLayerId: getFirstEditableLayerId(project.layers),
+      selectedLayerId: getFirstEditableLayerId(normalized),
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
