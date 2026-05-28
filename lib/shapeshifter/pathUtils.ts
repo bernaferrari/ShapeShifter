@@ -7,11 +7,7 @@
 import type { Command, CommandType, PathData, Point, SubPath } from "./types";
 import { arePointsEqual } from "./mathUtils";
 import { getPoleOfInaccessibility, isSubPathClockwise, arcToBeziers } from "./geometry";
-
-let idCounter = 0;
-function generateId(): string {
-  return `cmd_${Date.now()}_${idCounter++}`;
-}
+import { generateId } from "./ids";
 
 const COMMAND_POINT_COUNTS: Partial<Record<CommandType, number>> = {
   M: 1,
@@ -1741,6 +1737,15 @@ export function optimizePath(pathData: PathData, tolerance = 0.5): PathData {
   }
   return p;
 }
+
+// Stable ID foundation (ShapeShifter-k7zp / sogt) — single-import surface for v1 consumers
+// during the parallel migration window. All new structural edits now receive real ULIDs.
+export {
+  generateId,
+  ensureStableCommandIds,
+  decodeTime,
+  __resetMonotonicStateForTests,
+} from "./ids";
 
 export function generateDashPattern(
   preset: "solid" | "dashed" | "dotted" | "dashdot" = "dashed",
