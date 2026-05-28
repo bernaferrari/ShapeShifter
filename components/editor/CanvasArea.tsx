@@ -90,6 +90,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const [isDraggingArtboards, setIsDraggingArtboards] = useState(false);
   const [draggingArtboardIds, setDraggingArtboardIds] = useState<string[]>([]);
   const [artboardDragStart, setArtboardDragStart] = useState<{ x: number; y: number } | null>(null);
+  // Pro drag snapshot for constraints + future ghost/precision (1q2i)
+  const [dragStartPositions, setDragStartPositions] = useState<Record<string, { x: number; y: number }>>({});
 
   // Real implementation for world artboard dragging (fixes the previous no-op stub).
   // Called from pointer down when artboards are hit in select mode.
@@ -98,9 +100,17 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     const p = worldPointFromEvent(clientX, clientY);
     if (!p) return;
 
+    // Pro-level: snapshot originals at drag start for axis-lock constraints and future ghosts
+    const snapshot: Record<string, { x: number; y: number }> = {};
+    ids.forEach((id) => {
+      const f = frames.find((fr) => fr.id === id);
+      if (f) snapshot[id] = { x: f.x || 0, y: f.y || 0 };
+    });
+
     setIsDraggingArtboards(true);
     setDraggingArtboardIds(ids);
     setArtboardDragStart(p);
+    setDragStartPositions(snapshot);
   };
 
 
@@ -358,14 +368,23 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       const p = worldPointFromEvent(e.clientX, e.clientY);
       if (!p) return;
 
-      // Artboard dragging in world (select mode)
+      // Artboard dragging in world (select mode) — pro Figma-grade
       if (isDraggingArtboards && draggingArtboardIds.length > 0 && artboardDragStart) {
-        const dx = p.x - artboardDragStart.x;
-        const dy = p.y - artboardDragStart.y;
+        let dx = p.x - artboardDragStart.x;
+        let dy = p.y - artboardDragStart.y;
+
+        // Shift = axis lock (classic pro constraint)
+        if (e.shiftKey) {
+          if (Math.abs(dx) > Math.abs(dy)) {
+            dy = 0;
+          } else {
+            dx = 0;
+          }
+        }
+
         if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
-          // Use the store's moveFrames (it handles the projection correctly)
           useEditorStore.getState().moveFrames(draggingArtboardIds, dx, dy);
-          setArtboardDragStart(p); // update start for next delta
+          setArtboardDragStart(p);
         }
         return;
       }
@@ -428,13 +447,14 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       setWorldLassoFrame(0);
       worldLassoRef.current = [];
 
-      // Commit artboard drag
+      // Commit artboard drag (pro)
       if (isDraggingArtboards) {
         // Push a single history step for the whole drag
         useEditorStore.getState().pushHistory?.();
         setIsDraggingArtboards(false);
         setDraggingArtboardIds([]);
         setArtboardDragStart(null);
+        setDragStartPositions({});
       }
     },
     [toolMode, frames, getFrameBounds, isDraggingArtboards],
@@ -728,9 +748,12 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                     onPointerMove={handleWorldPointerMove}
                     onPointerUp={handleWorldPointerUp}
                     onDoubleClick={handleWorldDoubleClick}
-                    style={{ background: "hsl(var(--muted))" }}
+                    style={{
+                      background: "hsl(var(--muted))",
+                      cursor: isDraggingArtboards ? "grabbing" : "default",
+                    }}
                   >
-                    {/* World grid (subtle, like PathCanvas) */}
+                    {/* World grid (subtle, like PathCanvas) + pro drag shadow */}
                     <defs>
                       <pattern id="world-grid" width="16" height="16" patternUnits="userSpaceOnUse">
                         <path
@@ -741,6 +764,10 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                           opacity="0.5"
                         />
                       </pattern>
+                      {/* Subtle lift shadow for dragged artboards — Figma-grade tactility */}
+                      <filter id="dragShadow" x="-50%" y="-50%" width="200%" height="200%">
+                        <feDropShadow dx="0" dy="1.5" stdDeviation="1.2" floodOpacity="0.18" />
+                      </filter>
                     </defs>
                     <rect
                       x={worldView.x}
@@ -754,8 +781,16 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       const b = getFrameBounds(frame);
                       const isSel =
                         worldSelectedIds.includes(frame.id) || frame.id === selectedFrameId;
+                      const isBeingDragged = draggingArtboardIds.includes(frame.id);
                       // cheap preview: first path layer's from (or empty) — now from memo for large doc perf
                       const previewD = framePreviews.get(frame.id) || "";
+
+                      // Pro drag visuals (1q2i): lifted + active feedback while dragging
+                      const dragStroke = isBeingDragged ? "#0d99ff" : isSel ? "#0d99ff" : "hsl(var(--border))";
+                      const dragWidth = isBeingDragged ? 3 : isSel ? 2.5 : 1;
+                      const dragOpacity = isBeingDragged ? 0.65 : 1;
+                      const dragShadow = isBeingDragged ? "url(#dragShadow)" : undefined;
+
                       return (
                         <g key={frame.id} transform={`translate(${b.x} ${b.y})`}>
                           <rect
@@ -764,9 +799,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                             width={b.w}
                             height={b.h}
                             fill="#fff"
-                            stroke={isSel ? "#0d99ff" : "hsl(var(--border))"}
-                            strokeWidth={isSel ? 2.5 : 1}
+                            stroke={dragStroke}
+                            strokeWidth={dragWidth}
                             rx="1"
+                            opacity={dragOpacity}
+                            filter={dragShadow}
                           />
                           {previewD && (
                             <path
@@ -774,7 +811,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                               fill="none"
                               stroke="#111"
                               strokeWidth={Math.max(0.8, Math.min(2.2, b.w / 24))}
-                              opacity="0.85"
+                              opacity={isBeingDragged ? 0.5 : 0.85}
                               vectorEffect="non-scaling-stroke"
                             />
                           )}
@@ -784,6 +821,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                             fontSize={Math.max(3, b.w * 0.08)}
                             fill="hsl(var(--muted-foreground))"
                             pointerEvents="none"
+                            opacity={isBeingDragged ? 0.6 : 1}
                           >
                             {frame.name}
                           </text>
