@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { PathCanvas } from "./PathCanvas";
 import { useEditorStore } from "@/lib/store/editorStore";
+import type { Viewport } from "@/lib/shapeshifter/camera";
 import { pathToString } from "@/lib/shapeshifter/pathUtils";
 import { pointInPolygon } from "@/lib/shapeshifter/gestures/HitTests";
 
@@ -58,6 +59,10 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     deleteFrame,
     selectFrame,
     animation,
+    worldViewport,
+    setWorldViewport,
+    fitWorldToFrames,
+    bringFrameIntoView,
   } = useEditorStore();
 
   const compatibility = getCompatibilityStatus();
@@ -171,84 +176,24 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     };
   }, [getFrameBounds]);
 
-  // Auto-fit world camera when frames load or change significantly.
-  // Removed the fragile single-use "isDefaultBad" exact-match guard (root cause of persistent "super far away" after any interaction).
-  // Now applies a reasonable fit when the current view has no overlap with any frame content.
+  // Auto-fit world camera — now delegates to the store (1el Phase 2)
+  // The store owns the logic and will use the pure computeFitViewport.
   useEffect(() => {
     if (frames.length === 0) return;
 
-    const fit = computeFitView(frames);
-    const vb = worldView;
+    // Let the store decide — it has the improved pure helper and will
+    // avoid the old magic defaults.
+    fitWorldToFrames();
+  }, [frames, fitWorldToFrames]);
 
-    // Check if current view has any overlap with the content bounding box
-    const contentBounds = frames.reduce((acc, f) => {
-      const b = getFrameBounds(f);
-      return {
-        minX: Math.min(acc.minX, b.x),
-        minY: Math.min(acc.minY, b.y),
-        maxX: Math.max(acc.maxX, b.x + b.w),
-        maxY: Math.max(acc.maxY, b.y + b.h),
-      };
-    }, { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
-
-    const hasOverlap =
-      !(vb.x + vb.w < contentBounds.minX || vb.x > contentBounds.maxX ||
-        vb.y + vb.h < contentBounds.minY || vb.y > contentBounds.maxY);
-
-    if (!hasOverlap) {
-      setWorldView(fit);
-    }
-  }, [frames, computeFitView]);
-
-  // When a new frame is selected (e.g. after duplicate), gently bring it into view (helps 425)
+  // When a new frame is selected (e.g. after duplicate), gently bring it into view.
+  // Now delegates to the store action (preserves the nice lerp behavior).
   useEffect(() => {
     if (selectedFrameId && selectedFrameId !== prevSelectedFrameRef.current) {
-      const f = frames.find((fr) => fr.id === selectedFrameId);
-      if (f) {
-        const b = getFrameBounds(f);
-        const pad = Math.max(b.w, b.h) * 0.6;
-        const currentScale = worldView.scale;
-        const target = {
-          x: b.x - pad,
-          y: b.y - pad,
-          w: (b.w + pad * 2) / currentScale,  // preserve user's current zoom level
-          h: (b.h + pad * 2) / currentScale,
-          scale: currentScale,
-        };
-
-        const vb = worldView;
-        const isVisible =
-          b.x > vb.x && b.x + b.w < vb.x + vb.w &&
-          b.y > vb.y && b.y + b.h < vb.y + vb.h;
-
-        if (!isVisible) {
-          const st = { ...worldView };
-          const dur = 220;
-          const t0 = performance.now();
-          if (worldCameraRafRef.current) cancelAnimationFrame(worldCameraRafRef.current);
-
-          const step = () => {
-            const t = Math.min(1, (performance.now() - t0) / dur);
-            const e = 1 - Math.pow(1 - t, 3);
-            setWorldView({
-              x: st.x + (target.x - st.x) * e,
-              y: st.y + (target.y - st.y) * e,
-              w: st.w + (target.w - st.w) * e,
-              h: st.h + (target.h - st.h) * e,
-              scale: target.scale,
-            });
-            if (t < 1) {
-              worldCameraRafRef.current = requestAnimationFrame(step);
-            } else {
-              worldCameraRafRef.current = null;
-            }
-          };
-          worldCameraRafRef.current = requestAnimationFrame(step);
-        }
-      }
+      bringFrameIntoView(selectedFrameId, { animate: true });
     }
     prevSelectedFrameRef.current = selectedFrameId;
-  }, [selectedFrameId, frames, getFrameBounds, worldView]);
+  }, [selectedFrameId, bringFrameIntoView]);
 
   // Performance culling for large/complex docs (AABB vs world viewport)
   const culledFrames = useMemo(() => {
