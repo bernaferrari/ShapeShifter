@@ -271,7 +271,7 @@ function luDecompose(A: number[][], _fast?: boolean): { LU: number[][]; P: numbe
   let i: number, j: number, k: number, absAjk: number, Akk: number, Ak: number[], Pk: number, Ai: number[], max: number;
   const n = A.length;
   const n1 = n - 1;
-  const P = new Array<number>(n);
+  const P = Array.from({ length: n }, () => 0);
 
   const lu = cloneDeep(A) as number[][];
 

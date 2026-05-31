@@ -71,14 +71,15 @@ export function computeFitViewport(
   // Generous but content-aware padding (30% + minPadding)
   const pad = Math.max(minPadding, Math.max(contentW, contentH) * 0.3);
 
-  const vw = Math.max(200, contentW + pad * 2);
-  const vh = Math.max(200, contentH + pad * 2);
+  const size = Math.max(200, contentW + pad * 2, contentH + pad * 2);
+  const centerX = minX + contentW / 2;
+  const centerY = minY + contentH / 2;
 
   return {
-    x: minX - pad,
-    y: minY - pad,
-    w: vw,
-    h: vh,
+    x: centerX - size / 2,
+    y: centerY - size / 2,
+    w: size,
+    h: size,
     scale: Math.min(maxScale, 1),
   };
 }

@@ -5,15 +5,14 @@
 
 import type { AnimationState, Layer, PathData, VectorMetadata } from "./types";
 import { getInterpolatedPath, pathToString } from "./pathUtils";
-import { evaluateInterpolator, INTERPOLATOR_KEYSPLINES } from "./interpolators";
 
 export interface ExportOptions {
   duration?: number; // in seconds
   fps?: number; // frames per second for baked animation
   width?: number;
   height?: number;
-  viewBoxWidth?: number; // coordinate-space width (default: 24)
-  viewBoxHeight?: number; // coordinate-space height (default: 24)
+  viewBoxWidth?: number; // coordinate-space width (default: 48)
+  viewBoxHeight?: number; // coordinate-space height (default: 48)
   loop?: boolean;
   strokeWidth?: number;
   fromColor?: string;
@@ -36,8 +35,8 @@ export function exportAnimatedSVG(
     duration = 1.2,
     width = 512,
     height = 512,
-    viewBoxWidth = 24,
-    viewBoxHeight = 24,
+    viewBoxWidth = 48,
+    viewBoxHeight = 48,
     loop = true,
     strokeWidth = 2.5,
     fromColor = "#3b82f6",
@@ -61,10 +60,11 @@ export function exportAnimatedSVG(
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${vbW} ${vbH}">
+  <title>${escapeXml(layerName)}</title>
+  <desc>MORPH</desc>
   <defs>
     <style>
       .path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
-      .label { font-family: system-ui, -apple-system, sans-serif; font-size: ${(vbH / 24) * 2.2}px; fill: #64748b; }
     </style>
   </defs>
 
@@ -87,11 +87,15 @@ export function exportAnimatedSVG(
     (function() {
       var svg = document.currentScript.ownerSVGElement;
       var morph = svg.getElementById('morph');
-      var from = [${fromNums.join(",")}];
-      var to = [${toNums.join(",")}];
+      const keyframes = [
+        [${fromNums.join(",")}],
+        [${toNums.join(",")}]
+      ];
+      var from = keyframes[0];
+      var to = keyframes[1];
       var tpl = ${JSON.stringify(template)};
-      var dur = ${duration};
-      var loop = ${loop};
+      const duration = ${duration};
+      const loop = ${loop};
       var startTime = null;
 
       // Cubic-bezier easing (FAST_OUT_SLOW_IN)
@@ -115,11 +119,11 @@ export function exportAnimatedSVG(
       function animate(ts) {
         if (!startTime) startTime = ts;
         var elapsed = (ts - startTime) / 1000;
-        var rawT = (elapsed % dur) / dur;
-        if (!loop && elapsed > dur) rawT = 1;
+        var rawT = (elapsed % duration) / duration;
+        if (!loop && elapsed > duration) rawT = 1;
         var t = ease(rawT);
         morph.setAttribute('d', lerp(t));
-        if (loop || elapsed < dur) requestAnimationFrame(animate);
+        if (loop || elapsed < duration) requestAnimationFrame(animate);
       }
 
       requestAnimationFrame(animate);
@@ -229,7 +233,7 @@ function styleAttrs(layer: Layer) {
 }
 
 export function exportStaticSVG(layers: Layer[], options: ExportOptions = {}) {
-  const { width = 512, height = 512, viewBoxWidth = 24, viewBoxHeight = 24 } = options;
+  const { width = 512, height = 512, viewBoxWidth = 48, viewBoxHeight = 48 } = options;
 
   const roundCoord = (v: number) => (Number.isFinite(v) ? Number(v.toFixed(3)) : 0);
 
@@ -317,8 +321,8 @@ export function exportSvgSpritesheet(layer: Layer, options: ExportOptions = {}) 
   const {
     width = 512,
     height = 512,
-    viewBoxWidth = 24,
-    viewBoxHeight = 24,
+    viewBoxWidth = 48,
+    viewBoxHeight = 48,
     fps = 10,
     duration = 1.2,
   } = options;
@@ -342,7 +346,7 @@ ${frames}
 }
 
 export function exportVectorDrawable(layer: Layer, options: ExportOptions = {}) {
-  const { width = 48, height = 48, viewBoxWidth = 24, viewBoxHeight = 24 } = options;
+  const { width = 48, height = 48, viewBoxWidth = 48, viewBoxHeight = 48 } = options;
   const d = pathToString(layer.pathData ?? layer.from); // pathData for post-knife/boolean/paint fidelity (kus)
   const fill = layer.fillColor || "@android:color/transparent";
   const stroke = layer.strokeColor || "";
@@ -628,11 +632,11 @@ export function downloadLottie(from: PathData, to: PathData, layerName: string, 
  * Error tolerant: skips bad paths.
  */
 export function exportPDF(layers: Layer[], options: ExportOptions = {}): string {
-  const { width = 512, height = 512, viewBoxWidth = 24, viewBoxHeight = 24 } = options;
+  const { width = 512, height = 512, viewBoxWidth = 48, viewBoxHeight = 48 } = options;
   // Scale viewBox units to PDF points ( ~72pt per inch, here 20pt per unit for nice size)
   const scale = 20;
-  const pdfW = Math.round(width * (scale / (viewBoxWidth || 24)));
-  const pdfH = Math.round(height * (scale / (viewBoxHeight || 24)));
+  const pdfW = Math.round(width * (scale / (viewBoxWidth || 48)));
+  const pdfH = Math.round(height * (scale / (viewBoxHeight || 48)));
 
   const contentOps: string[] = [];
   const addPath = (layer: Layer) => {
@@ -640,7 +644,7 @@ export function exportPDF(layers: Layer[], options: ExportOptions = {}): string 
     const d = pathToString(layer.pathData ?? layer.from);
     if (!d) return;
     // Very small parser for PDF path ops (supports M L C Q Z approx; Q-> approx c for fidelity)
-    const tokens = d.split(/[\s,]+/).filter(Boolean);
+    const tokens = d.match(/[MLHVCSQTAZmlhvcsqtaz]|[-+]?(?:\d*\.)?\d+(?:e[-+]?\d+)?/gi) ?? [];
     let i = 0;
     const emit = (s: string) => contentOps.push(s);
     const num = () => {
@@ -684,8 +688,8 @@ export function exportPDF(layers: Layer[], options: ExportOptions = {}): string 
       } else if (t === "Z" || t === "z") {
         emit("h");
       } else if (/^-?\d/.test(t)) {
-        // stray num (from prior parse), skip to keep valid
-        i--;
+        // Stray number from unsupported/partial path syntax: skip to keep the PDF valid.
+        continue;
       }
     }
     if (started) emit("h");

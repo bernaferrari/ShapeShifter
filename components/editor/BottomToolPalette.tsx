@@ -3,7 +3,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { MousePointer2, Lasso, PaintBucket, PenTool, MoreHorizontal } from "lucide-react";
+import { MousePointer2, Lasso, PaintBucket, PenTool } from "lucide-react";
 import { useEditorStore } from "@/lib/store/editorStore";
 import type { ToolMode } from "@/lib/shapeshifter/toolModes";
 
@@ -33,7 +33,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     mode: "direct",
-    label: "Direct / Bend (Flex) – Ctrl+drag curves",
+    label: "Direct / Bend",
     icon: <span className="material-symbols text-[18px] leading-none">conversion_path</span>,
     shortcut: "D",
   },
@@ -45,25 +45,15 @@ const TOOLS: ToolDef[] = [
   },
   {
     mode: "pencil",
-    label: "Pencil / Lasso (future)",
+    label: "Lasso",
     icon: <Lasso className="h-4 w-4" />,
     shortcut: "L",
   },
   {
     mode: "paint",
-    label: "Paint / Fill (bucket)",
+    label: "Paint",
     icon: <PaintBucket className="h-4 w-4" />,
     shortcut: "B",
-  },
-  {
-    mode: "rectangle",
-    label: "Shapes (future)",
-    icon: <span className="material-symbols text-[18px] leading-none">rectangle</span>,
-  },
-  {
-    mode: "default",
-    label: "More…",
-    icon: <MoreHorizontal className="h-4 w-4" />,
   },
 ];
 
@@ -75,8 +65,8 @@ export function BottomToolPalette() {
   if (isActionMode) return null;
 
   return (
-    <div className="flex h-12 items-center justify-center border-t bg-card px-2 shadow-sm">
-      <div className="flex items-center gap-1 rounded-xl border bg-background p-1 shadow-sm">
+    <div className="flex items-center justify-center">
+      <div className="flex items-center gap-1 rounded-lg border bg-background/95 p-1 shadow-xl shadow-black/15 backdrop-blur dark:shadow-black/35">
         {TOOLS.map((tool) => {
           const isActive = toolMode === tool.mode;
           return (
@@ -84,9 +74,9 @@ export function BottomToolPalette() {
               <TooltipTrigger
                 render={
                   <Button
-                    size="sm"
+                    size="icon"
                     variant={isActive ? "secondary" : "ghost"}
-                    className={`h-8 gap-1.5 px-2.5 text-xs font-medium transition-all ${
+                    className={`h-11 w-11 rounded-md transition-[background-color,color,box-shadow,transform] active:scale-95 ${
                       isActive
                         ? "bg-primary text-primary-foreground shadow-sm"
                         : "text-muted-foreground hover:text-foreground"
@@ -96,7 +86,6 @@ export function BottomToolPalette() {
                     aria-pressed={isActive}
                   >
                     {tool.icon}
-                    <span className="hidden sm:inline">{tool.label.split(" / ")[0]}</span>
                   </Button>
                 }
               />
@@ -106,10 +95,6 @@ export function BottomToolPalette() {
             </Tooltip>
           );
         })}
-      </div>
-
-      <div className="ml-3 text-[10px] text-muted-foreground hidden md:block">
-        Tool palette (vision foundation)
       </div>
     </div>
   );

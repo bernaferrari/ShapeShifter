@@ -122,7 +122,7 @@ export function generateId(prefix?: string): string {
   if (timestamp === lastTimestamp) {
     // Monotonic guarantee within the same millisecond
     random = lastRandom + b1;
-    if (random >= (b1 << b80)) {
+    if (random >= b1 << b80) {
       // Extremely rare rollover — advance time
       timestamp = lastTimestamp + 1;
       random = getRandom80Bits();
@@ -195,7 +195,7 @@ export function ensureStableCommandIds(pathData: PathData): PathData {
 
       if (isLegacy) {
         dirty = true;
-        const fresh = generateId("cmd");
+        const fresh = generateId();
         seen.add(fresh);
         return { ...cmd, id: fresh };
       }

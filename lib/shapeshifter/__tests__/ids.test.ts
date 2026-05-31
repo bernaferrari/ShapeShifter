@@ -117,8 +117,32 @@ describe("Stable ID System (k7zp)", () => {
       const out = ensureStableCommandIds(input);
       expect(out).not.toBe(input);
       expect(out.subPaths[0].commands[0].id).not.toMatch(/^cmd_\d+_\d+$/);
-      expect(out.subPaths[0].commands[0].id.length).toBeGreaterThan(20);
-      expect(out.subPaths[0].commands.every((c) => /^[0-9A-HJKMNP-TV-Z_]+$/.test(c.id))).toBe(true);
+      expect(out.subPaths[0].commands[0].id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
+      expect(out.subPaths[0].commands.every((c) => /^[0-9A-HJKMNP-TV-Z]{26}$/.test(c.id))).toBe(
+        true,
+      );
+    });
+
+    it("is idempotent after mixed legacy IDs are migrated", () => {
+      const mixed: PathData = {
+        subPaths: [
+          {
+            commands: [
+              { id: "cmd_1712345678901_0", type: "M", points: [{ x: 0, y: 0 }] },
+              { id: "cmd_old_1", type: "L", points: [{ x: 10, y: 0 }] },
+              { id: generateId(), type: "L", points: [{ x: 10, y: 10 }] },
+            ],
+          },
+        ],
+      };
+
+      const once = ensureStableCommandIds(mixed);
+      const twice = ensureStableCommandIds(once);
+      const ids = once.subPaths[0].commands.map((command) => command.id);
+
+      expect(twice).toBe(once);
+      expect(ids.every((id) => !/^cmd_\d+/.test(id))).toBe(true);
+      expect(new Set(ids).size).toBe(ids.length);
     });
 
     it("replaces duplicate IDs with fresh stable ones while preserving good ones", () => {

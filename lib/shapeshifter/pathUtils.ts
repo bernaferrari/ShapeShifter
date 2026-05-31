@@ -139,6 +139,16 @@ export function parsePath(d: string): PathData {
   let subPathStart: Point = { x: 0, y: 0 };
 
   const isCommand = (token: string | undefined) => !!token && /^[a-zA-Z]$/.test(token);
+  const canReadNumbers = (count: number) => {
+    for (let offset = 0; offset < count; offset++) {
+      const token = tokens[index + offset];
+      if (!token || isCommand(token)) return false;
+    }
+    return true;
+  };
+  const skipMalformedArgs = () => {
+    while (index < tokens.length && !isCommand(tokens[index])) index++;
+  };
   const readNumber = () => Number(tokens[index++]);
   const readPoint = (relative: boolean): Point => {
     const x = readNumber();
@@ -160,16 +170,25 @@ export function parsePath(d: string): PathData {
     if (type === "Z") {
       subPath.commands.push({ id: generateId(), type: "Z", points: [] });
       current = { ...subPathStart };
+      commandToken = "";
       continue;
     }
 
     if (type === "M") {
+      if (!canReadNumbers(2)) {
+        skipMalformedArgs();
+        continue;
+      }
       const point = readPoint(relative);
       current = point;
       subPathStart = point;
       subPaths.push({ commands: [{ id: generateId(), type: "M", points: [point] }] });
 
       while (index < tokens.length && !isCommand(tokens[index])) {
+        if (!canReadNumbers(2)) {
+          skipMalformedArgs();
+          break;
+        }
         const linePoint = readPoint(relative);
         current = linePoint;
         ensureSubPath(subPaths).commands.push({ id: generateId(), type: "L", points: [linePoint] });
@@ -179,6 +198,10 @@ export function parsePath(d: string): PathData {
 
     while (index < tokens.length && !isCommand(tokens[index])) {
       if (type === "H") {
+        if (!canReadNumbers(1)) {
+          skipMalformedArgs();
+          break;
+        }
         const x = readNumber();
         current = { x: relative ? current.x + x : x, y: current.y };
         subPath.commands.push({ id: generateId(), type: "L", points: [{ ...current }] });
@@ -186,6 +209,10 @@ export function parsePath(d: string): PathData {
       }
 
       if (type === "V") {
+        if (!canReadNumbers(1)) {
+          skipMalformedArgs();
+          break;
+        }
         const y = readNumber();
         current = { x: current.x, y: relative ? current.y + y : y };
         subPath.commands.push({ id: generateId(), type: "L", points: [{ ...current }] });
@@ -197,7 +224,10 @@ export function parsePath(d: string): PathData {
         // Full arc-to-bezier conversion will be done in Wave 1 (W1-T1).
         // For now we at least stop silent data loss so roundtrips and later
         // conversion are possible.
-        if (index + 7 > tokens.length) break;
+        if (!canReadNumbers(7)) {
+          skipMalformedArgs();
+          break;
+        }
         const rx = readNumber();
         const ry = readNumber();
         const xRotation = readNumber();
@@ -215,7 +245,10 @@ export function parsePath(d: string): PathData {
       }
 
       const pointCount = COMMAND_POINT_COUNTS[type];
-      if (!pointCount || index + pointCount * 2 > tokens.length) break;
+      if (!pointCount || !canReadNumbers(pointCount * 2)) {
+        skipMalformedArgs();
+        break;
+      }
 
       const points = Array.from({ length: pointCount }, () => readPoint(relative));
       current = points.at(-1) ?? current;

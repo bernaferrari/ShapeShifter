@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isSubPathClockwise, getPoleOfInaccessibility, getCommandArea, arcToBeziers } from "./geometry";
+import { isSubPathClockwise, getPoleOfInaccessibility, arcToBeziers } from "./geometry";
 import { parsePath } from "./pathUtils";
 
 describe("geometry winding (isSubPathClockwise)", () => {

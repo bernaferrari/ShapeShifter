@@ -245,10 +245,6 @@ export function importLayersFromSvg(svgText: string, namePrefix = "svg") {
     const referenced = doc.getElementById(href.slice(1));
     if (!referenced) continue;
 
-    // Clone the referenced subtree
-    const clone = referenced.cloneNode(true) as Element;
-    clone.removeAttribute("id"); // avoid duplicate IDs
-
     // Apply <use> x/y as a translate, and copy the use element's transform
     const ux = use.getAttribute("x");
     const uy = use.getAttribute("y");
@@ -259,7 +255,16 @@ export function importLayersFromSvg(svgText: string, namePrefix = "svg") {
     // Wrap in a <g> with the combined transform and insert in place of <use>
     const wrapper = doc.createElementNS("http://www.w3.org/2000/svg", "g");
     if (combined) wrapper.setAttribute("transform", combined);
-    wrapper.appendChild(clone);
+
+    if (referenced.tagName.toLowerCase() === "symbol") {
+      for (const child of Array.from(referenced.children)) {
+        wrapper.appendChild(child.cloneNode(true));
+      }
+    } else {
+      const clone = referenced.cloneNode(true) as Element;
+      clone.removeAttribute("id"); // avoid duplicate IDs
+      wrapper.appendChild(clone);
+    }
     use.parentNode?.replaceChild(wrapper, use);
   }
 

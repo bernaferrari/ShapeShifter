@@ -296,7 +296,9 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
             const isExpandable = (childCountById.get(String(layer.id)) ?? 0) > 0;
             return (
               <React.Fragment key={layer.id}>
-                <button
+                <div
+                  role={layer.type === "vector" ? undefined : "button"}
+                  tabIndex={layer.type === "vector" ? undefined : 0}
                   className={`flex h-8 w-full items-center gap-2 px-2 text-left transition-all border-l-2 ${
                     isSelected
                       ? "bg-primary/10 border-primary text-foreground font-semibold"
@@ -304,6 +306,21 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                   }`}
                   onClick={() => layer.type !== "vector" && selectLayer(layer.id)}
                   onDoubleClick={() => isExpandable && toggleLayerExpanded(layer.id)}
+                  onKeyDown={(event) => {
+                    if (layer.type === "vector") return;
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      selectLayer(layer.id);
+                    }
+                    if (event.key === "ArrowRight" && isExpandable && layer.expanded === false) {
+                      event.preventDefault();
+                      toggleLayerExpanded(layer.id);
+                    }
+                    if (event.key === "ArrowLeft" && isExpandable && layer.expanded !== false) {
+                      event.preventDefault();
+                      toggleLayerExpanded(layer.id);
+                    }
+                  }}
                 >
                   <span style={{ width: `${row.depth * 12}px` }} />
                   <span
@@ -411,7 +428,7 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                       {layer.visible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
                     </span>
                   )}
-                </button>
+                </div>
               </React.Fragment>
             );
           })}

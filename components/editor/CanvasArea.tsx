@@ -22,6 +22,7 @@ import {
 import { PathCanvas } from "./PathCanvas";
 import { useEditorStore } from "@/lib/store/editorStore";
 import type { Viewport } from "@/lib/shapeshifter/camera";
+import { clientToWorld, zoomAtWorldPoint } from "@/lib/shapeshifter/camera";
 import { pathToString } from "@/lib/shapeshifter/pathUtils";
 import { pointInPolygon } from "@/lib/shapeshifter/gestures/HitTests";
 
@@ -76,7 +77,15 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   // patterns exactly (viewBox math, raf, pointer, focal zoom, lasso via HitTests).
   // moveFrames for multi-artboard. Double-click focus: selectFrame + camera lerp.
   // Zero changes to PathCanvas or actionMode paths. ToolMode (from palette/keyboard) drives world select/lasso.
-  const [worldView, setWorldView] = useState({ x: -80, y: -80, w: 320, h: 320, scale: 1 });
+  const worldView = worldViewport;
+  const setWorldView = useCallback(
+    (next: Viewport | ((previous: Viewport) => Viewport)) => {
+      const resolved =
+        typeof next === "function" ? next(useEditorStore.getState().worldViewport) : next;
+      setWorldViewport(resolved);
+    },
+    [setWorldViewport],
+  );
   const [isWorldPanning, setIsWorldPanning] = useState(false);
   const [lastWorldPan, setLastWorldPan] = useState({ x: 0, y: 0 });
   const worldSvgRef = useRef<SVGSVGElement>(null);
@@ -89,15 +98,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const worldCameraRafRef = useRef<number | null>(null);
   const [, setWorldLassoFrame] = useState(0);
   const [worldSelectedIds, setWorldSelectedIds] = useState<string[]>([]);
-  const prevSelectedFrameRef = useRef<string | null>(null);
 
   // Real artboard dragging state (replaces the previous no-op stub)
   const [isDraggingArtboards, setIsDraggingArtboards] = useState(false);
   const [draggingArtboardIds, setDraggingArtboardIds] = useState<string[]>([]);
   const [artboardDragStart, setArtboardDragStart] = useState<{ x: number; y: number } | null>(null);
-  // Pro drag snapshot for constraints + future ghost/precision (1q2i)
-  const [dragStartPositions, setDragStartPositions] = useState<Record<string, { x: number; y: number }>>({});
-
   // Real implementation for world artboard dragging (fixes the previous no-op stub).
   // Called from pointer down when artboards are hit in select mode.
   const startWorldArtboardDrag = (clientX: number, clientY: number, ids: string[]) => {
@@ -105,28 +110,16 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     const p = worldPointFromEvent(clientX, clientY);
     if (!p) return;
 
-    // Pro-level: snapshot originals at drag start for axis-lock constraints and future ghosts
-    const snapshot: Record<string, { x: number; y: number }> = {};
-    ids.forEach((id) => {
-      const f = frames.find((fr) => fr.id === id);
-      if (f) snapshot[id] = { x: f.x || 0, y: f.y || 0 };
-    });
-
     setIsDraggingArtboards(true);
     setDraggingArtboardIds(ids);
     setArtboardDragStart(p);
-    setDragStartPositions(snapshot);
   };
-
 
   const worldPointFromEvent = useCallback(
     (cx: number, cy: number) => {
       const r = worldSvgRef.current?.getBoundingClientRect();
       if (!r) return null;
-      return {
-        x: worldView.x + ((cx - r.left) / r.width) * worldView.w,
-        y: worldView.y + ((cy - r.top) / r.height) * worldView.h,
-      };
+      return clientToWorld(cx, cy, r, worldView);
     },
     [worldView],
   );
@@ -141,59 +134,38 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     [],
   );
 
-  // Proper camera fitting for the freeform world (fixes "super far away on open" + 8ri)
-  const computeFitView = useCallback((frameList: any[]) => {
-    if (!frameList || frameList.length === 0) {
-      return { x: -80, y: -80, w: 320, h: 320, scale: 1 };
+  const frameIdsSignature = useMemo(() => frames.map((frame) => frame.id).join("|"), [frames]);
+  const previousWorldSyncRef = useRef<{
+    frameIdsSignature: string;
+    selectedFrameId: string | null;
+  } | null>(null);
+
+  // Keep the store-owned camera synced to structural frame changes without re-fitting on drag.
+  useEffect(() => {
+    const previous = previousWorldSyncRef.current;
+    previousWorldSyncRef.current = {
+      frameIdsSignature,
+      selectedFrameId: selectedFrameId ?? null,
+    };
+
+    if (!frames.length || !previous) return;
+
+    if (previous.frameIdsSignature !== frameIdsSignature) {
+      fitWorldToFrames();
+      return;
     }
 
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-
-    frameList.forEach((f) => {
-      const b = getFrameBounds(f);
-      minX = Math.min(minX, b.x);
-      minY = Math.min(minY, b.y);
-      maxX = Math.max(maxX, b.x + b.w);
-      maxY = Math.max(maxY, b.y + b.h);
-    });
-
-    const contentW = maxX - minX;
-    const contentH = maxY - minY;
-    const pad = Math.max(contentW, contentH) * 0.3 + 40;
-
-    const vw = Math.max(200, contentW + pad * 2);
-    const vh = Math.max(200, contentH + pad * 2);
-
-    return {
-      x: minX - pad,
-      y: minY - pad,
-      w: vw,
-      h: vh,
-      scale: 1,
-    };
-  }, [getFrameBounds]);
-
-  // Auto-fit world camera — now delegates to the store (1el Phase 2)
-  // The store owns the logic and will use the pure computeFitViewport.
-  useEffect(() => {
-    if (frames.length === 0) return;
-
-    // Let the store decide — it has the improved pure helper and will
-    // avoid the old magic defaults.
-    fitWorldToFrames();
-  }, [frames, fitWorldToFrames]);
-
-  // When a new frame is selected (e.g. after duplicate), gently bring it into view.
-  // Now delegates to the store action (preserves the nice lerp behavior).
-  useEffect(() => {
-    if (selectedFrameId && selectedFrameId !== prevSelectedFrameRef.current) {
+    if (selectedFrameId && selectedFrameId !== previous.selectedFrameId) {
       bringFrameIntoView(selectedFrameId, { animate: true });
     }
-    prevSelectedFrameRef.current = selectedFrameId;
-  }, [selectedFrameId, bringFrameIntoView]);
+  }, [frameIdsSignature, frames.length, selectedFrameId, fitWorldToFrames, bringFrameIntoView]);
+
+  useEffect(() => {
+    return () => {
+      if (worldCameraRafRef.current) cancelAnimationFrame(worldCameraRafRef.current);
+      if (worldLassoRafRef.current) cancelAnimationFrame(worldLassoRafRef.current);
+    };
+  }, []);
 
   // Performance culling for large/complex docs (AABB vs world viewport)
   const culledFrames = useMemo(() => {
@@ -226,18 +198,20 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       const m = worldPointFromEvent(e.clientX, e.clientY);
       if (!m) return;
       const zf = e.deltaY > 0 ? 0.9 : 1.1;
-      const ns = Math.max(0.05, Math.min(10, worldView.scale * zf));
-
-      // Derive new visible world size from *current* view dimensions instead of hardcoding 320.
-      // This prevents violent teleports after computeFitView or user panning.
-      const nw = worldView.w / (ns / worldView.scale);
-      const nh = worldView.h / (ns / worldView.scale);
-
-      const nx = m.x - (m.x - worldView.x) * (nw / worldView.w);
-      const ny = m.y - (m.y - worldView.y) * (nh / worldView.h);
-      setWorldView({ x: nx, y: ny, w: nw, h: nh, scale: ns });
+      setWorldView(zoomAtWorldPoint(worldView, m, worldView.scale * zf, 0.05, 20));
     },
-    [worldPointFromEvent, worldView],
+    [setWorldView, worldPointFromEvent, worldView],
+  );
+
+  const zoomWorldAtCenter = useCallback(
+    (factor: number) => {
+      const center = {
+        x: worldView.x + worldView.w / 2,
+        y: worldView.y + worldView.h / 2,
+      };
+      setWorldView(zoomAtWorldPoint(worldView, center, worldView.scale * factor, 0.05, 20));
+    },
+    [setWorldView, worldView],
   );
 
   const hitArtboard = useCallback(
@@ -355,7 +329,16 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         }
       }
     },
-    [isWorldPanning, lastWorldPan, worldPointFromEvent, toolMode, worldView, isDraggingArtboards, draggingArtboardIds, artboardDragStart],
+    [
+      isWorldPanning,
+      lastWorldPan,
+      worldPointFromEvent,
+      toolMode,
+      worldView,
+      isDraggingArtboards,
+      draggingArtboardIds,
+      artboardDragStart,
+    ],
   );
 
   const handleWorldPointerUp = useCallback(
@@ -399,7 +382,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         setIsDraggingArtboards(false);
         setDraggingArtboardIds([]);
         setArtboardDragStart(null);
-        setDragStartPositions({});
       }
     },
     [toolMode, frames, getFrameBounds, isDraggingArtboards],
@@ -644,19 +626,23 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                     size="icon-xs"
                     variant="ghost"
                     className="h-6 w-6 text-xs text-muted-foreground hover:text-foreground"
-                    onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}
+                    onClick={() =>
+                      isActionMode ? setZoom(Math.max(0.5, zoom - 0.25)) : zoomWorldAtCenter(0.8)
+                    }
                     aria-label="Zoom out"
                   >
                     -
                   </Button>
                   <span className="text-[10px] font-mono font-medium px-1 text-muted-foreground select-none">
-                    {Math.round(zoom * 100)}%
+                    {Math.round((isActionMode ? zoom : worldView.scale) * 100)}%
                   </span>
                   <Button
                     size="icon-xs"
                     variant="ghost"
                     className="h-6 w-6 text-xs text-muted-foreground hover:text-foreground"
-                    onClick={() => setZoom(Math.min(4, zoom + 0.25))}
+                    onClick={() =>
+                      isActionMode ? setZoom(Math.min(4, zoom + 0.25)) : zoomWorldAtCenter(1.25)
+                    }
                     aria-label="Zoom in"
                   >
                     +
@@ -667,8 +653,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                     variant="ghost"
                     className="h-6 w-6 text-muted-foreground hover:text-foreground"
                     onClick={() => {
-                      const fit = computeFitView(frames.length ? frames : []);
-                      setWorldView(fit);
+                      fitWorldToFrames();
                       resetAllViews();
                     }}
                     aria-label="Reset canvas views"
@@ -687,6 +672,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                     ref={worldSvgRef}
                     width="100%"
                     height="100%"
+                    viewBox={`${worldView.x} ${worldView.y} ${worldView.w} ${worldView.h}`}
+                    preserveAspectRatio="xMidYMid meet"
                     className="touch-none"
                     onWheel={handleWorldWheel}
                     onPointerDown={handleWorldPointerDown}
@@ -731,7 +718,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       const previewD = framePreviews.get(frame.id) || "";
 
                       // Pro drag visuals (1q2i): lifted + active feedback while dragging
-                      const dragStroke = isBeingDragged ? "#0d99ff" : isSel ? "#0d99ff" : "hsl(var(--border))";
+                      const dragStroke = isBeingDragged
+                        ? "#0d99ff"
+                        : isSel
+                          ? "#0d99ff"
+                          : "hsl(var(--border))";
                       const dragWidth = isBeingDragged ? 3 : isSel ? 2.5 : 1;
                       const dragOpacity = isBeingDragged ? 0.65 : 1;
                       const dragShadow = isBeingDragged ? "url(#dragShadow)" : undefined;

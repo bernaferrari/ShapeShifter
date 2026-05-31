@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import type { Point, PathData } from "@/lib/shapeshifter/types";
+import type { PathData } from "@/lib/shapeshifter/types";
 
 interface EditPathOverlayProps {
   pathData: PathData;

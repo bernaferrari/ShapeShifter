@@ -23,7 +23,12 @@ import { Badge } from "@/components/ui/badge";
 import { Trash2, Maximize2, Minimize2 } from "lucide-react";
 import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editorStore";
-import { changeCommandType, parsePath, pathToString, updateCommandPoint } from "@/lib/shapeshifter/pathUtils";
+import {
+  changeCommandType,
+  parsePath,
+  pathToString,
+  updateCommandPoint,
+} from "@/lib/shapeshifter/pathUtils";
 import type { FillType, Layer, StrokeLineCap, StrokeLineJoin } from "@/lib/shapeshifter/types";
 import { MaterialSymbol } from "./MaterialSymbol";
 import { PathCommandsList } from "./PathCommandsList";
@@ -195,7 +200,9 @@ export function Inspector() {
           <div className="flex-1">
             <div className="flex items-center gap-2 text-sm font-medium">
               Path Commands
-              <span className="rounded bg-muted px-1.5 py-px font-mono text-[10px] text-muted-foreground">d</span>
+              <span className="rounded bg-muted px-1.5 py-px font-mono text-[10px] text-muted-foreground">
+                d
+              </span>
             </div>
             <div className="text-[10px] text-muted-foreground truncate">{currentLayer.name}</div>
           </div>
@@ -205,7 +212,8 @@ export function Inspector() {
             onClick={() => setIsCommandsFocused(false)}
             className="gap-1.5 text-xs"
           >
-            <Minimize2 className="h-3.5 w-3.5" /> Exit focus <span className="text-muted-foreground">(Esc)</span>
+            <Minimize2 className="h-3.5 w-3.5" /> Exit focus{" "}
+            <span className="text-muted-foreground">(Esc)</span>
           </Button>
         </div>
 
@@ -213,14 +221,14 @@ export function Inspector() {
           <PathCommandsList
             pathData={currentLayer[editingSide]}
             selectedPoints={selectedPoints}
-            onSelectCommand={(subPathIndex, commandIndex) => {
+            onSelectCommand={(subPathIndex, commandIndex, pointIndex) => {
               if (!currentLayer || !selectPoint) return;
               selectPoint({
                 layerId: selectedLayerId,
                 side: editingSide,
                 subPathIndex,
                 commandIndex,
-                pointIndex: 0,
+                pointIndex,
               });
             }}
             onUpdateCommandPoint={(subPathIndex, commandIndex, pointIndex, newPoint) => {
@@ -233,18 +241,14 @@ export function Inspector() {
                 newPoint,
               );
               updateLayer(
-                editingSide === "from"
-                  ? { from: updated, pathData: updated }
-                  : { to: updated },
+                editingSide === "from" ? { from: updated, pathData: updated } : { to: updated },
               );
             }}
             onChangeCommandType={(subPathIndex, commandIndex, newType) => {
               const currentPath = currentLayer[editingSide];
               const updated = changeCommandType(currentPath, subPathIndex, commandIndex, newType);
               updateLayer(
-                editingSide === "from"
-                  ? { from: updated, pathData: updated }
-                  : { to: updated },
+                editingSide === "from" ? { from: updated, pathData: updated } : { to: updated },
               );
             }}
             className="h-full text-xs" // extra breathing room in dedicated mode
@@ -379,7 +383,9 @@ export function Inspector() {
               <div className="px-4 pt-1">
                 <div className="mb-1 flex items-center gap-2 text-[9px] uppercase tracking-widest text-muted-foreground">
                   <span>Commands</span>
-                  <span className="rounded bg-muted px-1 py-px font-mono text-[8px] text-muted-foreground/70">d</span>
+                  <span className="rounded bg-muted px-1 py-px font-mono text-[8px] text-muted-foreground/70">
+                    d
+                  </span>
                   {/* bql — the final piece: optional dedicated full-height mode for the beautiful list */}
                   <Button
                     size="icon"
@@ -387,6 +393,7 @@ export function Inspector() {
                     className="ml-auto h-5 w-5 text-muted-foreground hover:text-foreground"
                     onClick={() => setIsCommandsFocused(true)}
                     title="Focus Commands (dedicated view for complex paths)"
+                    aria-label="Focus path commands"
                   >
                     <Maximize2 className="h-3.5 w-3.5" />
                   </Button>
@@ -394,14 +401,14 @@ export function Inspector() {
                 <PathCommandsList
                   pathData={currentLayer[editingSide]}
                   selectedPoints={selectedPoints}
-                  onSelectCommand={(subPathIndex, commandIndex) => {
+                  onSelectCommand={(subPathIndex, commandIndex, pointIndex) => {
                     if (!currentLayer || !selectPoint) return;
                     selectPoint({
                       layerId: selectedLayerId,
                       side: editingSide,
                       subPathIndex,
                       commandIndex,
-                      pointIndex: 0,
+                      pointIndex,
                     });
                   }}
                   onUpdateCommandPoint={(subPathIndex, commandIndex, pointIndex, newPoint) => {
@@ -421,7 +428,12 @@ export function Inspector() {
                   }}
                   onChangeCommandType={(subPathIndex, commandIndex, newType) => {
                     const currentPath = currentLayer[editingSide];
-                    const updated = changeCommandType(currentPath, subPathIndex, commandIndex, newType);
+                    const updated = changeCommandType(
+                      currentPath,
+                      subPathIndex,
+                      commandIndex,
+                      newType,
+                    );
                     updateLayer(
                       editingSide === "from"
                         ? { from: updated, pathData: updated }

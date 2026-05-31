@@ -460,6 +460,19 @@ const initialFrame: CanvasFrame = {
   hiddenLayerIds: [],
 };
 
+function getFrameRect(frame: CanvasFrame) {
+  return {
+    x: frame.x || 0,
+    y: frame.y || 0,
+    w: frame.vector?.width || 48,
+    h: frame.vector?.height || 48,
+  };
+}
+
+function computeFramesViewport(frames: CanvasFrame[]): Viewport {
+  return computeFitViewport(frames.map(getFrameRect));
+}
+
 export const useEditorStore = create<EditorState>((set, get) => ({
   frames: [initialFrame],
   selectedFrameId: initialFrame.id,
@@ -492,7 +505,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   timelineCollapsed: false,
 
   // World camera (1el Phase 2 foundation)
-  worldViewport: { x: -80, y: -80, w: 320, h: 320, scale: 1 },
+  worldViewport: computeFramesViewport([initialFrame]),
   toolMode: "select",
   cursorType: "default",
   hoveredItem: null,
@@ -700,21 +713,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   fitWorldToFrames: (frameIds) => {
     const { frames, setWorldViewport } = get();
-    const targetFrames = frameIds
-      ? frames.filter((f) => frameIds.includes(f.id))
-      : frames;
+    const targetFrames = frameIds ? frames.filter((f) => frameIds.includes(f.id)) : frames;
 
     if (targetFrames.length === 0) return;
 
-    const rects = targetFrames.map((f) => ({
-      x: f.x || 0,
-      y: f.y || 0,
-      w: f.vector?.width || 48,
-      h: f.vector?.height || 48,
-    }));
-
-    const fit = computeFitViewport(rects);
-    setWorldViewport(fit);
+    setWorldViewport(computeFramesViewport(targetFrames));
   },
 
   bringFrameIntoView: (frameId, options = {}) => {
@@ -722,12 +725,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const frame = frames.find((f) => f.id === frameId);
     if (!frame) return;
 
-    const b = {
-      x: frame.x || 0,
-      y: frame.y || 0,
-      w: frame.vector?.width || 48,
-      h: frame.vector?.height || 48,
-    };
+    const b = getFrameRect(frame);
 
     const pad = Math.max(b.w, b.h) * 0.6;
     const currentScale = worldViewport.scale;
@@ -742,10 +740,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     const vb = worldViewport;
     const isVisible =
-      b.x > vb.x &&
-      b.x + b.w < vb.x + vb.w &&
-      b.y > vb.y &&
-      b.y + b.h < vb.y + vb.h;
+      b.x > vb.x && b.x + b.w < vb.x + vb.w && b.y > vb.y && b.y + b.h < vb.y + vb.h;
 
     if (!isVisible) {
       if (options.animate === false) {
@@ -807,6 +802,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       frames: [frame],
       selectedFrameId: frame.id,
+      worldViewport: computeFramesViewport([frame]),
       layers: cloneLayers(normalized),
       vector: structuredClone(project.vector),
       animation: structuredClone(project.animation),
@@ -879,6 +875,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       frames: [frame],
       selectedFrameId: frame.id,
+      worldViewport: computeFramesViewport([frame]),
       layers: cloneLayers(normalized),
       vector: structuredClone(project.vector),
       animation: structuredClone(project.animation),
@@ -1783,6 +1780,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       frames: [cloneFrame(initialFrame)],
       selectedFrameId: initialFrame.id,
+      worldViewport: computeFramesViewport([initialFrame]),
       layers: cloneLayers(initialLayers),
       selectedLayerId: initialLayers[0]?.id ?? 0,
       selection: null,

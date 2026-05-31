@@ -550,13 +550,13 @@ describe("exportLottie", () => {
     expect(pathItem).toBeDefined();
   });
 
-  it("path has animated keyframes (a: 0 with t values)", () => {
+  it("path has animated keyframes (a: 1 with t values)", () => {
     const lottie = exportLottie(from, to, "test");
     const shapeGroup = lottie.layers[0].shapes[0];
     const pathItem = shapeGroup.it.find((item: { ty: string }) => item.ty === "sh")!;
     const ks = pathItem.ks!;
     expect(ks).toBeDefined();
-    expect(ks.a).toBe(0);
+    expect(ks.a).toBe(1);
     expect(ks.k).toHaveLength(2);
     expect(ks.k[0].t).toBe(0);
     expect(ks.k[1].t).toBe(lottie.op);
@@ -929,7 +929,7 @@ describe("kus 24t export fidelity", () => {
     const svg = exportStaticSVG([group, clip] as any);
     expect(svg).toContain('<g id="group1" transform="translate(3 0) rotate(45)"');
     expect(svg).toContain('<clipPath id="clip1"');
-    expect(svg).toContain("pathData" in child || true); // pref exercised internally
+    expect(svg).toContain(pathToString(child.from));
   });
 
   it("exportProjectJSON includes frames for freeform fidelity when passed", () => {

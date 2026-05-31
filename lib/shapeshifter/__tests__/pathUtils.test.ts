@@ -16,7 +16,7 @@ import {
   isPointInFillRegion,
   getCommandDescription,
 } from "../pathUtils";
-import { parserSpecs, autoFixTests, mutationTests } from "./testFixtures";
+import { parserSpecs } from "./testFixtures";
 
 function normalize(d: string): string {
   return pathToString(parsePath(d));

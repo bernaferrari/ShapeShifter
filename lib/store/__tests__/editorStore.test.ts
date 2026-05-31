@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useEditorStore } from "../editorStore";
 import { parsePath, pathToString } from "../../shapeshifter/pathUtils";
+import { DEMO_INFOS } from "../../shapeshifter/demoProjects";
 import type { Selection, Layer } from "../../shapeshifter/types";
 
 // Helper: get a fresh store state by resetting
@@ -38,9 +39,40 @@ function drawCommandCount(layer: Layer, side: "from" | "to" = "from"): number {
   return count;
 }
 
+function getLayerCommandIds(layers: Layer[]): string[] {
+  return layers.flatMap((layer) =>
+    [layer.from, layer.to, layer.pathData]
+      .filter(Boolean)
+      .flatMap((path) =>
+        path!.subPaths.flatMap((subPath) => subPath.commands.map((command) => command.id)),
+      ),
+  );
+}
+
 describe("editorStore", () => {
   beforeEach(() => {
     freshStore();
+  });
+
+  describe("world camera", () => {
+    it("starts fitted to the first frame instead of the old magic viewport", () => {
+      const viewport = getStore().worldViewport;
+
+      expect(viewport).not.toEqual({ x: -80, y: -80, w: 320, h: 320, scale: 1 });
+      expect(viewport.x).toBeLessThanOrEqual(0);
+      expect(viewport.y).toBeLessThanOrEqual(0);
+      expect(viewport.x + viewport.w).toBeGreaterThanOrEqual(getStore().vector.width);
+      expect(viewport.y + viewport.h).toBeGreaterThanOrEqual(getStore().vector.height);
+    });
+
+    it("does not reset the camera when artboards move", () => {
+      getStore().setWorldViewport({ x: 10, y: 20, w: 300, h: 240, scale: 1.5 });
+      const before = getStore().worldViewport;
+
+      getStore().moveFrames([getStore().selectedFrameId], 25, 10);
+
+      expect(getStore().worldViewport).toEqual(before);
+    });
   });
 
   // ─── Layer CRUD ──────────────────────────────────────────────────────
@@ -106,7 +138,7 @@ describe("editorStore", () => {
       });
 
       it("does NOT delete if only 1 layer remains", () => {
-      while (getStore().layers.length > 1) {
+        while (getStore().layers.length > 1) {
           getStore().deleteLayer(getStore().layers[getStore().layers.length - 1].id);
         }
         expect(getStore().layers.length).toBe(1);
@@ -1114,6 +1146,21 @@ describe("editorStore", () => {
       expect(getStore().progress).toBe(0);
       expect(getStore().isActionMode).toBe(false);
     });
+
+    it("normalizes fragile command IDs at store boundaries", () => {
+      const legacyLayer: Layer = {
+        ...getStore().layers[0],
+        id: 300,
+        from: parsePath("M 0 0 L 10 10"),
+        to: parsePath("M 0 0 L 20 20"),
+      };
+      legacyLayer.from.subPaths[0].commands[0].id = "cmd_1712345678901_0";
+      legacyLayer.to.subPaths[0].commands[0].id = "cmd_1712345678901_1";
+
+      getStore().setLayers([legacyLayer]);
+
+      expect(getLayerCommandIds(getStore().layers).every((id) => !/^cmd_\d+/.test(id))).toBe(true);
+    });
   });
 
   // ─── replaceSelectedLayerPaths / updateSelectedLayer ──────────────────
@@ -1189,7 +1236,9 @@ describe("editorStore", () => {
       expect(getStore().animation.duration).toBe(300);
       expect(getStore().animation.blocks).toHaveLength(2);
       expect(getStore().layers.some((layer) => layer.type === "group")).toBe(true);
-      expect(getStore().layers.find((layer) => layer.id === getStore().selectedLayerId)?.type).toBe("path");
+      expect(getStore().layers.find((layer) => layer.id === getStore().selectedLayerId)?.type).toBe(
+        "path",
+      );
       expect(getStore().progress).toBe(0);
       expect(getStore().isPlaying).toBe(false);
     });
@@ -1203,7 +1252,18 @@ describe("editorStore", () => {
       useEditorStore.setState({ selectedLayerId: 99999 });
       getStore().loadSample(0);
       expect(getStore().vector.name).toBe("playtopause");
-      expect(getStore().layers.find((layer) => layer.id === getStore().selectedLayerId)?.type).toBe("path");
+      expect(getStore().layers.find((layer) => layer.id === getStore().selectedLayerId)?.type).toBe(
+        "path",
+      );
+    });
+
+    it("loads every bundled demo without leaking fragile command IDs", () => {
+      for (let index = 0; index < DEMO_INFOS.length; index++) {
+        getStore().loadSample(index);
+        expect(getLayerCommandIds(getStore().layers).every((id) => !/^cmd_\d+/.test(id))).toBe(
+          true,
+        );
+      }
     });
   });
 

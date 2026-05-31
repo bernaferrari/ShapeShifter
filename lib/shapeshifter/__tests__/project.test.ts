@@ -8,7 +8,6 @@ import {
   isOriginalShapeShifterProject,
   flattenOriginalProject,
 } from "../project";
-import type { Layer } from "../types";
 
 // Minimal valid project fixture (based on existing test data patterns)
 const MINIMAL_PROJECT = {

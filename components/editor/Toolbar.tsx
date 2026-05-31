@@ -80,6 +80,7 @@ export function Toolbar({
     deleteSelectedPoint,
     deleteSelectedSubPath,
     booleanCombine,
+    resetProject,
   } = useEditorStore();
 
   const handleAutoFix = () => {
@@ -112,7 +113,7 @@ export function Toolbar({
               {isActionMode ? "Path morphing" : "Shape Shifter"}
             </div>
             <div className="text-[10px] text-white/70 dark:text-muted-foreground -mt-0.5 leading-none">
-              {isActionMode ? "Edit start and end path compatibility" : "React 2026"}
+              {isActionMode ? "Path compatibility" : "Vector motion studio"}
             </div>
           </div>
         </div>
@@ -184,7 +185,12 @@ export function Toolbar({
             <Upload className="w-3.5 h-3.5" /> File
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-52 text-xs">
-            <DropdownMenuItem onClick={() => toast.info("New project (demo)")}>
+            <DropdownMenuItem
+              onClick={() => {
+                resetProject();
+                toast.success("New project");
+              }}
+            >
               <Plus className="w-4 h-4 mr-2" /> New Project
             </DropdownMenuItem>
             <DropdownMenuItem onClick={onOpenSVGImport}>

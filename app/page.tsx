@@ -46,6 +46,7 @@ import { CanvasArea } from "@/components/editor/CanvasArea";
 import { Inspector } from "@/components/editor/Inspector";
 import { MaterialSymbol } from "@/components/editor/MaterialSymbol";
 import { LayerTimeline } from "@/components/editor/LayerTimeline";
+import { BottomToolPalette } from "@/components/editor/BottomToolPalette";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 
 function isEditableTarget(target: EventTarget | null) {
@@ -688,13 +689,18 @@ export default function ShapeShifter2026() {
         <div className="min-w-0 flex-1 overflow-hidden">
           <ResizablePanelGroup orientation="vertical" className="min-h-0">
             <ResizablePanel id="canvas" minSize={58} defaultSize={76}>
-              <main className="flex h-full min-h-0 overflow-hidden">
+              <main className="relative flex h-full min-h-0 overflow-hidden">
                 <CanvasArea
                   resetFrom={resetFrom}
                   resetPreview={resetPreview}
                   resetTo={resetTo}
                   resetAllViews={resetAllViews}
                 />
+                <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center">
+                  <div className="pointer-events-auto">
+                    <BottomToolPalette />
+                  </div>
+                </div>
               </main>
             </ResizablePanel>
             <ResizableHandle className="bg-border/80" />

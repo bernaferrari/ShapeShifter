@@ -2,23 +2,23 @@
 
 import React from "react";
 import type { CommandType, PathData, Selection } from "@/lib/shapeshifter/types";
-import { changeCommandType, getCommandDescription, updateCommandPoint } from "@/lib/shapeshifter/pathUtils";
+import { getCommandDescription } from "@/lib/shapeshifter/pathUtils";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 /**
  * Beautiful, calm, human-readable path command list.
- * 
+ *
  * Directly addresses the user's reference image vision (wys / 3o7):
  * - Scannable rows with type badge, short coords (mono), and friendly verb label.
  * - Live selection sync (highlights commands containing selected points).
  * - Click a row to select its anchor point on the canvas.
- * 
+ *
  * Uses only existing pro patterns:
  * - InspectorSection typography scale + muted headers
  * - LayerTimeline selectable row language (primary/10 bg, hover-muted, rounded-sm, mono data)
  * - Compact Badge for command type (like "anim" badges in Inspector)
- * 
+ *
  * Designed to live inside the existing Inspector "Path" section.
  * Zero new dependencies, tiny DOM, re-renders with the rest of the inspector.
  */
@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils";
 interface PathCommandsListProps {
   pathData?: PathData;
   selectedPoints?: Selection[];
-  onSelectCommand?: (subPathIndex: number, commandIndex: number) => void;
+  onSelectCommand?: (subPathIndex: number, commandIndex: number, pointIndex: number) => void;
   /** Called when a point inside a command should be mutated (for live two-way editing) */
   onUpdateCommandPoint?: (
     subPathIndex: number,
@@ -64,9 +64,7 @@ export function PathCommandsList({
   }
 
   const isCommandSelected = (subPathIndex: number, commandIndex: number) =>
-    selectedPoints.some(
-      (s) => s.subPathIndex === subPathIndex && s.commandIndex === commandIndex
-    );
+    selectedPoints.some((s) => s.subPathIndex === subPathIndex && s.commandIndex === commandIndex);
 
   const commitEdit = () => {
     if (!editing || !onUpdateCommandPoint) {
@@ -80,10 +78,7 @@ export function PathCommandsList({
       return;
     }
     const currentPt = cmd.points[pointIndex] || { x: 0, y: 0 };
-    const nextPt =
-      coord === "x"
-        ? { x: value, y: currentPt.y }
-        : { x: currentPt.x, y: value };
+    const nextPt = coord === "x" ? { x: value, y: currentPt.y } : { x: currentPt.x, y: value };
 
     onUpdateCommandPoint(subPathIndex, commandIndex, pointIndex, nextPt);
     setEditing(null);
@@ -116,18 +111,19 @@ export function PathCommandsList({
               const { label, shortCoords } = getCommandDescription(cmd);
               const selected = isCommandSelected(subPathIndex, commandIndex);
               const isClose = cmd.type === "Z";
+              const anchorPointIndex = Math.max(0, cmd.points.length - 1);
 
               return (
                 <button
                   key={cmd.id || `${subPathIndex}-${commandIndex}`}
                   type="button"
-                  onClick={() => onSelectCommand?.(subPathIndex, commandIndex)}
+                  onClick={() => onSelectCommand?.(subPathIndex, commandIndex, anchorPointIndex)}
                   className={cn(
                     "group flex w-full items-center gap-2 rounded-sm px-2.5 py-1 text-left transition-all",
                     "hover:bg-muted/70 active:bg-muted/50",
                     selected
                       ? "bg-primary/10 text-primary ring-1 ring-inset ring-primary/30"
-                      : "text-foreground hover:text-foreground"
+                      : "text-foreground hover:text-foreground",
                   )}
                   aria-pressed={selected}
                 >
@@ -138,7 +134,7 @@ export function PathCommandsList({
                       "h-4 shrink-0 rounded-sm border-0 px-1 font-mono text-[9px] tracking-[0.5px] cursor-pointer active:scale-95 transition-transform",
                       selected
                         ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground group-hover:bg-muted/80"
+                        : "bg-muted text-muted-foreground group-hover:bg-muted/80",
                     )}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -155,7 +151,7 @@ export function PathCommandsList({
                       <span
                         className={cn(
                           "shrink-0 font-mono text-[10px] tabular-nums tracking-tight cursor-text hover:underline decoration-dotted",
-                          selected ? "text-primary" : "text-foreground/90"
+                          selected ? "text-primary" : "text-foreground/90",
                         )}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -198,11 +194,17 @@ export function PathCommandsList({
                             if (e.key === "Escape") setEditing(null);
                             if (e.key === "ArrowUp") {
                               e.preventDefault();
-                              setEditing({ ...editing, value: editing.value + (e.shiftKey ? 5 : 0.5) });
+                              setEditing({
+                                ...editing,
+                                value: editing.value + (e.shiftKey ? 5 : 0.5),
+                              });
                             }
                             if (e.key === "ArrowDown") {
                               e.preventDefault();
-                              setEditing({ ...editing, value: editing.value - (e.shiftKey ? 5 : 0.5) });
+                              setEditing({
+                                ...editing,
+                                value: editing.value - (e.shiftKey ? 5 : 0.5),
+                              });
                             }
                           }}
                           className="w-20 rounded-sm bg-background px-1 py-0.5 font-mono text-[10px] ring-1 ring-primary"
@@ -212,7 +214,7 @@ export function PathCommandsList({
                     <span
                       className={cn(
                         "truncate text-[10px]",
-                        selected ? "font-medium text-primary" : "text-muted-foreground"
+                        selected ? "font-medium text-primary" : "text-muted-foreground",
                       )}
                     >
                       {label}
