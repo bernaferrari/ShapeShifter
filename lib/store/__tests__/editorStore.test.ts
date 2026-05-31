@@ -73,6 +73,26 @@ describe("editorStore", () => {
 
       expect(getStore().worldViewport).toEqual(before);
     });
+
+    it("keeps detail canvas zoom and viewport in one shared store camera", () => {
+      const before = getStore().detailViewport;
+
+      getStore().setZoom(2);
+
+      expect(getStore().zoom).toBe(2);
+      expect(getStore().detailViewport.scale).toBe(2);
+      expect(getStore().detailViewport.w).toBeCloseTo(before.w / 2);
+
+      const zoomed = getStore().detailViewport;
+      getStore().setDetailViewport((current) => ({
+        ...current,
+        x: current.x + 5,
+        y: current.y + 7,
+      }));
+
+      expect(getStore().detailViewport.x).toBeCloseTo(zoomed.x + 5);
+      expect(getStore().detailViewport.y).toBeCloseTo(zoomed.y + 7);
+    });
   });
 
   // ─── Layer CRUD ──────────────────────────────────────────────────────
@@ -942,6 +962,7 @@ describe("editorStore", () => {
     it("setZoom updates zoom", () => {
       getStore().setZoom(2.5);
       expect(getStore().zoom).toBe(2.5);
+      expect(getStore().detailViewport.scale).toBe(2.5);
     });
 
     it("toggleSnap toggles snapToGrid", () => {

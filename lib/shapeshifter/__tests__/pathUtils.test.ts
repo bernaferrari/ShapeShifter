@@ -179,6 +179,16 @@ describe("pathUtils", () => {
       expect(fixedFrom.subPaths.length).toEqual(fixedTo.subPaths.length);
     });
 
+    it("harmonizes open and closed paths before structural matching", () => {
+      const from = parsePath("M 0 0 L 12 0 L 12 12 L 0 12 Z");
+      const to = parsePath("M 2 2 L 10 10 Q 14 8 18 2");
+      const [fixedFrom, fixedTo] = autoFixPathPair(from, to);
+
+      expect(arePathsStructurallyCompatible(fixedFrom, fixedTo)).toBe(true);
+      expect(fixedFrom.subPaths[0].commands.at(-1)?.type).toBe("Z");
+      expect(fixedTo.subPaths[0].commands.at(-1)?.type).toBe("Z");
+    });
+
     it("autoFix from original AutoAwesome.spec.ts: simple square - makes compatible", () => {
       const from = parsePath("M 2 2 L 12 2 L 12 12 L 2 12 L 2 2");
       const to = parsePath("M 12 12 L 2 12 L 2 2 L 12 2 L 12 12");

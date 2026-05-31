@@ -20,7 +20,7 @@ import {
   exportAnimatedSVG,
   exportAnimatedVectorDrawable,
   exportCSSKeyframes,
-  exportLottie,
+  exportLottieDocument,
   exportPDF,
   exportProjectJSON,
   exportStaticSVG,
@@ -127,7 +127,9 @@ export function ExportDialog({ children }: ExportDialogProps) {
       const baseName = (currentLayer?.name || vector.name || "export")
         .replace(/\s+/g, "-")
         .toLowerCase();
-      const allVisibleLayers = layers.filter((l) => l.visible !== false);
+      const allVisibleLayers = layers.filter(
+        (layer) => layer.visible !== false && !hiddenLayerIds.includes(String(layer.id)),
+      );
 
       switch (format) {
         case "svg":
@@ -153,12 +155,10 @@ export function ExportDialog({ children }: ExportDialogProps) {
           break;
 
         case "lottie":
-          const lottieContent = exportLottie(
-            currentLayer!.from,
-            currentLayer!.to,
-            currentLayer!.name,
+          const lottieContent = exportLottieDocument(
+            allVisibleLayers,
+            vector.name || currentLayer!.name,
             options.duration,
-            currentLayer!,
           );
           blob = new Blob([JSON.stringify(lottieContent, null, 2)], { type: "application/json" });
           filename = `${baseName}.json`;

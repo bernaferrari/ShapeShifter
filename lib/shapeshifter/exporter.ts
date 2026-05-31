@@ -611,6 +611,72 @@ export function exportLottie(
   };
 }
 
+function flattenLottieLayers(layers: Layer[]): Layer[] {
+  const result: Layer[] = [];
+  const seen = new Set<string | number>();
+
+  const visit = (layer: Layer) => {
+    if (layer.visible === false) return;
+    if (layer.type === "group") {
+      layer.children?.forEach(visit);
+      return;
+    }
+    if (layer.from && layer.to && !seen.has(layer.id)) {
+      seen.add(layer.id);
+      result.push(layer);
+    }
+    layer.children?.forEach(visit);
+  };
+
+  layers.forEach(visit);
+  return result;
+}
+
+export function exportLottieDocument(layers: Layer[], name: string, duration = 1.2) {
+  const exportableLayers = flattenLottieLayers(layers);
+  const emptyPath: PathData = { subPaths: [{ commands: [] }] };
+
+  if (exportableLayers.length === 0) {
+    return exportLottie(emptyPath, emptyPath, name, duration);
+  }
+
+  const base = exportLottie(
+    exportableLayers[0].from,
+    exportableLayers[0].to,
+    name,
+    duration,
+    exportableLayers[0],
+  );
+  const sx = base.w / 24;
+  const sy = base.h / 24;
+
+  return {
+    ...base,
+    nm: name,
+    layers: exportableLayers.map((layer, index) => {
+      const single = exportLottie(layer.from, layer.to, layer.name, duration, layer).layers[0];
+      return {
+        ...single,
+        ind: index + 1,
+        nm: layer.name,
+        ks: {
+          ...single.ks,
+          p: {
+            a: 0,
+            k: [
+              base.w / 2 + (layer.translateX ?? 0) * sx,
+              base.h / 2 + (layer.translateY ?? 0) * sy,
+            ],
+          },
+          r: { a: 0, k: layer.rotation ?? 0 },
+          s: { a: 0, k: [(layer.scaleX ?? 1) * 100, (layer.scaleY ?? 1) * 100] },
+          o: { a: 0, k: (layer.alpha ?? 1) * 100 },
+        },
+      };
+    }),
+  };
+}
+
 export function downloadLottie(from: PathData, to: PathData, layerName: string, layer?: Layer) {
   const lottieObj = exportLottie(from, to, layerName, 1.2, layer);
   const json = JSON.stringify(lottieObj, null, 2);

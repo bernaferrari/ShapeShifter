@@ -285,7 +285,7 @@ export function Inspector() {
               <Badge
                 variant="secondary"
                 className="h-4 rounded-sm px-1 text-[9px] bg-primary/10 text-primary border-0"
-                title="This layer has animation blocks (optional power feature)"
+                title="This layer has animation blocks"
               >
                 anim
               </Badge>
@@ -298,7 +298,7 @@ export function Inspector() {
               <Button
                 size="icon-sm"
                 variant="ghost"
-                aria-label="Optional animation power feature: add or edit timeline blocks for this layer (see LayerTimeline)"
+                aria-label="Add or edit timeline blocks for this layer"
               />
             }
           >
@@ -386,7 +386,7 @@ export function Inspector() {
                   <span className="rounded bg-muted px-1 py-px font-mono text-[8px] text-muted-foreground/70">
                     d
                   </span>
-                  {/* bql — the final piece: optional dedicated full-height mode for the beautiful list */}
+                  {/* Path commands use the available inspector height when expanded. */}
                   <Button
                     size="icon"
                     variant="ghost"

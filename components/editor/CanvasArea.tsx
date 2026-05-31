@@ -99,11 +99,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const [, setWorldLassoFrame] = useState(0);
   const [worldSelectedIds, setWorldSelectedIds] = useState<string[]>([]);
 
-  // Real artboard dragging state (replaces the previous no-op stub)
+  // Artboard dragging state.
   const [isDraggingArtboards, setIsDraggingArtboards] = useState(false);
   const [draggingArtboardIds, setDraggingArtboardIds] = useState<string[]>([]);
   const [artboardDragStart, setArtboardDragStart] = useState<{ x: number; y: number } | null>(null);
-  // Real implementation for world artboard dragging (fixes the previous no-op stub).
+  // World artboard dragging.
   // Called from pointer down when artboards are hit in select mode.
   const startWorldArtboardDrag = (clientX: number, clientY: number, ids: string[]) => {
     if (!ids.length) return;
@@ -507,13 +507,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                   }`}
                   onClick={() => setEditingSide("from")}
                 >
-                  <PathCanvas
-                    side="from"
-                    resetKey={resetFrom}
-                    zoom={zoom}
-                    width={420}
-                    height={420}
-                  />
+                  <PathCanvas side="from" resetKey={resetFrom} width={420} height={420} />
                 </button>
               </div>
             )}
@@ -545,11 +539,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                             variant={frame.id === selectedFrameId ? "secondary" : "ghost"}
                             className="h-7 shrink-0 px-2 text-xs"
                             onClick={() => selectFrame(frame.id)}
-                            title={
-                              frameHasAnim
-                                ? `${frame.name} (has optional animation blocks)`
-                                : frame.name
-                            }
+                            title={frameHasAnim ? `${frame.name} (animation blocks)` : frame.name}
                           >
                             {frame.name}
                             {frameHasAnim && (
@@ -778,13 +768,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                     )}
                   </svg>
                 ) : (
-                  <PathCanvas
-                    side="preview"
-                    resetKey={resetPreview}
-                    zoom={zoom}
-                    width={456}
-                    height={456}
-                  />
+                  <PathCanvas side="preview" resetKey={resetPreview} width={456} height={456} />
                 )}
               </div>
               {compatibility.warning && (
@@ -817,14 +801,14 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                   }`}
                   onClick={() => setEditingSide("to")}
                 >
-                  <PathCanvas side="to" resetKey={resetTo} zoom={zoom} width={420} height={420} />
+                  <PathCanvas side="to" resetKey={resetTo} width={420} height={420} />
                 </button>
               </div>
             )}
           </motion.div>
         </div>
 
-        {/* Compact centered playback controls — power feature only. Rendered solely when animation opted-in (blocks present) for zero forced mental model + non-intrusive freeform canvas. Discovery + control remain excellent via toolbar, Space, LayerTimeline, Inspector. */}
+        {/* Compact centered playback controls render only when timeline blocks exist. */}
         {animation.blocks.length > 0 && (
           <div className="flex h-14 shrink-0 items-center justify-center gap-2 border-t bg-card">
             <Tooltip>

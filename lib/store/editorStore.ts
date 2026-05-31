@@ -28,7 +28,7 @@ import {
   ensureStableCommandIds,
 } from "../shapeshifter/pathUtils";
 import type { Viewport } from "../shapeshifter/camera";
-import { computeFitViewport } from "../shapeshifter/camera";
+import { computeDetailViewport, computeFitViewport, zoomAtWorldPoint } from "../shapeshifter/camera";
 import type {
   AnimationState,
   Layer,
@@ -195,6 +195,11 @@ interface EditorState {
   setWorldViewport: (v: Partial<Viewport>) => void;
   fitWorldToFrames: (frameIds?: string[]) => void;
   bringFrameIntoView: (frameId: string, options?: { animate?: boolean }) => void;
+
+  // Detail/path camera shared by all action-mode canvases.
+  detailViewport: Viewport;
+  setDetailViewport: (v: Viewport | ((current: Viewport) => Viewport)) => void;
+  fitDetailToVector: (scale?: number) => void;
 
   // Actions
   setLayers: (layers: Layer[]) => void;
@@ -473,6 +478,23 @@ function computeFramesViewport(frames: CanvasFrame[]): Viewport {
   return computeFitViewport(frames.map(getFrameRect));
 }
 
+function computeVectorViewport(vector: VectorMetadata, scale = 1): Viewport {
+  return computeDetailViewport({ width: vector.width, height: vector.height }, scale);
+}
+
+function zoomViewportAtCenter(viewport: Viewport, scale: number): Viewport {
+  return zoomAtWorldPoint(
+    viewport,
+    {
+      x: viewport.x + viewport.w / 2,
+      y: viewport.y + viewport.h / 2,
+    },
+    scale,
+    0.25,
+    8,
+  );
+}
+
 export const useEditorStore = create<EditorState>((set, get) => ({
   frames: [initialFrame],
   selectedFrameId: initialFrame.id,
@@ -506,6 +528,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   // World camera (1el Phase 2 foundation)
   worldViewport: computeFramesViewport([initialFrame]),
+  detailViewport: computeVectorViewport(initialVector),
   toolMode: "select",
   cursorType: "default",
   hoveredItem: null,
@@ -567,6 +590,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       frames: [...savedFrames, frame],
       selectedFrameId: frame.id,
+      detailViewport: computeVectorViewport(frame.vector),
+      zoom: 1,
       layers: cloneLayers(frame.layers),
       vector: structuredClone(frame.vector),
       animation: structuredClone(frame.animation),
@@ -603,6 +628,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       frames: [...savedFrames, frame],
       selectedFrameId: frame.id,
+      detailViewport: computeVectorViewport(frame.vector),
+      zoom: 1,
       layers: cloneLayers(frame.layers),
       vector: structuredClone(frame.vector),
       animation: structuredClone(frame.animation),
@@ -653,6 +680,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       frames: nextFrames,
       selectedFrameId: fallbackFrame.id,
+      detailViewport: computeVectorViewport(fallbackFrame.vector),
+      zoom: 1,
       layers: cloneLayers(fallbackFrame.layers),
       vector: structuredClone(fallbackFrame.vector),
       animation: structuredClone(fallbackFrame.animation),
@@ -676,6 +705,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       frames: savedFrames,
       selectedFrameId: frame.id,
+      detailViewport: computeVectorViewport(frame.vector),
+      zoom: 1,
       layers: cloneLayers(frame.layers),
       vector: structuredClone(frame.vector),
       animation: structuredClone(frame.animation),
@@ -709,6 +740,22 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => ({
       worldViewport: { ...state.worldViewport, ...v },
     }));
+  },
+
+  setDetailViewport: (v) => {
+    set((state) => {
+      const next = typeof v === "function" ? v(state.detailViewport) : v;
+      return {
+        detailViewport: next,
+        zoom: next.scale,
+      };
+    });
+  },
+
+  fitDetailToVector: (scale) => {
+    const { vector, detailViewport } = get();
+    const next = computeVectorViewport(vector, scale ?? detailViewport.scale);
+    set({ detailViewport: next, zoom: next.scale });
   },
 
   fitWorldToFrames: (frameIds) => {
@@ -803,6 +850,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       frames: [frame],
       selectedFrameId: frame.id,
       worldViewport: computeFramesViewport([frame]),
+      detailViewport: computeVectorViewport(frame.vector),
       layers: cloneLayers(normalized),
       vector: structuredClone(project.vector),
       animation: structuredClone(project.animation),
@@ -876,6 +924,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       frames: [frame],
       selectedFrameId: frame.id,
       worldViewport: computeFramesViewport([frame]),
+      detailViewport: computeVectorViewport(frame.vector),
       layers: cloneLayers(normalized),
       vector: structuredClone(project.vector),
       animation: structuredClone(project.animation),
@@ -1388,7 +1437,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   toggleSlowMotion: () => set((state) => ({ isSlowMotion: !state.isSlowMotion })),
   toggleRepeating: () => set((state) => ({ isRepeating: !state.isRepeating })),
 
-  setZoom: (zoom) => set({ zoom: Math.max(0.25, Math.min(8, zoom)) }),
+  setZoom: (zoom) =>
+    set((state) => {
+      const detailViewport = zoomViewportAtCenter(state.detailViewport, zoom);
+      return {
+        zoom: detailViewport.scale,
+        detailViewport,
+      };
+    }),
   toggleSnap: () => set((state) => ({ snapToGrid: !state.snapToGrid })),
 
   selectBlocks: (blockIds) => set({ selectedBlockIds: blockIds }),
@@ -1758,7 +1814,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const frames = saveActiveFrame({ ...state, vector }).map((frame) =>
         frame.id === state.selectedFrameId ? { ...frame, name: vector.name, vector } : frame,
       );
-      return { vector, frames };
+      return {
+        vector,
+        frames,
+        detailViewport: computeVectorViewport(vector, state.detailViewport.scale),
+      };
     });
   },
 
@@ -1781,6 +1841,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       frames: [cloneFrame(initialFrame)],
       selectedFrameId: initialFrame.id,
       worldViewport: computeFramesViewport([initialFrame]),
+      detailViewport: computeVectorViewport(initialVector),
       layers: cloneLayers(initialLayers),
       selectedLayerId: initialLayers[0]?.id ?? 0,
       selection: null,
@@ -1788,6 +1849,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedSubPaths: [],
       progress: 0,
       speed: 1,
+      zoom: 1,
       isSlowMotion: false,
       isRepeating: true,
       isPlaying: false,

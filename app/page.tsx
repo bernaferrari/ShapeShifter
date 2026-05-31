@@ -848,10 +848,6 @@ export default function ShapeShifter2026() {
               </div>
             </div>
           </div>
-          <div className="text-[10px] text-muted-foreground border-t pt-3">
-            Pro: Inspector number drag-scrub • Timeline block edge-resize • All power in ⌘K •
-            Animation is optional
-          </div>
         </DialogContent>
       </Dialog>
 

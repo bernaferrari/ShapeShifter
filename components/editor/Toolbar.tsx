@@ -15,7 +15,6 @@ import {
   HelpCircle,
   Trash2,
   X,
-  GitBranch,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -408,24 +407,6 @@ export function Toolbar({
               <TooltipContent>Delete SubPath</TooltipContent>
             </Tooltip>
 
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8 border-white/20 bg-white/5 hover:bg-white/10 text-white dark:border-border dark:bg-background dark:hover:bg-muted dark:text-foreground"
-                    onClick={() => {
-                      // Full PairSubPaths port pending (historical; future v6j parity)
-                    }}
-                    aria-label="Pair subpaths"
-                  />
-                }
-              >
-                <GitBranch className="h-4 w-4" />
-              </TooltipTrigger>
-              <TooltipContent>Pair SubPaths (future)</TooltipContent>
-            </Tooltip>
           </>
         )}
 
@@ -466,7 +447,7 @@ export function Toolbar({
           <TooltipContent>Shift points (S)</TooltipContent>
         </Tooltip>
 
-        {/* Boolean ops (kbv real clipper post-21g stub; !isActionMode layer select parity with Reverse/Shift) */}
+        {/* Boolean ops stay available outside the focused path canvas. */}
         <Tooltip>
           <TooltipTrigger
             render={

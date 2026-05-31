@@ -14,6 +14,7 @@ import {
   exportVectorDrawable,
   exportAnimatedVectorDrawable,
   exportLottie,
+  exportLottieDocument,
   exportPDF,
   exportProjectJSON,
 } from "../exporter";
@@ -604,6 +605,26 @@ describe("exportLottie", () => {
   it("uses custom duration correctly", () => {
     const lottie = exportLottie(from, to, "test", 3.0);
     expect(lottie.op).toBe(90); // 3.0 * 30 = 90
+  });
+
+  it("exports a multi-layer Lottie document instead of only the selected layer", () => {
+    const lottie = exportLottieDocument(
+      [
+        makeLayer({ id: "one", name: "One", translateX: 2 }),
+        makeLayer({ id: "hidden", name: "Hidden", visible: false }),
+        makeLayer({ id: "two", name: "Two", rotation: 15, alpha: 0.5 }),
+      ],
+      "document",
+      2,
+    );
+
+    expect(lottie.nm).toBe("document");
+    expect(lottie.op).toBe(60);
+    expect(lottie.layers).toHaveLength(2);
+    expect(lottie.layers.map((layer) => layer.nm)).toEqual(["One", "Two"]);
+    expect(lottie.layers[0].ks.p.k[0]).toBeGreaterThan(256);
+    expect(lottie.layers[1].ks.r.k).toBe(15);
+    expect(lottie.layers[1].ks.o.k).toBe(50);
   });
 });
 

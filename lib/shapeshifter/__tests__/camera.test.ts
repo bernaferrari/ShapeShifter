@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeFitViewport, zoomAtWorldPoint } from "../camera";
+import { computeDetailViewport, computeFitViewport, zoomAtWorldPoint } from "../camera";
 
 describe("world camera utilities", () => {
   it("fits real content without falling back to legacy magic coordinates", () => {
@@ -28,5 +28,19 @@ describe("world camera utilities", () => {
     expect(zoomed.h).toBe(50);
     expect(focalRatioXAfter).toBeCloseTo(focalRatioXBefore, 6);
     expect(focalRatioYAfter).toBeCloseTo(focalRatioYBefore, 6);
+  });
+
+  it("computes the shared detail canvas fit from vector dimensions", () => {
+    const viewport = computeDetailViewport({ width: 48, height: 24 });
+    const zoomed = computeDetailViewport({ width: 48, height: 24 }, 2);
+
+    expect(viewport.scale).toBe(1);
+    expect(viewport.w).toBe(viewport.h);
+    expect(viewport.x).toBeLessThanOrEqual(0);
+    expect(viewport.y).toBeLessThanOrEqual(0);
+    expect(viewport.x + viewport.w).toBeGreaterThanOrEqual(48);
+    expect(viewport.y + viewport.h).toBeGreaterThanOrEqual(24);
+    expect(zoomed.scale).toBe(2);
+    expect(zoomed.w).toBeCloseTo(viewport.w / 2);
   });
 });

@@ -3,25 +3,7 @@
 import React from "react";
 import type { CommandType, PathData, Selection } from "@/lib/shapeshifter/types";
 import { getCommandDescription } from "@/lib/shapeshifter/pathUtils";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-
-/**
- * Beautiful, calm, human-readable path command list.
- *
- * Directly addresses the user's reference image vision (wys / 3o7):
- * - Scannable rows with type badge, short coords (mono), and friendly verb label.
- * - Live selection sync (highlights commands containing selected points).
- * - Click a row to select its anchor point on the canvas.
- *
- * Uses only existing pro patterns:
- * - InspectorSection typography scale + muted headers
- * - LayerTimeline selectable row language (primary/10 bg, hover-muted, rounded-sm, mono data)
- * - Compact Badge for command type (like "anim" badges in Inspector)
- *
- * Designed to live inside the existing Inspector "Path" section.
- * Zero new dependencies, tiny DOM, re-renders with the rest of the inspector.
- */
 
 interface PathCommandsListProps {
   pathData?: PathData;
@@ -37,6 +19,18 @@ interface PathCommandsListProps {
   /** Called when the user wants to change the type of a command */
   onChangeCommandType?: (subPathIndex: number, commandIndex: number, newType: CommandType) => void;
   className?: string;
+}
+
+function pointRole(cmdType: CommandType, pointIndex: number, pointCount: number) {
+  if (pointCount <= 1) return cmdType === "M" ? "start" : "end";
+  if (pointIndex === pointCount - 1) return "end";
+  if (cmdType === "C") return pointIndex === 0 ? "ctrl 1" : "ctrl 2";
+  if (cmdType === "Q" || cmdType === "S") return "ctrl";
+  return "pt";
+}
+
+function formatNumber(value: number) {
+  return Number.isFinite(value) ? Number(value.toFixed(2)).toString() : "0";
 }
 
 export function PathCommandsList({
@@ -98,6 +92,13 @@ export function PathCommandsList({
 
   return (
     <div className={cn("min-h-0 flex-1 overflow-y-auto text-[10px]", className)}>
+      <div className="sticky top-0 z-10 grid grid-cols-[2rem_minmax(4rem,1fr)_3.25rem_3.25rem_1.5rem] gap-1 border-b bg-card/95 px-2.5 py-1 font-mono text-[8px] uppercase tracking-wider text-muted-foreground/70 backdrop-blur">
+        <span>Cmd</span>
+        <span>Point</span>
+        <span className="text-right">X</span>
+        <span className="text-right">Y</span>
+        <span className="text-right">#</span>
+      </div>
       {pathData.subPaths.map((subPath, subPathIndex) => (
         <div key={`sp-${subPathIndex}`} className="mb-1 last:mb-0">
           {pathData.subPaths.length > 1 && (
@@ -112,120 +113,169 @@ export function PathCommandsList({
               const selected = isCommandSelected(subPathIndex, commandIndex);
               const isClose = cmd.type === "Z";
               const anchorPointIndex = Math.max(0, cmd.points.length - 1);
+              const points = isClose ? [{ x: 0, y: 0 }] : cmd.points;
 
               return (
-                <button
+                <div
                   key={cmd.id || `${subPathIndex}-${commandIndex}`}
-                  type="button"
-                  onClick={() => onSelectCommand?.(subPathIndex, commandIndex, anchorPointIndex)}
                   className={cn(
-                    "group flex w-full items-center gap-2 rounded-sm px-2.5 py-1 text-left transition-all",
-                    "hover:bg-muted/70 active:bg-muted/50",
+                    "group rounded-sm px-2.5 py-1 text-left transition-[background-color,color,box-shadow]",
+                    "hover:bg-muted/70",
                     selected
                       ? "bg-primary/10 text-primary ring-1 ring-inset ring-primary/30"
                       : "text-foreground hover:text-foreground",
                   )}
-                  aria-pressed={selected}
                 >
-                  {/* Command type badge — now clickable to cycle type (editable surface) */}
-                  <Badge
-                    variant="outline"
-                    className={cn(
-                      "h-4 shrink-0 rounded-sm border-0 px-1 font-mono text-[9px] tracking-[0.5px] cursor-pointer active:scale-95 transition-transform",
-                      selected
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-muted-foreground group-hover:bg-muted/80",
-                    )}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      cycleType(subPathIndex, commandIndex);
-                    }}
-                    title="Click to cycle command type"
-                  >
-                    {cmd.type}
-                  </Badge>
+                  {points.map((point, pointIndex) => {
+                    const editable = !isClose && cmd.points.length > 0;
+                    const logicalPointIndex = editable ? pointIndex : anchorPointIndex;
+                    const pointSelected = selectedPoints.some(
+                      (selection) =>
+                        selection.subPathIndex === subPathIndex &&
+                        selection.commandIndex === commandIndex &&
+                        selection.pointIndex === logicalPointIndex,
+                    );
+                    const role = isClose
+                      ? "close"
+                      : pointRole(cmd.type as CommandType, pointIndex, points.length);
 
-                  {/* Coords + human label — heart of the beautiful surface. Now editable. */}
-                  <div className="flex min-w-0 flex-1 items-baseline gap-2 overflow-hidden">
-                    {!isClose && cmd.points.length > 0 && (
-                      <span
+                    return (
+                      <div
+                        key={`${cmd.id || commandIndex}-${pointIndex}`}
                         className={cn(
-                          "shrink-0 font-mono text-[10px] tabular-nums tracking-tight cursor-text hover:underline decoration-dotted",
-                          selected ? "text-primary" : "text-foreground/90",
+                          "grid grid-cols-[2rem_minmax(4rem,1fr)_3.25rem_3.25rem_1.5rem] items-center gap-1",
+                          pointIndex > 0 && "mt-1 border-t border-border/40 pt-1",
                         )}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          // Edit the last (endpoint) point — most common and useful action
-                          const ptIdx = cmd.points.length - 1;
-                          const pt = cmd.points[ptIdx];
-                          // Start editing X by default
-                          setEditing({
-                            subPathIndex,
-                            commandIndex,
-                            pointIndex: ptIdx,
-                            coord: "x",
-                            value: pt.x,
-                          });
-                        }}
-                        title="Click to edit endpoint X/Y"
                       >
-                        {shortCoords || "—"}
-                      </span>
-                    )}
+                        {pointIndex === 0 ? (
+                          <button
+                            type="button"
+                            className={cn(
+                              "inline-flex h-5 w-fit items-center justify-center rounded-sm border-0 px-1 font-mono text-[9px] tracking-[0.5px] transition-transform active:scale-95",
+                              selected
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-muted text-muted-foreground group-hover:bg-muted/80",
+                            )}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              cycleType(subPathIndex, commandIndex);
+                            }}
+                            title="Click to cycle command type"
+                          >
+                            {cmd.type}
+                          </button>
+                        ) : (
+                          <span />
+                        )}
 
-                    {/* Inline editor when this specific value is being edited */}
-                    {editing &&
-                      editing.subPathIndex === subPathIndex &&
-                      editing.commandIndex === commandIndex && (
-                        <input
-                          autoFocus
-                          type="number"
-                          step="0.5"
-                          value={editing.value}
-                          onChange={(e) => {
-                            const v = parseFloat(e.target.value);
-                            if (!Number.isNaN(v)) {
-                              setEditing({ ...editing, value: v });
+                        <button
+                          type="button"
+                          className={cn(
+                            "min-w-0 truncate rounded-sm px-1 py-0.5 text-left text-[10px]",
+                            pointSelected
+                              ? "bg-primary/15 font-medium text-primary"
+                              : "text-muted-foreground hover:bg-muted",
+                          )}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (editable) {
+                              onSelectCommand?.(subPathIndex, commandIndex, logicalPointIndex);
                             }
                           }}
-                          onBlur={commitEdit}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") commitEdit();
-                            if (e.key === "Escape") setEditing(null);
-                            if (e.key === "ArrowUp") {
-                              e.preventDefault();
-                              setEditing({
-                                ...editing,
-                                value: editing.value + (e.shiftKey ? 5 : 0.5),
-                              });
-                            }
-                            if (e.key === "ArrowDown") {
-                              e.preventDefault();
-                              setEditing({
-                                ...editing,
-                                value: editing.value - (e.shiftKey ? 5 : 0.5),
-                              });
-                            }
-                          }}
-                          className="w-20 rounded-sm bg-background px-1 py-0.5 font-mono text-[10px] ring-1 ring-primary"
-                        />
-                      )}
+                        >
+                          <span className="mr-1 font-mono uppercase tracking-wide">{role}</span>
+                          {pointIndex === 0 && (
+                            <span className="text-muted-foreground/70">{label}</span>
+                          )}
+                        </button>
 
-                    <span
-                      className={cn(
-                        "truncate text-[10px]",
-                        selected ? "font-medium text-primary" : "text-muted-foreground",
-                      )}
-                    >
-                      {label}
+                        {(["x", "y"] as const).map((coord) => {
+                          const isEditing =
+                            editing?.subPathIndex === subPathIndex &&
+                            editing.commandIndex === commandIndex &&
+                            editing.pointIndex === logicalPointIndex &&
+                            editing.coord === coord;
+
+                          if (!editable) {
+                            return (
+                              <span
+                                key={coord}
+                                className="font-mono text-[10px] text-right text-muted-foreground/50"
+                              >
+                                -
+                              </span>
+                            );
+                          }
+
+                          return isEditing ? (
+                            <input
+                              key={coord}
+                              autoFocus
+                              type="number"
+                              step="0.5"
+                              value={editing.value}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={(e) => {
+                                const v = parseFloat(e.target.value);
+                                if (!Number.isNaN(v)) {
+                                  setEditing({ ...editing, value: v });
+                                }
+                              }}
+                              onBlur={commitEdit}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") commitEdit();
+                                if (e.key === "Escape") setEditing(null);
+                                if (e.key === "ArrowUp") {
+                                  e.preventDefault();
+                                  setEditing({
+                                    ...editing,
+                                    value: editing.value + (e.shiftKey ? 5 : 0.5),
+                                  });
+                                }
+                                if (e.key === "ArrowDown") {
+                                  e.preventDefault();
+                                  setEditing({
+                                    ...editing,
+                                    value: editing.value - (e.shiftKey ? 5 : 0.5),
+                                  });
+                                }
+                              }}
+                              className="h-6 w-full rounded-sm bg-background px-1 text-right font-mono text-[10px] ring-1 ring-primary"
+                            />
+                          ) : (
+                            <button
+                              key={coord}
+                              type="button"
+                              className="h-6 rounded-sm px-1 text-right font-mono text-[10px] tabular-nums text-foreground/90 hover:bg-background hover:ring-1 hover:ring-border"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setEditing({
+                                  subPathIndex,
+                                  commandIndex,
+                                  pointIndex: logicalPointIndex,
+                                  coord,
+                                  value: point[coord],
+                                });
+                              }}
+                            >
+                              {formatNumber(point[coord])}
+                            </button>
+                          );
+                        })}
+
+                        <span className="text-right font-mono text-[8px] tabular-nums text-muted-foreground/50">
+                          {pointIndex === 0 ? commandIndex : ""}
+                        </span>
+                      </div>
+                    );
+                  })}
+
+                  {isClose && shortCoords && (
+                    <span className="mt-1 block truncate pl-8 text-[9px] text-muted-foreground">
+                      {shortCoords}
                     </span>
-                  </div>
-
-                  {/* Subtle index for power users (like reference alignment) */}
-                  <span className="shrink-0 font-mono text-[8px] text-muted-foreground/50 tabular-nums">
-                    {commandIndex}
-                  </span>
-                </button>
+                  )}
+                </div>
               );
             })}
           </div>

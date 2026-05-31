@@ -1111,6 +1111,19 @@ function reversePathAtSubIndex(path: PathData, subIdx: number): PathData {
   return result;
 }
 
+function isClosedSubPath(subPath: SubPath): boolean {
+  return subPath.commands.at(-1)?.type === "Z";
+}
+
+function closeSubPathAtIndex(path: PathData, subIdx: number): PathData {
+  const result = clonePathDataForSplit(path);
+  const commands = result.subPaths[subIdx]?.commands;
+  if (commands?.length && commands.at(-1)?.type !== "Z") {
+    commands.push({ id: generateId(), type: "Z", points: [] });
+  }
+  return result;
+}
+
 function convertCommandType(cmd: Command, start: Point, targetType: CommandType): Command {
   if (cmd.type === targetType) return cmd;
   const end = cmd.points.at(-1) || start;
@@ -1237,6 +1250,14 @@ export function autoFixPathPair(from: PathData, to: PathData): [PathData, PathDa
   const minSubs = Math.min(a.subPaths.length, b.subPaths.length);
 
   for (let s = 0; s < minSubs; s++) {
+    if (isClosedSubPath(a.subPaths[s]) !== isClosedSubPath(b.subPaths[s])) {
+      if (isClosedSubPath(a.subPaths[s])) {
+        b = closeSubPathAtIndex(b, s);
+      } else {
+        a = closeSubPathAtIndex(a, s);
+      }
+    }
+
     // 3. Align winding orders before matching/aligning
     if (isSubPathClockwise(a.subPaths[s]) !== isSubPathClockwise(b.subPaths[s])) {
       b = reversePathAtSubIndex(b, s);

@@ -12,6 +12,8 @@ import {
 import { evaluateBlock } from "@/lib/shapeshifter/interpolators";
 import type { SegmentSelection, SubPathSelection } from "@/lib/store/editorStore";
 import type { Command, Layer, PathData, Point, TimelineBlock } from "@/lib/shapeshifter/types";
+import type { Viewport } from "@/lib/shapeshifter/camera";
+import { zoomAtWorldPoint } from "@/lib/shapeshifter/camera";
 import { GestureDispatcher } from "@/lib/shapeshifter/gestures/GestureDispatcher";
 import {
   collectPointsInRect,
@@ -24,7 +26,7 @@ import {
 } from "@/lib/shapeshifter/gestures/HitTests";
 
 type PointSelection = { subPathIndex: number; commandIndex: number; pointIndex: number };
-type ViewBox = { x: number; y: number; w: number; h: number; scale: number };
+type ViewBox = Viewport;
 type Bounds = { x: number; y: number; width: number; height: number };
 type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 type SegmentTarget = {
@@ -42,7 +44,6 @@ interface PathCanvasProps {
   side: "from" | "to" | "preview";
   width?: number;
   height?: number;
-  zoom?: number;
 }
 
 export const PathCanvas = React.memo(function PathCanvas({
@@ -50,11 +51,9 @@ export const PathCanvas = React.memo(function PathCanvas({
   width = 320,
   height = 320,
   resetKey,
-  zoom = 1,
 }: PathCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const gridId = React.useId();
-  const suppressNextZoomSync = useRef(false);
 
   // Real Lasso collection (9rp under v6j, DESIGN_ID 67dd105e):
   // Refined pointer collection + polygon hit testing (pointInPolygon + collectPointsInLasso in HitTests)
@@ -85,7 +84,6 @@ export const PathCanvas = React.memo(function PathCanvas({
   // tool switches (v/p/d) actually affect gesture behavior.
   const dispatcherRef = useRef<GestureDispatcher | null>(null);
 
-  const [viewBox, setViewBox] = React.useState<ViewBox>({ x: 0, y: 0, w: 48, h: 48, scale: 1 });
   const [isPanning, setIsPanning] = React.useState(false);
   const [isSpaceDown, setIsSpaceDown] = React.useState(false);
   const [lastPan, setLastPan] = React.useState({ x: 0, y: 0 });
@@ -122,11 +120,16 @@ export const PathCanvas = React.memo(function PathCanvas({
     updateSelectedLayer,
     resizeSelectedLayer,
     deleteLayer,
-    setZoom,
+    zoom,
+    detailViewport,
+    setDetailViewport,
+    fitDetailToVector,
     selectSubPath,
     toolMode,
     isActionMode,
   } = useEditorStore();
+
+  const viewBox = detailViewport;
 
   const artboard = useMemo(() => {
     const artboardWidth = Math.max(1, vector.width || 24);
@@ -146,20 +149,8 @@ export const PathCanvas = React.memo(function PathCanvas({
   }, [vector.height, vector.width]);
 
   useEffect(() => {
-    const scale = Math.max(0.25, Math.min(8, zoom));
-    if (suppressNextZoomSync.current) {
-      suppressNextZoomSync.current = false;
-      return;
-    }
-    const size = artboard.baseViewSize / scale;
-    setViewBox({
-      x: artboard.centerX - size / 2,
-      y: artboard.centerY - size / 2,
-      w: size,
-      h: size,
-      scale,
-    });
-  }, [artboard.baseViewSize, artboard.centerX, artboard.centerY, resetKey, zoom]);
+    fitDetailToVector(1);
+  }, [fitDetailToVector, resetKey]);
 
   // Create the dispatcher once (lazy, stable ref) and keep its context fresh.
   // The 3 marquee callbacks are the bridge that lets the dispatcher/gesture own the
@@ -305,18 +296,11 @@ export const PathCanvas = React.memo(function PathCanvas({
       if (!mouse) return;
 
       const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-      const newScale = Math.max(0.25, Math.min(8, viewBox.scale * zoomFactor));
-      const newW = artboard.baseViewSize / newScale;
-      const newH = artboard.baseViewSize / newScale;
-
-      const newX = mouse.x - (mouse.x - viewBox.x) * (newW / viewBox.w);
-      const newY = mouse.y - (mouse.y - viewBox.y) * (newH / viewBox.h);
-
-      suppressNextZoomSync.current = true;
-      setZoom(newScale);
-      setViewBox({ x: newX, y: newY, w: newW, h: newH, scale: newScale });
+      setDetailViewport(
+        zoomAtWorldPoint(viewBox, mouse, viewBox.scale * zoomFactor, 0.25, 8),
+      );
     },
-    [artboard.baseViewSize, pointFromEvent, setZoom, viewBox],
+    [pointFromEvent, setDetailViewport, viewBox],
   );
 
   // Paint bucket helpers (rsn): pure hit via imported isPointInFillRegion (pathUtils sampling + parity for holes).
@@ -448,7 +432,7 @@ export const PathCanvas = React.memo(function PathCanvas({
         if (!rect) return;
         const dx = ((e.clientX - lastPan.x) / rect.width) * viewBox.w;
         const dy = ((e.clientY - lastPan.y) / rect.height) * viewBox.h;
-        setViewBox((prev) => ({ ...prev, x: prev.x - dx, y: prev.y - dy }));
+        setDetailViewport((prev) => ({ ...prev, x: prev.x - dx, y: prev.y - dy }));
         setLastPan({ x: e.clientX, y: e.clientY });
       }
       // Route *every* move through the dispatcher when a gesture may be active.
@@ -1312,15 +1296,7 @@ export const PathCanvas = React.memo(function PathCanvas({
       onPointerUp={handleSvgPointerUp}
       onDoubleClick={() => {
         if (side === "preview") return;
-        const scale = Math.max(0.5, Math.min(8, zoom));
-        const size = artboard.baseViewSize / scale;
-        setViewBox({
-          x: artboard.centerX - size / 2,
-          y: artboard.centerY - size / 2,
-          w: size,
-          h: size,
-          scale,
-        });
+        fitDetailToVector(viewBox.scale);
       }}
       role="img"
       aria-label={`${side} path canvas — interactive vector editor (pan/zoom, handles, lasso, paint, direct). Keyboard: V/P/D/L/B or bottom palette.`}

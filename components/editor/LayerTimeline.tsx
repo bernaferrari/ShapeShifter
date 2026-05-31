@@ -442,14 +442,14 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
             <span>anim</span>
             <span className="ml-1 text-[10px] text-muted-foreground">
               {animation.blocks.length === 0
-                ? "optional"
+                ? "0 blocks"
                 : `${animation.blocks.length} block${animation.blocks.length === 1 ? "" : "s"}`}
             </span>
             <span className="text-muted-foreground">{animation.duration}ms</span>
             {animation.blocks.length > 0 && (
               <span
                 className="ml-0.5 rounded-sm bg-primary/10 px-1 py-px text-[9px] font-mono text-primary/90"
-                title="Animation power feature active — zero friction when collapsed"
+                title="Animation blocks active"
               >
                 ANIM
               </span>
@@ -460,8 +460,8 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
             variant="ghost"
             aria-label={
               timelineCollapsed
-                ? "Expand timeline tracks (optional animation power feature)"
-                : "Collapse timeline tracks (keep scrub/playhead for zero-friction static editing)"
+                ? "Expand timeline tracks"
+                : "Collapse timeline tracks"
             }
             onClick={toggleTimelineCollapsed}
           >
@@ -547,10 +547,7 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
             style={{ left: `${Math.round(progress * 100)}%` }}
           />
           {!timelineCollapsed && animation.blocks.length === 0 && (
-            <div className="px-3 py-1 text-[10px] text-muted-foreground/60 italic select-none pointer-events-none">
-              Animation is an optional power feature — add blocks via layer menus or inspector.
-              Collapse to hide for pure vector work.
-            </div>
+            <div className="h-4 select-none pointer-events-none" aria-hidden="true" />
           )}
           {!timelineCollapsed &&
             timelineRows.map((row) => (

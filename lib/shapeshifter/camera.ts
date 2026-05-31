@@ -26,6 +26,32 @@ export interface Rect {
 }
 
 /**
+ * Detail/path editor fit viewport for a single vector artboard.
+ * This intentionally mirrors the old PathCanvas visual framing, but moves the
+ * math into the shared camera module so every path canvas sees the same pan and
+ * zoom instead of each shape owning an isolated camera.
+ */
+export function computeDetailViewport(
+  vector: { width?: number; height?: number },
+  scale = 1,
+): Viewport {
+  const width = Math.max(1, vector.width || 24);
+  const height = Math.max(1, vector.height || 24);
+  const baseSize = Math.max(width, height);
+  const baseViewSize = Math.max(24, baseSize * 1.55);
+  const clampedScale = Math.max(0.25, Math.min(8, scale));
+  const size = baseViewSize / clampedScale;
+
+  return {
+    x: width / 2 - size / 2,
+    y: height / 2 - size / 2,
+    w: size,
+    h: size,
+    scale: clampedScale,
+  };
+}
+
+/**
  * Compute a good fit viewport for a set of content rects.
  * Never returns the old magic -80/320 defaults when there is actual content.
  * When there is no content, returns a reasonable centered default (no more
