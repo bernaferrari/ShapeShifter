@@ -12,6 +12,10 @@ import {
   PenTool,
   Lasso,
   PaintBucket,
+  PanelRightClose,
+  PanelRightOpen,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -47,7 +51,13 @@ import { Inspector } from "@/components/editor/Inspector";
 import { MaterialSymbol } from "@/components/editor/MaterialSymbol";
 import { LayerTimeline } from "@/components/editor/LayerTimeline";
 import { BottomToolPalette } from "@/components/editor/BottomToolPalette";
+import { Onboarding } from "@/components/editor/Onboarding";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { cn } from "@/lib/utils";
+
+// Below this viewport width the fixed w-80 inspector + timeline get cramped, so
+// the inspector auto-collapses into a toggle (Figma-style responsive degrade).
+const NARROW_BREAKPOINT = 1100;
 
 function isEditableTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
@@ -65,15 +75,9 @@ export default function ShapeShifter2026() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
         e.preventDefault();
         if (e.shiftKey) {
-          if (store.canRedo) {
-            store.redo();
-            toast.success("Redo");
-          }
+          if (store.canRedo) store.redo();
         } else {
-          if (store.canUndo) {
-            store.undo();
-            toast.success("Undo");
-          }
+          if (store.canUndo) store.undo();
         }
         return;
       }
@@ -89,20 +93,17 @@ export default function ShapeShifter2026() {
       if (e.key.toLowerCase() === "a" && !e.metaKey) {
         e.preventDefault();
         store.autoFixSelectedLayer();
-        toast.success("Auto Fix applied");
         return;
       }
       if (e.key.toLowerCase() === "r" && !e.metaKey) {
         e.preventDefault();
         store.reverseSelectedLayer();
-        toast.success("Path reversed");
         return;
       }
 
       if (e.key.toLowerCase() === "s" && !e.metaKey) {
         e.preventDefault();
         store.shiftSelectedLayer(1);
-        toast.success("Points shifted");
         return;
       }
 
@@ -110,7 +111,6 @@ export default function ShapeShifter2026() {
       if (e.key === "Delete" || e.key === "Backspace") {
         if (store.selection) {
           store.deleteSelectedPoint();
-          toast.success("Point deleted");
         }
         return;
       }
@@ -468,6 +468,57 @@ export default function ShapeShifter2026() {
   const [commandOpen, setCommandOpen] = React.useState(false);
   const [helpOpen, setHelpOpen] = React.useState(false);
 
+  // === PANEL COLLAPSE / RESPONSIVE STATE ===
+  // User intent (persisted). The actual inspector visibility also folds in the
+  // narrow-viewport auto-collapse below, but we never overwrite the user's choice.
+  const [inspectorCollapsed, setInspectorCollapsed] = React.useState(false);
+  const [timelineCollapsed, setTimelineCollapsed] = React.useState(false);
+  const [isNarrow, setIsNarrow] = React.useState(false);
+
+  React.useEffect(() => {
+    try {
+      setInspectorCollapsed(localStorage.getItem("shapeshifter:panel:inspector") === "1");
+      setTimelineCollapsed(localStorage.getItem("shapeshifter:panel:timeline") === "1");
+    } catch {
+      // ignore — localStorage may be unavailable
+    }
+  }, []);
+
+  const toggleInspector = React.useCallback(() => {
+    setInspectorCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("shapeshifter:panel:inspector", next ? "1" : "0");
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleTimeline = React.useCallback(() => {
+    setTimelineCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("shapeshifter:panel:timeline", next ? "1" : "0");
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
+  // Auto-collapse the inspector on narrow viewports so nothing clips.
+  React.useEffect(() => {
+    const onResize = () => setIsNarrow(window.innerWidth < NARROW_BREAKPOINT);
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // Effective visibility: collapsed by explicit toggle OR forced by narrow width.
+  const inspectorHidden = inspectorCollapsed || isNarrow;
+
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (isEditableTarget(e.target)) return;
@@ -685,10 +736,10 @@ export default function ShapeShifter2026() {
       />
 
       {/* Main Workspace Layout */}
-      <div className="flex min-h-0 flex-1 overflow-hidden bg-muted">
-        <div className="min-w-0 flex-1 overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden bg-muted">
+        <div className="relative min-w-0 flex-1 overflow-hidden">
           <ResizablePanelGroup orientation="vertical" className="min-h-0">
-            <ResizablePanel id="canvas" minSize={58} defaultSize={76}>
+            <ResizablePanel id="canvas" minSize={58} defaultSize={timelineCollapsed ? 100 : 76}>
               <main className="relative flex h-full min-h-0 overflow-hidden">
                 <CanvasArea
                   resetFrom={resetFrom}
@@ -696,28 +747,72 @@ export default function ShapeShifter2026() {
                   resetTo={resetTo}
                   resetAllViews={resetAllViews}
                 />
-                <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex justify-center">
+                <div className="pointer-events-none absolute inset-y-0 left-3 z-30 flex items-center">
                   <div className="pointer-events-auto">
                     <BottomToolPalette />
                   </div>
                 </div>
+                <Onboarding />
               </main>
             </ResizablePanel>
-            <ResizableHandle className="bg-border/80" />
-            <ResizablePanel id="timeline" minSize={16} defaultSize={24}>
-              <LayerTimeline
-                onOpenSVGImport={openSVGImport}
-                onExport={handleExport}
-                onLoadSample={loadSample}
-              />
-            </ResizablePanel>
+            {!timelineCollapsed && (
+              <>
+                <ResizableHandle className="bg-border/80" />
+                <ResizablePanel id="timeline" minSize={16} defaultSize={24}>
+                  <LayerTimeline
+                    onOpenSVGImport={openSVGImport}
+                    onExport={handleExport}
+                    onLoadSample={loadSample}
+                  />
+                </ResizablePanel>
+              </>
+            )}
           </ResizablePanelGroup>
+
+          {/* Timeline collapse toggle — sits on the canvas chrome, bottom-center. */}
+          <button
+            type="button"
+            onClick={toggleTimeline}
+            aria-label={timelineCollapsed ? "Show timeline" : "Hide timeline"}
+            aria-expanded={!timelineCollapsed}
+            className="absolute bottom-1.5 right-3 z-30 flex items-center gap-1 rounded-md border border-border bg-card/90 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:text-foreground"
+          >
+            {timelineCollapsed ? (
+              <ChevronUp className="size-3.5" />
+            ) : (
+              <ChevronDown className="size-3.5" />
+            )}
+            Timeline
+          </button>
         </div>
 
-        {!isActionMode && (
+        {!isActionMode && !inspectorHidden && (
           <aside className="flex h-full w-80 shrink-0 flex-col overflow-hidden border-l bg-sidebar shadow-xs">
             <Inspector />
           </aside>
+        )}
+
+        {/* Inspector collapse/expand toggle — a quiet tab anchored to the right
+            edge of the workspace (just inside the inspector when open, flush to
+            the edge when collapsed). Hidden on narrow viewports, where the
+            inspector is force-collapsed and there's no room to reopen it. */}
+        {!isActionMode && !isNarrow && (
+          <button
+            type="button"
+            onClick={toggleInspector}
+            aria-label={inspectorCollapsed ? "Show inspector" : "Hide inspector"}
+            aria-expanded={!inspectorCollapsed}
+            className={cn(
+              "absolute top-2.5 z-30 grid size-7 place-items-center rounded-md border border-border bg-card/90 text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:text-foreground",
+              inspectorCollapsed ? "right-2" : "right-[19.5rem]",
+            )}
+          >
+            {inspectorCollapsed ? (
+              <PanelRightOpen className="size-4" />
+            ) : (
+              <PanelRightClose className="size-4" />
+            )}
+          </button>
         )}
       </div>
 

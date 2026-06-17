@@ -6,22 +6,25 @@ import {
   Pause,
   SkipBack,
   Undo2,
+  Redo2,
   Download,
   Upload,
   Plus,
   Zap,
   RotateCw,
+  Repeat,
+  Gauge,
   ArrowLeftRight,
   HelpCircle,
-  Trash2,
-  X,
+  ChevronDown,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -51,6 +54,9 @@ interface ToolbarProps {
   canRedo: boolean;
 }
 
+/** Quiet, neutral chrome — Figma-grade. The bar recedes; the canvas is the hero.
+ *  Dense path/boolean actions are collapsed into a single contextual "Edit" menu
+ *  instead of a wall of always-visible buttons. */
 export function Toolbar({
   onExport,
   onLoadSample,
@@ -58,7 +64,6 @@ export function Toolbar({
   onResetAnim,
   onOpenSVGImport,
   onShowHelp,
-  resetAllViews,
   isPlaying,
   isActionMode,
   editingSide,
@@ -80,499 +85,318 @@ export function Toolbar({
     deleteSelectedSubPath,
     booleanCombine,
     resetProject,
+    vector,
+    isRepeating,
+    isSlowMotion,
+    toggleRepeating,
+    toggleSlowMotion,
   } = useEditorStore();
 
   const handleAutoFix = () => {
     if (autoFixSelectedLayer()) {
-      toast.success("Auto Fix applied", { description: "Paths are now more compatible" });
+      toast.success("Paths made compatible");
     }
   };
 
   return (
-    <header className="flex min-h-12 shrink-0 items-center gap-2 overflow-x-auto bg-primary text-primary-foreground dark:bg-card dark:text-foreground border-b border-primary-foreground/10 dark:border-border px-4 shadow-sm [scrollbar-width:none]">
-      <div className="flex items-center gap-3">
-        {/* Brand */}
-        <div className="flex items-center gap-2 border-r border-white/20 dark:border-border pr-4">
-          {isActionMode && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="text-white hover:bg-white/10 dark:text-foreground dark:hover:bg-muted h-8 w-8"
-              aria-label="Close path morphing mode"
-              onClick={closeActionMode}
+    <header className="relative flex h-12 shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-card px-3 text-foreground [scrollbar-width:none]">
+      {/* Centered document name — Figma-style, fills the chrome's quiet middle */}
+      {!isActionMode && (
+        <div className="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 max-w-[40%] md:block">
+          <span className="block truncate text-center text-[12px] font-medium text-muted-foreground">
+            {vector?.name || "Untitled"}
+          </span>
+        </div>
+      )}
+      {/* Brand / back */}
+      <div className="flex items-center gap-2 pr-1">
+        {isActionMode && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-muted-foreground hover:text-foreground"
+                  aria-label="Back to canvas"
+                  onClick={closeActionMode}
+                />
+              }
             >
-              <MaterialSymbol name="arrow_back" size={20} />
-            </Button>
-          )}
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/15 dark:bg-primary/10 text-white dark:text-primary">
-            <MaterialSymbol name="auto_awesome" size={18} filled weight={600} />
+              <MaterialSymbol name="arrow_back" size={18} />
+            </TooltipTrigger>
+            <TooltipContent>Back to canvas (⌘W)</TooltipContent>
+          </Tooltip>
+        )}
+        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <MaterialSymbol name="auto_awesome" size={16} filled weight={600} />
+        </div>
+        <div className="hidden leading-none sm:block">
+          <div className="text-[13px] font-semibold tracking-tight">
+            {isActionMode ? "Path morphing" : "Shape Shifter"}
           </div>
-          <div>
-            <div className="text-sm font-bold tracking-tight text-white dark:text-foreground">
-              {isActionMode ? "Path morphing" : "Shape Shifter"}
-            </div>
-            <div className="text-[10px] text-white/70 dark:text-muted-foreground -mt-0.5 leading-none">
-              {isActionMode ? "Path compatibility" : "Vector motion studio"}
-            </div>
+          <div className="mt-0.5 text-[10px] leading-none text-muted-foreground">
+            {isActionMode ? "Compatibility editor" : "Vector motion studio"}
           </div>
         </div>
-
-        <Badge
-          variant="secondary"
-          className="font-mono text-[9px] tracking-widest px-1.5 py-0 bg-white/10 text-white hover:bg-white/10 dark:bg-muted dark:text-foreground"
-        >
-          v2.0
-        </Badge>
-
-        {/* Shortcuts / Help */}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="gap-1.5 text-xs text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground h-8 px-2.5"
-          onClick={onShowHelp}
-        >
-          <HelpCircle className="w-3.5 h-3.5" /> Shortcuts
-        </Button>
       </div>
 
-      <div className="flex items-center gap-1.5 border-l border-white/20 dark:border-border pl-2">
+      <div className="mx-1 h-5 w-px bg-border" />
+
+      {/* File */}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button variant="ghost" size="sm" className="gap-1 px-2 text-[13px] font-medium" />
+          }
+        >
+          File <ChevronDown className="size-3.5 opacity-50" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-52">
+          <DropdownMenuItem
+            onClick={() => {
+              resetProject();
+              toast.success("New project");
+            }}
+          >
+            <Plus className="mr-2 size-4" /> New project
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onOpenSVGImport}>
+            <Upload className="mr-2 size-4" /> Import SVG / XML / Project…
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => addLayer("path")}>
+            <Plus className="mr-2 size-4" /> Add layer
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => onExport("json")}>
+            <Download className="mr-2 size-4" /> Export project (.json)
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* Edit — all the dense path/boolean actions collapsed here */}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button variant="ghost" size="sm" className="gap-1 px-2 text-[13px] font-medium" />
+          }
+        >
+          Edit <ChevronDown className="size-3.5 opacity-50" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-56">
+          <DropdownMenuItem onClick={undo} disabled={!canUndo}>
+            <Undo2 className="mr-2 size-4" /> Undo
+            <span className="ml-auto text-xs text-muted-foreground">⌘Z</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={redo} disabled={!canRedo}>
+            <Redo2 className="mr-2 size-4" /> Redo
+            <span className="ml-auto text-xs text-muted-foreground">⇧⌘Z</span>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={handleAutoFix}>
+            <Zap className="mr-2 size-4 text-amber-500" /> Auto fix compatibility
+            <span className="ml-auto text-xs text-muted-foreground">A</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => {
+              reverseSelectedLayer();
+              toast.success("Reversed");
+            }}
+          >
+            <RotateCw className="mr-2 size-4" /> Reverse points
+            <span className="ml-auto text-xs text-muted-foreground">R</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => shiftSelectedLayer(1)}>
+            <ArrowLeftRight className="mr-2 size-4" /> Shift points forward
+            <span className="ml-auto text-xs text-muted-foreground">S</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => shiftSelectedLayer(-1)}>
+            <ArrowLeftRight className="mr-2 size-4 -scale-x-100" /> Shift points back
+          </DropdownMenuItem>
+
+          {isActionMode && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Selected command
+              </DropdownMenuLabel>
+              <DropdownMenuItem onClick={() => splitSelectedCommand()}>
+                <MaterialSymbol name="call_split" size={16} className="mr-2" /> Split in half
+                <span className="ml-auto text-xs text-muted-foreground">X</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSelectedCommandAsFirst()}>
+                <MaterialSymbol name="first_page" size={16} className="mr-2" /> Set as first point
+                <span className="ml-auto text-xs text-muted-foreground">F</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => deleteSelectedPoint()}>
+                <MaterialSymbol name="delete" size={16} className="mr-2" /> Delete point
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => deleteSelectedSubPath()}>
+                <MaterialSymbol name="close" size={16} className="mr-2" /> Delete subpath
+              </DropdownMenuItem>
+            </>
+          )}
+
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Combine with next layer
+          </DropdownMenuLabel>
+          <DropdownMenuItem onClick={() => booleanCombine("union")}>Union</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => booleanCombine("subtract")}>Subtract</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => booleanCombine("intersect")}>Intersect</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => booleanCombine("exclude")}>Exclude</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* Samples */}
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button variant="ghost" size="sm" className="gap-1 px-2 text-[13px] font-medium" />
+          }
+        >
+          Samples <ChevronDown className="size-3.5 opacity-50" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-48">
+          {DEMO_INFOS.map((demo, index) => (
+            <DropdownMenuItem key={demo.id} onClick={() => onLoadSample(index)}>
+              {demo.title}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* From / To — segmented, action mode only */}
+      {isActionMode && (
+        <>
+          <div className="mx-1 h-5 w-px bg-border" />
+          <div className="flex items-center rounded-md bg-muted p-0.5">
+            {(["from", "to"] as const).map((side) => (
+              <button
+                key={side}
+                type="button"
+                onClick={() => setEditingSide(side)}
+                className={`flex h-6 items-center gap-1 rounded-[5px] px-2.5 text-xs font-medium capitalize transition-colors ${
+                  editingSide === side
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {side === "from" ? (
+                  <MaterialSymbol name="arrow_left" size={14} />
+                ) : null}
+                {side}
+                {side === "to" ? <MaterialSymbol name="arrow_right" size={14} /> : null}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      <div className="flex-1" />
+
+      {/* Transport — reset · play · loop · slow-mo */}
+      <div className="flex items-center gap-0.5">
         <Tooltip>
           <TooltipTrigger
             render={
               <Button
                 variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground"
+                size="icon-sm"
+                className="text-muted-foreground hover:text-foreground"
                 onClick={onResetAnim}
                 aria-label="Reset animation"
               />
             }
           >
-            <SkipBack className="w-4 h-4" />
+            <SkipBack className="size-4" />
           </TooltipTrigger>
-          <TooltipContent>Reset animation</TooltipContent>
+          <TooltipContent>Reset to start</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger
             render={
               <Button
-                variant="default"
-                size="icon"
-                className="h-8 w-8 bg-primary-foreground hover:bg-primary-foreground/90 text-primary dark:bg-primary dark:text-primary-foreground dark:hover:bg-primary/90 shadow-sm"
+                size="sm"
+                className="h-7 gap-1.5 px-3"
                 onClick={onTogglePlay}
-                aria-label={isPlaying ? "Pause animation" : "Play animation"}
+                aria-label={isPlaying ? "Pause" : "Play"}
               />
             }
           >
-            {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+            {isPlaying ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+            <span className="text-xs">{isPlaying ? "Pause" : "Play"}</span>
           </TooltipTrigger>
-          <TooltipContent>{isPlaying ? "Pause" : "Play"} animation</TooltipContent>
-        </Tooltip>
-      </div>
-
-      {/* File */}
-      <div className="flex items-center gap-1 border-l border-white/20 dark:border-border pl-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <button
-                type="button"
-                className="inline-flex shrink-0 items-center justify-center rounded-lg h-8 gap-1.5 px-3 text-xs font-semibold hover:bg-white/10 text-white dark:text-foreground dark:hover:bg-muted transition-all outline-none"
-              />
-            }
-          >
-            <Upload className="w-3.5 h-3.5" /> File
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-52 text-xs">
-            <DropdownMenuItem
-              onClick={() => {
-                resetProject();
-                toast.success("New project");
-              }}
-            >
-              <Plus className="w-4 h-4 mr-2" /> New Project
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onOpenSVGImport}>
-              <Upload className="w-4 h-4 mr-2" /> Import SVG / XML / Project
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => addLayer("path")}>
-              <Plus className="w-4 h-4 mr-2" /> Add Layer
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => onExport("json")}>
-              <Download className="w-4 h-4 mr-2" /> Export Project (.json)
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
-      {/* Edit (Undo/Redo) */}
-      <div className="flex items-center gap-1 border-l border-white/20 dark:border-border pl-2">
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground"
-                onClick={undo}
-                disabled={!canUndo}
-                aria-label="Undo"
-              />
-            }
-          >
-            <Undo2 className="w-4 h-4" />
-          </TooltipTrigger>
-          <TooltipContent>Undo (⌘Z)</TooltipContent>
+          <TooltipContent>{isPlaying ? "Pause" : "Play"} (Space)</TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger
             render={
               <Button
                 variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground"
-                onClick={redo}
-                disabled={!canRedo}
-                aria-label="Redo"
+                size="icon-sm"
+                className={cn(
+                  "text-muted-foreground hover:text-foreground",
+                  isRepeating && "bg-primary/10 text-primary hover:text-primary",
+                )}
+                onClick={toggleRepeating}
+                aria-label="Loop playback"
+                aria-pressed={isRepeating}
               />
             }
           >
-            <Undo2 className="w-4 h-4 rotate-180 flip-y" />
+            <Repeat className="size-4" />
           </TooltipTrigger>
-          <TooltipContent>Redo (⇧⌘Z)</TooltipContent>
+          <TooltipContent>{isRepeating ? "Looping on" : "Loop off"}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={cn(
+                  "text-muted-foreground hover:text-foreground",
+                  isSlowMotion && "bg-primary/10 text-primary hover:text-primary",
+                )}
+                onClick={toggleSlowMotion}
+                aria-label="Slow motion"
+                aria-pressed={isSlowMotion}
+              />
+            }
+          >
+            <Gauge className="size-4" />
+          </TooltipTrigger>
+          <TooltipContent>{isSlowMotion ? "Slow motion (0.25×)" : "Slow motion"}</TooltipContent>
         </Tooltip>
       </div>
 
-      {/* Transform / Action Mode Side Toggle */}
-      <div className="flex items-center gap-1 border-l border-white/20 dark:border-border pl-2">
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant={editingSide === "from" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setEditingSide("from")}
-                className={`h-8 px-3 gap-1.5 text-xs font-semibold ${
-                  editingSide === "from"
-                    ? "bg-primary-foreground text-primary hover:bg-primary-foreground/90 dark:bg-primary dark:text-primary-foreground shadow-sm"
-                    : "text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground"
-                }`}
-              />
-            }
-          >
-            <MaterialSymbol name="arrow_left" size={16} /> From
-          </TooltipTrigger>
-          <TooltipContent>Edit starting shape (1)</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant={editingSide === "to" ? "default" : "ghost"}
-                size="sm"
-                onClick={() => setEditingSide("to")}
-                className={`h-8 px-3 gap-1.5 text-xs font-semibold ${
-                  editingSide === "to"
-                    ? "bg-primary-foreground text-primary hover:bg-primary-foreground/90 dark:bg-primary dark:text-primary-foreground shadow-sm"
-                    : "text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground"
-                }`}
-              />
-            }
-          >
-            To <MaterialSymbol name="arrow_right" size={16} />
-          </TooltipTrigger>
-          <TooltipContent>Edit ending shape (2)</TooltipContent>
-        </Tooltip>
-      </div>
-
-      {/* Magic Tools */}
-      <div className="flex items-center gap-1.5 border-l border-white/20 dark:border-border pl-2">
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 gap-1.5 text-xs border-white/20 bg-white/5 text-white hover:bg-white/10 dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
-                onClick={handleAutoFix}
-              />
-            }
-          >
-            <Zap className="w-3.5 h-3.5 text-amber-300 dark:text-amber-500" /> Auto Fix
-          </TooltipTrigger>
-          <TooltipContent>Make paths compatible (A)</TooltipContent>
-        </Tooltip>
-
-        {isActionMode && (
-          <>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8 border-white/20 bg-white/5 hover:bg-white/10 text-white dark:border-border dark:bg-background dark:hover:bg-muted dark:text-foreground"
-                    onClick={() => {
-                      shiftSelectedLayer(-1);
-                      toast.success("Shifted back");
-                    }}
-                    aria-label="Shift back points"
-                  />
-                }
-              >
-                <SkipBack className="h-4 w-4" />
-              </TooltipTrigger>
-              <TooltipContent>Shift back points</TooltipContent>
-            </Tooltip>
-          </>
-        )}
-
-        {isActionMode && (
-          <>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8 border-white/20 bg-white/5 hover:bg-white/10 text-white dark:border-border dark:bg-background dark:hover:bg-muted dark:text-foreground"
-                    onClick={() => {
-                      splitSelectedCommand();
-                      toast.success("Split in half");
-                    }}
-                    aria-label="Split command in half"
-                  />
-                }
-              >
-                <MaterialSymbol name="call_split" size={16} />
-              </TooltipTrigger>
-              <TooltipContent>Split command in half</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8 border-white/20 bg-white/5 hover:bg-white/10 text-white dark:border-border dark:bg-background dark:hover:bg-muted dark:text-foreground"
-                    onClick={() => {
-                      setSelectedCommandAsFirst();
-                      toast.success("Set as first point");
-                    }}
-                    aria-label="Set selected command as first"
-                  />
-                }
-              >
-                <MaterialSymbol name="first_page" size={16} />
-              </TooltipTrigger>
-              <TooltipContent>Set as first (original toolbar)</TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8 border-white/20 bg-white/5 hover:bg-white/10 text-white dark:border-border dark:bg-background dark:hover:bg-muted dark:text-foreground"
-                    onClick={() => {
-                      deleteSelectedPoint();
-                    }}
-                    aria-label="Delete selected point"
-                  />
-                }
-              >
-                <Trash2 className="h-4 w-4" />
-              </TooltipTrigger>
-              <TooltipContent>Delete Point</TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-8 w-8 border-white/20 bg-white/5 hover:bg-white/10 text-white dark:border-border dark:bg-background dark:hover:bg-muted dark:text-foreground"
-                    onClick={() => {
-                      deleteSelectedSubPath();
-                    }}
-                    aria-label="Delete selected subpath"
-                  />
-                }
-              >
-                <X className="h-4 w-4" />
-              </TooltipTrigger>
-              <TooltipContent>Delete SubPath</TooltipContent>
-            </Tooltip>
-
-          </>
-        )}
-
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 gap-1.5 text-xs border-white/20 bg-white/5 text-white hover:bg-white/10 dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
-                onClick={() => {
-                  reverseSelectedLayer();
-                  toast.success("Reversed");
-                }}
-              />
-            }
-          >
-            <RotateCw className="w-3.5 h-3.5 text-indigo-200 dark:text-indigo-400" /> Reverse
-          </TooltipTrigger>
-          <TooltipContent>Reverse (R)</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 gap-1.5 text-xs border-white/20 bg-white/5 text-white hover:bg-white/10 dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
-                onClick={() => {
-                  shiftSelectedLayer(1);
-                  toast.success("Shifted");
-                }}
-              />
-            }
-          >
-            <ArrowLeftRight className="w-3.5 h-3.5 text-emerald-300 dark:text-emerald-500" /> Shift
-          </TooltipTrigger>
-          <TooltipContent>Shift points (S)</TooltipContent>
-        </Tooltip>
-
-        {/* Boolean ops stay available outside the focused path canvas. */}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 px-2 text-[10px] border-white/20 bg-white/5 text-white hover:bg-white/10 dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
-                aria-label="Union selected with next layer"
-                onClick={() => {
-                  booleanCombine("union");
-                  toast.success("Union");
-                }}
-              />
-            }
-          >
-            Union
-          </TooltipTrigger>
-          <TooltipContent>Union selected + next layer</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 px-2 text-[10px] border-white/20 bg-white/5 text-white hover:bg-white/10 dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
-                aria-label="Subtract (A-B) selected minus next layer"
-                onClick={() => {
-                  booleanCombine("subtract");
-                  toast.success("Subtract");
-                }}
-              />
-            }
-          >
-            Sub
-          </TooltipTrigger>
-          <TooltipContent>Subtract (A-B) selected + next</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 px-2 text-[10px] border-white/20 bg-white/5 text-white hover:bg-white/10 dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
-                aria-label="Intersect selected with next layer"
-                onClick={() => {
-                  booleanCombine("intersect");
-                  toast.success("Intersect");
-                }}
-              />
-            }
-          >
-            Inter
-          </TooltipTrigger>
-          <TooltipContent>Intersect selected + next</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 px-2 text-[10px] border-white/20 bg-white/5 text-white hover:bg-white/10 dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-muted"
-                aria-label="Exclude/XOR selected with next layer"
-                onClick={() => {
-                  booleanCombine("exclude");
-                  toast.success("Exclude");
-                }}
-              />
-            }
-          >
-            Xor
-          </TooltipTrigger>
-          <TooltipContent>Exclude/XOR selected + next</TooltipContent>
-        </Tooltip>
-      </div>
-
-      {/* Samples */}
-      <div className="flex items-center gap-1 border-l border-white/20 dark:border-border pl-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <button
-                type="button"
-                className="inline-flex shrink-0 items-center justify-center rounded-lg h-8 gap-1.5 px-3 text-xs font-semibold hover:bg-white/10 text-white dark:text-foreground dark:hover:bg-muted transition-all outline-none"
-              />
-            }
-          >
-            Samples
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="text-xs">
-            {DEMO_INFOS.map((demo, index) => (
-              <DropdownMenuItem key={demo.id} onClick={() => onLoadSample(index)}>
-                {demo.title}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+      <div className="mx-1 h-5 w-px bg-border" />
 
       {/* Export */}
-      <div className="flex items-center gap-1 border-l border-white/20 dark:border-border pl-2">
-        <ExportDialog>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 gap-1.5 text-xs text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground"
-          >
-            <Download className="w-3.5 h-3.5" /> Export
-          </Button>
-        </ExportDialog>
-      </div>
+      <ExportDialog>
+        <Button variant="ghost" size="sm" className="gap-1.5 px-2.5 text-[13px] font-medium">
+          <Download className="size-3.5" /> Export
+        </Button>
+      </ExportDialog>
 
-      {/* Reset Views */}
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-8 text-xs text-white/80 hover:text-white hover:bg-white/10 dark:text-muted-foreground dark:hover:text-foreground border-l border-white/20 dark:border-border pl-2 rounded-none"
-        onClick={resetAllViews}
-      >
-        Reset Views
-      </Button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={onShowHelp}
+              aria-label="Keyboard shortcuts"
+            />
+          }
+        >
+          <HelpCircle className="size-4" />
+        </TooltipTrigger>
+        <TooltipContent>Keyboard shortcuts</TooltipContent>
+      </Tooltip>
 
-      <div className="flex-1" />
       <ThemeToggle />
     </header>
   );

@@ -1,5 +1,14 @@
 import { parsePath, ensureStableCommandIds } from "./pathUtils";
-import type { FillType, Layer, PathData, Point, StrokeLineCap, StrokeLineJoin } from "./types";
+import type {
+  FillType,
+  Gradient,
+  GradientStop,
+  Layer,
+  PathData,
+  Point,
+  StrokeLineCap,
+  StrokeLineJoin,
+} from "./types";
 
 // ── 2D affine transform matrix [a, b, c, d, e, f] ──────────────────────
 
@@ -168,9 +177,89 @@ const pathFromPoints = (element: Element, close: boolean) => {
   return commands.join(" ");
 };
 
+// ── Gradient parsing (objectBoundingBox <linearGradient>/<radialGradient>) ──
+
+const stopOffset = (raw: string): number => {
+  if (!raw) return 0;
+  const trimmed = raw.trim();
+  const n = trimmed.endsWith("%") ? Number(trimmed.slice(0, -1)) / 100 : Number(trimmed);
+  return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0;
+};
+
+/** Read a gradient element's stops, following a single xlink:href inheritance level. */
+function parseGradientStops(el: Element, doc: Document, depth = 0): GradientStop[] {
+  let stopEls = Array.from(el.querySelectorAll("stop"));
+  if (stopEls.length === 0 && depth < 4) {
+    const href =
+      el.getAttribute("href") ?? el.getAttributeNS("http://www.w3.org/1999/xlink", "href") ?? "";
+    if (href.startsWith("#")) {
+      const ref = doc.getElementById(href.slice(1));
+      if (ref) return parseGradientStops(ref, doc, depth + 1);
+    }
+  }
+  return stopEls.map((stop) => {
+    // Stop styling can live on attributes or an inline style="" string.
+    const inline = new Map<string, string>();
+    for (const decl of (stop.getAttribute("style") ?? "").split(";")) {
+      const [k, ...v] = decl.split(":");
+      if (k && v.length) inline.set(k.trim().toLowerCase(), v.join(":").trim());
+    }
+    const read = (n: string) => inline.get(n) ?? stop.getAttribute(n) ?? "";
+    const opacityRaw = read("stop-opacity");
+    return {
+      offset: stopOffset(read("offset")),
+      color: read("stop-color") || "#000000",
+      opacity: opacityRaw === "" ? 1 : Math.max(0, Math.min(1, Number(opacityRaw) || 0)),
+    };
+  });
+}
+
+/** Build a map of gradient id → model Gradient for url(#id) fill resolution. */
+function buildGradientLookup(doc: Document): Map<string, Gradient> {
+  const map = new Map<string, Gradient>();
+  for (const el of Array.from(doc.querySelectorAll("linearGradient, radialGradient"))) {
+    const id = el.getAttribute("id");
+    if (!id) continue;
+    const stops = parseGradientStops(el, doc);
+    if (stops.length < 2) continue;
+
+    if (el.tagName.toLowerCase() === "radialGradient".toLowerCase()) {
+      map.set(id, {
+        type: "radial",
+        stops,
+        cx: parseRatio(el.getAttribute("cx"), 0.5),
+        cy: parseRatio(el.getAttribute("cy"), 0.5),
+        r: parseRatio(el.getAttribute("r"), 0.5),
+      });
+    } else {
+      // Derive an angle from x1/y1→x2/y2 (objectBoundingBox-style fractions).
+      const x1 = parseRatio(el.getAttribute("x1"), 0);
+      const y1 = parseRatio(el.getAttribute("y1"), 0);
+      const x2 = parseRatio(el.getAttribute("x2"), 1);
+      const y2 = parseRatio(el.getAttribute("y2"), 0);
+      const angle = Math.round((Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI);
+      map.set(id, { type: "linear", stops, angle });
+    }
+  }
+  return map;
+}
+
+const parseRatio = (raw: string | null, fallback: number): number => {
+  if (raw == null || raw === "") return fallback;
+  const trimmed = raw.trim();
+  const n = trimmed.endsWith("%") ? Number(trimmed.slice(0, -1)) / 100 : Number(trimmed);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+/** Extract a `url(#id)` reference target, or null. */
+const urlRef = (value: string): string | null => {
+  const m = /url\(['"]?#([^'")]+)['"]?\)/.exec(value);
+  return m ? m[1] : null;
+};
+
 // ── Style extraction (attributes + inline CSS `style` attribute) ────────
 
-function getStyle(element: Element) {
+function getStyle(element: Element, gradients?: Map<string, Gradient>) {
   // Parse inline style attribute into a lookup map
   const inlineStyle = new Map<string, string>();
   const styleAttr = element.getAttribute("style");
@@ -191,8 +280,14 @@ function getStyle(element: Element) {
   const fillOpacity = Number(get("fill-opacity") || 1);
   const strokeOpacity = Number(get("stroke-opacity") || 1);
   const strokeWidth = Number(get("stroke-width") || 0);
+
+  // Resolve a url(#id) gradient fill into the model (solid fill stays a string).
+  const fillRefId = fill ? urlRef(fill) : null;
+  const fillGradient = fillRefId ? gradients?.get(fillRefId) : undefined;
+
   return {
-    fillColor: fill === "none" ? "" : fill,
+    ...(fillGradient ? { fillGradient } : {}),
+    fillColor: fill === "none" || fillRefId ? "" : fill,
     fillAlpha: Number.isFinite(fillOpacity) ? fillOpacity : 1,
     strokeColor: stroke === "none" ? "" : stroke,
     strokeAlpha: Number.isFinite(strokeOpacity) ? strokeOpacity : 1,
@@ -268,6 +363,8 @@ export function importLayersFromSvg(svgText: string, namePrefix = "svg") {
     use.parentNode?.replaceChild(wrapper, use);
   }
 
+  const gradients = buildGradientLookup(doc);
+
   const elements = Array.from(
     doc.querySelectorAll("path, rect, circle, ellipse, line, polygon, polyline"),
   ).filter((el) => !isInsideDefs(el));
@@ -296,7 +393,7 @@ export function importLayersFromSvg(svgText: string, namePrefix = "svg") {
         pathData,
         `${Date.now()}_${index}`,
         matrix,
-        getStyle(element),
+        getStyle(element, gradients),
       );
       // Harden: skip any layer whose parsed geometry contains non-finite coords (bad path data, NaN from malformed arcs/nums, complex edge cases)
       const hasNaN = layer.from.subPaths.some((sp) =>

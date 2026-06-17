@@ -51,7 +51,7 @@ export function PathCommandsList({
 
   if (!pathData?.subPaths?.length) {
     return (
-      <div className={cn("px-4 py-2 text-[10px] text-muted-foreground", className)}>
+      <div className={cn("px-4 py-2 text-[11px] text-muted-foreground", className)}>
         No path commands
       </div>
     );
@@ -91,23 +91,22 @@ export function PathCommandsList({
   };
 
   return (
-    <div className={cn("min-h-0 flex-1 overflow-y-auto text-[10px]", className)}>
-      <div className="sticky top-0 z-10 grid grid-cols-[2rem_minmax(4rem,1fr)_3.25rem_3.25rem_1.5rem] gap-1 border-b bg-card/95 px-2.5 py-1 font-mono text-[8px] uppercase tracking-wider text-muted-foreground/70 backdrop-blur">
+    <div className={cn("min-h-0 flex-1 overflow-y-auto text-[11px]", className)}>
+      <div className="sticky top-0 z-10 grid grid-cols-[1.5rem_minmax(0,1fr)_3.25rem_3.25rem] gap-1.5 border-b border-border bg-card/95 px-2 py-1.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground/60 backdrop-blur">
         <span>Cmd</span>
         <span>Point</span>
         <span className="text-right">X</span>
         <span className="text-right">Y</span>
-        <span className="text-right">#</span>
       </div>
       {pathData.subPaths.map((subPath, subPathIndex) => (
-        <div key={`sp-${subPathIndex}`} className="mb-1 last:mb-0">
+        <div key={`sp-${subPathIndex}`}>
           {pathData.subPaths.length > 1 && (
-            <div className="px-4 pb-0.5 pt-1 text-[9px] uppercase tracking-widest text-muted-foreground/60">
+            <div className="bg-muted/40 px-2 py-1 text-[9px] font-medium uppercase tracking-wider text-muted-foreground/60">
               Subpath {subPathIndex + 1}
             </div>
           )}
 
-          <div className="space-y-px">
+          <div className="space-y-px py-0.5">
             {subPath.commands.map((cmd, commandIndex) => {
               const { label, shortCoords } = getCommandDescription(cmd);
               const selected = isCommandSelected(subPathIndex, commandIndex);
@@ -119,11 +118,9 @@ export function PathCommandsList({
                 <div
                   key={cmd.id || `${subPathIndex}-${commandIndex}`}
                   className={cn(
-                    "group rounded-sm px-2.5 py-1 text-left transition-[background-color,color,box-shadow]",
-                    "hover:bg-muted/70",
-                    selected
-                      ? "bg-primary/10 text-primary ring-1 ring-inset ring-primary/30"
-                      : "text-foreground hover:text-foreground",
+                    "group px-2 py-1 text-left transition-[background-color,color]",
+                    "hover:bg-muted/60",
+                    selected ? "bg-primary/10 text-primary" : "text-foreground",
                   )}
                 >
                   {points.map((point, pointIndex) => {
@@ -143,15 +140,15 @@ export function PathCommandsList({
                       <div
                         key={`${cmd.id || commandIndex}-${pointIndex}`}
                         className={cn(
-                          "grid grid-cols-[2rem_minmax(4rem,1fr)_3.25rem_3.25rem_1.5rem] items-center gap-1",
-                          pointIndex > 0 && "mt-1 border-t border-border/40 pt-1",
+                          "grid grid-cols-[1.5rem_minmax(0,1fr)_3.25rem_3.25rem] items-center gap-1.5",
+                          pointIndex > 0 && "mt-0.5 pl-1",
                         )}
                       >
                         {pointIndex === 0 ? (
                           <button
                             type="button"
                             className={cn(
-                              "inline-flex h-5 w-fit items-center justify-center rounded-sm border-0 px-1 font-mono text-[9px] tracking-[0.5px] transition-transform active:scale-95",
+                              "inline-flex h-5 w-fit items-center justify-center rounded-sm border-0 px-1 font-mono text-[10px] tracking-[0.5px] transition-transform active:scale-95",
                               selected
                                 ? "bg-primary text-primary-foreground"
                                 : "bg-muted text-muted-foreground group-hover:bg-muted/80",
@@ -171,7 +168,7 @@ export function PathCommandsList({
                         <button
                           type="button"
                           className={cn(
-                            "min-w-0 truncate rounded-sm px-1 py-0.5 text-left text-[10px]",
+                            "min-w-0 truncate rounded-sm px-1 py-0.5 text-left text-[11px]",
                             pointSelected
                               ? "bg-primary/15 font-medium text-primary"
                               : "text-muted-foreground hover:bg-muted",
@@ -183,7 +180,9 @@ export function PathCommandsList({
                             }
                           }}
                         >
-                          <span className="mr-1 font-mono uppercase tracking-wide">{role}</span>
+                          {points.length > 1 && (
+                            <span className="mr-1.5 text-muted-foreground">{role}</span>
+                          )}
                           {pointIndex === 0 && (
                             <span className="text-muted-foreground/70">{label}</span>
                           )}
@@ -200,7 +199,7 @@ export function PathCommandsList({
                             return (
                               <span
                                 key={coord}
-                                className="font-mono text-[10px] text-right text-muted-foreground/50"
+                                className="font-mono text-[11px] text-right text-muted-foreground/50"
                               >
                                 -
                               </span>
@@ -240,13 +239,13 @@ export function PathCommandsList({
                                   });
                                 }
                               }}
-                              className="h-6 w-full rounded-sm bg-background px-1 text-right font-mono text-[10px] ring-1 ring-primary"
+                              className="h-6 w-full rounded-sm bg-background px-1 text-right font-mono text-[11px] ring-1 ring-primary"
                             />
                           ) : (
                             <button
                               key={coord}
                               type="button"
-                              className="h-6 rounded-sm px-1 text-right font-mono text-[10px] tabular-nums text-foreground/90 hover:bg-background hover:ring-1 hover:ring-border"
+                              className="h-6 rounded-sm px-1 text-right font-mono text-[11px] tabular-nums text-foreground/90 hover:bg-background hover:ring-1 hover:ring-border"
                               onClick={(event) => {
                                 event.stopPropagation();
                                 setEditing({
@@ -262,10 +261,6 @@ export function PathCommandsList({
                             </button>
                           );
                         })}
-
-                        <span className="text-right font-mono text-[8px] tabular-nums text-muted-foreground/50">
-                          {pointIndex === 0 ? commandIndex : ""}
-                        </span>
                       </div>
                     );
                   })}

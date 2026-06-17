@@ -7,7 +7,6 @@ import {
   EyeOff,
   FileCode2,
   FolderOpen,
-  Import,
   MoreVertical,
   Plus,
   Timer,
@@ -29,8 +28,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useEditorStore } from "@/lib/store/editorStore";
-import { DEMO_INFOS } from "@/lib/shapeshifter/demoProjects";
 import type { Layer, VectorMetadata } from "@/lib/shapeshifter/types";
+import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
+import { INTERPOLATOR_CURVES } from "@/lib/shapeshifter/interpolators";
+import { EasingCurve } from "./EasingCurve";
+
+/** Friendly labels for the real, curve-backed interpolators (Android-named). */
+const INTERPOLATOR_OPTIONS: { value: keyof typeof INTERPOLATOR_CURVES; label: string }[] = [
+  { value: "FAST_OUT_SLOW_IN", label: "Standard" },
+  { value: "LINEAR_OUT_SLOW_IN", label: "Decelerate" },
+  { value: "FAST_OUT_LINEAR_IN", label: "Accelerate" },
+  { value: "ACCELERATE_DECELERATE", label: "Ease in-out" },
+  { value: "LINEAR", label: "Linear" },
+];
 
 interface LayerTimelineProps {
   onOpenSVGImport: () => void;
@@ -38,7 +48,7 @@ interface LayerTimelineProps {
   onLoadSample: (index: number) => void;
 }
 
-export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: LayerTimelineProps) {
+export function LayerTimeline(_props: LayerTimelineProps) {
   const {
     layers,
     selectedLayerId,
@@ -56,7 +66,9 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
     selectBlocks,
     timelineCollapsed,
     toggleTimelineCollapsed,
+    setAnimationDuration,
   } = useEditorStore();
+  const currentTimeMs = Math.round(progress * animation.duration);
   const formatTimeMark = (timeMs: number) =>
     animation.duration < 1000 ? `${Math.round(timeMs)}ms` : `${(timeMs / 1000).toFixed(1)}s`;
 
@@ -166,88 +178,15 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
   return (
     <section className="z-20 flex h-full min-h-0 shrink-0 bg-card text-card-foreground shadow-md">
       <div className="flex min-h-0 w-[300px] shrink-0 flex-col border-r border-border/60 bg-sidebar">
-        <div className="flex h-10 items-center gap-0.5 border-b border-border/60 bg-card px-1.5 shadow-xs">
+        <div className="flex h-10 items-center justify-between border-b border-border/60 bg-card px-3">
+          <span className="text-[13px] font-semibold tracking-tight">Layers</span>
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
-                <button
-                  type="button"
-                  className="h-8 rounded px-2 text-xs font-medium hover:bg-muted"
-                />
-              }
-            >
-              File
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-44">
-              <DropdownMenuItem onClick={onOpenSVGImport}>Open project or asset</DropdownMenuItem>
-              {DEMO_INFOS.map((demo, index) => (
-                <DropdownMenuItem key={demo.id} onClick={() => onLoadSample(index)}>
-                  Demo: {demo.title}
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuItem onClick={() => onExport("json")}>
-                Save project JSON
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <button
-                  type="button"
-                  className="h-8 rounded px-2 text-xs font-medium hover:bg-muted"
-                />
-              }
-            >
-              Import
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-44">
-              <DropdownMenuItem onClick={onOpenSVGImport}>
-                <Import className="mr-2 h-4 w-4" /> SVG
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onOpenSVGImport}>
-                <Import className="mr-2 h-4 w-4" /> Vector Drawable XML
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <button
-                  type="button"
-                  className="h-8 rounded px-2 text-xs font-medium hover:bg-muted"
-                />
-              }
-            >
-              Export
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
-              <DropdownMenuItem onClick={() => onExport("svg")}>Animated SVG</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onExport("css")}>CSS keyframes</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onExport("lottie")}>Lottie JSON</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onExport("vector")}>
-                Vector Drawable
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onExport("avd")}>
-                Animated Vector Drawable
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onExport("spritesheet")}>
-                SVG spritesheet
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onExport("json")}>Project JSON</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onExport("static")}>
-                High-Fidelity Static SVG
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onExport("pdf")}>Vector PDF</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <div className="flex-1" />
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <button
-                  type="button"
-                  className="inline-flex shrink-0 items-center justify-center rounded-[min(var(--radius-md),12px)] size-7 border border-transparent bg-clip-padding text-sm font-medium transition-all outline-none hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50 text-muted-foreground"
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-foreground"
                   aria-label="Add layer"
                 />
               }
@@ -278,7 +217,7 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
               return (
                 <button
                   key={`${row.layer.id}-${row.propertyName}`}
-                  className={`flex h-6 w-full items-center gap-2 rounded px-2 text-left text-[10px] ${
+                  className={`flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] ${
                     isSelected
                       ? "bg-primary/10 text-primary"
                       : "text-muted-foreground hover:bg-muted/70"
@@ -287,7 +226,7 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                   onClick={() => selectBlocks(blockIds)}
                 >
                   <Timer className="h-3 w-3 shrink-0" />
-                  <span className="min-w-0 truncate font-mono">{row.propertyName}</span>
+                  <span className="min-w-0 truncate">{propertyLabel(row.propertyName)}</span>
                 </button>
               );
             }
@@ -368,7 +307,7 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                   )}
 
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium text-[11px]">{layer.name}</span>
+                    <span className="block truncate text-xs font-medium">{layer.name}</span>
                   </span>
 
                   <DropdownMenu>
@@ -436,39 +375,45 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-card">
-        <div className="flex h-10 items-center gap-2 border-b border-border/60 bg-card px-3 shadow-xs">
-          <div className="flex items-center gap-1.5 text-xs font-semibold">
-            <Timer className="h-3.5 w-3.5" />
-            <span>anim</span>
-            <span className="ml-1 text-[10px] text-muted-foreground">
-              {animation.blocks.length === 0
-                ? "0 blocks"
-                : `${animation.blocks.length} block${animation.blocks.length === 1 ? "" : "s"}`}
-            </span>
-            <span className="text-muted-foreground">{animation.duration}ms</span>
-            {animation.blocks.length > 0 && (
-              <span
-                className="ml-0.5 rounded-sm bg-primary/10 px-1 py-px text-[9px] font-mono text-primary/90"
-                title="Animation blocks active"
-              >
-                ANIM
-              </span>
-            )}
-          </div>
+        <div className="flex h-10 items-center gap-2 border-b border-border/60 bg-card px-3">
           <Button
             size="icon-xs"
             variant="ghost"
-            aria-label={
-              timelineCollapsed
-                ? "Expand timeline tracks"
-                : "Collapse timeline tracks"
-            }
+            className="text-muted-foreground hover:text-foreground"
+            aria-label={timelineCollapsed ? "Expand timeline tracks" : "Collapse timeline tracks"}
             onClick={toggleTimelineCollapsed}
           >
             <ChevronRight
               className={`h-3.5 w-3.5 transition-transform ${timelineCollapsed ? "" : "rotate-90"}`}
             />
           </Button>
+          <span className="text-[13px] font-semibold tracking-tight">Timeline</span>
+          <span className="text-[11px] text-muted-foreground">
+            {animation.blocks.length} {animation.blocks.length === 1 ? "track" : "tracks"}
+          </span>
+          <div className="flex-1" />
+          {/* Live playhead time + editable total duration */}
+          <span className="font-mono text-[11px] tabular-nums text-primary">
+            {currentTimeMs}
+            <span className="text-muted-foreground/60">ms</span>
+          </span>
+          <span className="text-[11px] text-muted-foreground/50">/</span>
+          <div className="flex items-center rounded-md border border-border bg-background focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+            <input
+              type="number"
+              min={100}
+              step={50}
+              value={animation.duration}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (Number.isFinite(n)) setAnimationDuration(n);
+              }}
+              aria-label="Animation duration in milliseconds"
+              title="Total animation duration"
+              className="h-6 w-14 bg-transparent px-1.5 text-right font-mono text-[11px] tabular-nums text-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+            />
+            <span className="pr-1.5 text-[10px] text-muted-foreground/60">ms</span>
+          </div>
         </div>
         <div
           className="relative grid h-7 grid-cols-11 border-b border-border/60 bg-muted/20 text-[11px] text-muted-foreground select-none cursor-ew-resize hover:bg-muted/35 active:bg-muted/50 transition-colors"
@@ -507,32 +452,77 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
           ))}
         </div>
 
-        {selectedBlockIds.length > 0 && (
-          <div className="flex h-9 items-center gap-2 border-b bg-muted/50 px-3 text-[10px]">
-            <span>Selected block interpolator:</span>
-            <Select
-              value={
-                animation.blocks.find((b) => selectedBlockIds.includes(b.id))?.interpolator ||
-                "FAST_OUT_SLOW_IN"
-              }
-              onValueChange={(value) => {
-                const selId = selectedBlockIds[0];
-                if (selId && value) updateTimelineBlock(selId, { interpolator: value });
-              }}
-            >
-              <SelectTrigger size="sm" className="h-7 w-44 bg-background text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="FAST_OUT_SLOW_IN">Fast out slow in</SelectItem>
-                <SelectItem value="LINEAR">Linear</SelectItem>
-                <SelectItem value="EASE_IN">Ease in</SelectItem>
-                <SelectItem value="EASE_OUT">Ease out</SelectItem>
-                <SelectItem value="EASE_IN_OUT">Ease in out</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        )}
+        {selectedBlockIds.length > 0 &&
+          (() => {
+            const selBlock = animation.blocks.find((b) => selectedBlockIds.includes(b.id));
+            const interp = selBlock?.interpolator || "FAST_OUT_SLOW_IN";
+            const isNamed = interp in INTERPOLATOR_CURVES;
+            // Resolve the curve points: a named Android interpolator, or a custom
+            // "x1 y1 x2 y2" string (which evaluateInterpolator already understands).
+            const curve = isNamed
+              ? INTERPOLATOR_CURVES[interp as keyof typeof INTERPOLATOR_CURVES]
+              : ((interp.match(/[-+]?(?:\d*\.)?\d+/g)?.map(Number).slice(0, 4) as
+                  | [number, number, number, number]
+                  | undefined) ?? INTERPOLATOR_CURVES.FAST_OUT_SLOW_IN);
+            // Apply an interpolator value to every selected block.
+            const setInterp = (value: string) =>
+              selectedBlockIds.forEach((id) => updateTimelineBlock(id, { interpolator: value }));
+            // Local progress within the selected block, for the travelling dot.
+            const localT = selBlock
+              ? Math.max(
+                  0,
+                  Math.min(
+                    1,
+                    (currentTimeMs - selBlock.startTime) /
+                      Math.max(1, selBlock.endTime - selBlock.startTime),
+                  ),
+                )
+              : undefined;
+            return (
+              <div className="flex h-16 items-center gap-3 border-b bg-muted/40 px-3 text-[11px]">
+                <EasingCurve
+                  points={curve}
+                  progress={localT}
+                  size={52}
+                  onChange={(pts) => setInterp(pts.join(" "))}
+                />
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">Easing</span>
+                    <Select
+                      value={isNamed ? interp : "__custom__"}
+                      onValueChange={(value) => {
+                        if (!value) return;
+                        // Selecting "Custom" seeds an editable curve from the
+                        // current shape; named options apply their preset.
+                        setInterp(value === "__custom__" ? curve.join(" ") : value);
+                      }}
+                    >
+                      <SelectTrigger size="sm" className="h-7 w-36 bg-background text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {INTERPOLATOR_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="__custom__">Custom…</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <span className="font-mono text-[10px] tabular-nums text-muted-foreground/80">
+                    {isNamed
+                      ? selBlock
+                        ? `${selBlock.startTime}–${selBlock.endTime}ms`
+                        : ""
+                      : `cubic-bezier(${curve.map((n) => Number(n).toFixed(2)).join(", ")})`}
+                    {selectedBlockIds.length > 1 && ` · ${selectedBlockIds.length} blocks`}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
 
         <div
           className="relative min-h-0 flex-1 bg-muted/15 pt-2.5"
@@ -547,13 +537,19 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
             style={{ left: `${Math.round(progress * 100)}%` }}
           />
           {!timelineCollapsed && animation.blocks.length === 0 && (
-            <div className="h-4 select-none pointer-events-none" aria-hidden="true" />
+            <div className="pointer-events-none absolute inset-0 z-0 flex flex-col items-center justify-center gap-1.5 px-4 text-center select-none">
+              <Timer className="h-4 w-4 text-muted-foreground/40" />
+              <p className="text-[11px] font-medium text-muted-foreground">No animations yet</p>
+              <p className="max-w-[16rem] text-[10px] leading-relaxed text-muted-foreground/70">
+                Animate a property from the Inspector, or a layer&apos;s ⋮ menu, to add a track.
+              </p>
+            </div>
           )}
           {!timelineCollapsed &&
             timelineRows.map((row) => (
               <div
                 key={row.kind === "property" ? `${row.layer.id}-${row.propertyName}` : row.layer.id}
-                className={`${row.kind === "property" ? "h-6" : "h-8"} relative border-b border-border/45`}
+                className={`${row.kind === "property" ? "h-7" : "h-8"} relative border-b border-border/45`}
               >
                 {row.kind === "property" &&
                   animation.blocks
@@ -674,7 +670,7 @@ export function LayerTimeline({ onOpenSVGImport, onExport, onLoadSample }: Layer
                       return (
                         <div
                           key={block.id}
-                          className={`absolute top-1.5 h-3 rounded-sm cursor-grab active:cursor-grabbing transition-colors relative overflow-visible ${isSelected ? "bg-primary ring-1 ring-ring" : "bg-primary/60 hover:bg-primary/75"} ${interp === "LINEAR" ? "border border-dashed border-primary/70" : ""}`}
+                          className={`absolute top-1 h-5 rounded-md cursor-grab active:cursor-grabbing transition-colors relative overflow-visible shadow-sm ${isSelected ? "bg-primary ring-1 ring-ring" : "bg-primary/65 hover:bg-primary/80"} ${interp === "LINEAR" ? "border border-dashed border-primary/70" : ""}`}
                           style={{
                             left: `${leftPct}%`,
                             width: `${widthPct}%`,

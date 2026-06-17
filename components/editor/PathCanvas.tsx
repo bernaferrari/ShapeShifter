@@ -12,8 +12,9 @@ import {
 import { evaluateBlock } from "@/lib/shapeshifter/interpolators";
 import type { SegmentSelection, SubPathSelection } from "@/lib/store/editorStore";
 import type { Command, Layer, PathData, Point, TimelineBlock } from "@/lib/shapeshifter/types";
+import { gradientToSvg } from "@/lib/shapeshifter/gradients";
 import type { Viewport } from "@/lib/shapeshifter/camera";
-import { zoomAtWorldPoint } from "@/lib/shapeshifter/camera";
+import { fitViewportToAspect, zoomAtWorldPoint } from "@/lib/shapeshifter/camera";
 import { GestureDispatcher } from "@/lib/shapeshifter/gestures/GestureDispatcher";
 import {
   collectPointsInRect,
@@ -129,7 +130,24 @@ export const PathCanvas = React.memo(function PathCanvas({
     isActionMode,
   } = useEditorStore();
 
-  const viewBox = detailViewport;
+  // Track the rendered element's aspect so the viewBox fills the (possibly
+  // non-square) container edge-to-edge while keeping screen↔world mapping exact.
+  const [elementAspect, setElementAspect] = React.useState(1);
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect;
+      if (r && r.width > 0 && r.height > 0) setElementAspect(r.width / r.height);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const viewBox = useMemo(
+    () => fitViewportToAspect(detailViewport, elementAspect),
+    [detailViewport, elementAspect],
+  );
 
   const artboard = useMemo(() => {
     const artboardWidth = Math.max(1, vector.width || 24);
@@ -292,13 +310,27 @@ export const PathCanvas = React.memo(function PathCanvas({
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
       e.preventDefault();
-      const mouse = pointFromEvent(e.clientX, e.clientY);
-      if (!mouse) return;
-
-      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-      setDetailViewport(
-        zoomAtWorldPoint(viewBox, mouse, viewBox.scale * zoomFactor, 0.25, 8),
-      );
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      // Figma model: ⌘/Ctrl+scroll (and trackpad pinch) zooms; plain scroll pans.
+      if (e.ctrlKey || e.metaKey) {
+        const mouse = pointFromEvent(e.clientX, e.clientY);
+        if (!mouse) return;
+        // Gentle, clamped zoom (≈0.86× per mouse notch; smooth for trackpad pinch).
+        const d = Math.max(-100, Math.min(100, e.deltaY));
+        const zoomFactor = Math.exp(-d * 0.0015);
+        setDetailViewport(zoomAtWorldPoint(viewBox, mouse, viewBox.scale * zoomFactor, 0.25, 8));
+        return;
+      }
+      const perPxX = viewBox.w / rect.width;
+      const perPxY = viewBox.h / rect.height;
+      const dxPx = e.shiftKey ? e.deltaY : e.deltaX;
+      const dyPx = e.shiftKey ? 0 : e.deltaY;
+      setDetailViewport((prev) => ({
+        ...prev,
+        x: prev.x + dxPx * perPxX,
+        y: prev.y + dyPx * perPxY,
+      }));
     },
     [pointFromEvent, setDetailViewport, viewBox],
   );
@@ -617,7 +649,7 @@ export const PathCanvas = React.memo(function PathCanvas({
     }
     return pathToString(targetPathData);
   }, [side, currentLayer.from, currentLayer.to, progress, targetPathData]);
-  const fallbackStroke = side === "to" ? "hsl(var(--destructive))" : "hsl(var(--primary))";
+  const fallbackStroke = side === "to" ? "var(--destructive)" : "var(--primary)";
   const hasExplicitStroke = Boolean(currentLayer.strokeColor);
   const hasExplicitFill = Boolean(currentLayer.fillColor);
   const strokeWidth =
@@ -1342,9 +1374,20 @@ export const PathCanvas = React.memo(function PathCanvas({
         <clipPath id={`${gridId}-artboard-clip`}>
           <rect x={artboard.x} y={artboard.y} width={artboard.width} height={artboard.height} />
         </clipPath>
+        {currentLayer.fillGradient && (
+          <g
+            dangerouslySetInnerHTML={{
+              __html: gradientToSvg(
+                currentLayer.fillGradient,
+                `${gridId}-fill-grad`,
+                currentLayer.fillAlpha ?? 1,
+              ),
+            }}
+          />
+        )}
       </defs>
 
-      <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="#252525" />
+      <rect x={viewBox.x} y={viewBox.y} width={viewBox.w} height={viewBox.h} fill="var(--muted)" />
       {side === "preview" && (
         <text
           x={artboard.x}
@@ -1508,8 +1551,12 @@ export const PathCanvas = React.memo(function PathCanvas({
                 ? "drop-shadow-sm"
                 : "opacity-85 drop-shadow-sm [stroke-dasharray:4_3]"
             }
-            fill={currentLayer.fillColor || "none"}
-            fillOpacity={currentLayer.fillAlpha ?? 1}
+            fill={
+              currentLayer.fillGradient
+                ? `url(#${gridId}-fill-grad)`
+                : currentLayer.fillColor || "none"
+            }
+            fillOpacity={currentLayer.fillGradient ? 1 : currentLayer.fillAlpha ?? 1}
             stroke={currentLayer.strokeColor || fallbackStroke}
             strokeOpacity={currentLayer.strokeAlpha ?? 1}
             strokeWidth={strokeWidth}
@@ -1813,10 +1860,20 @@ export const PathCanvas = React.memo(function PathCanvas({
             return (
               <g
                 key={`${command.id}-${pointIndex}`}
+                className="group"
                 transform={side === "preview" ? selectedPreviewTransform : undefined}
                 clipPath={overlayClipPath}
               >
-                {/* Handle line for cubics (original draws point -> handleIn / handleOut) */}
+                {/* Hover / selection halo (instant; SVG transitions are disabled globally) */}
+                <circle
+                  cx={point.x}
+                  cy={point.y}
+                  r={r * 2}
+                  fill="#0d99ff"
+                  pointerEvents="none"
+                  className={selected ? "opacity-20" : "opacity-0 group-hover:opacity-15"}
+                />
+                {/* Handle line for cubics (anchor -> control handle), dashed like the reference */}
                 {isCubic && showHandles && pointIndex < 2 && (
                   <line
                     x1={command.points[2]?.x ?? point.x}
@@ -1824,24 +1881,46 @@ export const PathCanvas = React.memo(function PathCanvas({
                     x2={point.x}
                     y2={point.y}
                     stroke="#0d99ff"
-                    strokeWidth={Math.max(viewBox.w * 0.0018, 0.06)}
+                    strokeWidth={Math.max(viewBox.w * 0.0015, 0.05)}
+                    strokeDasharray={`${Math.max(viewBox.w * 0.004, 0.12)} ${Math.max(viewBox.w * 0.003, 0.09)}`}
                     vectorEffect="non-scaling-stroke"
-                    opacity={0.6}
+                    opacity={0.55}
+                    pointerEvents="none"
                   />
                 )}
-                <circle
-                  cx={point.x}
-                  cy={point.y}
-                  r={r}
-                  className="cursor-grab transition-[fill,stroke,transform] duration-100"
-                  fill={fill}
-                  stroke="#0d99ff"
-                  strokeWidth={strokeW}
-                  vectorEffect="non-scaling-stroke"
-                  onPointerDown={(e) =>
-                    handlePointerDown(e, subPathIndex, commandIndex, pointIndex)
-                  }
-                />
+                {isHandle ? (
+                  /* Bezier control handle — round point */
+                  <circle
+                    cx={point.x}
+                    cy={point.y}
+                    r={r}
+                    className="cursor-grab transition-[fill,stroke] duration-100"
+                    fill={fill}
+                    stroke="#0d99ff"
+                    strokeWidth={strokeW}
+                    vectorEffect="non-scaling-stroke"
+                    onPointerDown={(e) =>
+                      handlePointerDown(e, subPathIndex, commandIndex, pointIndex)
+                    }
+                  />
+                ) : (
+                  /* Anchor point — hollow square (Figma / reference convention) */
+                  <rect
+                    x={point.x - r}
+                    y={point.y - r}
+                    width={r * 2}
+                    height={r * 2}
+                    rx={Math.max(r * 0.14, 0.015)}
+                    className="cursor-grab transition-[fill,stroke] duration-100"
+                    fill={fill}
+                    stroke="#0d99ff"
+                    strokeWidth={strokeW}
+                    vectorEffect="non-scaling-stroke"
+                    onPointerDown={(e) =>
+                      handlePointerDown(e, subPathIndex, commandIndex, pointIndex)
+                    }
+                  />
+                )}
               </g>
             );
           });

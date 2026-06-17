@@ -45,11 +45,39 @@ export type LayerType = "path" | "clipPath" | "group" | "vector";
 export type StrokeLineCap = "butt" | "square" | "round";
 export type StrokeLineJoin = "miter" | "round" | "bevel";
 export type FillType = "nonZero" | "evenOdd";
+export type GradientType = "linear" | "radial";
+
+/** A single gradient color stop. `offset` is 0..1, `opacity` (0..1) defaults to 1. */
+export interface GradientStop {
+  offset: number;
+  color: string;
+  opacity?: number;
+}
+
+/**
+ * Optional gradient fill for a path layer. When present on a Layer it takes
+ * precedence over the solid `fillColor` for both rendering and export.
+ * All spatial values are expressed in the path's bounding box (objectBoundingBox),
+ * so a gradient maps correctly regardless of the layer's transform or frame.
+ */
+export interface Gradient {
+  type: GradientType;
+  /** >= 2 stops, kept sorted by offset. */
+  stops: GradientStop[];
+  /** Linear only: direction in degrees. 0 = left→right, 90 = top→bottom. */
+  angle?: number;
+  /** Radial only: center as a fraction of the bounds (default 0.5/0.5). */
+  cx?: number;
+  cy?: number;
+  /** Radial only: radius as a fraction of the bounds (default 0.5). */
+  r?: number;
+}
 
 export interface PathStyle {
   pathData?: PathData;
   fillColor?: string;
   fillAlpha?: number;
+  fillGradient?: Gradient;
   strokeColor?: string;
   strokeAlpha?: number;
   strokeWidth?: number;

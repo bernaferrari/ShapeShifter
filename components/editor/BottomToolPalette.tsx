@@ -58,44 +58,47 @@ const TOOLS: ToolDef[] = [
 ];
 
 export function BottomToolPalette() {
-  const { toolMode, setToolMode, isActionMode } = useEditorStore();
-
-  // Hide the new palette in the old Action Mode triptych for now
-  // (the old left sidebar still lives there). This keeps the transition safe.
-  if (isActionMode) return null;
+  const { toolMode, setToolMode } = useEditorStore();
 
   return (
-    <div className="flex items-center justify-center">
-      <div className="flex items-center gap-1 rounded-lg border bg-background/95 p-1 shadow-xl shadow-black/15 backdrop-blur dark:shadow-black/35">
-        {TOOLS.map((tool) => {
-          const isActive = toolMode === tool.mode;
-          return (
-            <Tooltip key={tool.mode}>
-              <TooltipTrigger
-                render={
-                  <Button
-                    size="icon"
-                    variant={isActive ? "secondary" : "ghost"}
-                    className={`h-11 w-11 rounded-md transition-[background-color,color,box-shadow,transform] active:scale-95 ${
-                      isActive
-                        ? "bg-primary text-primary-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                    onClick={() => setToolMode(tool.mode)}
-                    aria-label={tool.label}
-                    aria-pressed={isActive}
-                  >
-                    {tool.icon}
-                  </Button>
-                }
-              />
-              <TooltipContent side="top" className="text-[11px]">
-                {tool.label} {tool.shortcut ? `(${tool.shortcut})` : ""}
-              </TooltipContent>
-            </Tooltip>
-          );
-        })}
-      </div>
+    <div className="flex flex-col items-center gap-1 rounded-xl border border-border bg-card/95 p-1 shadow-lg shadow-black/10 backdrop-blur-md dark:shadow-black/40">
+      {TOOLS.map((tool) => {
+        const isActive = toolMode === tool.mode;
+        return (
+          <React.Fragment key={tool.mode}>
+            {/* Divider between navigate/edit tools and create tools (Figma-style grouping) */}
+            {tool.mode === "pen" && <div className="my-0.5 h-px w-5 bg-border" />}
+            <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className={`size-10 rounded-lg transition-[background-color,color,transform] active:scale-95 ${
+                    isActive
+                      ? "bg-primary text-primary-foreground hover:bg-primary"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }`}
+                  onClick={() => setToolMode(tool.mode)}
+                  aria-label={tool.label}
+                  aria-pressed={isActive}
+                >
+                  {tool.icon}
+                </Button>
+              }
+            />
+            <TooltipContent side="right" className="flex items-center gap-2 text-[11px]">
+              <span>{tool.label}</span>
+              {tool.shortcut && (
+                <kbd className="rounded bg-muted px-1 py-px font-mono text-[10px] text-muted-foreground">
+                  {tool.shortcut}
+                </kbd>
+              )}
+            </TooltipContent>
+          </Tooltip>
+          </React.Fragment>
+        );
+      })}
     </div>
   );
 }

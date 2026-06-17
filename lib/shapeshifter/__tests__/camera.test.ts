@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { computeDetailViewport, computeFitViewport, zoomAtWorldPoint } from "../camera";
+import {
+  computeDetailViewport,
+  computeFitViewport,
+  computeGridSpec,
+  snapValueToStep,
+  zoomAtWorldPoint,
+} from "../camera";
 
 describe("world camera utilities", () => {
   it("fits real content without falling back to legacy magic coordinates", () => {
@@ -42,5 +48,35 @@ describe("world camera utilities", () => {
     expect(viewport.y + viewport.h).toBeGreaterThanOrEqual(24);
     expect(zoomed.scale).toBe(2);
     expect(zoomed.w).toBeCloseTo(viewport.w / 2);
+  });
+
+  it("derives an adaptive pixel grid from on-screen density", () => {
+    // Moderate zoom: one world unit ~ 10 screen px → whole-pixel grid, majors at 4.
+    const close = computeGridSpec(10);
+    expect(close.minor).toBe(1);
+    expect(close.major).toBe(4);
+
+    // Hard zoom → sub-pixel minors appear, but majors emphasise whole pixels.
+    const extreme = computeGridSpec(60);
+    expect(extreme.minor).toBeLessThan(1);
+    expect(extreme.major).toBe(1);
+
+    // Zoomed out: minors grow (power-of-two) so cells stay comfortably visible.
+    const far = computeGridSpec(0.5);
+    expect(far.minor).toBeGreaterThanOrEqual(10);
+    expect(far.major).toBe(far.minor * 4);
+
+    // iOS-style 5/10/15 grid via custom divisions.
+    const ios = computeGridSpec(10, { divisions: 5 });
+    expect(ios.minor).toBe(1);
+    expect(ios.major).toBe(5);
+  });
+
+  it("snaps to a step and scrubs floating-point dust", () => {
+    expect(snapValueToStep(1.0000002, 1)).toBe(1);
+    expect(snapValueToStep(2.3, 0.5)).toBe(2.5);
+    expect(snapValueToStep(0.30000000004, 0.25)).toBe(0.25);
+    // A zero/invalid step leaves the value untouched.
+    expect(snapValueToStep(3.14159, 0)).toBe(3.14159);
   });
 });

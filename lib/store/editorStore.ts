@@ -152,6 +152,9 @@ interface EditorState {
   // UI
   zoom: number;
   snapToGrid: boolean;
+  /** Minor grid cells per major line (4 = 4/8/12/16, 5 = iOS-style 5/10/15). */
+  gridDivisions: number;
+  setGridDivisions: (divisions: number) => void;
 
   // Timeline
   selectedBlockIds: string[];
@@ -519,6 +522,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   isRepeating: true,
   zoom: 1,
   snapToGrid: true,
+  gridDivisions: 4,
   selectedBlockIds: [],
   collapsedLayerIds: [],
   timelineZoom: 1,
@@ -576,12 +580,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const savedFrames = saveActiveFrame(state);
     const nextIndex = savedFrames.length + 1;
     const name = `Frame ${nextIndex}`;
+    // Place the new frame just to the right of the rightmost existing one (Figma-style),
+    // aligned to the same top edge — not scattered across the world.
+    const gap = 24;
+    const rightEdge = savedFrames.reduce(
+      (max, f) => Math.max(max, (f.x ?? 0) + (f.vector?.width ?? 48)),
+      0,
+    );
+    const topEdge = savedFrames.length ? Math.min(...savedFrames.map((f) => f.y ?? 0)) : 40;
     const frame: CanvasFrame = {
       id: `frame-${Date.now()}`,
       name,
-      // Place new frames in a more spread out, visible way in the freeform world.
-      x: nextIndex * 140,
-      y: 40,
+      x: savedFrames.length ? rightEdge + gap : 40,
+      y: topEdge,
       layers: cloneLayers(initialLayers),
       vector: { ...initialVector, id: `vector-${Date.now()}`, name },
       animation: { ...initialAnimation, id: `anim-${Date.now()}` },
@@ -615,9 +626,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       ...activeFrame,
       id: `frame-${Date.now()}`,
       name: `${activeFrame.name} copy`,
-      // More visible offset than the tiny previous +32. Combined with the world camera "bring into view" logic, duplicates should now appear near the user's current focus instead of disappearing diagonally offscreen.
-      x: activeFrame.x + 120,
-      y: activeFrame.y + 120,
+      // Figma-style: drop the copy immediately to the right of the original with a small
+      // gap, on the same baseline — not flung off diagonally into the world.
+      x: activeFrame.x + (activeFrame.vector?.width ?? 48) + 24,
+      y: activeFrame.y,
       vector: {
         ...activeFrame.vector,
         id: `vector-${Date.now()}`,
@@ -1446,6 +1458,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
     }),
   toggleSnap: () => set((state) => ({ snapToGrid: !state.snapToGrid })),
+  setGridDivisions: (divisions) =>
+    set({ gridDivisions: divisions > 1 ? Math.round(divisions) : 4 }),
 
   selectBlocks: (blockIds) => set({ selectedBlockIds: blockIds }),
   toggleBlockSelection: (blockId) =>

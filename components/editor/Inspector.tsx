@@ -2,26 +2,16 @@
 
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
-import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Badge } from "@/components/ui/badge";
-import { Trash2, Maximize2, Minimize2 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Maximize2, Minimize2, Trash2, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/lib/store/editorStore";
 import {
   changeCommandType,
@@ -29,100 +19,438 @@ import {
   pathToString,
   updateCommandPoint,
 } from "@/lib/shapeshifter/pathUtils";
-import type { FillType, Layer, StrokeLineCap, StrokeLineJoin } from "@/lib/shapeshifter/types";
+import type {
+  FillType,
+  Gradient,
+  GradientStop,
+  GradientType,
+  Layer,
+  StrokeLineCap,
+  StrokeLineJoin,
+} from "@/lib/shapeshifter/types";
+import {
+  gradientFromSolid,
+  gradientToCssBar,
+  normalizeStops,
+} from "@/lib/shapeshifter/gradients";
+import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
 import { MaterialSymbol } from "./MaterialSymbol";
 import { PathCommandsList } from "./PathCommandsList";
 
-function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid min-h-8 grid-cols-[112px_minmax(0,1fr)] items-center gap-3 px-4 py-1">
-      <Label className="select-none truncate text-xs font-normal text-muted-foreground">
-        {label}
-      </Label>
-      {children}
-    </div>
-  );
-}
+/* ------------------------------------------------------------------ */
+/* Field primitives — a small, consistent Figma-grade control system  */
+/* ------------------------------------------------------------------ */
 
-function InspectorSection({ title, children }: { title: string; children: React.ReactNode }) {
+const fieldBase =
+  "h-8 w-full rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground/50 hover:border-foreground/20 focus:border-primary focus:ring-2 focus:ring-primary/20";
+
+function Section({
+  title,
+  action,
+  children,
+  defaultOpen = true,
+}: {
+  title: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = React.useState(defaultOpen);
   return (
-    <section className="py-2">
-      <div className="px-4 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        {title}
+    <section className="border-b border-border/60 last:border-b-0">
+      <div className="flex h-9 items-center justify-between pl-1.5 pr-3">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex min-w-0 items-center gap-1 rounded py-1 pr-1 text-foreground hover:text-foreground"
+          aria-expanded={open}
+        >
+          <ChevronRight
+            className={cn(
+              "size-3.5 shrink-0 text-muted-foreground transition-transform",
+              open && "rotate-90",
+            )}
+          />
+          <span className="truncate text-[11px] font-semibold tracking-tight">{title}</span>
+        </button>
+        {open && action}
       </div>
-      <div className="space-y-0.5">{children}</div>
+      {open && <div className="space-y-1.5 px-3 pb-3">{children}</div>}
     </section>
   );
 }
 
-function NumberField({
-  value,
-  min,
-  max,
-  step = 1,
-  onChange,
-}: {
-  value: number;
-  min?: number;
-  max?: number;
-  step?: number;
-  onChange: (value: number) => void;
-}) {
-  // Figma-grade live scrubbing (drag label-adjacent grip for pro number editing)
-  // Smallest addition: local pointer drag modeled on LayerTimeline pattern, no store impact.
-  const [scrub, setScrub] = React.useState<{ startX: number; startVal: number } | null>(null);
-
-  const handleScrubStart = (e: React.PointerEvent<HTMLSpanElement>) => {
-    e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    setScrub({ startX: e.clientX, startVal: value });
-  };
-  const handleScrubMove = (e: React.PointerEvent<HTMLSpanElement>) => {
-    if (!scrub) return;
-    const dx = e.clientX - scrub.startX;
-    const sens = (step || 1) * 0.2; // tuned for 60fps precise feel
-    let next = scrub.startVal + dx * sens;
-    if (min !== undefined) next = Math.max(min, next);
-    if (max !== undefined) next = Math.min(max, next);
-    if (step && step > 0) next = Math.round(next / step) * step;
-    onChange(next);
-  };
-  const handleScrubEnd = (e: React.PointerEvent<HTMLSpanElement>) => {
-    try {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {}
-    setScrub(null);
-  };
-
+function Row({ label, children }: { label?: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-1">
-      <Input
-        type="number"
-        value={Number.isFinite(value) ? value : 0}
-        min={min}
-        max={max}
-        step={step}
-        className="h-7 rounded-sm bg-background font-mono text-xs"
-        onChange={(event) => {
-          const next = Number(event.target.value);
-          if (Number.isFinite(next)) onChange(next);
-        }}
-      />
-      <span
-        role="presentation"
-        tabIndex={-1}
-        className="cursor-ew-resize select-none px-0.5 text-[10px] leading-none text-muted-foreground/70 hover:text-foreground active:text-primary"
-        title="Drag to scrub value (Figma-style)"
-        onPointerDown={handleScrubStart}
-        onPointerMove={handleScrubMove}
-        onPointerUp={handleScrubEnd}
-        onPointerCancel={handleScrubEnd}
-      >
-        ⟷
-      </span>
+    <div className="grid grid-cols-[58px_minmax(0,1fr)] items-center gap-2">
+      {label ? (
+        <span className="truncate text-[11px] text-muted-foreground">{label}</span>
+      ) : (
+        <span />
+      )}
+      <div className="min-w-0">{children}</div>
     </div>
   );
 }
+
+function TextInput({
+  value,
+  onChange,
+  placeholder,
+  mono,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  mono?: boolean;
+}) {
+  return (
+    <input
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      className={cn(fieldBase, mono && "font-mono")}
+    />
+  );
+}
+
+/** Number field with Figma-style label-drag scrubbing + optional unit suffix. */
+function NumberRow({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step = 1,
+  suffix,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  suffix?: string;
+}) {
+  const scrub = React.useRef<{ startX: number; startVal: number } | null>(null);
+  // While the field is focused we keep the raw keystrokes so typing "2." or a
+  // trailing zero isn't reformatted mid-edit. Display always uses a "." decimal
+  // separator (an <input type=number> would otherwise render the OS locale's
+  // comma, e.g. "2,4" on pt-BR), and we parse both "." and "," on input.
+  const [draft, setDraft] = React.useState<string | null>(null);
+  const display = draft ?? (Number.isFinite(value) ? String(value) : "0");
+
+  const clamp = (n: number) => {
+    let next = n;
+    if (min !== undefined) next = Math.max(min, next);
+    if (max !== undefined) next = Math.min(max, next);
+    if (step) next = Math.round(next / step) * step;
+    return Number(next.toFixed(4));
+  };
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    scrub.current = { startX: e.clientX, startVal: value };
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!scrub.current) return;
+    const dx = e.clientX - scrub.current.startX;
+    onChange(clamp(scrub.current.startVal + dx * (step || 1) * 0.5));
+  };
+  const onPointerUp = (e: React.PointerEvent) => {
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
+    scrub.current = null;
+  };
+
+  return (
+    <div className="grid grid-cols-[58px_minmax(0,1fr)] items-center gap-2">
+      <span
+        role="slider"
+        aria-label={label}
+        aria-valuenow={value}
+        tabIndex={-1}
+        className="w-fit cursor-ew-resize select-none truncate border-b border-dotted border-muted-foreground/40 text-[11px] text-muted-foreground hover:border-foreground/50 hover:text-foreground"
+        title="Drag to adjust"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
+        {label}
+      </span>
+      <div className="relative">
+        <input
+          type="text"
+          inputMode="decimal"
+          value={display}
+          onFocus={() => setDraft(Number.isFinite(value) ? String(value) : "0")}
+          onChange={(e) => {
+            const raw = e.target.value;
+            setDraft(raw);
+            const n = Number(raw.replace(",", "."));
+            if (Number.isFinite(n)) onChange(clamp(n));
+          }}
+          onBlur={() => setDraft(null)}
+          className={cn(fieldBase, "pr-7 font-mono tabular-nums")}
+        />
+        {suffix && (
+          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground/60">
+            {suffix}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Compact color pill: swatch + hex + opacity in one control (Figma-style). */
+function ColorRow({
+  label,
+  color,
+  alpha,
+  onColor,
+  onAlpha,
+}: {
+  label: string;
+  color: string;
+  alpha?: number;
+  onColor: (v: string) => void;
+  onAlpha?: (v: number) => void;
+}) {
+  const hex = color?.startsWith("#") ? color : "#000000";
+  return (
+    <div className="grid grid-cols-[58px_minmax(0,1fr)] items-center gap-2">
+      <span className="truncate text-[11px] text-muted-foreground">{label}</span>
+      <div className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-background pl-1.5 pr-2 transition-colors hover:border-foreground/20 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+        <label
+          className="relative size-5 shrink-0 cursor-pointer overflow-hidden rounded ring-1 ring-inset ring-border"
+          style={{
+            background: color
+              ? color
+              : "repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50% / 8px 8px",
+          }}
+        >
+          <input
+            type="color"
+            value={hex}
+            onChange={(e) => onColor(e.target.value)}
+            className="absolute inset-0 cursor-pointer opacity-0"
+            aria-label={`${label} color`}
+          />
+        </label>
+        <input
+          value={color || ""}
+          placeholder="none"
+          onChange={(e) => onColor(e.target.value)}
+          className="min-w-0 flex-1 bg-transparent font-mono text-xs uppercase text-foreground outline-none placeholder:text-muted-foreground/50 placeholder:normal-case"
+          aria-label={`${label} hex`}
+        />
+        {alpha != null && onAlpha && (
+          <>
+            <span className="h-4 w-px bg-border" />
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={Math.round((alpha ?? 1) * 100)}
+              onChange={(e) => {
+                const pct = Number(e.target.value);
+                if (Number.isFinite(pct)) onAlpha(Math.max(0, Math.min(100, pct)) / 100);
+              }}
+              className="w-9 bg-transparent text-right font-mono text-xs tabular-nums text-muted-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+              aria-label={`${label} opacity`}
+            />
+            <span className="text-[10px] text-muted-foreground/60">%</span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Compact Figma-style gradient editor: preview bar + per-stop color/offset/opacity. */
+function GradientEditor({
+  gradient,
+  onChange,
+}: {
+  gradient: Gradient;
+  onChange: (g: Gradient) => void;
+}) {
+  const stops = gradient.stops;
+  const [active, setActive] = React.useState(0);
+  const activeIdx = Math.min(active, stops.length - 1);
+  const activeStop = stops[activeIdx];
+
+  const commit = (next: Partial<Gradient>) => onChange({ ...gradient, ...next });
+
+  const updateStop = (idx: number, patch: Partial<GradientStop>) => {
+    const next = stops.map((s, i) => (i === idx ? { ...s, ...patch } : s));
+    commit({ stops: next });
+  };
+
+  const addStop = () => {
+    // Insert a stop in the widest gap, colored by interpolating neighbours' offsets.
+    const sorted = normalizeStops(stops);
+    let gapStart = 0;
+    let gap = -1;
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const d = sorted[i + 1].offset - sorted[i].offset;
+      if (d > gap) {
+        gap = d;
+        gapStart = i;
+      }
+    }
+    const offset = (sorted[gapStart].offset + sorted[gapStart + 1].offset) / 2;
+    const next = [...stops, { offset, color: sorted[gapStart].color, opacity: 1 }];
+    commit({ stops: next });
+    setActive(next.length - 1);
+  };
+
+  const removeStop = (idx: number) => {
+    if (stops.length <= 2) return;
+    commit({ stops: stops.filter((_, i) => i !== idx) });
+    setActive(0);
+  };
+
+  const hex = activeStop?.color?.startsWith("#") ? activeStop.color : "#000000";
+
+  return (
+    <div className="space-y-2">
+      {/* Preview bar with stop handles */}
+      <div
+        className="relative h-6 rounded-md ring-1 ring-inset ring-border"
+        style={{
+          backgroundImage: `${gradientToCssBar(gradient)}, repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%)`,
+          backgroundSize: "100% 100%, 8px 8px",
+        }}
+      >
+        {stops.map((s, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => setActive(i)}
+            aria-label={`Stop ${i + 1}`}
+            className={cn(
+              "absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 shadow-sm transition-transform",
+              i === activeIdx
+                ? "border-primary scale-110"
+                : "border-white ring-1 ring-black/20",
+            )}
+            style={{ left: `${s.offset * 100}%`, background: s.color }}
+          />
+        ))}
+      </div>
+
+      {/* Active stop editor */}
+      {activeStop && (
+        <div className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-background pl-1.5 pr-2 transition-colors focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+          <label
+            className="relative size-5 shrink-0 cursor-pointer overflow-hidden rounded ring-1 ring-inset ring-border"
+            style={{ background: activeStop.color }}
+          >
+            <input
+              type="color"
+              value={hex}
+              onChange={(e) => updateStop(activeIdx, { color: e.target.value })}
+              className="absolute inset-0 cursor-pointer opacity-0"
+              aria-label="Stop color"
+            />
+          </label>
+          <input
+            value={activeStop.color}
+            onChange={(e) => updateStop(activeIdx, { color: e.target.value })}
+            className="min-w-0 flex-1 bg-transparent font-mono text-xs uppercase text-foreground outline-none"
+            aria-label="Stop hex"
+          />
+          <span className="h-4 w-px bg-border" />
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={Math.round((activeStop.opacity ?? 1) * 100)}
+            onChange={(e) => {
+              const pct = Number(e.target.value);
+              if (Number.isFinite(pct))
+                updateStop(activeIdx, { opacity: Math.max(0, Math.min(100, pct)) / 100 });
+            }}
+            className="w-9 bg-transparent text-right font-mono text-xs tabular-nums text-muted-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+            aria-label="Stop opacity"
+          />
+          <span className="text-[10px] text-muted-foreground/60">%</span>
+        </div>
+      )}
+
+      {activeStop && (
+        <div className="flex items-center gap-2">
+          <NumberRow
+            label="Position"
+            value={Math.round((activeStop.offset ?? 0) * 100)}
+            min={0}
+            max={100}
+            suffix="%"
+            onChange={(v) => updateStop(activeIdx, { offset: v / 100 })}
+          />
+        </div>
+      )}
+
+      {/* Add / remove stop */}
+      <div className="grid grid-cols-2 gap-1">
+        <button
+          type="button"
+          onClick={addStop}
+          className="flex h-7 items-center justify-center gap-1 rounded-md border border-border bg-background text-[11px] text-foreground transition-colors hover:border-foreground/20 hover:bg-muted"
+        >
+          <MaterialSymbol name="add" size={14} className="text-muted-foreground" /> Stop
+        </button>
+        <button
+          type="button"
+          onClick={() => removeStop(activeIdx)}
+          disabled={stops.length <= 2}
+          className="flex h-7 items-center justify-center gap-1 rounded-md border border-border bg-background text-[11px] text-foreground transition-colors hover:border-foreground/20 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <MaterialSymbol name="remove" size={14} className="text-muted-foreground" /> Remove
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+}: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex h-8 items-center rounded-md bg-muted p-0.5">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={cn(
+            "flex h-7 flex-1 items-center justify-center rounded-[5px] px-1 text-[11px] capitalize transition-colors",
+            value === o.value
+              ? "bg-card font-medium text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Inspector                                                          */
+/* ------------------------------------------------------------------ */
 
 export function Inspector() {
   const {
@@ -139,38 +467,39 @@ export function Inspector() {
     animation,
     selectedPoints,
     selectPoint,
+    booleanCombine,
   } = useEditorStore();
 
   const point = getCurrentSelectedPoint ? getCurrentSelectedPoint() : null;
   const currentLayer = layers.find((l) => l.id === selectedLayerId);
   const updateLayer = (patch: Partial<Layer>) => updateSelectedLayer(patch);
+  const setPath = (parsed: ReturnType<typeof parsePath>) =>
+    updateLayer(editingSide === "from" ? { from: parsed, pathData: parsed } : { to: parsed });
 
-  // bql: Dedicated "Focus Commands" mode — gives the beautiful reference-style command list
-  // almost the full height of the sidebar when the user wants breathing room for complex paths.
   const [isCommandsFocused, setIsCommandsFocused] = React.useState(false);
+  const [showPathData, setShowPathData] = React.useState(false);
 
-  // Escape exits focus mode (very intuitive)
   React.useEffect(() => {
     if (!isCommandsFocused) return;
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setIsCommandsFocused(false);
-      }
-    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setIsCommandsFocused(false);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [isCommandsFocused]);
 
+  /* ---- empty state ---- */
   if (!currentLayer) {
     return (
       <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-        <div className="flex min-h-16 items-center border-b bg-card px-4 shadow-xs">
-          <span className="text-sm font-medium">Properties</span>
+        <div className="flex h-14 items-center border-b border-border px-3">
+          <span className="text-[13px] font-semibold">Properties</span>
         </div>
-        <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground">
-          <MaterialSymbol name="touch_app" size={28} />
-          <p className="ml-3">Select something to edit its properties</p>
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+          <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <MaterialSymbol name="touch_app" size={24} />
+          </div>
+          <p className="max-w-[12rem] text-xs leading-relaxed text-muted-foreground">
+            Select a layer or point to edit its properties
+          </p>
         </div>
       </div>
     );
@@ -191,104 +520,92 @@ export function Inspector() {
           "trimPathOffset",
         ];
 
-  // bql dedicated focus mode — the final piece of "do all of them"
+  const commandsList = (extraClass?: string) => (
+    <PathCommandsList
+      pathData={currentLayer[editingSide]}
+      selectedPoints={selectedPoints}
+      className={extraClass}
+      onSelectCommand={(subPathIndex, commandIndex, pointIndex) => {
+        if (!selectPoint) return;
+        selectPoint({
+          layerId: selectedLayerId,
+          side: editingSide,
+          subPathIndex,
+          commandIndex,
+          pointIndex,
+        });
+      }}
+      onUpdateCommandPoint={(subPathIndex, commandIndex, pointIndex, newPoint) => {
+        setPath(
+          updateCommandPoint(currentLayer[editingSide], subPathIndex, commandIndex, pointIndex, newPoint),
+        );
+      }}
+      onChangeCommandType={(subPathIndex, commandIndex, newType) => {
+        setPath(changeCommandType(currentLayer[editingSide], subPathIndex, commandIndex, newType));
+      }}
+    />
+  );
+
+  /* ---- dedicated full-height command focus mode ---- */
   if (isCommandsFocused) {
     return (
       <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-        {/* Calm, generous dedicated header — reference image spirit */}
-        <div className="flex items-center gap-3 border-b bg-card px-4 py-3 shadow-xs">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              Path Commands
-              <span className="rounded bg-muted px-1.5 py-px font-mono text-[10px] text-muted-foreground">
-                d
-              </span>
-            </div>
-            <div className="text-[10px] text-muted-foreground truncate">{currentLayer.name}</div>
+        <div className="flex h-14 items-center justify-between border-b border-border px-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="text-[13px] font-semibold">Path commands</span>
+            <span className="rounded bg-muted px-1.5 py-px font-mono text-[10px] text-muted-foreground">
+              d
+            </span>
+            <span className="truncate text-[11px] text-muted-foreground">{currentLayer.name}</span>
           </div>
           <Button
-            size="sm"
+            size="icon-sm"
             variant="ghost"
+            className="text-muted-foreground hover:text-foreground"
             onClick={() => setIsCommandsFocused(false)}
-            className="gap-1.5 text-xs"
+            aria-label="Exit focus (Esc)"
           >
-            <Minimize2 className="h-3.5 w-3.5" /> Exit focus{" "}
-            <span className="text-muted-foreground">(Esc)</span>
+            <Minimize2 className="size-4" />
           </Button>
         </div>
-
-        <div className="min-h-0 flex-1 overflow-hidden p-2">
-          <PathCommandsList
-            pathData={currentLayer[editingSide]}
-            selectedPoints={selectedPoints}
-            onSelectCommand={(subPathIndex, commandIndex, pointIndex) => {
-              if (!currentLayer || !selectPoint) return;
-              selectPoint({
-                layerId: selectedLayerId,
-                side: editingSide,
-                subPathIndex,
-                commandIndex,
-                pointIndex,
-              });
-            }}
-            onUpdateCommandPoint={(subPathIndex, commandIndex, pointIndex, newPoint) => {
-              const currentPath = currentLayer[editingSide];
-              const updated = updateCommandPoint(
-                currentPath,
-                subPathIndex,
-                commandIndex,
-                pointIndex,
-                newPoint,
-              );
-              updateLayer(
-                editingSide === "from" ? { from: updated, pathData: updated } : { to: updated },
-              );
-            }}
-            onChangeCommandType={(subPathIndex, commandIndex, newType) => {
-              const currentPath = currentLayer[editingSide];
-              const updated = changeCommandType(currentPath, subPathIndex, commandIndex, newType);
-              updateLayer(
-                editingSide === "from" ? { from: updated, pathData: updated } : { to: updated },
-              );
-            }}
-            className="h-full text-xs" // extra breathing room in dedicated mode
-          />
-        </div>
+        <div className="min-h-0 flex-1 overflow-hidden p-2">{commandsList("h-full")}</div>
       </div>
     );
   }
 
+  const isGroup = currentLayer.type === "group";
+
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-      <div className="flex min-h-16 items-center gap-3 border-b bg-card px-4 shadow-xs">
-        <MaterialSymbol
-          name={
-            currentLayer.type === "clipPath"
-              ? "crop"
-              : currentLayer.type === "group"
-                ? "folder"
-                : "polyline"
-          }
-          size={32}
-          className="shrink-0 text-muted-foreground"
-        />
+      {/* Header */}
+      <div className="flex h-14 items-center gap-2.5 border-b border-border px-3">
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+          <MaterialSymbol
+            name={
+              currentLayer.type === "clipPath"
+                ? "crop"
+                : isGroup
+                  ? "folder"
+                  : "polyline"
+            }
+            size={18}
+          />
+        </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-lg font-medium leading-6">{currentLayer.name}</div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>{currentLayer.type} layer</span>
-            {currentLayer.type !== "group" && (
-              <Badge variant="outline" className="h-4 rounded-sm px-1 text-[10px]">
+          <div className="truncate text-[13px] font-semibold leading-tight">
+            {currentLayer.name}
+          </div>
+          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] leading-none text-muted-foreground">
+            <span className="capitalize">{currentLayer.type}</span>
+            {!isGroup && (
+              <span className="rounded bg-muted px-1 py-0.5 text-[10px] capitalize">
                 {editingSide}
-              </Badge>
+              </span>
             )}
             {animation.blocks.some((b) => String(b.layerId) === String(currentLayer.id)) && (
-              <Badge
-                variant="secondary"
-                className="h-4 rounded-sm px-1 text-[9px] bg-primary/10 text-primary border-0"
-                title="This layer has animation blocks"
-              >
+              <span className="rounded bg-primary/10 px-1 py-0.5 text-[10px] text-primary">
                 anim
-              </Badge>
+              </span>
             )}
           </div>
         </div>
@@ -298,7 +615,9 @@ export function Inspector() {
               <Button
                 size="icon-sm"
                 variant="ghost"
-                aria-label="Add or edit timeline blocks for this layer"
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Animate a property"
+                title="Animate a property"
               />
             }
           >
@@ -310,392 +629,350 @@ export function Inspector() {
                 key={propertyName}
                 onClick={() => addTimelineBlock(currentLayer.id, propertyName)}
               >
-                {propertyName}
+                {propertyLabel(propertyName)}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
-        {currentLayer.type !== "group" && (
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            onClick={startActionMode}
-            aria-label="Edit path morphing animation"
-          >
-            <MaterialSymbol name="edit" size={17} />
-          </Button>
+        {!isGroup && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={startActionMode}
+                  aria-label="Edit path morph"
+                />
+              }
+            >
+              <MaterialSymbol name="edit" size={17} />
+            </TooltipTrigger>
+            <TooltipContent>Edit path morph (start → end)</TooltipContent>
+          </Tooltip>
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto py-2 text-xs">
-        <InspectorSection title="Layer">
-          <PropertyRow label="name">
-            <Input
-              className="h-7 rounded-sm bg-background text-xs"
-              value={currentLayer.name}
-              onChange={(event) => updateLayer({ name: event.target.value })}
-              aria-label="Layer name"
-            />
-          </PropertyRow>
-          <PropertyRow label="type">
-            <Select
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* Layer */}
+        <Section title="Layer">
+          <Row label="Name">
+            <TextInput value={currentLayer.name} onChange={(v) => updateLayer({ name: v })} />
+          </Row>
+          <Row label="Type">
+            <Segmented
               value={currentLayer.type}
-              onValueChange={(value) => updateLayer({ type: value as Layer["type"] })}
-            >
-              <SelectTrigger size="sm" className="h-7 w-full rounded-sm bg-background text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="path">path</SelectItem>
-                <SelectItem value="clipPath">clipPath</SelectItem>
-                <SelectItem value="group">group</SelectItem>
-              </SelectContent>
-            </Select>
-          </PropertyRow>
-        </InspectorSection>
-        <Separator />
+              onChange={(v) => updateLayer({ type: v as Layer["type"] })}
+              options={[
+                { value: "path", label: "Path" },
+                { value: "clipPath", label: "Clip" },
+                { value: "group", label: "Group" },
+              ]}
+            />
+          </Row>
+        </Section>
 
-        {currentLayer.type !== "group" && (
+        {!isGroup && (
           <>
-            <InspectorSection title="Path">
-              <PropertyRow label="pathData">
-                <Textarea
+            {/* Fill */}
+            <Section title="Fill">
+              {(() => {
+                const fillKind: "solid" | GradientType =
+                  currentLayer.fillGradient?.type ?? "solid";
+                const setKind = (kind: "solid" | GradientType) => {
+                  if (kind === "solid") {
+                    updateLayer({ fillGradient: undefined });
+                    return;
+                  }
+                  const existing = currentLayer.fillGradient;
+                  updateLayer({
+                    fillGradient: existing
+                      ? { ...existing, type: kind }
+                      : gradientFromSolid(kind, currentLayer.fillColor || "#000000"),
+                  });
+                };
+                return (
+                  <>
+                    <Row label="Type">
+                      <Segmented<"solid" | GradientType>
+                        value={fillKind}
+                        onChange={setKind}
+                        options={[
+                          { value: "solid", label: "Solid" },
+                          { value: "linear", label: "Linear" },
+                          { value: "radial", label: "Radial" },
+                        ]}
+                      />
+                    </Row>
+                    {currentLayer.fillGradient ? (
+                      <>
+                        <GradientEditor
+                          gradient={currentLayer.fillGradient}
+                          onChange={(g) => updateLayer({ fillGradient: g })}
+                        />
+                        {currentLayer.fillGradient.type === "linear" && (
+                          <NumberRow
+                            label="Angle"
+                            value={currentLayer.fillGradient.angle ?? 90}
+                            suffix="°"
+                            onChange={(v) =>
+                              updateLayer({
+                                fillGradient: { ...currentLayer.fillGradient!, angle: v },
+                              })
+                            }
+                          />
+                        )}
+                        <NumberRow
+                          label="Opacity"
+                          value={Math.round((currentLayer.fillAlpha ?? 1) * 100)}
+                          min={0}
+                          max={100}
+                          suffix="%"
+                          onChange={(v) => updateLayer({ fillAlpha: v / 100 })}
+                        />
+                      </>
+                    ) : (
+                      <ColorRow
+                        label="Color"
+                        color={currentLayer.fillColor || ""}
+                        alpha={currentLayer.fillAlpha ?? 1}
+                        onColor={(v) => updateLayer({ fillColor: v })}
+                        onAlpha={(v) => updateLayer({ fillAlpha: v })}
+                      />
+                    )}
+                  </>
+                );
+              })()}
+              <Row label="Rule">
+                <Segmented
+                  value={currentLayer.fillType ?? "nonZero"}
+                  onChange={(v) => updateLayer({ fillType: v as FillType })}
+                  options={[
+                    { value: "nonZero", label: "Non-zero" },
+                    { value: "evenOdd", label: "Even-odd" },
+                  ]}
+                />
+              </Row>
+            </Section>
+
+            {/* Stroke */}
+            <Section title="Stroke">
+              <ColorRow
+                label="Color"
+                color={currentLayer.strokeColor || ""}
+                alpha={currentLayer.strokeAlpha ?? 1}
+                onColor={(v) => updateLayer({ strokeColor: v })}
+                onAlpha={(v) => updateLayer({ strokeAlpha: v })}
+              />
+              <NumberRow
+                label="Width"
+                value={currentLayer.strokeWidth ?? 1}
+                min={0}
+                step={0.1}
+                onChange={(v) => updateLayer({ strokeWidth: v })}
+              />
+              <Row label="Cap">
+                <Segmented
+                  value={currentLayer.strokeLinecap ?? "butt"}
+                  onChange={(v) => updateLayer({ strokeLinecap: v as StrokeLineCap })}
+                  options={[
+                    { value: "butt", label: "Butt" },
+                    { value: "round", label: "Round" },
+                    { value: "square", label: "Square" },
+                  ]}
+                />
+              </Row>
+              <Row label="Join">
+                <Segmented
+                  value={currentLayer.strokeLinejoin ?? "miter"}
+                  onChange={(v) => updateLayer({ strokeLinejoin: v as StrokeLineJoin })}
+                  options={[
+                    { value: "miter", label: "Miter" },
+                    { value: "round", label: "Round" },
+                    { value: "bevel", label: "Bevel" },
+                  ]}
+                />
+              </Row>
+            </Section>
+
+            {/* Trim path */}
+            <Section title="Trim path">
+              <NumberRow
+                label="Start"
+                value={currentLayer.trimPathStart ?? 0}
+                min={0}
+                max={1}
+                step={0.01}
+                onChange={(v) => updateLayer({ trimPathStart: v })}
+              />
+              <NumberRow
+                label="End"
+                value={currentLayer.trimPathEnd ?? 1}
+                min={0}
+                max={1}
+                step={0.01}
+                onChange={(v) => updateLayer({ trimPathEnd: v })}
+              />
+              <NumberRow
+                label="Offset"
+                value={currentLayer.trimPathOffset ?? 0}
+                step={0.01}
+                onChange={(v) => updateLayer({ trimPathOffset: v })}
+              />
+            </Section>
+
+            {/* Path */}
+            <Section
+              title="Path"
+              action={
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => setIsCommandsFocused(true)}
+                  aria-label="Focus path commands"
+                >
+                  <Maximize2 className="size-3.5" />
+                </Button>
+              }
+            >
+              <div className="overflow-hidden rounded-md border border-border">
+                {commandsList("max-h-72")}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPathData((s) => !s)}
+                className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+              >
+                <ChevronRight
+                  className={cn("size-3.5 transition-transform", showPathData && "rotate-90")}
+                />
+                SVG path data
+              </button>
+              {showPathData && (
+                <textarea
                   value={pathToString(currentLayer[editingSide])}
-                  className="min-h-20 resize-none rounded-sm bg-background p-1.5 font-mono text-[10px]"
-                  onChange={(event) => {
+                  onChange={(e) => {
                     try {
-                      const parsed = parsePath(event.target.value);
-                      updateLayer(
-                        editingSide === "from"
-                          ? { from: parsed, pathData: parsed }
-                          : { to: parsed },
-                      );
+                      setPath(parsePath(e.target.value));
                     } catch {
                       toast.error("Invalid path data");
                     }
                   }}
+                  spellCheck={false}
+                  className="min-h-20 w-full resize-y rounded-md border border-border bg-background p-2 font-mono text-[10px] leading-relaxed text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
-              </PropertyRow>
+              )}
+            </Section>
 
-              {/* Beautiful human-readable command surface (ShapeShifter-wys / 3o7)
-                  Directly delivers the calm, scannable d-attribute breakdown from the reference image.
-                  Live-synced to selection + click-to-select. Reuses LayerTimeline row patterns + Inspector typography. */}
-              <div className="px-4 pt-1">
-                <div className="mb-1 flex items-center gap-2 text-[9px] uppercase tracking-widest text-muted-foreground">
-                  <span>Commands</span>
-                  <span className="rounded bg-muted px-1 py-px font-mono text-[8px] text-muted-foreground/70">
-                    d
-                  </span>
-                  {/* Path commands use the available inspector height when expanded. */}
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="ml-auto h-5 w-5 text-muted-foreground hover:text-foreground"
-                    onClick={() => setIsCommandsFocused(true)}
-                    title="Focus Commands (dedicated view for complex paths)"
-                    aria-label="Focus path commands"
-                  >
-                    <Maximize2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-                <PathCommandsList
-                  pathData={currentLayer[editingSide]}
-                  selectedPoints={selectedPoints}
-                  onSelectCommand={(subPathIndex, commandIndex, pointIndex) => {
-                    if (!currentLayer || !selectPoint) return;
-                    selectPoint({
-                      layerId: selectedLayerId,
-                      side: editingSide,
-                      subPathIndex,
-                      commandIndex,
-                      pointIndex,
-                    });
-                  }}
-                  onUpdateCommandPoint={(subPathIndex, commandIndex, pointIndex, newPoint) => {
-                    const currentPath = currentLayer[editingSide];
-                    const updated = updateCommandPoint(
-                      currentPath,
-                      subPathIndex,
-                      commandIndex,
-                      pointIndex,
-                      newPoint,
-                    );
-                    updateLayer(
-                      editingSide === "from"
-                        ? { from: updated, pathData: updated }
-                        : { to: updated },
-                    );
-                  }}
-                  onChangeCommandType={(subPathIndex, commandIndex, newType) => {
-                    const currentPath = currentLayer[editingSide];
-                    const updated = changeCommandType(
-                      currentPath,
-                      subPathIndex,
-                      commandIndex,
-                      newType,
-                    );
-                    updateLayer(
-                      editingSide === "from"
-                        ? { from: updated, pathData: updated }
-                        : { to: updated },
-                    );
-                  }}
-                />
-              </div>
-            </InspectorSection>
-            <Separator />
-
-            <InspectorSection title="Fill">
-              <PropertyRow label="fillColor">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={
-                      currentLayer.fillColor?.startsWith("#") ? currentLayer.fillColor : "#000000"
-                    }
-                    onChange={(e) => updateLayer({ fillColor: e.target.value })}
-                    className="h-7 w-7 cursor-pointer rounded-sm border border-border bg-transparent"
-                    aria-label="Fill color picker"
-                  />
-                  <Input
-                    className="h-7 rounded-sm bg-background font-mono text-xs"
-                    value={currentLayer.fillColor || ""}
-                    placeholder="none"
-                    onChange={(e) => updateLayer({ fillColor: e.target.value })}
-                    aria-label="Fill color hex value"
-                  />
-                </div>
-              </PropertyRow>
-
-              <PropertyRow label="fillAlpha">
-                <NumberField
-                  min={0}
-                  max={1}
-                  step={0.1}
-                  value={currentLayer.fillAlpha ?? 1}
-                  onChange={(val) => updateLayer({ fillAlpha: val })}
-                />
-              </PropertyRow>
-              <PropertyRow label="fillType">
-                <Select
-                  value={currentLayer.fillType ?? "nonZero"}
-                  onValueChange={(val) => updateLayer({ fillType: val as FillType })}
-                >
-                  <SelectTrigger size="sm" className="h-7 w-full rounded-sm bg-background text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="nonZero">nonZero</SelectItem>
-                    <SelectItem value="evenOdd">evenOdd</SelectItem>
-                  </SelectContent>
-                </Select>
-              </PropertyRow>
-            </InspectorSection>
-            <Separator />
-
-            <InspectorSection title="Stroke">
-              <PropertyRow label="strokeColor">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={
-                      currentLayer.strokeColor?.startsWith("#")
-                        ? currentLayer.strokeColor
-                        : "#000000"
-                    }
-                    onChange={(e) => updateLayer({ strokeColor: e.target.value })}
-                    className="h-7 w-7 cursor-pointer rounded-sm border border-border bg-transparent"
-                    aria-label="Stroke color picker"
-                  />
-                  <Input
-                    className="h-7 rounded-sm bg-background font-mono text-xs"
-                    value={currentLayer.strokeColor || ""}
-                    placeholder="none"
-                    onChange={(e) => updateLayer({ strokeColor: e.target.value })}
-                    aria-label="Stroke color hex value"
-                  />
-                </div>
-              </PropertyRow>
-
-              <PropertyRow label="strokeAlpha">
-                <NumberField
-                  min={0}
-                  max={1}
-                  step={0.1}
-                  value={currentLayer.strokeAlpha ?? 1}
-                  onChange={(val) => updateLayer({ strokeAlpha: val })}
-                />
-              </PropertyRow>
-
-              <PropertyRow label="strokeWidth">
-                <NumberField
-                  min={0}
-                  step={0.1}
-                  value={currentLayer.strokeWidth ?? 1}
-                  onChange={(val) => updateLayer({ strokeWidth: val })}
-                />
-              </PropertyRow>
-
-              <PropertyRow label="strokeLinecap">
-                <Select
-                  value={currentLayer.strokeLinecap ?? "butt"}
-                  onValueChange={(val) => updateLayer({ strokeLinecap: val as StrokeLineCap })}
-                >
-                  <SelectTrigger size="sm" className="h-7 w-full rounded-sm bg-background text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="butt">Butt</SelectItem>
-                    <SelectItem value="round">Round</SelectItem>
-                    <SelectItem value="square">Square</SelectItem>
-                  </SelectContent>
-                </Select>
-              </PropertyRow>
-
-              <PropertyRow label="strokeLinejoin">
-                <Select
-                  value={currentLayer.strokeLinejoin ?? "miter"}
-                  onValueChange={(val) => updateLayer({ strokeLinejoin: val as StrokeLineJoin })}
-                >
-                  <SelectTrigger size="sm" className="h-7 w-full rounded-sm bg-background text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="miter">Miter</SelectItem>
-                    <SelectItem value="round">Round</SelectItem>
-                    <SelectItem value="bevel">Bevel</SelectItem>
-                  </SelectContent>
-                </Select>
-              </PropertyRow>
-
-              <PropertyRow label="strokeMiterLimit">
-                <NumberField
-                  min={1}
-                  value={currentLayer.strokeMiterLimit ?? 4}
-                  onChange={(val) => updateLayer({ strokeMiterLimit: val })}
-                />
-              </PropertyRow>
-            </InspectorSection>
-            <Separator />
-
-            <InspectorSection title="Trim Path">
-              <PropertyRow label="trimPathStart">
-                <NumberField
-                  min={0}
-                  max={1}
-                  step={0.1}
-                  value={currentLayer.trimPathStart ?? 0}
-                  onChange={(val) => updateLayer({ trimPathStart: val })}
-                />
-              </PropertyRow>
-
-              <PropertyRow label="trimPathEnd">
-                <NumberField
-                  min={0}
-                  max={1}
-                  step={0.1}
-                  value={currentLayer.trimPathEnd ?? 1}
-                  onChange={(val) => updateLayer({ trimPathEnd: val })}
-                />
-              </PropertyRow>
-
-              <PropertyRow label="trimPathOffset">
-                <NumberField
-                  step={0.1}
-                  value={currentLayer.trimPathOffset ?? 0}
-                  onChange={(val) => updateLayer({ trimPathOffset: val })}
-                />
-              </PropertyRow>
-            </InspectorSection>
+            {/* Boolean combine with the layer below (mirrors the toolbar Edit menu). */}
+            {(() => {
+              const idx = layers.findIndex((l) => l.id === currentLayer.id);
+              const hasNext = idx >= 0 && idx < layers.length - 1;
+              if (!hasNext) return null;
+              const ops = [
+                { op: "union", label: "Union", icon: "join_full" },
+                { op: "subtract", label: "Subtract", icon: "join_left" },
+                { op: "intersect", label: "Intersect", icon: "join_inner" },
+                { op: "exclude", label: "Exclude", icon: "join_right" },
+              ] as const;
+              return (
+                <Section title="Combine" defaultOpen={false}>
+                  <p className="text-[10px] leading-relaxed text-muted-foreground">
+                    Boolean with the layer below ({layers[idx + 1]?.name}).
+                  </p>
+                  <div className="grid grid-cols-2 gap-1">
+                    {ops.map(({ op, label, icon }) => (
+                      <button
+                        key={op}
+                        type="button"
+                        onClick={() => {
+                          booleanCombine(op);
+                          toast.success(label);
+                        }}
+                        className="flex h-8 items-center justify-center gap-1.5 rounded-md border border-border bg-background text-[11px] text-foreground transition-colors hover:border-foreground/20 hover:bg-muted"
+                      >
+                        <MaterialSymbol name={icon} size={15} className="text-muted-foreground" />
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </Section>
+              );
+            })()}
           </>
         )}
 
-        {currentLayer.type === "group" && (
-          <InspectorSection title="Transform">
-            <PropertyRow label="rotation">
-              <NumberField
-                value={currentLayer.rotation ?? 0}
-                onChange={(val) => updateLayer({ rotation: val })}
-              />
-            </PropertyRow>
-            <PropertyRow label="scaleX">
-              <NumberField
-                value={currentLayer.scaleX ?? 1}
-                onChange={(val) => updateLayer({ scaleX: val })}
-              />
-            </PropertyRow>
-            <PropertyRow label="scaleY">
-              <NumberField
-                value={currentLayer.scaleY ?? 1}
-                onChange={(val) => updateLayer({ scaleY: val })}
-              />
-            </PropertyRow>
-            <PropertyRow label="pivotX">
-              <NumberField
-                value={currentLayer.pivotX ?? 0}
-                onChange={(val) => updateLayer({ pivotX: val })}
-              />
-            </PropertyRow>
-            <PropertyRow label="pivotY">
-              <NumberField
-                value={currentLayer.pivotY ?? 0}
-                onChange={(val) => updateLayer({ pivotY: val })}
-              />
-            </PropertyRow>
-            <PropertyRow label="translateX">
-              <NumberField
-                value={currentLayer.translateX ?? 0}
-                onChange={(val) => updateLayer({ translateX: val })}
-              />
-            </PropertyRow>
-            <PropertyRow label="translateY">
-              <NumberField
-                value={currentLayer.translateY ?? 0}
-                onChange={(val) => updateLayer({ translateY: val })}
-              />
-            </PropertyRow>
-          </InspectorSection>
+        {isGroup && (
+          <Section title="Transform">
+            <NumberRow
+              label="Rotation"
+              value={currentLayer.rotation ?? 0}
+              suffix="°"
+              onChange={(v) => updateLayer({ rotation: v })}
+            />
+            <NumberRow
+              label="Scale X"
+              value={currentLayer.scaleX ?? 1}
+              step={0.1}
+              onChange={(v) => updateLayer({ scaleX: v })}
+            />
+            <NumberRow
+              label="Scale Y"
+              value={currentLayer.scaleY ?? 1}
+              step={0.1}
+              onChange={(v) => updateLayer({ scaleY: v })}
+            />
+            <NumberRow
+              label="Pivot X"
+              value={currentLayer.pivotX ?? 0}
+              onChange={(v) => updateLayer({ pivotX: v })}
+            />
+            <NumberRow
+              label="Pivot Y"
+              value={currentLayer.pivotY ?? 0}
+              onChange={(v) => updateLayer({ pivotY: v })}
+            />
+            <NumberRow
+              label="Move X"
+              value={currentLayer.translateX ?? 0}
+              onChange={(v) => updateLayer({ translateX: v })}
+            />
+            <NumberRow
+              label="Move Y"
+              value={currentLayer.translateY ?? 0}
+              onChange={(v) => updateLayer({ translateY: v })}
+            />
+          </Section>
         )}
 
-        {selection && point ? (
-          <>
-            <Separator />
-            <InspectorSection title="Selected Point">
-              <div className="grid grid-cols-2 gap-2 px-4">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-mono text-[10px] text-muted-foreground">X</span>
-                  <NumberField
-                    value={point.x}
-                    step={0.1}
-                    onChange={(val) => updateSelectedPoint({ x: val, y: point.y })}
-                  />
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="font-mono text-[10px] text-muted-foreground">Y</span>
-                  <NumberField
-                    value={point.y}
-                    step={0.1}
-                    onChange={(val) => updateSelectedPoint({ x: point.x, y: val })}
-                  />
-                </div>
-              </div>
-              <Button
-                variant="outline"
-                className="mx-4 mt-2 h-7 w-[calc(100%-2rem)] justify-start gap-1.5 border-destructive/20 text-xs text-destructive"
-                size="sm"
-                onClick={() => {
-                  deleteSelectedPoint();
-                  toast.success("Point deleted");
-                }}
-              >
-                <Trash2 className="h-3.5 w-3.5" /> Delete Point
-              </Button>
-            </InspectorSection>
-          </>
-        ) : (
-          <div className="mx-4 my-3 rounded-sm border border-dashed border-border/80 p-2 text-center text-[10px] text-muted-foreground">
-            Click a point on the canvas to edit its coordinates.
-          </div>
+        {/* Selected point */}
+        {selection && point && (
+          <Section title="Selected point">
+            <div className="grid grid-cols-2 gap-2">
+              <NumberRow
+                label="X"
+                value={point.x}
+                step={0.1}
+                onChange={(v) => updateSelectedPoint({ x: v, y: point.y })}
+              />
+              <NumberRow
+                label="Y"
+                value={point.y}
+                step={0.1}
+                onChange={(v) => updateSelectedPoint({ x: point.x, y: v })}
+              />
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-1 h-8 w-full justify-start gap-1.5 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => deleteSelectedPoint()}
+            >
+              <Trash2 className="size-3.5" /> Delete point
+            </Button>
+          </Section>
         )}
       </div>
     </div>

@@ -2,6 +2,7 @@ import { parsePath, ensureStableCommandIds } from "./pathUtils";
 import type {
   AnimationState,
   FillType,
+  Gradient,
   Layer,
   LayerType,
   StrokeLineCap,
@@ -18,6 +19,7 @@ export interface ShapeShifterProjectLayer {
   pathData?: string;
   fillColor?: string;
   fillAlpha?: number;
+  fillGradient?: Gradient;
   strokeColor?: string;
   strokeAlpha?: number;
   strokeWidth?: number;
@@ -135,6 +137,7 @@ export function flattenOriginalProject(project: ShapeShifterProject): FlattenedS
         expanded: true,
         fillColor: layer.fillColor ?? "",
         fillAlpha: layer.fillAlpha ?? 1,
+        ...(layer.fillGradient ? { fillGradient: layer.fillGradient } : {}),
         strokeColor: layer.strokeColor ?? "",
         strokeAlpha: layer.strokeAlpha ?? 1,
         strokeWidth: layer.strokeWidth ?? 0,

@@ -47,73 +47,81 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/*
+ * Figma-quiet identity.
+ * Near-silent neutral chrome so the canvas is the hero; ONE blue accent (#0D99FF)
+ * reserved for selection / primary actions / focus. Surfaces:
+ *   --card / --background / --sidebar  → white panels & chrome
+ *   --muted                            → the gray canvas backdrop
+ *   --border                           → hairline dividers
+ */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: oklch(1 0 0); /* white panels & top bar */
+  --foreground: oklch(0.21 0 0); /* calm near-black text */
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.21 0 0);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.527 0.154 150.069);
-  --primary-foreground: oklch(0.982 0.018 155.826);
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
+  --popover-foreground: oklch(0.21 0 0);
+  --primary: oklch(0.647 0.183 251.5); /* #0D99FF Figma selection blue */
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.968 0 0);
+  --secondary-foreground: oklch(0.27 0 0);
+  --muted: oklch(0.948 0 0); /* canvas backdrop gray */
+  --muted-foreground: oklch(0.553 0 0);
+  --accent: oklch(0.962 0 0);
+  --accent-foreground: oklch(0.27 0 0);
+  --destructive: oklch(0.585 0.222 27.2);
+  --border: oklch(0.915 0 0); /* hairline */
+  --input: oklch(0.915 0 0);
+  --ring: oklch(0.647 0.183 251.5); /* blue focus ring */
+  --chart-1: oklch(0.647 0.183 251.5);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.627 0.194 149.214);
-  --sidebar-primary-foreground: oklch(0.982 0.018 155.826);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --radius: 0.5rem; /* precise, not cozy */
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.21 0 0);
+  --sidebar-primary: oklch(0.647 0.183 251.5);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.962 0 0);
+  --sidebar-accent-foreground: oklch(0.27 0 0);
+  --sidebar-border: oklch(0.915 0 0);
+  --sidebar-ring: oklch(0.647 0.183 251.5);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.448 0.119 151.328);
-  --primary-foreground: oklch(0.982 0.018 155.826);
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
+  --background: oklch(0.205 0 0); /* #2c2c2c panels */
+  --foreground: oklch(0.97 0 0);
+  --card: oklch(0.225 0 0);
+  --card-foreground: oklch(0.97 0 0);
+  --popover: oklch(0.225 0 0);
+  --popover-foreground: oklch(0.97 0 0);
+  --primary: oklch(0.647 0.183 251.5); /* same blue accent */
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.28 0 0);
+  --secondary-foreground: oklch(0.97 0 0);
+  --muted: oklch(0.16 0 0); /* darker canvas backdrop */
+  --muted-foreground: oklch(0.68 0 0);
+  --accent: oklch(0.29 0 0);
+  --accent-foreground: oklch(0.97 0 0);
+  --destructive: oklch(0.68 0.19 24);
+  --border: oklch(1 0 0 / 11%);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.647 0.183 251.5);
+  --chart-1: oklch(0.647 0.183 251.5);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.723 0.219 149.579);
-  --sidebar-primary-foreground: oklch(0.982 0.018 155.826);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-foreground: oklch(0.97 0 0);
+  --sidebar-primary: oklch(0.647 0.183 251.5);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.29 0 0);
+  --sidebar-accent-foreground: oklch(0.97 0 0);
+  --sidebar-border: oklch(1 0 0 / 11%);
+  --sidebar-ring: oklch(0.647 0.183 251.5);
 }
 
 .material-symbols,
@@ -151,6 +159,18 @@
   outline-offset: 2px;
 }
 
+/*
+ * Form controls already render their own focus treatment (a primary border +
+ * soft ring), so the global outline above would stack a third indicator on top.
+ * Suppress it for those — buttons/links keep the outline as their indicator.
+ */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[contenteditable]:focus-visible {
+  outline: none;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -176,17 +196,15 @@ body {
   overflow: hidden;
 }
 
-/* Ensure performance-sensitive elements, SVGs, absolute items (playheads), and dragging handles have no transitions */
+/*
+ * Suppress transitions only where they would visibly lag a 60fps drag/playback
+ * loop — explicitly opt-in via `.no-transition`, plus the grab cursors used by
+ * draggable handles. We deliberately do NOT blanket-disable transitions on
+ * `svg`/`.absolute`/`[style*=transform]`: this is a motion tool, and those broad
+ * selectors were killing hover/press feedback across most of the chrome.
+ */
 .no-transition,
 .no-transition *,
-svg,
-svg *,
-.absolute,
-.absolute *,
-[style*="left"],
-[style*="top"],
-[style*="transform"],
-[style*="width"],
 .cursor-grab,
 .cursor-grabbing {
   transition: none !important;

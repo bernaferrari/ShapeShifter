@@ -5,6 +5,13 @@
 
 import type { AnimationState, Layer, PathData, VectorMetadata } from "./types";
 import { getInterpolatedPath, pathToString } from "./pathUtils";
+import {
+  dominantColor,
+  gradientDomId,
+  gradientToSvg,
+  linearVector,
+  normalizeStops,
+} from "./gradients";
 
 export interface ExportOptions {
   duration?: number; // in seconds
@@ -212,11 +219,15 @@ const safeName = (value: string) => value.replace(/[^\w.]+/g, "_").replace(/^(\d
 
 function styleAttrs(layer: Layer) {
   const attrs: string[] = [];
-  const fillColor = layer.fillColor || "none";
   const strokeColor = layer.strokeColor || "";
 
-  attrs.push(`fill="${escapeXml(fillColor)}"`);
-  if ((layer.fillAlpha ?? 1) !== 1) attrs.push(`fill-opacity="${layer.fillAlpha}"`);
+  if (layer.fillGradient) {
+    // Gradient fill references a <defs> entry; fillAlpha is baked into the stops.
+    attrs.push(`fill="url(#${gradientDomId(layer.id)})"`);
+  } else {
+    attrs.push(`fill="${escapeXml(layer.fillColor || "none")}"`);
+    if ((layer.fillAlpha ?? 1) !== 1) attrs.push(`fill-opacity="${layer.fillAlpha}"`);
+  }
   if (strokeColor) attrs.push(`stroke="${escapeXml(strokeColor)}"`);
   if ((layer.strokeAlpha ?? 1) !== 1) attrs.push(`stroke-opacity="${layer.strokeAlpha}"`);
   if ((layer.strokeWidth ?? 0) > 0) attrs.push(`stroke-width="${layer.strokeWidth}"`);
@@ -303,12 +314,25 @@ export function exportStaticSVG(layers: Layer[], options: ExportOptions = {}) {
   };
   layers.forEach(collectClips);
 
+  // Gradient defs (real <linearGradient>/<radialGradient> for faithful SVG output).
+  const gradientDefs: string[] = [];
+  const collectGradients = (layer: Layer) => {
+    if (layer.type !== "group" && layer.visible !== false && layer.fillGradient) {
+      gradientDefs.push(
+        `  ${gradientToSvg(layer.fillGradient, gradientDomId(layer.id), layer.fillAlpha ?? 1)}`,
+      );
+    }
+    (layer.children ?? []).forEach(collectGradients);
+  };
+  layers.forEach(collectGradients);
+
   const content = layers
     .map((l) => renderLayer(l))
     .filter(Boolean)
     .join("\n");
 
-  const defs = clipDefs.length ? `  <defs>\n${clipDefs.join("\n")}\n  </defs>\n` : "";
+  const allDefs = [...clipDefs, ...gradientDefs];
+  const defs = allDefs.length ? `  <defs>\n${allDefs.join("\n")}\n  </defs>\n` : "";
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${viewBoxWidth} ${viewBoxHeight}">
@@ -338,11 +362,71 @@ export function exportSvgSpritesheet(layer: Layer, options: ExportOptions = {}) 
   </g>`;
   }).join("\n");
 
+  const defs = layer.fillGradient
+    ? `  <defs>\n  ${gradientToSvg(layer.fillGradient, gradientDomId(layer.id), layer.fillAlpha ?? 1)}\n  </defs>\n`
+    : "";
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width * frameCount}" height="${height}" viewBox="0 0 ${viewBoxWidth * frameCount} ${viewBoxHeight}">
-${frames}
+${defs}${frames}
 </svg>
 `;
+}
+
+/**
+ * Build an Android `<aapt:attr name="android:fillColor"><gradient .../></aapt:attr>`
+ * block. Android gradients live in viewport space, so we map the unit-box vector
+ * across the full viewport (a faithful approximation; objectBoundingBox isn't
+ * available in VD). Stop opacity is folded into 8-digit #AARRGGBB colors.
+ */
+function vectorDrawableGradient(layer: Layer, vw: number, vh: number): string {
+  const g = layer.fillGradient!;
+  const fillAlpha = layer.fillAlpha ?? 1;
+  const items = normalizeStops(g.stops)
+    .map(
+      (s) =>
+        `          <item android:offset="${Number(s.offset.toFixed(4))}" android:color="${toAndroidColor(
+          s.color,
+          (s.opacity ?? 1) * fillAlpha,
+        )}" />`,
+    )
+    .join("\n");
+
+  let attrs: string;
+  if (g.type === "radial") {
+    const cx = (g.cx ?? 0.5) * vw;
+    const cy = (g.cy ?? 0.5) * vh;
+    const gr = (g.r ?? 0.5) * Math.max(vw, vh);
+    attrs = `android:type="radial" android:centerX="${num(cx)}" android:centerY="${num(
+      cy,
+    )}" android:gradientRadius="${num(gr)}"`;
+  } else {
+    const v = linearVector(g.angle ?? 0);
+    attrs = `android:type="linear" android:startX="${num(v.x1 * vw)}" android:startY="${num(
+      v.y1 * vh,
+    )}" android:endX="${num(v.x2 * vw)}" android:endY="${num(v.y2 * vh)}"`;
+  }
+
+  return `
+      <aapt:attr name="android:fillColor">
+        <gradient ${attrs}>
+${items}
+        </gradient>
+      </aapt:attr>`;
+}
+
+const num = (n: number) => Number(n.toFixed(3)).toString();
+
+/** #RRGGBB (+ alpha) → Android #AARRGGBB. */
+function toAndroidColor(hex: string, alpha: number): string {
+  const m = /^#?([0-9a-f]{3,8})$/i.exec(hex);
+  if (!m) return "#FF000000";
+  let h = m[1];
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  const a = Math.round(Math.max(0, Math.min(1, alpha)) * 255)
+    .toString(16)
+    .padStart(2, "0");
+  return `#${a}${h.slice(0, 6)}`.toUpperCase();
 }
 
 export function exportVectorDrawable(layer: Layer, options: ExportOptions = {}) {
@@ -350,30 +434,39 @@ export function exportVectorDrawable(layer: Layer, options: ExportOptions = {}) 
   const d = pathToString(layer.pathData ?? layer.from); // pathData for post-knife/boolean/paint fidelity (kus)
   const fill = layer.fillColor || "@android:color/transparent";
   const stroke = layer.strokeColor || "";
-  return `<vector xmlns:android="http://schemas.android.com/apk/res/android"
+  const hasGradient = Boolean(layer.fillGradient);
+  const aaptNs = hasGradient ? `\n    xmlns:aapt="http://schemas.android.com/aapt"` : "";
+  const fillAttr = hasGradient
+    ? ""
+    : `
+      android:fillColor="${escapeXml(fill)}"`;
+  return `<vector xmlns:android="http://schemas.android.com/apk/res/android"${aaptNs}
     android:width="${width}dp"
     android:height="${height}dp"
     android:viewportWidth="${viewBoxWidth}"
     android:viewportHeight="${viewBoxHeight}">
   <path
       android:name="${escapeXml(safeName(layer.name))}"
-      android:pathData="${escapeXml(d)}"
-      android:fillColor="${escapeXml(fill)}"${
+      android:pathData="${escapeXml(d)}"${fillAttr}${
         stroke
           ? `
       android:strokeColor="${escapeXml(stroke)}"
       android:strokeWidth="${layer.strokeWidth ?? 1}"`
           : ""
       }
-      android:fillAlpha="${layer.fillAlpha ?? 1}"
-      android:strokeAlpha="${layer.strokeAlpha ?? 1}"
+      ${hasGradient ? "" : `android:fillAlpha="${layer.fillAlpha ?? 1}"\n      `}android:strokeAlpha="${layer.strokeAlpha ?? 1}"
       android:strokeLineCap="${layer.strokeLinecap ?? "butt"}"
       android:strokeLineJoin="${layer.strokeLinejoin ?? "miter"}"
       android:strokeMiterLimit="${layer.strokeMiterLimit ?? 4}"
       android:fillType="${layer.fillType === "evenOdd" ? "evenOdd" : "nonZero"}"
       android:trimPathStart="${layer.trimPathStart ?? 0}"
       android:trimPathEnd="${layer.trimPathEnd ?? 1}"
-      android:trimPathOffset="${layer.trimPathOffset ?? 0}" />
+      android:trimPathOffset="${layer.trimPathOffset ?? 0}"${
+        hasGradient
+          ? `>${vectorDrawableGradient(layer, viewBoxWidth, viewBoxHeight)}
+  </path>`
+          : " />"
+      }
 </vector>
 `;
 }
@@ -580,7 +673,17 @@ export function exportLottie(
                       lj: 2,
                     },
                   ]),
-              ...(layer?.fillColor
+              ...(layer?.fillGradient
+                ? [
+                    // Lottie gradient fills are complex; approximate with the dominant stop.
+                    {
+                      ty: "fl",
+                      nm: "Fill",
+                      c: { a: 0, k: hexToLottieRgba(dominantColor(layer.fillGradient), 1) },
+                      o: { a: 0, k: (layer.fillAlpha ?? 1) * 100 },
+                    },
+                  ]
+                : layer?.fillColor
                 ? [
                     {
                       ty: "fl",
@@ -760,8 +863,13 @@ export function exportPDF(layers: Layer[], options: ExportOptions = {}): string 
     }
     if (started) emit("h");
 
-    // Style: fill then stroke (PDF paint order)
-    const fill = layer.fillColor && layer.fillColor !== "none" ? layer.fillColor : null;
+    // Style: fill then stroke (PDF paint order). PDF axial/radial shadings are heavy;
+    // approximate a gradient with its dominant stop color.
+    const fill = layer.fillGradient
+      ? dominantColor(layer.fillGradient)
+      : layer.fillColor && layer.fillColor !== "none"
+        ? layer.fillColor
+        : null;
     const stroke = layer.strokeColor || null;
     const sw = Math.max(0.1, (layer.strokeWidth ?? 1) * (scale / 12));
     if (fill) {
@@ -875,6 +983,7 @@ export function exportProjectJSON(
       pathData: pathToString(layer.pathData ?? layer.from),
       fillColor: layer.fillColor ?? "",
       fillAlpha: layer.fillAlpha ?? 1,
+      ...(layer.fillGradient ? { fillGradient: layer.fillGradient } : {}),
       strokeColor: layer.strokeColor ?? "",
       strokeAlpha: layer.strokeAlpha ?? 1,
       strokeWidth: layer.strokeWidth ?? 0,

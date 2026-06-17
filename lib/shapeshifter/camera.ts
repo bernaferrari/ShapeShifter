@@ -64,7 +64,7 @@ export function computeFitViewport(
   contentRects: Rect[],
   options: { minPadding?: number; maxScale?: number } = {},
 ): Viewport {
-  const { minPadding = 40, maxScale = 1 } = options;
+  const { minPadding = 2, maxScale = 1 } = options;
 
   if (!contentRects || contentRects.length === 0) {
     // Clean default for empty documents — centered and reasonable size.
@@ -94,10 +94,12 @@ export function computeFitViewport(
   const contentW = maxX - minX;
   const contentH = maxY - minY;
 
-  // Generous but content-aware padding (30% + minPadding)
-  const pad = Math.max(minPadding, Math.max(contentW, contentH) * 0.3);
+  // Content-aware padding: tight enough that a single artboard fills ~75-80% of
+  // the view (starts comfortably zoomed in like Figma), with breathing room that
+  // scales as more frames are added.
+  const pad = Math.max(minPadding, Math.max(contentW, contentH) * 0.12);
 
-  const size = Math.max(200, contentW + pad * 2, contentH + pad * 2);
+  const size = Math.max(28, contentW + pad * 2, contentH + pad * 2);
   const centerX = minX + contentW / 2;
   const centerY = minY + contentH / 2;
 
@@ -108,6 +110,28 @@ export function computeFitViewport(
     h: size,
     scale: Math.min(maxScale, 1),
   };
+}
+
+/**
+ * Expand a viewport so its aspect ratio matches the display container's, keeping
+ * the same center and the same world-units-per-pixel (no distortion). This lets a
+ * canvas fill a non-square area edge-to-edge while keeping screen↔world mapping
+ * exact (the `(client/rect) * viewBox` math only holds when aspects match).
+ */
+export function fitViewportToAspect(v: Viewport, aspect: number): Viewport {
+  if (!Number.isFinite(aspect) || aspect <= 0) return v;
+  const current = v.w / v.h;
+  if (Math.abs(current - aspect) < 1e-4) return v;
+  const cx = v.x + v.w / 2;
+  const cy = v.y + v.h / 2;
+  let w = v.w;
+  let h = v.h;
+  if (aspect >= current) {
+    w = h * aspect;
+  } else {
+    h = w / aspect;
+  }
+  return { x: cx - w / 2, y: cy - h / 2, w, h, scale: v.scale };
 }
 
 /**
@@ -124,6 +148,48 @@ export function clientToWorld(
     x: viewport.x + ((clientX - rect.left) / rect.width) * viewport.w,
     y: viewport.y + ((clientY - rect.top) / rect.height) * viewport.h,
   };
+}
+
+export interface GridSpec {
+  /** World units between minor (sub) grid lines. */
+  minor: number;
+  /** World units between major (emphasised, labelled) grid lines. */
+  major: number;
+}
+
+/**
+ * Adaptive pixel grid, Figma-style. Picks a minor step from how many screen
+ * pixels one world unit currently occupies so a single cell is never a hairline
+ * mush and never a giant void: a zoomed-in 24px icon shows every pixel (1,2,3…),
+ * a zoomed-out world shows coarse spacing. Steps are power-of-two friendly so
+ * majors land on 4 / 8 / 12 / 16 by default; pass `divisions: 5` for an iOS-style
+ * 5 / 10 / 15 grid. Sub-pixel zoom always emphasises whole pixels.
+ *
+ * @param pxPerUnit screen pixels per world unit (screenSize / viewport size)
+ * @param options.minMinorScreenPx smallest comfortable on-screen size for a minor cell
+ * @param options.divisions minor cells per major line (default 4)
+ */
+export function computeGridSpec(
+  pxPerUnit: number,
+  options: { minMinorScreenPx?: number; divisions?: number } = {},
+): GridSpec {
+  const { minMinorScreenPx = 7, divisions = 4 } = options;
+  const safe = pxPerUnit > 0 && Number.isFinite(pxPerUnit) ? pxPerUnit : 1;
+  const minWorld = minMinorScreenPx / safe;
+  const steps = [0.25, 0.5, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048];
+  const minor = steps.find((s) => s >= minWorld) ?? steps[steps.length - 1];
+  const div = divisions > 1 ? Math.round(divisions) : 4;
+  const major = minor < 1 ? 1 : minor * div;
+  return { minor, major };
+}
+
+/**
+ * Snap a value to the nearest multiple of `step`, scrubbing float dust so we get
+ * clean 1 / 1.5 / 2 instead of 1.0000000002 / 0.30000000004 in exported paths.
+ */
+export function snapValueToStep(value: number, step: number): number {
+  if (!(step > 0) || !Number.isFinite(step)) return value;
+  return Number((Math.round(value / step) * step).toFixed(4));
 }
 
 /**
