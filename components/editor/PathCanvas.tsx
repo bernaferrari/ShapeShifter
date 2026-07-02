@@ -79,6 +79,8 @@ export const PathCanvas = React.memo(function PathCanvas({
   const [, setPaintPreviewFrame] = React.useState(0);
   const paintHitRef = useRef<{ layerId: string | number } | null>(null);
 
+
+
   // GestureDispatcher (PR-01.1 / ShapeShifter-ish fix round xwx under mvd).
   // The ref that owns the decision logic for canvas interactions (Key Decision #2).
   // Created once, context kept fresh via useEffect below so BottomToolPalette + keyboard
@@ -129,6 +131,13 @@ export const PathCanvas = React.memo(function PathCanvas({
     toolMode,
     isActionMode,
   } = useEditorStore();
+
+  // Dynamic paint bucket cursor tinted with current selected color
+  const currentFillColor = layers.find((l) => l.id === selectedLayerId)?.fillColor || "#111111";
+  const paintBucketCursor = React.useMemo(() => {
+    const c = currentFillColor.replace("#", "%23");
+    return `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cg%3E%3Cpath fill='${c}' stroke='%23000' stroke-width='0.8' d='M3 3 L13 3 L14 13 L2 13 Z'/%3E%3Cpath fill='none' stroke='%23000' stroke-width='1' d='M3 3 L3 13 M13 3 L13 13'/%3E%3Cpath fill='%23ddd' d='M5 5 L11 5 L10 11 L6 11 Z'/%3E%3Cpath fill='none' stroke='%23000' stroke-width='0.5' d='M4 2 L12 2'/%3E%3C/g%3E%3C/svg%3E") 4 2, crosshair`;
+  }, [currentFillColor]);
 
   // Track the rendered element's aspect so the viewBox fills the (possibly
   // non-square) container edge-to-edge while keeping screen↔world mapping exact.
@@ -376,7 +385,8 @@ export const PathCanvas = React.memo(function PathCanvas({
       // Fresh get for safety post-select
       useEditorStore.getState().updateSelectedLayer(fillPatch);
 
-      toast.success(`Filled ${tgt.name || "layer"}`);
+      const c = src?.fillColor || "#000000";
+      toast.success(`Painted ${tgt.name || "layer"} with ${c}`);
 
       // Clear preview
       paintHitRef.current = null;
@@ -1317,10 +1327,11 @@ export const PathCanvas = React.memo(function PathCanvas({
       className={`h-full w-full min-w-0 touch-none select-none bg-card ${
         isSpaceDown || isPanning
           ? "cursor-grab"
-          : side === "preview" && !isActionMode && toolMode !== "paint"
+          : side === "preview" && !isActionMode
             ? "cursor-default"
             : "cursor-crosshair"
       }`}
+      style={toolMode === "paint" ? { cursor: paintBucketCursor } : undefined}
       onClick={handleSvgClick}
       onWheel={handleWheel}
       onPointerDown={handleSvgPointerDown}

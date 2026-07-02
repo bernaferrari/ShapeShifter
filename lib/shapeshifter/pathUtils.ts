@@ -593,6 +593,23 @@ export function deleteSubPath(pathData: PathData, subIdx: number): PathData {
 }
 
 /**
+ * Extracts a subpath by index into its own PathData, returning both the
+ * remaining path (with that subpath removed) and the extracted one.
+ * Useful for "split to new layer" to allow independent styling (e.g. different strokes).
+ */
+export function extractSubPath(pathData: PathData, subIdx: number): { remaining: PathData; extracted: PathData } {
+  const cloned = structuredClone(pathData);
+  if (subIdx < 0 || subIdx >= cloned.subPaths.length) {
+    return { remaining: cloned, extracted: { subPaths: [] } };
+  }
+  const [extractedSub] = cloned.subPaths.splice(subIdx, 1);
+  return {
+    remaining: cloned,
+    extracted: { subPaths: [extractedSub] },
+  };
+}
+
+/**
  * Find the best place to insert a new point near a clicked location.
  * Uses simple sampling for now (good enough for 2026 MVP, upgradeable).
  */

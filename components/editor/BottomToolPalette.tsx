@@ -87,12 +87,24 @@ export function BottomToolPalette() {
                 </Button>
               }
             />
-            <TooltipContent side="right" className="flex items-center gap-2 text-[11px]">
-              <span>{tool.label}</span>
-              {tool.shortcut && (
-                <kbd className="rounded bg-muted px-1 py-px font-mono text-[10px] text-muted-foreground">
-                  {tool.shortcut}
-                </kbd>
+            <TooltipContent side="right" className="flex flex-col gap-1 text-[11px] max-w-[220px]">
+              <div className="flex items-center gap-2">
+                <span>{tool.label}</span>
+                {tool.shortcut && (
+                  <kbd className="rounded bg-muted px-1 py-px font-mono text-[10px] text-muted-foreground">
+                    {tool.shortcut}
+                  </kbd>
+                )}
+              </div>
+              {tool.mode === "pen" && (
+                <div className="text-[10px] text-muted-foreground leading-tight">
+                  Click to place points • Drag for curves • Click first point (or near) to close • Double-click last / Esc / Enter to finish
+                </div>
+              )}
+              {tool.mode === "paint" && (
+                <div className="text-[10px] text-muted-foreground leading-tight">
+                  Hover to preview fill with current color • Click valid region to paint • Crosshair + dashed overlay shows valid/invalid
+                </div>
               )}
             </TooltipContent>
           </Tooltip>

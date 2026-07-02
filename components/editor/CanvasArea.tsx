@@ -107,6 +107,15 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const editPath: PathData | null =
     editLayer && editLayer.type !== "group" ? (editLayer[editingSide] as PathData) : null;
   const editOrigin = editFrame ? { x: editFrame.x || 0, y: editFrame.y || 0 } : null;
+
+  const currentFillColor = layers.find((l) => l.id === selectedLayerId)?.fillColor || "#111111";
+
+  // Dynamic paint bucket cursor tinted with current selected color (for CSS cursor)
+  const paintBucketCursor = React.useMemo(() => {
+    const c = currentFillColor.replace("#", "%23");
+    return `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cg%3E%3Cpath fill='${c}' stroke='%23000' stroke-width='0.8' d='M3 3 L13 3 L14 13 L2 13 Z'/%3E%3Cpath fill='none' stroke='%23000' stroke-width='1' d='M3 3 L3 13 M13 3 L13 13'/%3E%3Cpath fill='%23ddd' d='M5 5 L11 5 L10 11 L6 11 Z'/%3E%3Cpath fill='none' stroke='%23000' stroke-width='0.5' d='M4 2 L12 2'/%3E%3C/g%3E%3C/svg%3E") 4 2, crosshair`;
+  }, [currentFillColor]);
+
   // Anchor handles drawn at a constant on-screen size regardless of zoom.
   const worldPerPx = worldSize.w > 0 ? worldView.w / worldSize.w : 1;
   const anchorR = worldPerPx * 4;
@@ -198,6 +207,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const [worldSelectedIds, setWorldSelectedIds] = useState<string[]>([]);
   // Hover feedback (Figma-style): frame under the cursor when idle in select/direct.
   const [hoveredFrameId, setHoveredFrameId] = useState<string | null>(null);
+  // Paint tool hover state for live preview + cursor icon
+  const [paintHoverValid, setPaintHoverValid] = useState(false);
+
+  // Custom paint bucket cursor (static, offset for tip of handle)
+
 
   // Pen tool state. The active sub-path is the one currently being drawn; the
   // "outgoing" handle of the last committed anchor curves the next segment; the
@@ -213,6 +227,25 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     pendingOutgoing: { x: number; y: number } | null;
   }>(null);
   const [penPreview, setPenPreview] = useState<{ x: number; y: number } | null>(null);
+
+  // Finishing the current pen path (Esc/Enter, tool switch, frame switch, double-click last point).
+  const finishPen = useCallback(() => {
+    penActiveSubpathRef.current = null;
+    penOutgoingRef.current = null;
+    penDragRef.current = null;
+    setPenPreview(null);
+  }, []);
+
+  useEffect(() => {
+    finishPen();
+  }, [toolMode, selectedFrameId, editingSide, finishPen]);
+
+  // Clear paint preview state when leaving paint tool
+  useEffect(() => {
+    if (toolMode !== "paint") {
+      setPaintHoverValid(false);
+    }
+  }, [toolMode]);
 
   // Artboard dragging state.
   const [isDraggingArtboards, setIsDraggingArtboards] = useState(false);
@@ -474,6 +507,16 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
           commitEditPath(path, false);
           return;
         }
+        // Click the last point again to finish the open path (common pen UX).
+        const lastCmd = sub.commands[sub.commands.length - 1];
+        const lastAnchor = lastCmd?.points[lastCmd.points.length - 1];
+        if (
+          lastAnchor &&
+          Math.hypot(local.x - lastAnchor.x, local.y - lastAnchor.y) <= closeTol
+        ) {
+          finishPen();
+          return;
+        }
         // Append a new segment to the active sub-path.
         const prevCmd = sub.commands[sub.commands.length - 1];
         const prevAnchor = prevCmd?.points[prevCmd.points.length - 1] ?? local;
@@ -520,7 +563,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       penOutgoingRef.current = null;
       commitEditPath(path, false);
     },
-    [editPath, editSnap, worldPerPx, commitEditPath],
+    [editPath, editSnap, worldPerPx, commitEditPath, finishPen],
   );
 
   // Pen — pointer drag: pull a symmetric bézier handle out of the just-placed
@@ -584,17 +627,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     penDragRef.current = null;
   }, []);
 
-  // Finishing the current pen path (Esc/Enter, tool switch, frame switch).
-  const finishPen = useCallback(() => {
-    penActiveSubpathRef.current = null;
-    penOutgoingRef.current = null;
-    penDragRef.current = null;
-    setPenPreview(null);
-  }, []);
-  useEffect(() => {
-    finishPen();
-  }, [toolMode, selectedFrameId, editingSide, finishPen]);
-
   // Paint bucket: fill the focused frame's vector if the click lands in its fill region.
   const applyWorldPaint = useCallback(
     (local: { x: number; y: number }) => {
@@ -604,17 +636,18 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       }
       if (isPointInFillRegion(local, editPath)) {
         const layer = editLayer as { fillColor?: string; fillAlpha?: number; fillType?: string };
+        const color = currentFillColor; // use the one from preview/selected
         updateSelectedLayer({
-          fillColor: layer.fillColor || "#111111",
+          fillColor: color,
           fillAlpha: layer.fillAlpha ?? 1,
           fillType: (layer.fillType as "nonZero" | "evenOdd") || "nonZero",
         });
-        toast.success("Filled");
+        toast.success(`Painted with ${color}`);
       } else {
         toast.info("No fill region under cursor");
       }
     },
-    [editLayer, editPath, updateSelectedLayer],
+    [editLayer, editPath, updateSelectedLayer, currentFillColor],
   );
 
   // World pointer handlers (exact PathCanvas parity for gestures + artboard ops)
@@ -646,6 +679,13 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       }
       if (toolMode === "paint") {
         if (!editOrigin) {
+          const hp = worldPointFromEvent(e.clientX, e.clientY);
+          const fid = hp ? hitArtboard(hp) : null;
+          if (fid) {
+            selectFrame(fid);
+            toast.info("Frame focused — click inside to paint with selected color");
+            return;
+          }
           toast.info("Select a frame to paint");
           return;
         }
@@ -754,6 +794,18 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       }
       const p = worldPointFromEvent(e.clientX, e.clientY);
       if (!p) return;
+
+      if (toolMode === "paint" && editOrigin && editPath) {
+        const rawLocal = { x: p.x - editOrigin.x, y: p.y - editOrigin.y };
+        const valid = isPointInFillRegion(rawLocal, editPath);
+        setPaintHoverValid(valid);
+      } else if (toolMode === "paint") {
+        // No focused frame: allow preview on any artboard
+        const fid = hitArtboard(p);
+        setPaintHoverValid(!!fid);
+      } else if (paintHoverValid) {
+        setPaintHoverValid(false);
+      }
 
       // Inline anchor drag: move the selected frame's point directly on the canvas.
       if (pointDragRef.current && editPath && editOrigin) {
@@ -962,6 +1014,10 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         setDraggingArtboardIds([]);
         setArtboardDragStart(null);
       }
+
+      if (toolMode === "paint") {
+        setPaintHoverValid(false);
+      }
     },
     [
       toolMode,
@@ -982,13 +1038,19 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   // canvas (Figma-style "enter frame"), no separate edit screen.
   const handleWorldDoubleClick = useCallback(
     (e: React.MouseEvent) => {
+      // Double-click finishes an in-progress pen path (very common & intuitive pattern)
+      if (toolMode === "pen" && penActiveSubpathRef.current != null) {
+        e.preventDefault();
+        finishPen();
+        return;
+      }
       const p = worldPointFromEvent(e.clientX, e.clientY);
       const hit = hitArtboard(p);
       if (!hit) return;
       selectFrame(hit);
       bringFrameIntoView(hit, { animate: true });
     },
-    [worldPointFromEvent, hitArtboard, selectFrame, bringFrameIntoView],
+    [worldPointFromEvent, hitArtboard, selectFrame, bringFrameIntoView, toolMode, finishPen],
   );
 
   // Figma-style world zoom shortcuts (only on the freeform canvas).
@@ -1040,7 +1102,17 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
           >
             <div className="relative flex h-full min-h-0 w-full flex-col">
               <div className="mb-2 flex items-center justify-between pl-14">
-                {isActionMode ? (
+                {toolMode === "paint" ? (
+                  <div className="flex min-w-0 items-center gap-2 text-[12px]">
+                    <span className="font-semibold text-primary">Paint</span>
+                    <span className="text-muted-foreground">hover to preview fill with selected color • click valid region to apply • Esc or switch tool to cancel</span>
+                  </div>
+                ) : toolMode === "pen" && penActiveSubpathRef.current != null ? (
+                  <div className="flex min-w-0 items-center gap-2 text-[12px]">
+                    <span className="font-semibold text-primary">Pen</span>
+                    <span className="text-muted-foreground">drawing path — dbl-click last / Esc / Enter to finish • click first to close</span>
+                  </div>
+                ) : isActionMode ? (
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="text-[13px] font-semibold">
                       {isPlaying ? "Preview" : editingSide === "from" ? "Editing Start" : "Editing End"}
@@ -1048,6 +1120,14 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                     <span className="max-w-[200px] truncate text-[11px] text-muted-foreground">
                       {selectedLayer?.name ?? "Path morph"}
                     </span>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      className="ml-2 h-6 px-2 text-[10px]"
+                      onClick={() => useEditorStore.getState().closeActionMode()}
+                    >
+                      Done
+                    </Button>
                   </div>
                 ) : (
                   <Button
@@ -1162,7 +1242,12 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                     onPointerDown={handleWorldPointerDown}
                     onPointerMove={handleWorldPointerMove}
                     onPointerUp={handleWorldPointerUp}
-                    onPointerLeave={() => setHoveredFrameId(null)}
+                    onPointerLeave={() => {
+                      setHoveredFrameId(null);
+                      if (toolMode === "paint") {
+                        setPaintHoverValid(false);
+                      }
+                    }}
                     onDoubleClick={handleWorldDoubleClick}
                     style={{
                       background: "var(--muted)",
@@ -1170,8 +1255,10 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                         ? "grabbing"
                         : isDraggingArtboards
                           ? "grabbing"
-                          : toolMode === "pen" || toolMode === "paint" || toolMode === "pencil"
-                            ? "crosshair"
+                          : toolMode === "paint"
+                            ? paintBucketCursor
+                            : toolMode === "pen" || toolMode === "pencil"
+                              ? "crosshair"
                             : hoveredFrameId
                               ? "move"
                               : "default",
@@ -1468,10 +1555,9 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                         );
                       })()}
 
-                    {/* Pen rubber-band: dashed segment from the last anchor to the cursor */}
+                    {/* Pen rubber-band + close target (always show first-point target while drawing) */}
                     {!isPlaying &&
                       toolMode === "pen" &&
-                      penPreview &&
                       editOrigin &&
                       penActiveSubpathRef.current != null &&
                       editPath?.subPaths[penActiveSubpathRef.current] &&
@@ -1480,47 +1566,94 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                         const lastCmd = sub.commands[sub.commands.length - 1];
                         const lastAnchor = lastCmd?.points[lastCmd.points.length - 1];
                         const first = sub.commands[0]?.points[0];
-                        if (!lastAnchor) return null;
+                        if (!lastAnchor || !first) return null;
                         const closeTol = Math.max(editSnap * 1.5, worldPerPx * 6);
                         const willClose =
-                          first &&
                           sub.commands.length > 1 &&
-                          Math.hypot(penPreview.x - first.x, penPreview.y - first.y) <= closeTol;
+                          (penPreview
+                            ? Math.hypot(penPreview.x - first.x, penPreview.y - first.y) <= closeTol
+                            : false);
                         return (
                           <g pointerEvents="none">
-                            <line
-                              x1={editOrigin.x + lastAnchor.x}
-                              y1={editOrigin.y + lastAnchor.y}
-                              x2={editOrigin.x + penPreview.x}
-                              y2={editOrigin.y + penPreview.y}
-                              stroke="#0d99ff"
-                              strokeOpacity={0.7}
-                              strokeWidth={worldPerPx}
-                              strokeDasharray={`${worldPerPx * 2} ${worldPerPx * 2}`}
-                            />
-                            <circle
-                              cx={editOrigin.x + penPreview.x}
-                              cy={editOrigin.y + penPreview.y}
-                              r={anchorR * 0.9}
-                              fill={willClose ? "#0d99ff" : "#ffffff"}
-                              stroke="#0d99ff"
-                              strokeWidth={1.25}
-                              vectorEffect="non-scaling-stroke"
-                            />
-                            {willClose && first && (
+                            {penPreview && (
+                              <line
+                                x1={editOrigin.x + lastAnchor.x}
+                                y1={editOrigin.y + lastAnchor.y}
+                                x2={editOrigin.x + penPreview.x}
+                                y2={editOrigin.y + penPreview.y}
+                                stroke="#0d99ff"
+                                strokeOpacity={0.7}
+                                strokeWidth={worldPerPx}
+                                strokeDasharray={`${worldPerPx * 2} ${worldPerPx * 2}`}
+                              />
+                            )}
+                            {penPreview && (
+                              <circle
+                                cx={editOrigin.x + penPreview.x}
+                                cy={editOrigin.y + penPreview.y}
+                                r={anchorR * 0.9}
+                                fill={willClose ? "#0d99ff" : "#ffffff"}
+                                stroke="#0d99ff"
+                                strokeWidth={1.25}
+                                vectorEffect="non-scaling-stroke"
+                              />
+                            )}
+                            {/* Always highlight the start point as a close target while pen is active */}
+                            {sub.commands.length > 1 && (
                               <circle
                                 cx={editOrigin.x + first.x}
                                 cy={editOrigin.y + first.y}
-                                r={anchorR * 1.7}
+                                r={willClose ? anchorR * 1.7 : anchorR * 1.3}
                                 fill="none"
-                                stroke="#0d99ff"
-                                strokeWidth={1.25}
+                                stroke={willClose ? "#0d99ff" : "#0d99ff"}
+                                strokeOpacity={willClose ? 1 : 0.5}
+                                strokeWidth={willClose ? 1.5 : 1}
                                 vectorEffect="non-scaling-stroke"
                               />
                             )}
                           </g>
                         );
                       })()}
+
+                    {/* Paint bucket live preview (world view) - shows the region that would be filled with the currently selected color */}
+                    {toolMode === "paint" && paintHoverValid && (
+                      editOrigin && editPath ? (
+                        <g transform={`translate(${editOrigin.x} ${editOrigin.y})`} pointerEvents="none">
+                          <path
+                            d={pathToString(editPath)}
+                            fill={currentFillColor}
+                            fillOpacity={Math.max(0.25, Math.min(0.65, (layers.find((l) => l.id === selectedLayerId)?.fillAlpha ?? 1) * 0.7))}
+                            stroke="#0d99ff"
+                            strokeWidth={worldPerPx * 1.5}
+                            strokeDasharray={`${worldPerPx * 3} ${worldPerPx * 1.5}`}
+                            vectorEffect="non-scaling-stroke"
+                            opacity={0.85}
+                          />
+                        </g>
+                      ) : hoveredFrameId ? (
+                        (() => {
+                          const f = frames.find((ff) => ff.id === hoveredFrameId);
+                          if (!f) return null;
+                          const b = getFrameBounds(f);
+                          return (
+                            <g pointerEvents="none">
+                              <rect
+                                x={b.x}
+                                y={b.y}
+                                width={b.w}
+                                height={b.h}
+                                fill={currentFillColor}
+                                fillOpacity={0.4}
+                                stroke="#0d99ff"
+                                strokeWidth={worldPerPx * 1.5}
+                                strokeDasharray={`${worldPerPx * 3} ${worldPerPx * 1.5}`}
+                                rx={Math.max(0.5, b.w * 0.015)}
+                              />
+                            </g>
+                          );
+                        })()
+                      ) : null
+                    )}
 
                     {/* Inline anchor points for the selected frame — edit in place */}
                     {!isPlaying &&

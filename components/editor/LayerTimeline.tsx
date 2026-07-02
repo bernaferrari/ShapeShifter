@@ -13,6 +13,7 @@ import {
   Square,
   Crop,
 } from "lucide-react";
+import { MaterialSymbol } from "./MaterialSymbol";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -313,9 +314,11 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                   <DropdownMenu>
                     <DropdownMenuTrigger
                       render={
-                        <button
+                        <Button
                           type="button"
-                          className="grid h-5 w-5 place-items-center rounded hover:bg-foreground/10"
+                          size="icon-xs"
+                          variant="ghost"
+                          className="size-5 text-muted-foreground hover:text-foreground"
                           onClick={(event) => event.stopPropagation()}
                         />
                       }
@@ -537,12 +540,18 @@ export function LayerTimeline(_props: LayerTimelineProps) {
             style={{ left: `${Math.round(progress * 100)}%` }}
           />
           {!timelineCollapsed && animation.blocks.length === 0 && (
-            <div className="pointer-events-none absolute inset-0 z-0 flex flex-col items-center justify-center gap-1.5 px-4 text-center select-none">
-              <Timer className="h-4 w-4 text-muted-foreground/40" />
-              <p className="text-[11px] font-medium text-muted-foreground">No animations yet</p>
-              <p className="max-w-[16rem] text-[10px] leading-relaxed text-muted-foreground/70">
-                Animate a property from the Inspector, or a layer&apos;s ⋮ menu, to add a track.
-              </p>
+            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center p-5">
+              <div className="w-full max-w-[260px] rounded-2xl border border-border/50 bg-card/75 px-4 py-4 text-center shadow-sm backdrop-blur-md">
+                <div className="mx-auto mb-2.5 flex size-8 items-center justify-center rounded-full bg-muted">
+                  <MaterialSymbol name="animation" size={17} className="text-muted-foreground" />
+                </div>
+                <div className="text-[13px] font-semibold tracking-[-0.1px] text-foreground/90">
+                  No animations yet
+                </div>
+                <div className="mt-1.5 text-[11.5px] leading-snug text-muted-foreground/90">
+                  Click <MaterialSymbol name="animation" size={13} className="inline align-text-bottom text-foreground/70" /> next to a property in the Inspector, or choose <span className="font-medium text-foreground/70">Animate</span> from a layer’s menu.
+                </div>
+              </div>
             </div>
           )}
           {!timelineCollapsed &&

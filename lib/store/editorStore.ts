@@ -14,6 +14,7 @@ import {
   scalePathToBounds,
   deleteCommand,
   deleteSubPath,
+  extractSubPath,
   splitCommandInHalf,
   setCommandAsFirst,
   splitPointNear,
@@ -243,6 +244,7 @@ interface EditorState {
   ) => void;
   deleteSelectedPoint: () => void;
   deleteSelectedSubPath: () => void;
+  extractSelectedSubPathToNewLayer: () => void;
   splitSelectedCommand: () => void;
   setSelectedCommandAsFirst: () => void;
 
@@ -283,6 +285,7 @@ interface EditorState {
   setTimelineZoom: (zoom: number) => void;
   setTimelineScroll: (x: number, y: number) => void;
   toggleTimelineCollapsed: () => void;
+  setTimelineCollapsed: (collapsed: boolean) => void;
 
   // Action Mode / Gestures (Phase 1)
   setToolMode: (mode: ToolMode) => void;
@@ -1002,7 +1005,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedSubPaths: state.editingSide === side ? state.selectedSubPaths : [],
     })),
   startActionMode: () =>
-    set({ isActionMode: true, selection: null, selectedPoints: [], selectedSubPaths: [] }),
+    set({
+      isActionMode: true,
+      selection: null,
+      selectedPoints: [],
+      selectedSubPaths: [],
+      // Enter morph edit ready to manipulate points directly (best default for "edit")
+      toolMode: "direct",
+    }),
   closeActionMode: () =>
     set({ isActionMode: false, selection: null, selectedPoints: [], selectedSubPaths: [] }),
 
@@ -1354,23 +1364,45 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   deleteSelectedPoint: () => {
-    const { layers, selectedLayerId, editingSide, selection } = get();
-    if (!selection) return;
+    const { layers, selectedLayerId, editingSide, selection, selectedPoints } = get();
+    const toDelete = selectedPoints.length > 0 ? selectedPoints : (selection ? [selection] : []);
+    if (toDelete.length === 0) return;
 
     const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
     if (layerIndex === -1) return;
 
     const layer = layers[layerIndex];
-    const targetPath = editingSide === "from" ? layer.from : layer.to;
 
-    const updatedPath = deleteCommand(targetPath, selection.subPathIndex, selection.commandIndex);
+    // Clone the target side to work on
+    let targetPath = editingSide === "from"
+      ? structuredClone(layer.from)
+      : structuredClone(layer.to);
+
+    // Group by subpath, delete commands from highest index to lowest to preserve indices
+    const bySub = new Map<number, number[]>();
+    for (const sel of toDelete) {
+      if (String(sel.layerId) !== String(selectedLayerId) || sel.side !== editingSide) continue;
+      if (!bySub.has(sel.subPathIndex)) bySub.set(sel.subPathIndex, []);
+      bySub.get(sel.subPathIndex)!.push(sel.commandIndex);
+    }
+
+    for (const [subIdx, cmdIdxs] of bySub.entries()) {
+      const uniqueCmds = [...new Set(cmdIdxs)].sort((a, b) => b - a); // descending
+      for (const cmdIdx of uniqueCmds) {
+        targetPath = deleteCommand(targetPath, subIdx, cmdIdx);
+      }
+    }
 
     const newLayers = [...layers];
+    const updatedLayer: any = {
+      ...layer,
+      from: editingSide === "from" ? targetPath : layer.from,
+      to: editingSide === "to" ? targetPath : layer.to,
+    };
     if (editingSide === "from") {
-      newLayers[layerIndex] = { ...layer, from: updatedPath, pathData: updatedPath };
-    } else {
-      newLayers[layerIndex] = { ...layer, to: updatedPath };
+      updatedLayer.pathData = targetPath;
     }
+    newLayers[layerIndex] = updatedLayer;
 
     get().pushHistory();
     set({
@@ -1382,21 +1414,104 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   deleteSelectedSubPath: () => {
-    const { layers, selectedLayerId, editingSide, selection } = get();
-    if (!selection) return;
+    const { layers, selectedLayerId, editingSide, selection, selectedSubPaths } = get();
+    const toDelete = selectedSubPaths.length > 0 ? selectedSubPaths : (selection ? [{ layerId: selection.layerId, side: selection.side, subPathIndex: selection.subPathIndex }] : []);
+    if (toDelete.length === 0) return;
+
     const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
     if (layerIndex === -1) return;
     const layer = layers[layerIndex];
-    const targetPath = editingSide === "from" ? layer.from : layer.to;
-    const updatedPath = deleteSubPath(targetPath, selection.subPathIndex);
-    const newLayers = [...layers];
-    if (editingSide === "from") {
-      newLayers[layerIndex] = { ...layer, from: updatedPath, pathData: updatedPath };
-    } else {
-      newLayers[layerIndex] = { ...layer, to: updatedPath };
+
+    let targetFrom = structuredClone(layer.from);
+    let targetTo = structuredClone(layer.to);
+
+    // Delete subpaths descending per side to keep indices valid
+    const fromIdxs = toDelete
+      .filter(s => s.side === "from" && String(s.layerId) === String(selectedLayerId))
+      .map(s => s.subPathIndex)
+      .sort((a, b) => b - a);
+    for (const idx of fromIdxs) {
+      targetFrom = deleteSubPath(targetFrom, idx);
     }
+
+    const toIdxs = toDelete
+      .filter(s => s.side === "to" && String(s.layerId) === String(selectedLayerId))
+      .map(s => s.subPathIndex)
+      .sort((a, b) => b - a);
+    for (const idx of toIdxs) {
+      targetTo = deleteSubPath(targetTo, idx);
+    }
+
+    const newLayers = [...layers];
+    const updatedLayer = {
+      ...layer,
+      from: targetFrom,
+      to: targetTo,
+    };
+    if (editingSide === "from") {
+      updatedLayer.pathData = targetFrom;
+    }
+    newLayers[layerIndex] = updatedLayer;
+
     get().pushHistory();
     set({ layers: newLayers, selection: null, selectedPoints: [], selectedSubPaths: [] });
+  },
+
+  extractSelectedSubPathToNewLayer: () => {
+    const { layers, selectedLayerId, editingSide, selectedSubPaths, selection } = get();
+    // Determine the subpath index from either multi-subpath selection or single selection
+    let subIdx: number | null = null;
+    const subSel = selectedSubPaths.find(
+      (s) => String(s.layerId) === String(selectedLayerId) && s.side === editingSide,
+    );
+    if (subSel) {
+      subIdx = subSel.subPathIndex;
+    } else if (selection && String(selection.layerId) === String(selectedLayerId) && selection.side === editingSide) {
+      subIdx = selection.subPathIndex;
+    }
+    if (subIdx == null) return;
+
+    const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
+    if (layerIndex === -1) return;
+    const layer = layers[layerIndex];
+
+    // Extract from both sides so the morph stays consistent (subpath indices should correspond)
+    const fromExtract = extractSubPath(layer.from, subIdx);
+    const toExtract = extractSubPath(layer.to, subIdx);
+
+    if (fromExtract.extracted.subPaths.length === 0 && toExtract.extracted.subPaths.length === 0) return;
+
+    // Create a new independent layer for the extracted subpath (inherits style, can now be edited separately)
+    const newId = Date.now() + Math.random();
+    const newLayer: Layer = {
+      ...structuredClone(layer),
+      id: newId,
+      name: `${layer.name} subpath`,
+      from: fromExtract.extracted,
+      to: toExtract.extracted,
+      timeline: [], // start fresh for the new layer's animations
+    };
+    newLayer.pathData = editingSide === "from" ? newLayer.from : newLayer.to;
+
+    // Update original with remainders (use the from-side index; to may differ in count but we used matching index)
+    const updatedOriginal = {
+      ...layer,
+      from: fromExtract.remaining,
+      to: toExtract.remaining,
+    };
+    updatedOriginal.pathData = editingSide === "from" ? updatedOriginal.from : updatedOriginal.to;
+
+    const newLayers = [...layers];
+    newLayers[layerIndex] = updatedOriginal;
+
+    get().pushHistory();
+    set({
+      layers: [...newLayers, newLayer],
+      selectedLayerId: newId,
+      selection: null,
+      selectedPoints: [],
+      selectedSubPaths: [],
+    });
   },
 
   splitSelectedCommand: () => {
@@ -1443,7 +1558,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({ layers: newLayers });
   },
 
-  togglePlayback: () => set((state) => ({ isPlaying: !state.isPlaying })),
+  togglePlayback: () => set((state) => {
+    const atEnd = state.progress >= 0.999;
+    if (!state.isPlaying && atEnd) {
+      // Restart from beginning when hitting Play after the animation finished
+      return { isPlaying: true, progress: 0 };
+    }
+    return { isPlaying: !state.isPlaying };
+  }),
   setProgress: (progress) => set({ progress: Math.max(0, Math.min(1, progress)) }),
   setSpeed: (speed) => set({ speed }),
   toggleSlowMotion: () => set((state) => ({ isSlowMotion: !state.isSlowMotion })),
@@ -1478,6 +1600,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setTimelineZoom: (zoom) => set({ timelineZoom: Math.max(0.1, Math.min(10, zoom)) }),
   setTimelineScroll: (x, y) => set({ timelineScrollX: x, timelineScrollY: y }),
   toggleTimelineCollapsed: () => set((state) => ({ timelineCollapsed: !state.timelineCollapsed })),
+  setTimelineCollapsed: (collapsed: boolean) => set({ timelineCollapsed: collapsed }),
 
   setToolMode: (mode) => set({ toolMode: mode }),
   setCursorType: (cursor) => set({ cursorType: cursor }),

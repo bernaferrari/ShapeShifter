@@ -107,10 +107,12 @@ export default function ShapeShifter2026() {
         return;
       }
 
-      // Delete
+      // Delete (supports multi lasso selection for points or subpaths)
       if (e.key === "Delete" || e.key === "Backspace") {
-        if (store.selection) {
+        if ((store.selectedPoints && store.selectedPoints.length > 0) || store.selection) {
           store.deleteSelectedPoint();
+        } else if (store.selectedSubPaths && store.selectedSubPaths.length > 0) {
+          store.deleteSelectedSubPath();
         }
         return;
       }
@@ -261,6 +263,7 @@ export default function ShapeShifter2026() {
               if (isOriginalShapeShifterProject(project)) {
                 const flattened = flattenOriginalProject(project);
                 useEditorStore.getState().loadProject(flattened);
+                setTimelineCollapsed(false);
                 // vrh/24t residual: restore frames (x/y layout) from exportProjectJSON for full freeform project roundtrip fidelity (complex multi-artboard case). Uses loaded projection content + serialized metadata. Matches exporter surface. Zero regression.
                 if (
                   (project as any).frames &&
@@ -339,6 +342,7 @@ export default function ShapeShifter2026() {
               return;
             }
             useEditorStore.getState().loadProject(flattened);
+            setTimelineCollapsed(false);
             // vrh/24t residual: restore frames (x/y layout) from exportProjectJSON for full freeform project roundtrip fidelity (complex multi-artboard case). Uses loaded projection content + serialized metadata. Matches exporter surface. Zero regression.
             if (
               (project as any).frames &&
@@ -504,6 +508,8 @@ export default function ShapeShifter2026() {
       } catch {
         // ignore
       }
+      // Keep store in sync so LayerTimeline's internal track collapse also matches
+      useEditorStore.getState().setTimelineCollapsed(next);
       return next;
     });
   }, []);
@@ -672,6 +678,8 @@ export default function ShapeShifter2026() {
     storeLoadSample(index);
     const demo = DEMO_INFOS[((index % DEMO_INFOS.length) + DEMO_INFOS.length) % DEMO_INFOS.length];
     toast.success("Demo loaded", { description: demo.title });
+    // Force the timeline panel + tracks to be visible so the demo's animation blocks are obvious
+    setTimelineCollapsed(false);
   };
 
   const togglePlay = () => {
@@ -775,7 +783,7 @@ export default function ShapeShifter2026() {
             onClick={toggleTimeline}
             aria-label={timelineCollapsed ? "Show timeline" : "Hide timeline"}
             aria-expanded={!timelineCollapsed}
-            className="absolute bottom-1.5 right-3 z-30 flex items-center gap-1 rounded-md border border-border bg-card/90 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:text-foreground"
+            className="absolute bottom-1.5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 rounded-md border border-border bg-card/90 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:text-foreground"
           >
             {timelineCollapsed ? (
               <ChevronUp className="size-3.5" />
@@ -866,7 +874,7 @@ export default function ShapeShifter2026() {
                 </div>
                 <div className="flex items-center justify-between">
                   <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">P</kbd>
-                  <span className="text-muted-foreground">Pen</span>
+                  <span className="text-muted-foreground">Pen (click points, drag curves; dbl-click last/Esc/Enter finish, click start to close)</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">D</kbd>
@@ -905,7 +913,7 @@ export default function ShapeShifter2026() {
                 </div>
                 <div className="flex items-center justify-between">
                   <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">Delete / ⌫</kbd>
-                  <span className="text-muted-foreground">Remove point</span>
+                  <span className="text-muted-foreground">Remove point(s) (lasso multi ok)</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">
@@ -933,8 +941,8 @@ export default function ShapeShifter2026() {
                   <span className="text-muted-foreground">From / To side</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">Esc</kbd>
-                  <span className="text-muted-foreground">Clear selection</span>
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">Esc / Enter</kbd>
+                  <span className="text-muted-foreground">Clear selection (or finish pen path)</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">⌘W</kbd>
@@ -967,7 +975,7 @@ export default function ShapeShifter2026() {
               onSelect={() =>
                 runCommand(() => {
                   useEditorStore.getState().setToolMode("pen");
-                  toast.success("Pen tool");
+                  toast.success("Pen tool — click to add, drag curves, dbl-click last or Esc/Enter to finish");
                 })
               }
             >

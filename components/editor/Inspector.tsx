@@ -36,6 +36,7 @@ import {
 import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
 import { MaterialSymbol } from "./MaterialSymbol";
 import { PathCommandsList } from "./PathCommandsList";
+import { CompactColorInput } from "@/components/ui/color-picker";
 
 /* ------------------------------------------------------------------ */
 /* Field primitives — a small, consistent Figma-grade control system  */
@@ -206,7 +207,8 @@ function NumberRow({
   );
 }
 
-/** Compact color pill: swatch + hex + opacity in one control (Figma-style). */
+/** Compact color pill: swatch + hex + opacity in one control (Figma-style).
+    Uses the rich 3d-editor grade color picker popover. */
 function ColorRow({
   label,
   color,
@@ -214,39 +216,24 @@ function ColorRow({
   onColor,
   onAlpha,
 }: {
-  label: string;
+  label?: string;
   color: string;
   alpha?: number;
   onColor: (v: string) => void;
   onAlpha?: (v: number) => void;
 }) {
-  const hex = color?.startsWith("#") ? color : "#000000";
+  const hex = (color?.startsWith("#") ? color : color ? `#${color}` : "#000000");
+  const hasLabel = Boolean(label);
   return (
-    <div className="grid grid-cols-[58px_minmax(0,1fr)] items-center gap-2">
-      <span className="truncate text-[11px] text-muted-foreground">{label}</span>
-      <div className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-background pl-1.5 pr-2 transition-colors hover:border-foreground/20 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-        <label
-          className="relative size-5 shrink-0 cursor-pointer overflow-hidden rounded ring-1 ring-inset ring-border"
-          style={{
-            background: color
-              ? color
-              : "repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50% / 8px 8px",
-          }}
-        >
-          <input
-            type="color"
-            value={hex}
-            onChange={(e) => onColor(e.target.value)}
-            className="absolute inset-0 cursor-pointer opacity-0"
-            aria-label={`${label} color`}
-          />
-        </label>
-        <input
-          value={color || ""}
-          placeholder="none"
-          onChange={(e) => onColor(e.target.value)}
-          className="min-w-0 flex-1 bg-transparent font-mono text-xs uppercase text-foreground outline-none placeholder:text-muted-foreground/50 placeholder:normal-case"
-          aria-label={`${label} hex`}
+    <div className={cn("grid items-center gap-2", hasLabel ? "grid-cols-[58px_minmax(0,1fr)]" : "grid-cols-1")}>
+      {hasLabel && <span className="truncate text-[11px] text-muted-foreground">{label}</span>}
+      <div className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-background pl-1 pr-2 transition-colors hover:border-foreground/20 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+        <CompactColorInput
+          value={hex}
+          onChange={onColor}
+          ariaLabel={label || "Color"}
+          side="bottom"
+          align="start"
         />
         {alpha != null && onAlpha && (
           <>
@@ -261,7 +248,7 @@ function ColorRow({
                 if (Number.isFinite(pct)) onAlpha(Math.max(0, Math.min(100, pct)) / 100);
               }}
               className="w-9 bg-transparent text-right font-mono text-xs tabular-nums text-muted-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
-              aria-label={`${label} opacity`}
+              aria-label={(label || "Color") + " opacity"}
             />
             <span className="text-[10px] text-muted-foreground/60">%</span>
           </>
@@ -346,24 +333,13 @@ function GradientEditor({
 
       {/* Active stop editor */}
       {activeStop && (
-        <div className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-background pl-1.5 pr-2 transition-colors focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-          <label
-            className="relative size-5 shrink-0 cursor-pointer overflow-hidden rounded ring-1 ring-inset ring-border"
-            style={{ background: activeStop.color }}
-          >
-            <input
-              type="color"
-              value={hex}
-              onChange={(e) => updateStop(activeIdx, { color: e.target.value })}
-              className="absolute inset-0 cursor-pointer opacity-0"
-              aria-label="Stop color"
-            />
-          </label>
-          <input
-            value={activeStop.color}
-            onChange={(e) => updateStop(activeIdx, { color: e.target.value })}
-            className="min-w-0 flex-1 bg-transparent font-mono text-xs uppercase text-foreground outline-none"
-            aria-label="Stop hex"
+        <div className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-background pl-1 pr-2 transition-colors focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+          <CompactColorInput
+            value={hex}
+            onChange={(c) => updateStop(activeIdx, { color: c })}
+            ariaLabel="Stop color"
+            side="bottom"
+            align="start"
           />
           <span className="h-4 w-px bg-border" />
           <input
@@ -398,21 +374,25 @@ function GradientEditor({
 
       {/* Add / remove stop */}
       <div className="grid grid-cols-2 gap-1">
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="xs"
           onClick={addStop}
-          className="flex h-7 items-center justify-center gap-1 rounded-md border border-border bg-background text-[11px] text-foreground transition-colors hover:border-foreground/20 hover:bg-muted"
+          className="h-7 gap-1 text-[11px]"
         >
           <MaterialSymbol name="add" size={14} className="text-muted-foreground" /> Stop
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="outline"
+          size="xs"
           onClick={() => removeStop(activeIdx)}
           disabled={stops.length <= 2}
-          className="flex h-7 items-center justify-center gap-1 rounded-md border border-border bg-background text-[11px] text-foreground transition-colors hover:border-foreground/20 hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+          className="h-7 gap-1 text-[11px] disabled:opacity-40"
         >
           <MaterialSymbol name="remove" size={14} className="text-muted-foreground" /> Remove
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -430,19 +410,21 @@ function Segmented<T extends string>({
   return (
     <div className="flex h-8 items-center rounded-md bg-muted p-0.5">
       {options.map((o) => (
-        <button
+        <Button
           key={o.value}
           type="button"
+          size="xs"
+          variant="ghost"
           onClick={() => onChange(o.value)}
           className={cn(
-            "flex h-7 flex-1 items-center justify-center rounded-[5px] px-1 text-[11px] capitalize transition-colors",
+            "h-7 flex-1 rounded-[5px] px-1 text-[11px] capitalize",
             value === o.value
-              ? "bg-card font-medium text-foreground shadow-sm"
+              ? "bg-card font-medium text-foreground shadow-sm hover:bg-card"
               : "text-muted-foreground hover:text-foreground",
           )}
         >
           {o.label}
-        </button>
+        </Button>
       ))}
     </div>
   );
@@ -759,7 +741,6 @@ export function Inspector() {
             {/* Stroke */}
             <Section title="Stroke">
               <ColorRow
-                label="Color"
                 color={currentLayer.strokeColor || ""}
                 alpha={currentLayer.strokeAlpha ?? 1}
                 onColor={(v) => updateLayer({ strokeColor: v })}
@@ -772,53 +753,95 @@ export function Inspector() {
                 step={0.1}
                 onChange={(v) => updateLayer({ strokeWidth: v })}
               />
-              <Row label="Cap">
-                <Segmented
-                  value={currentLayer.strokeLinecap ?? "butt"}
-                  onChange={(v) => updateLayer({ strokeLinecap: v as StrokeLineCap })}
-                  options={[
-                    { value: "butt", label: "Butt" },
-                    { value: "round", label: "Round" },
-                    { value: "square", label: "Square" },
-                  ]}
-                />
-              </Row>
-              <Row label="Join">
-                <Segmented
-                  value={currentLayer.strokeLinejoin ?? "miter"}
-                  onChange={(v) => updateLayer({ strokeLinejoin: v as StrokeLineJoin })}
-                  options={[
-                    { value: "miter", label: "Miter" },
-                    { value: "round", label: "Round" },
-                    { value: "bevel", label: "Bevel" },
-                  ]}
-                />
-              </Row>
+
+              {/* Figma-style compact icon controls for cap + join (no verbose text) */}
+              <div className="grid grid-cols-2 gap-1.5">
+                <div>
+                  <div className="mb-0.5 text-[9px] font-medium uppercase tracking-wider text-muted-foreground/70">Cap</div>
+                  <div className="flex items-center gap-px rounded-md bg-muted p-0.5">
+                    {([
+                      { v: "butt", label: "Butt", icon: <svg width="14" height="10" viewBox="0 0 14 10" className="mx-auto"><line x1="1" y1="5" x2="13" y2="5" stroke="currentColor" strokeWidth="2" strokeLinecap="butt" /></svg> },
+                      { v: "round", label: "Round", icon: <svg width="14" height="10" viewBox="0 0 14 10" className="mx-auto"><line x1="1" y1="5" x2="11" y2="5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /><circle cx="11" cy="5" r="1.5" fill="none" stroke="currentColor" strokeWidth="1" /></svg> },
+                      { v: "square", label: "Square", icon: <svg width="14" height="10" viewBox="0 0 14 10" className="mx-auto"><line x1="1" y1="5" x2="11" y2="5" stroke="currentColor" strokeWidth="2" strokeLinecap="square" /><rect x="10" y="3.5" width="3" height="3" fill="none" stroke="currentColor" strokeWidth="1" /></svg> },
+                    ] as const).map(({ v, label, icon }) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => updateLayer({ strokeLinecap: v })}
+                        className={cn(
+                          "flex h-6 flex-1 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/70",
+                          (currentLayer.strokeLinecap ?? "butt") === v && "bg-card text-foreground shadow-sm"
+                        )}
+                        title={label}
+                        aria-label={label}
+                      >
+                        {icon}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-0.5 text-[9px] font-medium uppercase tracking-wider text-muted-foreground/70">Join</div>
+                  <div className="flex items-center gap-px rounded-md bg-muted p-0.5">
+                    {([
+                      { v: "miter", label: "Miter", icon: <svg width="14" height="10" viewBox="0 0 14 10" className="mx-auto"><polyline points="1,8 7,2 13,8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="miter" /></svg> },
+                      { v: "round", label: "Round", icon: <svg width="14" height="10" viewBox="0 0 14 10" className="mx-auto"><polyline points="1,8 7,2 13,8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" /></svg> },
+                      { v: "bevel", label: "Bevel", icon: <svg width="14" height="10" viewBox="0 0 14 10" className="mx-auto"><polyline points="1,8 7,3 13,8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="bevel" /></svg> },
+                    ] as const).map(({ v, label, icon }) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => updateLayer({ strokeLinejoin: v })}
+                        className={cn(
+                          "flex h-6 flex-1 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/70",
+                          (currentLayer.strokeLinejoin ?? "miter") === v && "bg-card text-foreground shadow-sm"
+                        )}
+                        title={label}
+                        aria-label={label}
+                      >
+                        {icon}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Clarify scope: stroke is per-layer (affects every subpath). Users can split for independent styling. */}
+              {currentLayer.from?.subPaths && currentLayer.from.subPaths.length > 1 && (
+                <p className="mt-1 text-[9px] leading-tight text-muted-foreground/60">
+                  Applies to all {currentLayer.from.subPaths.length} subpaths in this layer.
+                  Select a subpath (in path commands or direct tool) then use Edit → Extract to separate.
+                </p>
+              )}
             </Section>
 
             {/* Trim path */}
             <Section title="Trim path">
               <NumberRow
                 label="Start"
-                value={currentLayer.trimPathStart ?? 0}
+                value={Math.round((currentLayer.trimPathStart ?? 0) * 100)}
                 min={0}
-                max={1}
-                step={0.01}
-                onChange={(v) => updateLayer({ trimPathStart: v })}
+                max={100}
+                step={1}
+                suffix="%"
+                onChange={(v) => updateLayer({ trimPathStart: Math.max(0, Math.min(1, v / 100)) })}
               />
               <NumberRow
                 label="End"
-                value={currentLayer.trimPathEnd ?? 1}
+                value={Math.round((currentLayer.trimPathEnd ?? 1) * 100)}
                 min={0}
-                max={1}
-                step={0.01}
-                onChange={(v) => updateLayer({ trimPathEnd: v })}
+                max={100}
+                step={1}
+                suffix="%"
+                onChange={(v) => updateLayer({ trimPathEnd: Math.max(0, Math.min(1, v / 100)) })}
               />
               <NumberRow
                 label="Offset"
-                value={currentLayer.trimPathOffset ?? 0}
-                step={0.01}
-                onChange={(v) => updateLayer({ trimPathOffset: v })}
+                value={Math.round((currentLayer.trimPathOffset ?? 0) * 100)}
+                step={1}
+                suffix="%"
+                onChange={(v) => updateLayer({ trimPathOffset: v / 100 })}
               />
             </Section>
 
@@ -947,30 +970,34 @@ export function Inspector() {
           </Section>
         )}
 
-        {/* Selected point */}
-        {selection && point && (
-          <Section title="Selected point">
-            <div className="grid grid-cols-2 gap-2">
-              <NumberRow
-                label="X"
-                value={point.x}
-                step={0.1}
-                onChange={(v) => updateSelectedPoint({ x: v, y: point.y })}
-              />
-              <NumberRow
-                label="Y"
-                value={point.y}
-                step={0.1}
-                onChange={(v) => updateSelectedPoint({ x: point.x, y: v })}
-              />
-            </div>
+        {/* Selected point(s) - supports lasso multi-select */}
+        {(selection || (selectedPoints && selectedPoints.length > 0)) && (
+          <Section title={selectedPoints && selectedPoints.length > 1 ? `Selected points (${selectedPoints.length})` : "Selected point"}>
+            {selectedPoints && selectedPoints.length > 1 ? (
+              <p className="text-[10px] text-muted-foreground mb-1">Batch edit via drag or delete (lasso).</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <NumberRow
+                  label="X"
+                  value={point?.x ?? 0}
+                  step={0.1}
+                  onChange={(v) => updateSelectedPoint({ x: v, y: point?.y ?? 0 })}
+                />
+                <NumberRow
+                  label="Y"
+                  value={point?.y ?? 0}
+                  step={0.1}
+                  onChange={(v) => updateSelectedPoint({ x: point?.x ?? 0, y: v })}
+                />
+              </div>
+            )}
             <Button
               variant="ghost"
               size="sm"
               className="mt-1 h-8 w-full justify-start gap-1.5 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
               onClick={() => deleteSelectedPoint()}
             >
-              <Trash2 className="size-3.5" /> Delete point
+              <Trash2 className="size-3.5" /> Delete {selectedPoints && selectedPoints.length > 1 ? "points" : "point"}
             </Button>
           </Section>
         )}

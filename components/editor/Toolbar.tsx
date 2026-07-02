@@ -83,6 +83,7 @@ export function Toolbar({
     setSelectedCommandAsFirst,
     deleteSelectedPoint,
     deleteSelectedSubPath,
+    extractSelectedSubPathToNewLayer,
     booleanCombine,
     resetProject,
     vector,
@@ -229,13 +230,20 @@ export function Toolbar({
                 <span className="ml-auto text-xs text-muted-foreground">F</span>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => deleteSelectedPoint()}>
-                <MaterialSymbol name="delete" size={16} className="mr-2" /> Delete point
+                <MaterialSymbol name="delete" size={16} className="mr-2" /> Delete point(s)
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => deleteSelectedSubPath()}>
-                <MaterialSymbol name="close" size={16} className="mr-2" /> Delete subpath
+                <MaterialSymbol name="close" size={16} className="mr-2" /> Delete subpath(s)
               </DropdownMenuItem>
             </>
           )}
+
+          <DropdownMenuItem
+            onClick={() => extractSelectedSubPathToNewLayer?.()}
+            disabled={!extractSelectedSubPathToNewLayer}
+          >
+            <MaterialSymbol name="call_split" size={16} className="mr-2" /> Extract subpath to new layer
+          </DropdownMenuItem>
 
           <DropdownMenuSeparator />
           <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -266,19 +274,21 @@ export function Toolbar({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* From / To — segmented, action mode only */}
+      {/* From / To — segmented, action mode only (shadcn Button) */}
       {isActionMode && (
         <>
           <div className="mx-1 h-5 w-px bg-border" />
           <div className="flex items-center rounded-md bg-muted p-0.5">
             {(["from", "to"] as const).map((side) => (
-              <button
+              <Button
                 key={side}
                 type="button"
+                size="xs"
+                variant="ghost"
                 onClick={() => setEditingSide(side)}
-                className={`flex h-6 items-center gap-1 rounded-[5px] px-2.5 text-xs font-medium capitalize transition-colors ${
+                className={`h-6 gap-1 rounded-[5px] px-2.5 text-xs capitalize ${
                   editingSide === side
-                    ? "bg-card text-foreground shadow-sm"
+                    ? "bg-card text-foreground shadow-sm hover:bg-card"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
@@ -287,7 +297,7 @@ export function Toolbar({
                 ) : null}
                 {side}
                 {side === "to" ? <MaterialSymbol name="arrow_right" size={14} /> : null}
-              </button>
+              </Button>
             ))}
           </div>
         </>
