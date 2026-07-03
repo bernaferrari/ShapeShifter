@@ -15,7 +15,7 @@ describe("world camera utilities", () => {
     expect(viewport.y).toBeLessThanOrEqual(80);
     expect(viewport.x + viewport.w).toBeGreaterThanOrEqual(160);
     expect(viewport.y + viewport.h).toBeGreaterThanOrEqual(100);
-    expect(viewport.w).toBe(viewport.h);
+    expect(viewport.w).toBeGreaterThan(viewport.h);
     expect(viewport).not.toEqual({ x: -80, y: -80, w: 320, h: 320, scale: 1 });
   });
 

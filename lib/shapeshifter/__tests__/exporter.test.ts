@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { parsePath, pathToString } from "../pathUtils";
+import { parsePath, pathToString, getInterpolatedPath } from "../pathUtils";
 import type { AnimationState, Layer, PathData, VectorMetadata } from "../types";
 import {
   exportAnimatedSVG,
@@ -76,9 +76,36 @@ describe("exportAnimatedSVG", () => {
     expect(svg).toContain("requestAnimationFrame");
   });
 
-  it("generates keyframe data in the script", () => {
+  it("embeds baked morph frames (matches on-canvas getInterpolatedPath preview)", () => {
     const svg = exportAnimatedSVG(from, to);
-    expect(svg).toContain("const keyframes = [");
+    // Frames are pre-baked via getInterpolatedPath so the exported morph matches
+    // the preview even when from/to command structures differ.
+    expect(svg).toContain("var frames = [");
+    // First baked frame equals the from path; last equals the to path.
+    expect(svg).toContain(pathToString(from));
+    expect(svg).toContain(pathToString(to));
+  });
+
+  it("baked frames equal getInterpolatedPath output (export matches preview, no per-number truncation)", () => {
+    // from has 3 commands, to has 6 — the old per-number lerp over the FROM
+    // skeleton dropped every surplus target point.
+    const fromShort = makePath("M 0 0 L 10 0 L 10 10 Z");
+    const toLong = makePath("M 0 0 L 5 0 L 10 0 L 10 5 L 10 10 L 5 10 Z");
+    const svg = exportAnimatedSVG(fromShort, toLong, "Mismatch");
+    const m = svg.match(/var frames = (\[[\s\S]*?\]);/);
+    expect(m).not.toBeNull();
+    const frames: string[] = JSON.parse(m![1]);
+    expect(frames).toHaveLength(60);
+    // Every baked frame is exactly what getInterpolatedPath produces, so the
+    // exported morph is identical to the on-canvas preview.
+    for (let i = 0; i < frames.length; i++) {
+      const t = i / (frames.length - 1);
+      expect(frames[i]).toBe(getInterpolatedPath(fromShort, toLong, t));
+    }
+    // The toLong-only segments survive in the final frame (the old per-number
+    // lerp over FROM's skeleton dropped them entirely).
+    expect(frames[frames.length - 1]).toContain("L10 10");
+    expect(frames[frames.length - 1]).toContain("L5 10");
   });
 
   it("uses custom duration and stroke width", () => {
@@ -337,7 +364,7 @@ describe("exportSvgSpritesheet", () => {
   it("frame 0 contains from path data, last frame contains to path data", () => {
     const svg = exportSvgSpritesheet(layer, { fps: 2, duration: 1 });
     const fromD = pathToString(layer.from);
-    const toD = pathToString(layer.to);
+    const toD = pathToString(layer.to!);
     expect(svg).toContain(`d="${fromD}"`);
     expect(svg).toContain(`d="${toD}"`);
   });
@@ -472,7 +499,7 @@ describe("exportAnimatedVectorDrawable", () => {
   it("includes from and to path data in animator", () => {
     const avd = exportAnimatedVectorDrawable(layer);
     const fromD = pathToString(layer.from);
-    const toD = pathToString(layer.to);
+    const toD = pathToString(layer.to!);
     expect(avd).toContain(`android:valueFrom="${fromD}"`);
     expect(avd).toContain(`android:valueTo="${toD}"`);
   });

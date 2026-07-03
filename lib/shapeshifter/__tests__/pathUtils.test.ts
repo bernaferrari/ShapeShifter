@@ -71,11 +71,29 @@ describe("pathUtils", () => {
       expect(result).toEqual("M19 11 L19 13 L5 13 C5 13 5 11 5 11 C5 11 19 11 19 11");
     });
 
-    it("reverses arc with flipped sweep flag", () => {
+    it("reverses arc preserving curve shape (normalized to cubics, no malformed A)", () => {
+      // Arcs are normalized to cubic beziers before reversal so the curve survives
+      // intact instead of collapsing or emitting a malformed 1-point A.
       const path = parsePath("M 0 0 A 5 5 0 1 1 10 0");
       const reversed = reversePath(path);
       const d = pathToString(reversed);
-      expect(d).toContain("A5 5 0 1 0");
+      expect(d.startsWith("M10 0")).toBe(true);
+      expect(d).toContain("C");
+      expect(d).not.toContain("A");
+      // Double reverse restores the forward start point + curve.
+      const doubled = pathToString(reversePath(reversed));
+      expect(doubled.startsWith("M0 0")).toBe(true);
+      expect(doubled).toContain("C");
+    });
+
+    it("reverses smooth-cubic (S) path without leading-S collapse", () => {
+      // S is normalized to C before reversal, so the implicit reflected control
+      // lands on the correct neighbor and the curve shape is preserved.
+      const path = parsePath("M 0 0 C 0 5 5 10 10 10 S 20 5 20 0");
+      const d = pathToString(reversePath(path));
+      expect(d.startsWith("M20 0")).toBe(true);
+      expect(d).toContain("C");
+      expect(d).not.toContain("S");
     });
 
     it("handles single-command path unchanged", () => {
@@ -147,6 +165,35 @@ describe("pathUtils", () => {
       expect(cmds.length).toBe(3);
       expect(cmds[1].type).toBe("C");
       expect(cmds[2].type).toBe("C");
+    });
+
+    it("splits quadratic bezier (Q) into two Q commands that survive reparse", () => {
+      // Previously the generic fallthrough emitted a malformed 1-point Q that was
+      // dropped on reparse. The de Casteljau split must keep both halves.
+      const split = splitCommandInHalf(parsePath("M 0 0 Q 5 10 10 0"), 0, 1);
+      const cmds = split.subPaths[0].commands;
+      expect(cmds.length).toBe(3); // M + 2 Q
+      expect(cmds[1].type).toBe("Q");
+      expect(cmds[2].type).toBe("Q");
+      // Reparse keeps all 4 Q control/end points (no drop).
+      const reparsed = parsePath(pathToString(split));
+      const drawCmds = reparsed.subPaths[0].commands.filter((c) => c.type === "Q");
+      expect(drawCmds.reduce((n, c) => n + c.points.length, 0)).toBe(4);
+    });
+
+    it("splits smooth cubic (S) into two C commands", () => {
+      const split = splitCommandInHalf(parsePath("M 0 0 C 0 5 5 10 10 10 S 20 5 20 0"), 0, 2);
+      const cmds = split.subPaths[0].commands;
+      // S materializes to C then splits: M + C + C + C (second half can't stay smooth).
+      expect(cmds.filter((c) => c.type === "C").length).toBeGreaterThanOrEqual(3);
+      expect(cmds.some((c) => c.type === "S")).toBe(false);
+    });
+
+    it("splits arc (A) into cubic segments (no malformed 1-point A)", () => {
+      const split = splitCommandInHalf(parsePath("M 0 0 A 5 5 0 1 1 10 0"), 0, 1);
+      const d = pathToString(split);
+      expect(d).toContain("C");
+      expect(d).not.toMatch(/A\d/);
     });
   });
 
@@ -251,6 +298,20 @@ describe("pathUtils", () => {
       const result = getInterpolatedPath(from, to, 0.5);
       expect(typeof result).toBe("string");
       expect(result.length).toBeGreaterThan(0);
+    });
+
+    it("interpolates arc-derived paths without data loss (no malformed SVG)", () => {
+      // Arcs normalize to cubics on both sides, so t=0.5 renders a valid arc-derived
+      // path instead of dropping arcArgs / emitting a bare A.
+      const from = parsePath("M 0 0 A 5 5 0 1 1 10 0");
+      const to = parsePath("M 0 0 A 5 5 0 1 1 10 0");
+      const result = getInterpolatedPath(from, to, 0.5);
+      expect(typeof result).toBe("string");
+      expect(result.length).toBeGreaterThan(0);
+      expect(result).not.toMatch(/NaN|Infinity/);
+      expect(result).toContain("C");
+      // Round-trips cleanly through the parser (no malformed command dropped).
+      expect(() => pathToString(parsePath(result))).not.toThrow();
     });
   });
 

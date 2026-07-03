@@ -82,12 +82,6 @@ export default function ShapeShifter2026() {
         return;
       }
 
-      // Playback
-      if (e.key === " " || e.key === "Spacebar") {
-        e.preventDefault();
-        store.togglePlayback();
-        return;
-      }
 
       // Magic tools - very intuitive single keys
       if (e.key.toLowerCase() === "a" && !e.metaKey) {
@@ -107,19 +101,16 @@ export default function ShapeShifter2026() {
         return;
       }
 
-      // Delete (supports multi lasso selection for points or subpaths)
+      // Delete (single owner — C1/H2 fix). Priority: points → subpaths → layer (last resort).
       if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
         if ((store.selectedPoints && store.selectedPoints.length > 0) || store.selection) {
           store.deleteSelectedPoint();
         } else if (store.selectedSubPaths && store.selectedSubPaths.length > 0) {
           store.deleteSelectedSubPath();
+        } else if (store.layers.length > 1) {
+          store.deleteLayer(store.selectedLayerId);
         }
-        return;
-      }
-
-      // Clear selection
-      if (e.key === "Escape") {
-        store.clearSelection?.();
         return;
       }
 
@@ -137,7 +128,7 @@ export default function ShapeShifter2026() {
         return;
       }
       if (e.key.toLowerCase() === "d" && !e.metaKey) {
-        // Direct / handles + Bend/Flex (Ctrl+drag curves)
+        // Vector editor (Figma: edit points on the path)
         e.preventDefault();
         store.setToolMode("direct");
         return;
@@ -179,22 +170,48 @@ export default function ShapeShifter2026() {
         store.closeActionMode?.();
         return;
       }
-
-      // Arrow nudges (extend if needed)
-
-      // Nudge selected point with arrows (very useful)
-      if (store.selection && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+      // Clipboard (M2 wiring) — copy/paste/cut/duplicate were dead code with no key bindings.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c") {
         e.preventDefault();
-        const point = store.getCurrentSelectedPoint();
-        if (!point) return;
+        store.copyLayers?.([store.selectedLayerId]);
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v") {
+        e.preventDefault();
+        store.pasteLayers?.();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "x") {
+        e.preventDefault();
+        store.cutLayers?.([store.selectedLayerId]);
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        store.copyLayers?.([store.selectedLayerId]);
+        store.pasteLayers?.();
+        return;
+      }
+
+      // Arrow nudges — single owner (H3 fix: no more double-transform vs the canvas listener).
+      // Priority: multi-point → single point → subpaths → whole layer.
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+        e.preventDefault();
         const step = e.shiftKey ? 5 : 0.5;
-        let dx = 0;
-        let dy = 0;
-        if (e.key === "ArrowUp") dy = -step;
-        if (e.key === "ArrowDown") dy = step;
-        if (e.key === "ArrowLeft") dx = -step;
-        if (e.key === "ArrowRight") dx = step;
-        store.updateSelectedPoint({ x: point.x + dx, y: point.y + dy });
+        const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+        const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
+        const s = useEditorStore.getState();
+        if (s.selectedPoints && s.selectedPoints.length > 0) {
+          s.translateSelectedPoints(dx, dy);
+        } else if (s.selection) {
+          const point = s.getCurrentSelectedPoint();
+          if (point) s.updateSelectedPoint({ x: point.x + dx, y: point.y + dy });
+        } else if (s.selectedSubPaths && s.selectedSubPaths.length > 0) {
+          s.translateSelectedSubPaths(dx, dy);
+        } else {
+          s.translateSelectedLayer(dx, dy);
+        }
+        return;
       }
 
       // Quick side switching
@@ -209,18 +226,15 @@ export default function ShapeShifter2026() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  // BUG-9: only run the playback RAF while actually playing (no perpetual 60fps no-op when paused).
+  const playbackActive = useEditorStore((s) => s.isPlaying);
   React.useEffect(() => {
+    if (!playbackActive) return;
     let frameId = 0;
     let previousTime = performance.now();
 
     const tick = (time: number) => {
       const store = useEditorStore.getState();
-      if (!store.isPlaying) {
-        previousTime = time;
-        frameId = requestAnimationFrame(tick);
-        return;
-      }
-
       const elapsed = time - previousTime;
       previousTime = time;
       const duration = Math.max(1, store.animation.duration);
@@ -243,7 +257,7 @@ export default function ShapeShifter2026() {
 
     frameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameId);
-  }, []);
+  }, [playbackActive]);
 
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -508,11 +522,15 @@ export default function ShapeShifter2026() {
       } catch {
         // ignore
       }
-      // Keep store in sync so LayerTimeline's internal track collapse also matches
-      useEditorStore.getState().setTimelineCollapsed(next);
       return next;
     });
   }, []);
+
+  // Sync panel open/closed → store *after* render (never inside a setState updater —
+  // that can run while React is rendering and break other store subscribers like ExportDialog).
+  React.useEffect(() => {
+    useEditorStore.getState().setTimelineCollapsed(timelineCollapsed);
+  }, [timelineCollapsed]);
 
   // Auto-collapse the inspector on narrow viewports so nothing clips.
   React.useEffect(() => {
@@ -583,7 +601,7 @@ export default function ShapeShifter2026() {
     }
 
     const fromPath = layer.from;
-    const toPath = layer.to;
+    const toPath = layer.to ?? layer.from;
     const name = layer.name.replace(/\s+/g, "-").toLowerCase();
 
     try {
@@ -794,26 +812,30 @@ export default function ShapeShifter2026() {
           </button>
         </div>
 
-        {!isActionMode && !inspectorHidden && (
-          <aside className="flex h-full w-80 shrink-0 flex-col overflow-hidden border-l bg-sidebar shadow-xs">
-            <Inspector />
+        {!isActionMode && (
+          <aside
+            className={cn(
+              "flex h-full shrink-0 flex-col overflow-hidden border-l bg-sidebar shadow-xs transition-[width,opacity] duration-300 ease-out",
+              inspectorHidden ? "w-0 border-l-0 opacity-0" : "w-80 opacity-100",
+            )}
+          >
+            {/* Inner content keeps a fixed width so it clips cleanly during the width animation. */}
+            <div className="flex h-full w-80 flex-col">
+              <Inspector />
+            </div>
           </aside>
         )}
 
-        {/* Inspector collapse/expand toggle — a quiet tab anchored to the right
-            edge of the workspace (just inside the inspector when open, flush to
-            the edge when collapsed). Hidden on narrow viewports, where the
-            inspector is force-collapsed and there's no room to reopen it. */}
+        {/* Inspector collapse/expand toggle — always at the workspace top-right corner
+            (sits inside the panel when open, at the screen edge when collapsed), so its
+            position is consistent and discoverable. Hidden in Action Mode / narrow viewports. */}
         {!isActionMode && !isNarrow && (
           <button
             type="button"
             onClick={toggleInspector}
             aria-label={inspectorCollapsed ? "Show inspector" : "Hide inspector"}
             aria-expanded={!inspectorCollapsed}
-            className={cn(
-              "absolute top-2.5 z-30 grid size-7 place-items-center rounded-md border border-border bg-card/90 text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:text-foreground",
-              inspectorCollapsed ? "right-2" : "right-[19.5rem]",
-            )}
+            className="absolute right-2 top-2.5 z-30 grid size-7 place-items-center rounded-md border border-border bg-card/90 text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:text-foreground"
           >
             {inspectorCollapsed ? (
               <PanelRightOpen className="size-4" />

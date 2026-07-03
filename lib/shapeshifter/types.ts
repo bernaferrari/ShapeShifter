@@ -125,8 +125,15 @@ export interface Layer extends PathStyle {
   id: number | string;
   name: string;
   type: LayerType;
+  /** Start geometry. Always present. */
   from: PathData;
-  to: PathData;
+  /**
+   * Optional end geometry. When absent the layer is a STATIC shape (no morph).
+   * Morphing is opt-in: a layer becomes a morph only when `to` is set (e.g. the demo
+   * clips, or when the user adds an end state). This keeps plain shapes simple and
+   * makes the document CRDT/yjs-friendly (static shape = trivial data).
+   */
+  to?: PathData;
   visible: boolean;
   locked: boolean;
   expanded?: boolean;
@@ -142,6 +149,14 @@ export interface Layer extends PathStyle {
   pivotY?: number;
   duration?: number; // per-layer duration override
   timeline?: TimelineBlock[];
+}
+
+/**
+ * Resolve a layer's end geometry, falling back to its start when the layer is static
+ * (no `to`). Use this for every read so missing-`to` layers render/edit as plain shapes.
+ */
+export function getTo(layer: Pick<Layer, "from" | "to">): PathData {
+  return layer.to ?? layer.from;
 }
 
 /**

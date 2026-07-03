@@ -484,7 +484,7 @@ describe("importLayersFromSvg", () => {
   describe("path data integrity", () => {
     it("from and to are identical for imported layers", () => {
       const layers = importLayersFromSvg(SVG_PATH_TRIANGLE);
-      expect(pathToString(layers[0].from)).toEqual(pathToString(layers[0].to));
+      expect(pathToString(layers[0].from)).toEqual(pathToString(layers[0].to!));
     });
 
     it("pathData matches from", () => {
@@ -612,7 +612,7 @@ describe("importLayersFromVectorDrawable", () => {
   describe("path data integrity", () => {
     it("from and to are identical for imported layers", () => {
       const layers = importLayersFromVectorDrawable(VECTOR_DRAWABLE_BASIC);
-      expect(pathToString(layers[0].from)).toEqual(pathToString(layers[0].to));
+      expect(pathToString(layers[0].from)).toEqual(pathToString(layers[0].to!));
     });
 
     it("pathData matches from", () => {
@@ -716,9 +716,9 @@ describe("project.ts: .shapeshifter project import", () => {
       const result = flattenOriginalProject(PROJECT_WITH_ANIMATION);
       const layer = result.layers[0];
       expect(layer.name).toBe("morph_path");
-      expect(pathToString(layer.from)).not.toEqual(pathToString(layer.to));
+      expect(pathToString(layer.from)).not.toEqual(pathToString(layer.to!));
       expect(pathToString(layer.from)).toContain("M0 0");
-      expect(pathToString(layer.to)).toContain("M24 0");
+      expect(pathToString(layer.to!)).toContain("M24 0");
     });
 
     it("preserves animation metadata", () => {
@@ -897,18 +897,24 @@ describe("24t phase1: SVG import fidelity edges (arcParams, transforms, groups, 
     <rect x="20" y="20" width="10" height="10"/>
   </svg>`;
 
-  it("preserves and correctly transforms arcParams xRotation (fixes pre-exist rotation vs xRotation shape mismatch)", () => {
+  it("preserves and correctly transforms arcParams xRotation under conformal rotate (group hierarchy now preserved)", () => {
     const layers = importLayersFromSvg(SVG_ARC_ROTATED_IN_GROUP);
-    expect(layers).toHaveLength(1);
-    const arcCmd = layers[0].from.subPaths[0]?.commands.find((c) => c.type === "A");
+    // <g> is no longer flattened: one group + its arc path child.
+    const groups = layers.filter((l) => l.type === "group");
+    expect(groups).toHaveLength(1);
+    const arcLayer = layers.find((l) => l.name === "arc");
+    expect(arcLayer).toBeDefined();
+    expect(arcLayer!.type).toBe("path");
+    expect(arcLayer!.parentId).toBe(groups[0].id);
+    const arcCmd = arcLayer!.from.subPaths[0]?.commands.find((c) => c.type === "A");
     expect(arcCmd).toBeDefined();
     expect(arcCmd!.arcParams).toBeDefined();
-    // Original xRotation 30 + group rotate 45 => ~75 (within float)
+    // rotate(45 12 12) is conformal → fast path: original xRotation 30 + group rotate 45 ≈ 75.
     expect(arcCmd!.arcParams!.xRotation).toBeCloseTo(75, 1);
     expect(Number.isFinite(arcCmd!.arcParams!.rx)).toBe(true);
     expect(Number.isFinite(arcCmd!.arcParams!.ry)).toBe(true);
     // geometry transformed (points moved by rot)
-    expect(layers[0].from.subPaths[0].commands[0].points[0].x).not.toBeCloseTo(6);
+    expect(arcLayer!.from.subPaths[0].commands[0].points[0].x).not.toBeCloseTo(6);
   });
 
   it("graceful partial recovery on bad/complex path data (no crash, imports goods only, toasts in app)", () => {
@@ -935,7 +941,7 @@ describe("24t phase1: SVG import fidelity edges (arcParams, transforms, groups, 
       {
         ...original[0],
         from: reversePath(original[0].from),
-        to: reversePath(original[0].to),
+        to: reversePath(original[0].to!),
         pathData: reversePath(original[0].pathData!),
       },
     ];
@@ -960,6 +966,97 @@ describe("24t phase1: SVG import fidelity edges (arcParams, transforms, groups, 
     </svg>`;
     const layers = importLayersFromSvg(svgWithUse);
     expect(layers.length).toBeGreaterThanOrEqual(1);
-    expect(extractPathString(layers[0])).toContain("M");
+    // <use> is resolved into a wrapper <g> (now preserved) + its child path.
+    const pathLayer = layers.find((l) => l.type === "path");
+    expect(pathLayer).toBeDefined();
+    expect(extractPathString(pathLayer!)).toContain("M");
+  });
+});
+
+describe("import fidelity: nested groups, userSpaceOnUse gradients, non-conformal arcs", () => {
+  it("preserves nested <g> hierarchy with parentId nesting and id/name", () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+      <g id="outer">
+        <g id="inner">
+          <path id="leaf" d="M 0 0 L 10 10"/>
+        </g>
+      </g>
+    </svg>`;
+    const layers = importLayersFromSvg(svg);
+    const outer = layers.find((l) => l.name === "outer");
+    const inner = layers.find((l) => l.name === "inner");
+    const leaf = layers.find((l) => l.name === "leaf");
+    expect(outer).toBeDefined();
+    expect(inner).toBeDefined();
+    expect(leaf).toBeDefined();
+    expect(outer!.type).toBe("group");
+    expect(inner!.type).toBe("group");
+    expect(leaf!.type).toBe("path");
+    expect(outer!.parentId).toBeNull();
+    expect(inner!.parentId).toBe(outer!.id);
+    expect(leaf!.parentId).toBe(inner!.id);
+  });
+
+  it("emits a flat list (no group) when SVG has no <g>", () => {
+    const layers = importLayersFromSvg(SVG_MULTI_ELEMENT);
+    expect(layers.every((l) => l.type !== "group")).toBe(true);
+    expect(layers.every((l) => l.parentId == null)).toBe(true);
+  });
+
+  it("converts userSpaceOnUse linear gradient to objectBoundingBox fractions via path bbox", () => {
+    // Path bbox x∈[0,10], y∈[0,10]. Gradient line (0,0)->(10,0) in user space
+    // maps to fractions (0,0)->(1,0) → angle 0.
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">
+      <defs>
+        <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="10" y2="0">
+          <stop offset="0" stop-color="#ff0000"/>
+          <stop offset="1" stop-color="#0000ff"/>
+        </linearGradient>
+      </defs>
+      <path id="p" d="M 0 0 L 10 0 L 10 10 L 0 10 Z" fill="url(#g)"/>
+    </svg>`;
+    const layers = importLayersFromSvg(svg);
+    const p = layers.find((l) => l.name === "p");
+    expect(p).toBeDefined();
+    expect(p!.fillGradient).toBeDefined();
+    expect(p!.fillGradient!.type).toBe("linear");
+    expect(p!.fillGradient!.angle).toBe(0);
+  });
+
+  it("keeps objectBoundingBox gradients as fractions (no userSpace conversion)", () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">
+      <defs>
+        <linearGradient id="g" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#ff0000"/>
+          <stop offset="1" stop-color="#0000ff"/>
+        </linearGradient>
+      </defs>
+      <path id="p" d="M 0 0 L 10 0 L 10 10 L 0 10 Z" fill="url(#g)"/>
+    </svg>`;
+    const layers = importLayersFromSvg(svg);
+    const p = layers.find((l) => l.name === "p");
+    expect(p!.fillGradient).toBeDefined();
+    expect(p!.fillGradient!.angle).toBe(0);
+  });
+
+  it("flattens arcs to beziers under non-uniform scale (no surviving A command)", () => {
+    // scale(2, 1) is non-conformal → arc must be converted to cubic beziers.
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+      <g transform="scale(2, 1)">
+        <path id="arc" d="M 2 6 A 4 4 0 0 1 10 6" fill="none" stroke="#000"/>
+      </g>
+    </svg>`;
+    const layers = importLayersFromSvg(svg);
+    const arc = layers.find((l) => l.name === "arc");
+    expect(arc).toBeDefined();
+    const cmds = arc!.from.subPaths[0].commands;
+    expect(cmds.some((c) => c.type === "A")).toBe(false);
+    expect(cmds.some((c) => c.type === "C")).toBe(true);
+    expect(cmds.every((c) => c.arcParams === undefined)).toBe(true);
+    // End point transformed by scale(2,1): (10,6) -> (20,6)
+    const lastC = [...cmds].reverse().find((c) => c.type === "C")!;
+    const end = lastC.points[lastC.points.length - 1];
+    expect(end.x).toBeCloseTo(20, 0);
+    expect(end.y).toBeCloseTo(6, 0);
   });
 });

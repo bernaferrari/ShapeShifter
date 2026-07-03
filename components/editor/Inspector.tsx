@@ -504,7 +504,7 @@ export function Inspector() {
 
   const commandsList = (extraClass?: string) => (
     <PathCommandsList
-      pathData={currentLayer[editingSide]}
+      pathData={(currentLayer[editingSide] ?? currentLayer.from)}
       selectedPoints={selectedPoints}
       className={extraClass}
       onSelectCommand={(subPathIndex, commandIndex, pointIndex) => {
@@ -519,11 +519,11 @@ export function Inspector() {
       }}
       onUpdateCommandPoint={(subPathIndex, commandIndex, pointIndex, newPoint) => {
         setPath(
-          updateCommandPoint(currentLayer[editingSide], subPathIndex, commandIndex, pointIndex, newPoint),
+          updateCommandPoint((currentLayer[editingSide] ?? currentLayer.from), subPathIndex, commandIndex, pointIndex, newPoint),
         );
       }}
       onChangeCommandType={(subPathIndex, commandIndex, newType) => {
-        setPath(changeCommandType(currentLayer[editingSide], subPathIndex, commandIndex, newType));
+        setPath(changeCommandType((currentLayer[editingSide] ?? currentLayer.from), subPathIndex, commandIndex, newType));
       }}
     />
   );
@@ -875,7 +875,7 @@ export function Inspector() {
               </button>
               {showPathData && (
                 <textarea
-                  value={pathToString(currentLayer[editingSide])}
+                  value={pathToString((currentLayer[editingSide] ?? currentLayer.from))}
                   onChange={(e) => {
                     try {
                       setPath(parsePath(e.target.value));

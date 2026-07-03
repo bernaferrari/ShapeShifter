@@ -24,6 +24,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuGroup,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -218,9 +219,10 @@ export function Toolbar({
           {isActionMode && (
             <>
               <DropdownMenuSeparator />
-              <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                Selected command
-              </DropdownMenuLabel>
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Selected command
+                </DropdownMenuLabel>
               <DropdownMenuItem onClick={() => splitSelectedCommand()}>
                 <MaterialSymbol name="call_split" size={16} className="mr-2" /> Split in half
                 <span className="ml-auto text-xs text-muted-foreground">X</span>
@@ -235,6 +237,7 @@ export function Toolbar({
               <DropdownMenuItem onClick={() => deleteSelectedSubPath()}>
                 <MaterialSymbol name="close" size={16} className="mr-2" /> Delete subpath(s)
               </DropdownMenuItem>
+              </DropdownMenuGroup>
             </>
           )}
 
@@ -246,13 +249,15 @@ export function Toolbar({
           </DropdownMenuItem>
 
           <DropdownMenuSeparator />
-          <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            Combine with next layer
-          </DropdownMenuLabel>
-          <DropdownMenuItem onClick={() => booleanCombine("union")}>Union</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => booleanCombine("subtract")}>Subtract</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => booleanCombine("intersect")}>Intersect</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => booleanCombine("exclude")}>Exclude</DropdownMenuItem>
+          <DropdownMenuGroup>
+            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              Combine with next layer
+            </DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => booleanCombine("union")}>Union</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => booleanCombine("subtract")}>Subtract</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => booleanCombine("intersect")}>Intersect</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => booleanCombine("exclude")}>Exclude</DropdownMenuItem>
+          </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
 

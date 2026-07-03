@@ -134,8 +134,8 @@ export function ExportDialog({ children }: ExportDialogProps) {
       switch (format) {
         case "svg":
           const svgContent = exportAnimatedSVG(
-            currentLayer!.from,
-            currentLayer!.to,
+            currentLayer!.pathData ?? currentLayer!.from,
+            currentLayer!.to ?? currentLayer!.from,
             currentLayer!.name,
             options,
           );
@@ -145,8 +145,8 @@ export function ExportDialog({ children }: ExportDialogProps) {
 
         case "css":
           const cssContent = exportCSSKeyframes(
-            currentLayer!.from,
-            currentLayer!.to,
+            currentLayer!.pathData ?? currentLayer!.from,
+            currentLayer!.to ?? currentLayer!.from,
             currentLayer!.name,
             options.duration,
           );

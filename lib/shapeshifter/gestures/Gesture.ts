@@ -44,7 +44,7 @@ export interface GestureCallbacks {
   beginMarqueeSelection?: (start: Point, additive: boolean) => void;
   updateMarquee?: (current: Point) => void;
   endMarquee?: () => void;
-  commitMarqueeSelection?: (start: Point, end: Point) => void;
+  commitMarqueeSelection?: (start: Point, end: Point, additive: boolean) => void;
 
   // Add more callbacks as gestures are implemented (selectPoint, updatePoint, etc.)
 }

@@ -4,10 +4,11 @@
  * in the data model; the UI shows these labels instead of leaking internals.
  */
 export const PROPERTY_LABELS: Record<string, string> = {
-  pathData: "Shape",
-  fillColor: "Fill color",
-  fillAlpha: "Fill opacity",
-  strokeColor: "Stroke color",
+  // pathData is not shown as its own timeline row — morph lives on the layer clip bar
+  pathData: "Morph",
+  fillColor: "Fill",
+  fillAlpha: "Opacity",
+  strokeColor: "Stroke",
   strokeAlpha: "Stroke opacity",
   strokeWidth: "Stroke width",
   trimPathStart: "Trim start",
@@ -18,8 +19,8 @@ export const PROPERTY_LABELS: Record<string, string> = {
   scaleY: "Scale Y",
   pivotX: "Pivot X",
   pivotY: "Pivot Y",
-  translateX: "Move X",
-  translateY: "Move Y",
+  translateX: "Position",
+  translateY: "Position Y",
   alpha: "Opacity",
 };
 

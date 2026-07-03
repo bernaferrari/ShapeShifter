@@ -94,20 +94,20 @@ export function computeFitViewport(
   const contentW = maxX - minX;
   const contentH = maxY - minY;
 
-  // Content-aware padding: tight enough that a single artboard fills ~75-80% of
-  // the view (starts comfortably zoomed in like Figma), with breathing room that
-  // scales as more frames are added.
+  // Content-aware padding: fit the content's REAL aspect (not a forced square) so wide
+  // arrangements (e.g. several frames side by side) aren't squished into a tiny sliver.
+  // ~12% padding keeps a single artboard filling most of the view (Figma-like).
   const pad = Math.max(minPadding, Math.max(contentW, contentH) * 0.12);
-
-  const size = Math.max(28, contentW + pad * 2, contentH + pad * 2);
+  const w = Math.max(28, contentW + pad * 2);
+  const h = Math.max(28, contentH + pad * 2);
   const centerX = minX + contentW / 2;
   const centerY = minY + contentH / 2;
 
   return {
-    x: centerX - size / 2,
-    y: centerY - size / 2,
-    w: size,
-    h: size,
+    x: centerX - w / 2,
+    y: centerY - h / 2,
+    w,
+    h,
     scale: Math.min(maxScale, 1),
   };
 }

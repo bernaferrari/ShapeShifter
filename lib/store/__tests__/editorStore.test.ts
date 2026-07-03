@@ -29,7 +29,7 @@ function makeSelection(layerId: string | number, side: "from" | "to" = "from"): 
 
 // Helper: count draw commands in a layer's path (excluding M and Z)
 function drawCommandCount(layer: Layer, side: "from" | "to" = "from"): number {
-  const path = side === "from" ? layer.from : layer.to;
+  const path = side === "from" ? layer.from : layer.to!;
   let count = 0;
   for (const sp of path.subPaths) {
     for (const cmd of sp.commands) {
@@ -41,7 +41,7 @@ function drawCommandCount(layer: Layer, side: "from" | "to" = "from"): number {
 
 function getLayerCommandIds(layers: Layer[]): string[] {
   return layers.flatMap((layer) =>
-    [layer.from, layer.to, layer.pathData]
+    [layer.from, layer.to!, layer.pathData]
       .filter(Boolean)
       .flatMap((path) =>
         path!.subPaths.flatMap((subPath) => subPath.commands.map((command) => command.id)),
@@ -142,7 +142,13 @@ describe("editorStore", () => {
     });
 
     describe("deleteLayer", () => {
+      /** Default project has 1 layer per frame — seed a second layer for delete tests. */
+      function ensureTwoLayers() {
+        if (getStore().layers.length < 2) getStore().addLayer("path");
+      }
+
       it("deletes a layer by id", () => {
+        ensureTwoLayers();
         const initialCount = getStore().layers.length;
         const targetId = getStore().layers[1].id;
         getStore().deleteLayer(targetId);
@@ -151,6 +157,7 @@ describe("editorStore", () => {
       });
 
       it("selects first remaining layer if deleted was selected", () => {
+        ensureTwoLayers();
         const targetId = getStore().layers[1].id;
         getStore().selectLayer(targetId);
         getStore().deleteLayer(targetId);
@@ -167,12 +174,14 @@ describe("editorStore", () => {
       });
 
       it("pushes history on delete", () => {
+        ensureTwoLayers();
         getStore().deleteLayer(getStore().layers[1].id);
         expect(getStore().canUndo).toBe(true);
       });
 
       it("clears selection on delete", () => {
-        getStore().selectPoint(makeSelection(0));
+        ensureTwoLayers();
+        getStore().selectPoint(makeSelection(getStore().layers[0].id));
         getStore().deleteLayer(getStore().layers[1].id);
         expect(getStore().selection).toBeNull();
       });
@@ -223,13 +232,15 @@ describe("editorStore", () => {
   describe("selection", () => {
     describe("selectLayer", () => {
       it("changes selectedLayerId", () => {
+        getStore().addLayer("path");
         const targetId = getStore().layers[1].id;
         getStore().selectLayer(targetId);
         expect(getStore().selectedLayerId).toBe(targetId);
       });
 
       it("clears point selection", () => {
-        getStore().selectPoint(makeSelection(0));
+        getStore().addLayer("path");
+        getStore().selectPoint(makeSelection(getStore().layers[0].id));
         expect(getStore().selection).not.toBeNull();
         getStore().selectLayer(getStore().layers[1].id);
         expect(getStore().selection).toBeNull();
@@ -409,8 +420,8 @@ describe("editorStore", () => {
 
   // ─── ToolMode ────────────────────────────────────────────────────────
   describe("toolMode", () => {
-    it("defaults to 'select'", () => {
-      expect(getStore().toolMode).toBe("select");
+    it("defaults to 'direct' (vector editor first)", () => {
+      expect(getStore().toolMode).toBe("direct");
     });
 
     it("setToolMode changes the mode", () => {
@@ -503,7 +514,7 @@ describe("editorStore", () => {
         getStore().selectPoint(sel);
         getStore().updateSelectedPoint({ x: 42, y: 42 });
         const updated = getStore().layers.find((l) => l.id === layer.id)!;
-        const pt = updated.to.subPaths[0].commands[0].points[0];
+        const pt = updated.to!.subPaths[0].commands[0].points[0];
         expect(pt.x).toBe(42);
         expect(pt.y).toBe(42);
       });
@@ -623,7 +634,7 @@ describe("editorStore", () => {
       it("splits matching from and to segments and selects the inserted midpoint", () => {
         const layer = getStore().layers[0];
         const beforeFrom = layer.from.subPaths[0].commands.length;
-        const beforeTo = layer.to.subPaths[0].commands.length;
+        const beforeTo = layer.to!.subPaths[0].commands.length;
         getStore().splitSelectedLayerSegment({
           layerId: layer.id,
           side: "from",
@@ -632,7 +643,7 @@ describe("editorStore", () => {
         });
         const updated = getStore().layers.find((l) => l.id === layer.id)!;
         expect(updated.from.subPaths[0].commands.length).toBe(beforeFrom + 1);
-        expect(updated.to.subPaths[0].commands.length).toBe(beforeTo + 1);
+        expect(updated.to!.subPaths[0].commands.length).toBe(beforeTo + 1);
         expect(getStore().selection).toMatchObject({
           layerId: layer.id,
           side: "from",
@@ -655,9 +666,10 @@ describe("editorStore", () => {
           { x: 15, y: 12 },
         );
         const updated = getStore().layers.find((l) => l.id === layer.id)!;
+        // Shape op edits ONLY the active side so morph endpoints can differ.
         expect(updated.from.subPaths[0].commands[1].type).toBe("C");
         expect(updated.from.subPaths[0].commands[1].points).toHaveLength(3);
-        expect(updated.to.subPaths[0].commands[1].type).toBe("C");
+        expect(updated.to!.subPaths[0].commands[1].type).toBe("L");
         expect(getStore().canUndo).toBe(true);
       });
 
@@ -823,25 +835,27 @@ describe("editorStore", () => {
   // ─── Timeline Block Management ───────────────────────────────────────
   describe("timeline block management", () => {
     it("addTimelineBlock adds a block to the animation and layer", () => {
+      // Default frame already has a pathData block — add a second property
       const layer = getStore().layers[0];
-      getStore().addTimelineBlock(layer.id, "pathData");
-      expect(getStore().animation.blocks.length).toBe(1);
-      const block = getStore().animation.blocks[0];
+      const before = getStore().animation.blocks.length;
+      getStore().addTimelineBlock(layer.id, "fillAlpha");
+      expect(getStore().animation.blocks.length).toBe(before + 1);
+      const block = getStore().animation.blocks[getStore().animation.blocks.length - 1];
       expect(block.layerId).toBe(layer.id);
-      expect(block.propertyName).toBe("pathData");
-      expect(block.type).toBe("path");
+      expect(block.propertyName).toBe("fillAlpha");
     });
 
     it("addTimelineBlock for numeric property creates number block", () => {
       const layer = getStore().layers[0];
       getStore().addTimelineBlock(layer.id, "scaleX");
-      const block = getStore().animation.blocks[0];
-      expect(block.type).toBe("number");
+      const block = getStore().animation.blocks.find((b) => b.propertyName === "scaleX");
+      expect(block?.type).toBe("number");
     });
 
     it("addTimelineBlock no-op when layer not found", () => {
+      const before = getStore().animation.blocks.length;
       getStore().addTimelineBlock(99999, "pathData");
-      expect(getStore().animation.blocks.length).toBe(0);
+      expect(getStore().animation.blocks.length).toBe(before);
     });
 
     it("addTimelineBlock sets expanded=true on layer", () => {
@@ -921,14 +935,17 @@ describe("editorStore", () => {
 
       getStore().resetProject();
 
-      expect(getStore().layers.length).toBe(3);
-      expect(getStore().selectedLayerId).toBe(0);
+      // Default workspace: 3 frames; active Play→Pause has 2 layers (upper/lower)
+      expect(getStore().frames.length).toBe(3);
+      expect(getStore().layers.length).toBe(2);
+      expect(getStore().animation.blocks.length).toBe(2);
+      expect(String(getStore().selectedLayerId)).toBe(String(getStore().layers[0]?.id));
       expect(getStore().isPlaying).toBe(false);
       expect(getStore().progress).toBe(0);
       expect(getStore().speed).toBe(1);
       expect(getStore().isSlowMotion).toBe(false);
       expect(getStore().isRepeating).toBe(true);
-      expect(getStore().toolMode).toBe("select");
+      expect(getStore().toolMode).toBe("direct");
       expect(getStore().editingSide).toBe("from");
       expect(getStore().isActionMode).toBe(false);
       expect(getStore().selection).toBeNull();
@@ -953,7 +970,9 @@ describe("editorStore", () => {
       getStore().setAnimationDuration(5000);
       getStore().resetProject();
       expect(getStore().animation.duration).toBe(1000);
-      expect(getStore().animation.blocks).toEqual([]);
+      // Active Play→Pause frame: one pathData block per layer (upper + lower)
+      expect(getStore().animation.blocks.length).toBe(2);
+      expect(getStore().animation.blocks.every((b) => b.propertyName === "pathData")).toBe(true);
     });
   });
 
@@ -1093,6 +1112,7 @@ describe("editorStore", () => {
     });
 
     it("cutLayers removes layers and copies them", () => {
+      getStore().addLayer("path");
       const targetId = getStore().layers[1].id;
       const beforeCount = getStore().layers.length;
       getStore().cutLayers([targetId]);
@@ -1176,7 +1196,7 @@ describe("editorStore", () => {
         to: parsePath("M 0 0 L 20 20"),
       };
       legacyLayer.from.subPaths[0].commands[0].id = "cmd_1712345678901_0";
-      legacyLayer.to.subPaths[0].commands[0].id = "cmd_1712345678901_1";
+      legacyLayer.to!.subPaths[0].commands[0].id = "cmd_1712345678901_1";
 
       getStore().setLayers([legacyLayer]);
 
@@ -1292,10 +1312,11 @@ describe("editorStore", () => {
   describe("getCompatibilityStatus", () => {
     it("returns compatible=true for initial layers", () => {
       const status = getStore().getCompatibilityStatus();
-      expect(typeof status.compatible).toBe("boolean");
-      expect(typeof status.fromPoints).toBe("number");
-      expect(typeof status.toPoints).toBe("number");
-      expect(typeof status.warning).toBe("string");
+      // Default morph frames are pre-fixed so the app never greets with Auto Fix
+      expect(status.compatible).toBe(true);
+      expect(status.warning).toBe("");
+      expect(status.fromPoints).toBeGreaterThan(0);
+      expect(status.toPoints).toBeGreaterThan(0);
     });
 
     it("returns compatible warning for incompatible paths", () => {

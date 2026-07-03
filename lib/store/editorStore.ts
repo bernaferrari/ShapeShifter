@@ -10,7 +10,6 @@ import {
   parsePath,
   pathToString,
   updatePoint,
-  translatePath,
   scalePathToBounds,
   deleteCommand,
   deleteSubPath,
@@ -34,6 +33,7 @@ import type {
   AnimationState,
   Layer,
   LayerType,
+  PathData,
   Selection,
   Point,
   VectorMetadata,
@@ -120,6 +120,17 @@ function createPathLayer(layer: Omit<Layer, "type"> & Partial<Pick<Layer, "type"
   };
 }
 
+/** Full editable-state snapshot for trustworthy undo/redo (C7). */
+interface HistoryEntry {
+  layers: Layer[];
+  animation: AnimationState;
+  selectedLayerId: string | number;
+  selectedLayerIds: Array<string | number>;
+  selection: Selection | null;
+  selectedPoints: Selection[];
+  selectedSubPaths: SubPathSelection[];
+  editingSide: "from" | "to";
+}
 interface EditorState {
   // Workspace frames
   frames: CanvasFrame[];
@@ -142,6 +153,21 @@ interface EditorState {
   // (faithful port of original paper.js BatchSelectItemsGesture + multi segment selection in edit path mode)
   selectedPoints: Selection[];
   selectedSubPaths: SubPathSelection[];
+  /**
+   * Figma: objects can be fully deselected (click empty canvas / Esc) while the
+   * active frame's document slice stays loaded for editing context.
+   * When false, no blue selection chrome on frames/layers.
+   */
+  hasCanvasSelection: boolean;
+  /**
+   * Figma selection scope — mutually exclusive:
+   *  - none: nothing selected
+   *  - frame: the artboard is selected (children are NOT selected)
+   *  - layer: a child object is selected (parent frame is not “the” selection)
+   */
+  selectionKind: "none" | "frame" | "layer";
+  /** Figma multi-select: one or more layers (primary = selectedLayerId). */
+  selectedLayerIds: (string | number)[];
 
   // Playback
   isPlaying: boolean;
@@ -175,8 +201,9 @@ interface EditorState {
   clipboard: ClipboardData | null;
 
   // History for undo/redo (professional 2026 tool feel)
-  history: Layer[][];
-  future: Layer[][];
+  // Full editable-state snapshot so undo restores selection + animation too (C7 fix).
+  history: HistoryEntry[];
+  future: HistoryEntry[];
   canUndo: boolean;
   canRedo: boolean;
 
@@ -217,6 +244,8 @@ interface EditorState {
   replaceSelectedLayerPaths: (paths: Partial<Pick<Layer, "from" | "to" | "name">>) => void;
   updateSelectedLayer: (patch: Partial<Layer>, options?: { recordHistory?: boolean }) => void;
   selectLayer: (id: string | number) => void;
+  /** Figma marquee / shift-multi: select several layers at once. */
+  selectLayers: (ids: (string | number)[]) => void;
   setEditingSide: (side: "from" | "to") => void;
   startActionMode: () => void;
   closeActionMode: () => void;
@@ -256,6 +285,11 @@ interface EditorState {
     options?: { recordHistory?: boolean },
   ) => void;
   translateSelectedLayer: (dx: number, dy: number, options?: { recordHistory?: boolean }) => void;
+  /**
+   * Figma motion: after moving a layer, register/update translateX/Y timeline tracks
+   * at the current playhead so the move appears under the layer in the timeline.
+   */
+  recordLayerTranslationAtPlayhead: () => void;
   resizeSelectedLayer: (
     fromBounds: { x: number; y: number; width: number; height: number },
     toBounds: { x: number; y: number; width: number; height: number },
@@ -323,6 +357,8 @@ interface EditorState {
   selectPoint: (selection: Selection | null, addToMulti?: boolean) => void;
   selectSubPath: (selection: SubPathSelection | null, addToMulti?: boolean) => void;
   clearSelection: () => void;
+  /** Figma: clear object selection (empty canvas click / Esc). Keeps active frame data loaded. */
+  deselectAll: () => void;
   selectMultiplePoints: (points: Selection[]) => void;
   selectMultipleSubPaths: (subPaths: SubPathSelection[]) => void;
 
@@ -343,41 +379,207 @@ interface EditorState {
   };
 }
 
-const initialLayers: Layer[] = [
-  createPathLayer({
-    id: 0,
-    name: "Play → Pause",
-    from: parsePath("M 12 6 L 12 18 M 6 12 L 18 12"),
-    to: parsePath("M 8 8 L 16 16 M 8 16 L 16 8"),
-    visible: true,
-    locked: false,
-    strokeColor: "#000000",
-    strokeWidth: 2.4,
+/**
+ * Default workspace = three artboards. Shapes that are *visually* separate pieces
+ * are real layers (Figma model) — not one compound path with fake names.
+ *
+ *  Play → Pause: 2 layers (upper / lower triangle → pause bars)
+ *  Menu → Close: 3 layers (top / mid / bottom bar → X arms + collapse)
+ *  Heart → Star: 1 layer (single silhouette morph)
+ */
+const DEFAULT_DURATION_MS = 1000;
+
+type MorphPart = {
+  id: string;
+  name: string;
+  from: string;
+  to: string;
+};
+
+function makeMorphFrame(opts: {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  stroke?: boolean;
+  fill?: boolean;
+  /** One timeline object + pathData block per part */
+  parts: MorphPart[];
+}): CanvasFrame {
+  const stroke = opts.stroke !== false;
+  const fill = !!opts.fill;
+  const layers = opts.parts.map((part) => {
+    const from = parsePath(part.from);
+    const to = parsePath(part.to);
+    return createPathLayer({
+      id: part.id,
+      name: part.name,
+      from,
+      to,
+      pathData: from,
+      visible: true,
+      locked: false,
+      strokeColor: stroke ? "#000000" : "",
+      strokeWidth: stroke ? 2.4 : 0,
+      fillColor: fill ? "#000000" : "",
+    });
+  });
+  const animation: AnimationState = {
+    id: `anim-${opts.id}`,
+    name: opts.name,
+    duration: DEFAULT_DURATION_MS,
+    blocks: opts.parts.map((part, i) => {
+      const layer = layers[i]!;
+      return {
+        id: `block-${opts.id}-${part.id}`,
+        layerId: layer.id,
+        propertyName: "pathData",
+        fromValue: pathToString(layer.from),
+        toValue: pathToString(layer.to ?? layer.from),
+        startTime: 0,
+        endTime: DEFAULT_DURATION_MS,
+        interpolator: "FAST_OUT_SLOW_IN" as const,
+        type: "path" as const,
+      };
+    }),
+  };
+  return {
+    id: opts.id,
+    name: opts.name,
+    x: opts.x,
+    y: opts.y,
+    layers,
+    vector: {
+      id: `vector-${opts.id}`,
+      name: opts.name,
+      width: 24,
+      height: 24,
+      alpha: 1,
+    },
+    animation,
+    hiddenLayerIds: [],
+  };
+}
+
+/**
+ * Default morph frames. Paths designed for linear point interpolation
+ * (matching topology + vertex order — wrong order causes mid-morph flips).
+ */
+const initialFrames: CanvasFrame[] = [
+  makeMorphFrame({
+    id: "frame-play-pause",
+    // Frame name = artboard label only (Figma). Morph intent lives on animation.name.
+    name: "Play icon",
+    x: 0,
+    y: 0,
+    stroke: false,
+    fill: true,
+    // Classic two-piece play icon → two pause bars (each piece is its own layer)
+    parts: [
+      {
+        id: "layer-play-upper",
+        name: "Upper",
+        from: "M 8 5 L 8 12 L 19 12 L 19 12 L 8 5",
+        to: "M 5 6 L 5 10 L 19 10 L 19 6 L 5 6",
+      },
+      {
+        id: "layer-play-lower",
+        name: "Lower",
+        from: "M 8 12 L 8 19 L 19 12 L 19 12 L 8 12",
+        to: "M 5 14 L 5 18 L 19 18 L 19 14 L 5 14",
+      },
+    ],
   }),
-  createPathLayer({
-    id: 1,
-    name: "Menu → Close",
-    from: parsePath("M 4 6 L 20 6 M 4 12 L 20 12 M 4 18 L 20 18"),
-    to: parsePath("M 6 6 L 18 18 M 18 6 L 6 18"),
-    visible: true,
-    locked: false,
-    strokeColor: "#000000",
-    strokeWidth: 2.4,
+  makeMorphFrame({
+    id: "frame-menu-close",
+    name: "Menu icon",
+    x: 48,
+    y: 0,
+    stroke: false,
+    fill: true,
+    // Each hamburger line is a layer (Figma: three rectangles, not one compound path).
+    // Vertex order TL→TR→BR→BL on every bar so they rotate without flipping.
+    parts: [
+      {
+        id: "layer-menu-top",
+        name: "Top bar",
+        from: "M 3 5 L 21 5 L 21 7.5 L 3 7.5 Z",
+        to: "M 6.45 4.55 L 19.45 17.55 L 17.55 19.45 L 4.55 6.45 Z",
+      },
+      {
+        id: "layer-menu-mid",
+        name: "Middle bar",
+        from: "M 3 10.75 L 21 10.75 L 21 13.25 L 3 13.25 Z",
+        to: "M 12 12 L 12 12 L 12 12 L 12 12 Z",
+      },
+      {
+        id: "layer-menu-bottom",
+        name: "Bottom bar",
+        from: "M 3 16.5 L 21 16.5 L 21 19 L 3 19 Z",
+        to: "M 4.55 17.55 L 17.55 4.55 L 19.45 6.45 L 6.45 19.45 Z",
+      },
+    ],
   }),
-  createPathLayer({
-    id: 2,
-    name: "Heart → Star",
-    from: parsePath(
-      "M 12 21 L 12 21 L 12 21 C 12 21 4 15 4 9 C 4 5 7 3 10 5 C 12 3 15 5 15 9 C 15 15 12 21 12 21 Z",
-    ),
-    to: parsePath("M 12 4 L 14 9 L 19 9 L 15 12 L 17 17 L 12 14 L 7 17 L 9 12 L 5 9 L 10 9 Z"),
-    visible: true,
-    locked: false,
-    fillColor: "#000000",
+  makeMorphFrame({
+    id: "frame-heart-star",
+    name: "Heart icon",
+    x: 96,
+    y: 0,
+    stroke: false,
+    fill: true,
+    // One continuous silhouette — truly a single layer
+    parts: [
+      {
+        id: "layer-heart-star",
+        name: "Shape",
+        from: "M 12 6.8 L 15.4 4.1 L 19.6 5.3 L 21 9.2 L 19 14 L 12 20.8 L 5 14 L 3 9.2 L 4.4 5.3 L 8.6 4.1 Z",
+        to: "M 12 3 L 14.4 9.1 L 20.9 9.4 L 15.9 13.5 L 17.6 20 L 12 16.4 L 6.4 20 L 8.1 13.5 L 3.1 9.4 L 9.6 9.1 Z",
+      },
+    ],
   }),
 ];
 
+const initialFrame = initialFrames[0];
+const initialLayers = cloneLayersForInit(initialFrame.layers);
+const initialVector = structuredClone(initialFrame.vector);
+const initialAnimation = structuredClone(initialFrame.animation);
+
+function cloneLayersForInit(layers: Layer[]) {
+  return structuredClone(layers);
+}
+
 const cloneLayers = (layers: Layer[]) => structuredClone(layers);
+/** Apply fn to a layer's end geometry only when it exists (static layers have no `to`). */
+const mapToEnd = (layer: Layer, fn: (p: PathData) => PathData): PathData | undefined =>
+  layer.to ? fn(layer.to) : undefined;
+/** Resolve end geometry, falling back to start for static layers. */
+const endOf = (layer: Layer): PathData => layer.to ?? layer.from;
+/** Capture the full editable state for undo/redo (C7: selection + animation included). */
+const snapshotHistoryEntry = (s: EditorState): HistoryEntry => ({
+  layers: cloneLayers(s.layers),
+  animation: structuredClone(s.animation),
+  selectedLayerId: s.selectedLayerId,
+  selectedLayerIds: [...s.selectedLayerIds],
+  selection: s.selection ? structuredClone(s.selection) : null,
+  selectedPoints: s.selectedPoints.map((p) => structuredClone(p)),
+  selectedSubPaths: s.selectedSubPaths.map((p) => structuredClone(p)),
+  editingSide: s.editingSide,
+});
+
+/** Restore a history entry, re-anchoring selection onto restored layers defensively. */
+const restoreHistoryEntry = (s: EditorState, entry: HistoryEntry) => {
+  const layerExists = entry.layers.some((l) => l.id === entry.selectedLayerId);
+  return {
+    layers: entry.layers,
+    animation: entry.animation,
+    selectedLayerId: layerExists ? entry.selectedLayerId : (entry.layers[0]?.id ?? 0),
+    selectedLayerIds: entry.selectedLayerIds,
+    selection: entry.selection,
+    selectedPoints: entry.selectedPoints,
+    selectedSubPaths: entry.selectedSubPaths,
+    editingSide: entry.editingSide,
+  };
+};
 
 function normalizeLayerPaths(layer: Layer): Layer {
   // 3t0c: last line of defense. Any Layer arriving at the store boundary (from demos,
@@ -386,7 +588,7 @@ function normalizeLayerPaths(layer: Layer): Layer {
   return {
     ...layer,
     from: ensureStableCommandIds(layer.from),
-    to: ensureStableCommandIds(layer.to),
+    to: mapToEnd(layer, ensureStableCommandIds),
     ...(layer.pathData && { pathData: ensureStableCommandIds(layer.pathData) }),
     // Note: children recursion not needed today (groups carry empty paths); future-proof if added.
   };
@@ -400,14 +602,6 @@ const getFirstEditableLayerId = (layers: Layer[]) =>
   layers.find((layer) => layer.type === "path" || layer.type === "clipPath")?.id ??
   layers[0]?.id ??
   0;
-const initialVector: VectorMetadata = {
-  id: "vector",
-  name: "ShapeShifter",
-  width: 24,
-  height: 24,
-  alpha: 1,
-};
-const initialAnimation: AnimationState = { id: "anim", name: "anim", duration: 1000, blocks: [] };
 
 function cloneFrame(frame: CanvasFrame): CanvasFrame {
   return {
@@ -460,17 +654,6 @@ function cubicPointAt(
   };
 }
 
-const initialFrame: CanvasFrame = {
-  id: "frame-1",
-  name: "ShapeShifter",
-  x: 0,
-  y: 0,
-  layers: cloneLayers(initialLayers),
-  vector: structuredClone(initialVector),
-  animation: structuredClone(initialAnimation),
-  hiddenLayerIds: [],
-};
-
 function getFrameRect(frame: CanvasFrame) {
   return {
     x: frame.x || 0,
@@ -502,22 +685,25 @@ function zoomViewportAtCenter(viewport: Viewport, scale: number): Viewport {
 }
 
 export const useEditorStore = create<EditorState>((set, get) => ({
-  frames: [initialFrame],
+  frames: initialFrames.map(cloneFrame),
   selectedFrameId: initialFrame.id,
-  layers: initialLayers,
-  vector: initialVector,
-  animation: initialAnimation,
+  layers: cloneLayers(initialLayers),
+  vector: structuredClone(initialVector),
+  animation: structuredClone(initialAnimation),
   hiddenLayerIds: [],
   history: [],
   future: [],
   canUndo: false,
   canRedo: false,
-  selectedLayerId: 0,
+  selectedLayerId: getFirstEditableLayerId(initialLayers),
+  selectedLayerIds: [getFirstEditableLayerId(initialLayers)],
   editingSide: "from",
   isActionMode: false,
   selection: null,
   selectedPoints: [],
   selectedSubPaths: [],
+  hasCanvasSelection: true,
+  selectionKind: "layer",
   isPlaying: false,
   progress: 0,
   speed: 1,
@@ -534,18 +720,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   timelineCollapsed: false,
 
   // World camera (1el Phase 2 foundation)
-  worldViewport: computeFramesViewport([initialFrame]),
+  worldViewport: computeFramesViewport(initialFrames),
   detailViewport: computeVectorViewport(initialVector),
-  toolMode: "select",
+  // Core loop: edit vectors + play morph (default into the vector editor).
+  toolMode: "direct",
   cursorType: "default",
   hoveredItem: null,
   dragState: null,
   clipboard: null,
 
   pushHistory: () => {
-    const { layers, history } = get();
     set({
-      history: [...history, cloneLayers(layers)].slice(-100),
+      history: [...get().history, snapshotHistoryEntry(get())].slice(-100),
       future: [],
       canUndo: true,
       canRedo: false,
@@ -553,26 +739,28 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   undo: () => {
-    const { history, layers } = get();
+    const { history } = get();
     if (history.length === 0) return;
-    const prev = history[history.length - 1];
+    const entry = history[history.length - 1];
+    const current = snapshotHistoryEntry(get());
     set({
-      layers: prev,
+      ...restoreHistoryEntry(get(), entry),
       history: history.slice(0, -1),
-      future: [cloneLayers(layers), ...get().future],
+      future: [current, ...get().future],
       canUndo: history.length > 1,
       canRedo: true,
     });
   },
 
   redo: () => {
-    const { future, layers } = get();
+    const { future } = get();
     if (future.length === 0) return;
-    const next = future[0];
+    const entry = future[0];
+    const current = snapshotHistoryEntry(get());
     set({
-      layers: next,
+      ...restoreHistoryEntry(get(), entry),
       future: future.slice(1),
-      history: [...get().history, cloneLayers(layers)],
+      history: [...get().history, current],
       canUndo: true,
       canRedo: future.length > 1,
     });
@@ -615,6 +803,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedPoints: [],
       selectedSubPaths: [],
       selectedBlockIds: [],
+      hasCanvasSelection: true,
+      selectionKind: "frame",
       progress: 0,
       isPlaying: false,
     });
@@ -654,6 +844,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedPoints: [],
       selectedSubPaths: [],
       selectedBlockIds: [],
+      hasCanvasSelection: true,
+      selectionKind: "frame",
       progress: 0,
       isPlaying: false,
     });
@@ -713,10 +905,32 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   selectFrame: (id) => {
     const state = get();
-    if (id === state.selectedFrameId) return;
+    /**
+     * Figma: selecting a frame replaces the entire selection.
+     * Children / points / timeline blocks are NOT co-selected with the frame.
+     * Direct (vector) edit is exited back to object Select.
+     */
+    const clearChildSelection = {
+      selection: null as null,
+      selectedPoints: [] as [],
+      selectedSubPaths: [] as [],
+      selectedBlockIds: [] as string[],
+      selectedLayerIds: [] as (string | number)[],
+      hasCanvasSelection: true as const,
+      selectionKind: "frame" as const,
+      // Selecting the frame (not a path) leaves vector edit for Move
+      toolMode: "select" as const,
+    };
+
+    // Same frame re-click: still promote selection to the frame and drop children.
+    if (id === state.selectedFrameId) {
+      set(clearChildSelection);
+      return;
+    }
     const savedFrames = saveActiveFrame(state);
     const frame = savedFrames.find((candidate) => candidate.id === id);
     if (!frame) return;
+    // Switching frames does NOT reset the playhead or stop playback.
     set({
       frames: savedFrames,
       selectedFrameId: frame.id,
@@ -726,13 +940,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       vector: structuredClone(frame.vector),
       animation: structuredClone(frame.animation),
       hiddenLayerIds: [...frame.hiddenLayerIds],
+      // Keep a default “active layer for tools” but it is NOT selected (selectionKind: frame).
       selectedLayerId: getFirstEditableLayerId(frame.layers),
-      selection: null,
-      selectedPoints: [],
-      selectedSubPaths: [],
-      selectedBlockIds: [],
-      progress: 0,
-      isPlaying: false,
+      ...clearChildSelection,
     });
   },
 
@@ -838,6 +1048,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (layerIndex === -1) return false;
     const layer = layers[layerIndex];
 
+    if (!layer.to) return false; // static layer — nothing to auto-fix.
     const [from, to] = autoFixPathPair(layer.from, layer.to);
 
     const newLayers = [...layers];
@@ -997,7 +1208,44 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({ layers: newLayers });
   },
   selectLayer: (id) =>
-    set({ selectedLayerId: id, selection: null, selectedPoints: [], selectedSubPaths: [] }),
+    set({
+      selectedLayerId: id,
+      selectedLayerIds: [id],
+      selection: null,
+      selectedPoints: [],
+      selectedSubPaths: [],
+      selectedBlockIds: [],
+      hasCanvasSelection: true,
+      // Figma: selecting a child replaces frame selection — the layer is the selection.
+      selectionKind: "layer",
+    }),
+
+  selectLayers: (ids) => {
+    const unique: (string | number)[] = [];
+    const seen = new Set<string>();
+    for (const id of ids) {
+      const key = String(id);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(id);
+    }
+    if (unique.length === 0) {
+      get().deselectAll();
+      return;
+    }
+    set({
+      selectedLayerId: unique[unique.length - 1]!,
+      selectedLayerIds: unique,
+      selection: null,
+      selectedPoints: [],
+      selectedSubPaths: [],
+      selectedBlockIds: [],
+      hasCanvasSelection: true,
+      selectionKind: "layer",
+      // Multi-object selection uses Move tool (Figma leaves vector edit)
+      toolMode: unique.length > 1 ? "select" : get().toolMode,
+    });
+  },
   setEditingSide: (side) =>
     set((state) => ({
       editingSide: side,
@@ -1024,7 +1272,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (layerIndex === -1) return;
 
     const layer = layers[layerIndex];
-    const targetPath = editingSide === "from" ? layer.from : layer.to;
+    const targetPath = editingSide === "from" ? layer.from : endOf(layer);
 
     const updatedPath = updatePoint(
       targetPath,
@@ -1055,7 +1303,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (layerIndex === -1) return;
 
     const layer = layers[layerIndex];
-    let targetPath = editingSide === "from" ? layer.from : layer.to;
+    let targetPath = editingSide === "from" ? layer.from : endOf(layer);
 
     // Apply delta to every selected point (uniform translate for batch drag)
     for (const sel of selectedPoints) {
@@ -1118,7 +1366,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       };
 
       const from = movePath(layer.from);
-      const to = movePath(layer.to);
+      const to = mapToEnd(layer, movePath);
       return { ...layer, from, to, pathData: from };
     });
 
@@ -1136,15 +1384,100 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (layerIndex === -1) return;
 
     const layer = layers[layerIndex];
-    const from = translatePath(layer.from, dx, dy);
-    const to = translatePath(layer.to, dx, dy);
+    // Object move uses layer transforms (Figma Position) — not baked into path morph data.
     const newLayers = [...layers];
-    newLayers[layerIndex] = { ...layer, from, to, pathData: from };
+    newLayers[layerIndex] = {
+      ...layer,
+      translateX: (layer.translateX ?? 0) + dx,
+      translateY: (layer.translateY ?? 0) + dy,
+    };
 
     if (options?.recordHistory !== false) {
       get().pushHistory();
     }
     set({ layers: newLayers });
+  },
+
+  recordLayerTranslationAtPlayhead: () => {
+    const { layers, selectedLayerId, animation, progress } = get();
+    const layer = layers.find((l) => String(l.id) === String(selectedLayerId));
+    if (!layer) return;
+
+    const duration = Math.max(1, animation.duration);
+    const ms = progress * duration;
+    const nearStart = ms <= duration * 0.05;
+    const nearEnd = ms >= duration * 0.95;
+
+    const upsert = (
+      blocks: typeof animation.blocks,
+      propertyName: "translateX" | "translateY",
+      value: number,
+    ) => {
+      const idx = blocks.findIndex(
+        (b) =>
+          String(b.layerId) === String(layer.id) && b.propertyName === propertyName,
+      );
+      if (idx === -1) {
+        // First registration of this property on the timeline
+        const fromValue = nearStart ? value : 0;
+        const toValue = nearEnd || nearStart ? value : value;
+        // Static place at t≈0 → both ends equal. Mid/end scrub → animate 0 → value.
+        const staticPose = nearStart;
+        return [
+          ...blocks,
+          {
+            id: `block-${layer.id}-${propertyName}-${Date.now()}`,
+            layerId: layer.id,
+            propertyName,
+            type: "number" as const,
+            fromValue: staticPose ? value : fromValue,
+            toValue: staticPose ? value : toValue,
+            startTime: 0,
+            endTime: duration,
+            interpolator: "FAST_OUT_SLOW_IN" as const,
+          },
+        ];
+      }
+      const prev = blocks[idx]!;
+      const fromV = Number(prev.fromValue) || 0;
+      const toV = Number(prev.toValue) || 0;
+      const wasStatic = Math.abs(fromV - toV) < 1e-6;
+      let nextFrom = fromV;
+      let nextTo = toV;
+      if (nearStart) {
+        nextFrom = value;
+        if (wasStatic) nextTo = value;
+      } else if (nearEnd) {
+        nextTo = value;
+        if (wasStatic) nextFrom = value;
+      } else {
+        // Mid playhead: keep start, set end to the new pose (Figma-ish key at playhead → end)
+        nextTo = value;
+        if (wasStatic) nextFrom = fromV;
+      }
+      const next = [...blocks];
+      next[idx] = {
+        ...prev,
+        fromValue: nextFrom,
+        toValue: nextTo,
+        type: "number",
+      };
+      return next;
+    };
+
+    let blocks = animation.blocks;
+    blocks = upsert(blocks, "translateX", layer.translateX ?? 0);
+    blocks = upsert(blocks, "translateY", layer.translateY ?? 0);
+
+    // Expand layer in timeline so the new Position tracks are visible
+    const newLayers = layers.map((l) =>
+      String(l.id) === String(layer.id) ? { ...l, expanded: true } : l,
+    );
+
+    set({
+      animation: { ...animation, blocks },
+      layers: newLayers,
+    });
   },
 
   resizeSelectedLayer: (fromBounds, toBounds, options) => {
@@ -1154,7 +1487,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     const layer = layers[layerIndex];
     const from = scalePathToBounds(layer.from, fromBounds, toBounds);
-    const to = scalePathToBounds(layer.to, fromBounds, toBounds);
+    const to = mapToEnd(layer, (p) => scalePathToBounds(p, fromBounds, toBounds));
     const newLayers = [...layers];
     newLayers[layerIndex] = { ...layer, from, to, pathData: from };
 
@@ -1170,18 +1503,38 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (layerIndex === -1) return;
 
     const layer = layers[layerIndex];
-    const targetPath = editingSide === "from" ? layer.from : layer.to;
+    // Structural op: keep from/to command counts equal by splitting BOTH sides at the
+    // same (subIdx, cmdIdx). The click determines the position on the active side; we
+    // mirror the insertion onto the other side so the morph stays interpolatable.
+    const activePath = editingSide === "from" ? layer.from : endOf(layer);
+    const otherPath = editingSide === "from" ? layer.to : layer.from;
+    const splitActive = splitPointNear(activePath, { x: clickX, y: clickY });
+    if (!splitActive) return;
 
-    // Split the nearest segment (preserves type: C→C, Q→Q, etc.)
-    const updatedPath = splitPointNear(targetPath, { x: clickX, y: clickY });
-    if (!updatedPath) return;
-
-    const newLayers = [...layers];
-    if (editingSide === "from") {
-      newLayers[layerIndex] = { ...layer, from: updatedPath, pathData: updatedPath };
-    } else {
-      newLayers[layerIndex] = { ...layer, to: updatedPath };
+    // Detect where splitPointNear inserted the new command (an id absent before the split).
+    let splitSub = -1;
+    let splitCmd = -1;
+    for (let s = 0; s < activePath.subPaths.length; s++) {
+      const beforeIds = new Set(activePath.subPaths[s].commands.map((c) => c.id));
+      const afterCmds = splitActive.subPaths[s]?.commands ?? [];
+      const insertPos = afterCmds.findIndex((c) => !beforeIds.has(c.id));
+      if (insertPos !== -1) {
+        splitSub = s;
+        splitCmd = insertPos - 1; // splitCommandInHalf inserts the new command at cmdIdx + 1
+        break;
+      }
     }
+    // Only mirror the split onto the other side if this is a morph layer (has `to`).
+    // Static layers just gain a point on their single (from) geometry.
+    const splitOther =
+      otherPath && splitSub !== -1 && splitCmd >= 0
+        ? splitCommandInHalf(otherPath, splitSub, splitCmd)
+        : otherPath;
+
+    const from = editingSide === "from" ? splitActive : (splitOther ?? splitActive);
+    const to = editingSide === "from" ? splitOther : splitActive;
+    const newLayers = [...layers];
+    newLayers[layerIndex] = { ...layer, from, to, pathData: from };
 
     get().pushHistory();
     set({ layers: newLayers });
@@ -1196,7 +1549,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const splitPath = (pathData: typeof layer.from) =>
       splitCommandInHalf(pathData, segment.subPathIndex, segment.commandIndex);
     const from = splitPath(layer.from);
-    const to = splitPath(layer.to);
+    const to = mapToEnd(layer, splitPath);
     const newLayers = [...layers];
     newLayers[layerIndex] = { ...layer, from, to, pathData: from };
 
@@ -1271,8 +1624,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return next;
     };
 
-    const from = bendPath(layer.from);
-    const to = bendPath(layer.to);
+    // Shape op: edit ONLY the active side so the user can author independent morph endpoints.
+    const isFrom = segment.side === "from";
+    const edited = bendPath(isFrom ? layer.from : endOf(layer));
+    const from = isFrom ? edited : layer.from;
+    const to = isFrom ? layer.to : edited;
     const newLayers = [...layers];
     newLayers[layerIndex] = { ...layer, from, to, pathData: from };
 
@@ -1348,8 +1704,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return next;
     };
 
-    const from = flexPath(layer.from);
-    const to = flexPath(layer.to);
+    // Shape op: edit ONLY the active side so the user can author independent morph endpoints.
+    const isFrom = segment.side === "from";
+    const edited = flexPath(isFrom ? layer.from : endOf(layer));
+    const from = isFrom ? edited : layer.from;
+    const to = isFrom ? layer.to : edited;
     const newLayers = [...layers];
     newLayers[layerIndex] = { ...layer, from, to, pathData: from };
 
@@ -1364,7 +1723,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   deleteSelectedPoint: () => {
-    const { layers, selectedLayerId, editingSide, selection, selectedPoints } = get();
+    const { layers, selectedLayerId, selection, selectedPoints } = get();
     const toDelete = selectedPoints.length > 0 ? selectedPoints : (selection ? [selection] : []);
     if (toDelete.length === 0) return;
 
@@ -1373,36 +1732,30 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     const layer = layers[layerIndex];
 
-    // Clone the target side to work on
-    let targetPath = editingSide === "from"
-      ? structuredClone(layer.from)
-      : structuredClone(layer.to);
-
-    // Group by subpath, delete commands from highest index to lowest to preserve indices
+    // Structural op: delete the SAME command indices on BOTH sides so the morph stays
+    // interpolatable. Group by subpath, delete highest index first to preserve indices.
     const bySub = new Map<number, number[]>();
     for (const sel of toDelete) {
-      if (String(sel.layerId) !== String(selectedLayerId) || sel.side !== editingSide) continue;
+      if (String(sel.layerId) !== String(selectedLayerId)) continue;
       if (!bySub.has(sel.subPathIndex)) bySub.set(sel.subPathIndex, []);
       bySub.get(sel.subPathIndex)!.push(sel.commandIndex);
     }
+    if (bySub.size === 0) return;
 
-    for (const [subIdx, cmdIdxs] of bySub.entries()) {
-      const uniqueCmds = [...new Set(cmdIdxs)].sort((a, b) => b - a); // descending
-      for (const cmdIdx of uniqueCmds) {
-        targetPath = deleteCommand(targetPath, subIdx, cmdIdx);
+    const deleteOn = (pathData: Layer["from"]) => {
+      let p = structuredClone(pathData);
+      for (const [subIdx, cmdIdxs] of bySub.entries()) {
+        for (const cmdIdx of [...new Set(cmdIdxs)].sort((a, b) => b - a)) {
+          p = deleteCommand(p, subIdx, cmdIdx);
+        }
       }
-    }
-
-    const newLayers = [...layers];
-    const updatedLayer: any = {
-      ...layer,
-      from: editingSide === "from" ? targetPath : layer.from,
-      to: editingSide === "to" ? targetPath : layer.to,
+      return p;
     };
-    if (editingSide === "from") {
-      updatedLayer.pathData = targetPath;
-    }
-    newLayers[layerIndex] = updatedLayer;
+
+    const from = deleteOn(layer.from);
+    const to = mapToEnd(layer, deleteOn);
+    const newLayers = [...layers];
+    newLayers[layerIndex] = { ...layer, from, to, pathData: from };
 
     get().pushHistory();
     set({
@@ -1423,7 +1776,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const layer = layers[layerIndex];
 
     let targetFrom = structuredClone(layer.from);
-    let targetTo = structuredClone(layer.to);
+    let targetTo = layer.to ? structuredClone(layer.to) : undefined;
 
     // Delete subpaths descending per side to keep indices valid
     const fromIdxs = toDelete
@@ -1438,8 +1791,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       .filter(s => s.side === "to" && String(s.layerId) === String(selectedLayerId))
       .map(s => s.subPathIndex)
       .sort((a, b) => b - a);
-    for (const idx of toIdxs) {
-      targetTo = deleteSubPath(targetTo, idx);
+    if (targetTo) {
+      for (const idx of toIdxs) {
+        targetTo = deleteSubPath(targetTo, idx);
+      }
     }
 
     const newLayers = [...layers];
@@ -1477,9 +1832,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     // Extract from both sides so the morph stays consistent (subpath indices should correspond)
     const fromExtract = extractSubPath(layer.from, subIdx);
-    const toExtract = extractSubPath(layer.to, subIdx);
+    const toExtract = layer.to ? extractSubPath(layer.to, subIdx) : null;
 
-    if (fromExtract.extracted.subPaths.length === 0 && toExtract.extracted.subPaths.length === 0) return;
+    if (fromExtract.extracted.subPaths.length === 0 && (toExtract?.extracted.subPaths.length ?? 0) === 0)
+      return;
 
     // Create a new independent layer for the extracted subpath (inherits style, can now be edited separately)
     const newId = Date.now() + Math.random();
@@ -1488,18 +1844,19 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       id: newId,
       name: `${layer.name} subpath`,
       from: fromExtract.extracted,
-      to: toExtract.extracted,
+      to: toExtract?.extracted,
       timeline: [], // start fresh for the new layer's animations
     };
-    newLayer.pathData = editingSide === "from" ? newLayer.from : newLayer.to;
+    newLayer.pathData = editingSide === "from" ? newLayer.from : (newLayer.to ?? newLayer.from);
 
     // Update original with remainders (use the from-side index; to may differ in count but we used matching index)
     const updatedOriginal = {
       ...layer,
       from: fromExtract.remaining,
-      to: toExtract.remaining,
+      to: toExtract?.remaining,
     };
-    updatedOriginal.pathData = editingSide === "from" ? updatedOriginal.from : updatedOriginal.to;
+    updatedOriginal.pathData =
+      editingSide === "from" ? updatedOriginal.from : (updatedOriginal.to ?? updatedOriginal.from);
 
     const newLayers = [...layers];
     newLayers[layerIndex] = updatedOriginal;
@@ -1520,7 +1877,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
     if (layerIndex === -1) return;
     const layer = layers[layerIndex];
-    const targetPath = editingSide === "from" ? layer.from : layer.to;
+    const targetPath = editingSide === "from" ? layer.from : endOf(layer);
     const updatedPath = splitCommandInHalf(
       targetPath,
       selection.subPathIndex,
@@ -1542,7 +1899,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
     if (layerIndex === -1) return;
     const layer = layers[layerIndex];
-    const targetPath = editingSide === "from" ? layer.from : layer.to;
+    const targetPath = editingSide === "from" ? layer.from : endOf(layer);
     const updatedPath = setCommandAsFirst(
       targetPath,
       selection.subPathIndex,
@@ -1602,7 +1959,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   toggleTimelineCollapsed: () => set((state) => ({ timelineCollapsed: !state.timelineCollapsed })),
   setTimelineCollapsed: (collapsed: boolean) => set({ timelineCollapsed: collapsed }),
 
-  setToolMode: (mode) => set({ toolMode: mode }),
+  // H5: switching tool exits Action Mode so tool shortcuts actually take effect on the canvas.
+  setToolMode: (mode) => set({ toolMode: mode, isActionMode: false }),
   setCursorType: (cursor) => set({ cursorType: cursor }),
   setHoveredItem: (item) => set({ hoveredItem: item }),
   startDrag: (type, x, y) =>
@@ -1658,7 +2016,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (layerIndex === -1) return;
 
     const layer = layers[layerIndex];
-    const targetPath = editingSide === "from" ? layer.from : layer.to;
+    const targetPath = editingSide === "from" ? layer.from : endOf(layer);
 
     const updatedPath = reversePath(targetPath);
 
@@ -1679,7 +2037,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (layerIndex === -1) return false;
 
     const layer = layers[layerIndex];
-    const targetPath = editingSide === "from" ? layer.from : layer.to;
+    const targetPath = editingSide === "from" ? layer.from : endOf(layer);
 
     const updatedPath = shiftPath(targetPath, steps);
 
@@ -1818,12 +2176,23 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }),
   clearSelection: () => set({ selection: null, selectedPoints: [], selectedSubPaths: [] }),
 
+  deselectAll: () =>
+    set({
+      hasCanvasSelection: false,
+      selectionKind: "none",
+      selectedLayerIds: [],
+      selection: null,
+      selectedPoints: [],
+      selectedSubPaths: [],
+      selectedBlockIds: [],
+    }),
+
   getCurrentSelectedPoint: () => {
     const state = get();
     if (!state.selection) return null;
     const layer = state.layers.find((l) => l.id === state.selection?.layerId);
     if (!layer) return null;
-    const path = state.editingSide === "from" ? layer.from : layer.to;
+    const path = state.editingSide === "from" ? layer.from : endOf(layer);
     const cmd = path.subPaths[state.selection.subPathIndex]?.commands[state.selection.commandIndex];
     return cmd?.points[state.selection.pointIndex] || null;
   },
@@ -1838,7 +2207,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       name: `${label} ${layers.length + 1}`,
       type,
       from: parsePath("M 10 10 L 30 10 L 30 30 L 10 30 Z"),
-      to: parsePath("M 15 15 L 25 15 L 25 25 L 15 25 Z"),
+      // No `to` → a STATIC shape by default. Morphing is opt-in (set a `to` / add an end state).
       visible: true,
       locked: false,
       fillColor: type === "path" ? "#000000" : "",
@@ -1964,9 +2333,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       animation: {
         ...state.animation,
         duration: Math.max(100, ms),
-        blocks: state.animation.blocks.map((b) =>
-          b.endTime === state.animation.duration ? { ...b, endTime: Math.max(100, ms) } : b,
-        ),
+        // Clamp every block to the new [0, duration] so none overflow past 100%
+        // (BUG-1). Preserve the trailing-block re-anchor when shortening.
+        blocks: state.animation.blocks.map((b) => ({
+          ...b,
+          startTime: Math.min(b.startTime, Math.max(100, ms) - 50),
+          endTime:
+            b.endTime === state.animation.duration
+              ? Math.max(100, ms)
+              : Math.min(b.endTime, Math.max(100, ms)),
+        })),
       },
     }));
   },
@@ -1974,13 +2350,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   // === Project reset ===
   resetProject: () => {
     get().pushHistory();
+    const frames = initialFrames.map(cloneFrame);
+    const active = frames[0];
     set({
-      frames: [cloneFrame(initialFrame)],
-      selectedFrameId: initialFrame.id,
-      worldViewport: computeFramesViewport([initialFrame]),
-      detailViewport: computeVectorViewport(initialVector),
-      layers: cloneLayers(initialLayers),
-      selectedLayerId: initialLayers[0]?.id ?? 0,
+      frames,
+      selectedFrameId: active.id,
+      worldViewport: computeFramesViewport(frames),
+      detailViewport: computeVectorViewport(active.vector),
+      layers: cloneLayers(active.layers),
+      selectedLayerId: getFirstEditableLayerId(active.layers),
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -1992,8 +2370,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       isPlaying: false,
       isActionMode: false,
       editingSide: "from",
-      vector: structuredClone(initialVector),
-      animation: structuredClone(initialAnimation),
+      vector: structuredClone(active.vector),
+      animation: structuredClone(active.animation),
       hiddenLayerIds: [],
       selectedBlockIds: [],
       collapsedLayerIds: [],
@@ -2001,7 +2379,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       timelineScrollX: 0,
       timelineScrollY: 0,
       timelineCollapsed: false,
-      toolMode: "select",
+      hasCanvasSelection: true,
+      selectionKind: "layer",
+      toolMode: "direct",
       cursorType: "default",
       hoveredItem: null,
       dragState: null,
@@ -2015,7 +2395,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const li = layers.findIndex((l) => l.id === selectedLayerId);
     if (li === -1) return;
     const lay = layers[li];
-    const target = editingSide === "from" ? lay.from : lay.to;
+    const target = editingSide === "from" ? lay.from : endOf(lay);
     const simplified = simplifyPath(target, tolerance);
     const newLayers = [...layers];
     if (editingSide === "from") {
@@ -2046,9 +2426,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (!layer) return { compatible: true, fromPoints: 0, toPoints: 0, warning: "" };
 
     const fromCount = countPathPoints(layer.from);
-    const toCount = countPathPoints(layer.to);
+    const toCount = countPathPoints(endOf(layer));
     const ratio = Math.max(fromCount, toCount) / Math.max(1, Math.min(fromCount, toCount));
-    const compatible = arePathsStructurallyCompatible(layer.from, layer.to);
+    const compatible = arePathsStructurallyCompatible(layer.from, endOf(layer));
 
     let warning = "";
     if (!compatible) {

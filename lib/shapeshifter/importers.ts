@@ -1,5 +1,7 @@
 import { parsePath, ensureStableCommandIds } from "./pathUtils";
+import { arcToBeziers } from "./geometry";
 import type {
+  Command,
   FillType,
   Gradient,
   GradientStop,
@@ -97,7 +99,13 @@ function getAccumulatedTransform(element: Element): Matrix {
   return result;
 }
 
-/** Apply an affine transform to every point in a PathData. */
+/** Apply an affine transform to every point in a PathData.
+ *  For conformal matrices (uniform scale + rotation/reflection + translation)
+ *  the fast path scales `rx/ry` and rotates `xRotation` in place. For
+ *  NON-conformal matrices (non-uniform scale or skew) that path misorients the
+ *  ellipse, so arcs are flattened to cubic Bézier segments (via `arcToBeziers`)
+ *  in their original coordinate space and the control points are then
+ *  transformed — matching how Figma/SVG rasterize arcs under skew. */
 function transformPathData(path: PathData, matrix: Matrix): PathData {
   if (isIdentity(matrix)) return path;
   const sx = Math.sqrt(matrix[0] * matrix[0] + matrix[1] * matrix[1]);
@@ -105,26 +113,83 @@ function transformPathData(path: PathData, matrix: Matrix): PathData {
   const det = matrix[0] * matrix[3] - matrix[1] * matrix[2];
   const rotDeg = (Math.atan2(matrix[1], matrix[0]) * 180) / Math.PI;
 
-  return {
-    subPaths: path.subPaths.map((sp) => ({
-      commands: sp.commands.map((cmd) => ({
-        ...cmd,
-        points: cmd.points.map((p) => transformPoint(matrix, p)),
-        arcParams: cmd.arcParams
-          ? {
-              rx: (cmd.arcParams.rx ?? 0) * sx,
-              ry: (cmd.arcParams.ry ?? 0) * sy,
-              // xRotation only: pre-existing arcParams/rotation shape mismatch debt (legacy parser variance)
-              // isolated+fixed here for k88 clean gates (parsePath + all utils now standardize on xRotation per types.ts Command).
-              // Test coverage in importers.test.ts "preserves and correctly transforms arcParams xRotation".
-              // Minimal targeted change; zero fidelity impact on SVG/VD import, transforms, roundtrips, tools.
-              xRotation: (cmd.arcParams.xRotation ?? 0) + rotDeg,
-              largeArc: cmd.arcParams.largeArc,
-              sweep: det < 0 ? !cmd.arcParams.sweep : cmd.arcParams.sweep,
-            }
-          : undefined,
+  // Conformal = uniform-scale (+ optional rotation/reflection). Detected via
+  // equal column lengths AND orthogonal columns of the upper-left 2×2.
+  const EPS = 1e-9;
+  const isConformal =
+    Math.abs(sx - sy) < EPS && Math.abs(matrix[0] * matrix[2] + matrix[1] * matrix[3]) < EPS;
+
+  if (isConformal) {
+    return {
+      subPaths: path.subPaths.map((sp) => ({
+        commands: sp.commands.map((cmd) => ({
+          ...cmd,
+          points: cmd.points.map((p) => transformPoint(matrix, p)),
+          arcParams: cmd.arcParams
+            ? {
+                rx: (cmd.arcParams.rx ?? 0) * sx,
+                ry: (cmd.arcParams.ry ?? 0) * sy,
+                xRotation: (cmd.arcParams.xRotation ?? 0) + rotDeg,
+                largeArc: cmd.arcParams.largeArc,
+                sweep: det < 0 ? !cmd.arcParams.sweep : cmd.arcParams.sweep,
+              }
+            : undefined,
+        })),
       })),
-    })),
+    };
+  }
+
+  // Non-conformal: flatten arcs to Béziers (in original space) and transform.
+  return {
+    subPaths: path.subPaths.map((sp) => {
+      const out: Command[] = [];
+      let cur: Point | null = null;
+      let start: Point | null = null;
+      for (const cmd of sp.commands) {
+        if (cmd.type === "A" && cmd.arcParams && cur) {
+          const ap = cmd.arcParams;
+          const end: Point = cmd.points[cmd.points.length - 1] ?? cur;
+          const beziers = arcToBeziers(
+            cur.x,
+            cur.y,
+            ap.rx ?? 0,
+            ap.ry ?? 0,
+            ap.xRotation ?? 0,
+            ap.largeArc ?? false,
+            ap.sweep ?? false,
+            end.x,
+            end.y,
+          );
+          if (beziers.length === 0) {
+            out.push({ id: cmd.id, type: "L", points: [transformPoint(matrix, end)] });
+          } else {
+            for (const seg of beziers) {
+              out.push({
+                id: cmd.id,
+                type: "C",
+                points: [
+                  transformPoint(matrix, seg.cp1),
+                  transformPoint(matrix, seg.cp2),
+                  transformPoint(matrix, seg.to),
+                ],
+              });
+            }
+          }
+          cur = end;
+        } else {
+          out.push({ ...cmd, points: cmd.points.map((p) => transformPoint(matrix, p)) });
+          if (cmd.type === "M" && cmd.points[0]) {
+            cur = cmd.points[0];
+            start = cmd.points[0];
+          } else if (cmd.type === "Z") {
+            cur = start;
+          } else if (cmd.points.length > 0) {
+            cur = cmd.points[cmd.points.length - 1];
+          }
+        }
+      }
+      return { commands: out };
+    }),
   };
 }
 
@@ -214,31 +279,126 @@ function parseGradientStops(el: Element, doc: Document, depth = 0): GradientStop
   });
 }
 
-/** Build a map of gradient id → model Gradient for url(#id) fill resolution. */
-function buildGradientLookup(doc: Document): Map<string, Gradient> {
-  const map = new Map<string, Gradient>();
+type GradientLookupEntry = {
+  gradient: Gradient;
+  // When the source gradient used gradientUnits="userSpaceOnUse", the raw
+  // user-space coordinates are kept here and converted to objectBoundingBox
+  // fractions at style-resolution time using the referencing path's bbox.
+  // (The Gradient type has no units field by design — the conversion happens
+  // at import so export via objectBoundingBox is correct.)
+  userSpaceLinear?: { x1: number; y1: number; x2: number; y2: number };
+  userSpaceRadial?: { cx: number; cy: number; r: number };
+};
+
+type BBox = { minX: number; minY: number; maxX: number; maxY: number };
+
+/** Sample every command point of a path's `d` string for an approximate bbox. */
+function pathBBox(d: string): BBox | null {
+  let parsed: PathData;
+  try {
+    parsed = parsePath(d);
+  } catch {
+    return null;
+  }
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let any = false;
+  for (const sp of parsed.subPaths) {
+    for (const cmd of sp.commands) {
+      for (const p of cmd.points) {
+        if (Number.isFinite(p.x) && Number.isFinite(p.y)) {
+          any = true;
+          if (p.x < minX) minX = p.x;
+          if (p.y < minY) minY = p.y;
+          if (p.x > maxX) maxX = p.x;
+          if (p.y > maxY) maxY = p.y;
+        }
+      }
+    }
+  }
+  return any ? { minX, minY, maxX, maxY } : null;
+}
+
+/** Convert a userSpaceOnUse gradient entry to the objectBoundingBox fraction model. */
+function convertUserSpaceGradient(entry: GradientLookupEntry, bbox: BBox): Gradient {
+  const w = bbox.maxX - bbox.minX || 1;
+  const h = bbox.maxY - bbox.minY || 1;
+  const refLen = (w + h) / 2 || 1;
+  if (entry.userSpaceRadial) {
+    const u = entry.userSpaceRadial;
+    return {
+      ...entry.gradient,
+      cx: (u.cx - bbox.minX) / w,
+      cy: (u.cy - bbox.minY) / h,
+      r: u.r / refLen,
+    };
+  }
+  const u = entry.userSpaceLinear!;
+  const fx1 = (u.x1 - bbox.minX) / w;
+  const fy1 = (u.y1 - bbox.minY) / h;
+  const fx2 = (u.x2 - bbox.minX) / w;
+  const fy2 = (u.y2 - bbox.minY) / h;
+  const angle = Math.round((Math.atan2(fy2 - fy1, fx2 - fx1) * 180) / Math.PI);
+  return { ...entry.gradient, angle };
+}
+
+/** Build a map of gradient id → entry (model Gradient + optional user-space coords). */
+function buildGradientLookup(doc: Document): Map<string, GradientLookupEntry> {
+  const map = new Map<string, GradientLookupEntry>();
   for (const el of Array.from(doc.querySelectorAll("linearGradient, radialGradient"))) {
     const id = el.getAttribute("id");
     if (!id) continue;
     const stops = parseGradientStops(el, doc);
     if (stops.length < 2) continue;
 
-    if (el.tagName.toLowerCase() === "radialGradient".toLowerCase()) {
-      map.set(id, {
-        type: "radial",
-        stops,
-        cx: parseRatio(el.getAttribute("cx"), 0.5),
-        cy: parseRatio(el.getAttribute("cy"), 0.5),
-        r: parseRatio(el.getAttribute("r"), 0.5),
-      });
+    const units = (el.getAttribute("gradientUnits") || "objectBoundingBox").trim();
+    const isRadial = el.tagName.toLowerCase() === "radialgradient";
+
+    if (units === "userSpaceOnUse") {
+      // Keep raw user-space coordinates; convert to fractions at fill resolution
+      // (where the referencing path's bbox is known).
+      if (isRadial) {
+        map.set(id, {
+          gradient: { type: "radial", stops },
+          userSpaceRadial: {
+            cx: parseRatio(el.getAttribute("cx"), 0.5),
+            cy: parseRatio(el.getAttribute("cy"), 0.5),
+            r: parseRatio(el.getAttribute("r"), 0.5),
+          },
+        });
+      } else {
+        map.set(id, {
+          gradient: { type: "linear", stops },
+          userSpaceLinear: {
+            x1: parseRatio(el.getAttribute("x1"), 0),
+            y1: parseRatio(el.getAttribute("y1"), 0),
+            x2: parseRatio(el.getAttribute("x2"), 1),
+            y2: parseRatio(el.getAttribute("y2"), 0),
+          },
+        });
+      }
     } else {
-      // Derive an angle from x1/y1→x2/y2 (objectBoundingBox-style fractions).
-      const x1 = parseRatio(el.getAttribute("x1"), 0);
-      const y1 = parseRatio(el.getAttribute("y1"), 0);
-      const x2 = parseRatio(el.getAttribute("x2"), 1);
-      const y2 = parseRatio(el.getAttribute("y2"), 0);
-      const angle = Math.round((Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI);
-      map.set(id, { type: "linear", stops, angle });
+      // objectBoundingBox (default): coords are already fractions [0..1].
+      if (isRadial) {
+        map.set(id, {
+          gradient: {
+            type: "radial",
+            stops,
+            cx: parseRatio(el.getAttribute("cx"), 0.5),
+            cy: parseRatio(el.getAttribute("cy"), 0.5),
+            r: parseRatio(el.getAttribute("r"), 0.5),
+          },
+        });
+      } else {
+        const x1 = parseRatio(el.getAttribute("x1"), 0);
+        const y1 = parseRatio(el.getAttribute("y1"), 0);
+        const x2 = parseRatio(el.getAttribute("x2"), 1);
+        const y2 = parseRatio(el.getAttribute("y2"), 0);
+        const angle = Math.round((Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI);
+        map.set(id, { gradient: { type: "linear", stops, angle } });
+      }
     }
   }
   return map;
@@ -259,7 +419,11 @@ const urlRef = (value: string): string | null => {
 
 // ── Style extraction (attributes + inline CSS `style` attribute) ────────
 
-function getStyle(element: Element, gradients?: Map<string, Gradient>) {
+function getStyle(
+  element: Element,
+  gradients?: Map<string, GradientLookupEntry>,
+  pathDataD?: string,
+) {
   // Parse inline style attribute into a lookup map
   const inlineStyle = new Map<string, string>();
   const styleAttr = element.getAttribute("style");
@@ -283,7 +447,20 @@ function getStyle(element: Element, gradients?: Map<string, Gradient>) {
 
   // Resolve a url(#id) gradient fill into the model (solid fill stays a string).
   const fillRefId = fill ? urlRef(fill) : null;
-  const fillGradient = fillRefId ? gradients?.get(fillRefId) : undefined;
+  let fillGradient: Gradient | undefined;
+  if (fillRefId) {
+    const entry = gradients?.get(fillRefId);
+    if (entry) {
+      if (entry.userSpaceLinear || entry.userSpaceRadial) {
+        // userSpaceOnUse: convert raw user-space coords to objectBoundingBox
+        // fractions using THIS referencing path's bbox (sampled from its d).
+        const bbox = pathDataD ? pathBBox(pathDataD) : null;
+        fillGradient = bbox ? convertUserSpaceGradient(entry, bbox) : entry.gradient;
+      } else {
+        fillGradient = entry.gradient;
+      }
+    }
+  }
 
   return {
     ...(fillGradient ? { fillGradient } : {}),
@@ -299,7 +476,14 @@ function getStyle(element: Element, gradients?: Map<string, Gradient>) {
   };
 }
 
-function layerFromPathData(name: string, pathData: string, id: string, matrix: Matrix, style = {}) {
+function layerFromPathData(
+  name: string,
+  pathData: string,
+  id: string,
+  matrix: Matrix,
+  style = {},
+  parentId: string | null = null,
+) {
   let parsed = parsePath(pathData);
   parsed = transformPathData(parsed, matrix);
   // k7zp/3t0c: guarantee stable ULID command IDs even for freshly parsed imported geometry.
@@ -314,19 +498,112 @@ function layerFromPathData(name: string, pathData: string, id: string, matrix: M
     pathData: parsed,
     visible: true,
     locked: false,
+    parentId,
     ...style,
   } satisfies Layer;
 }
 
-/** Check if an element is inside a <defs>, <symbol>, or <clipPath> (not directly renderable). */
-function isInsideDefs(el: Element): boolean {
-  let parent = el.parentElement;
-  while (parent) {
-    const tag = parent.tagName.toLowerCase();
-    if (tag === "defs" || tag === "symbol" || tag === "clippath") return true;
-    parent = parent.parentElement;
+const SVG_SHAPE_TAGS: Record<string, true> = {
+  path: true,
+  rect: true,
+  circle: true,
+  ellipse: true,
+  line: true,
+  polygon: true,
+  polyline: true,
+};
+
+/** Convert a leaf SVG shape element to its `d` string. */
+function svgPathDataFor(element: Element, tag: string): string {
+  switch (tag) {
+    case "path":
+      return element.getAttribute("d") ?? "";
+    case "rect":
+      return pathFromRect(element);
+    case "circle":
+    case "ellipse":
+      return pathFromCircle(element);
+    case "line":
+      return pathFromLine(element);
+    case "polygon":
+      return pathFromPoints(element, true);
+    default:
+      return pathFromPoints(element, false);
   }
-  return false;
+}
+
+/**
+ * Recursively walk an SVG container (<svg> or <g>), emitting group Layer nodes
+ * for <g> elements (preserving id/name + parentId nesting) and path layers for
+ * leaf shapes. Ancestor transforms are baked into leaf geometry exactly as
+ * before via getAccumulatedTransform; <defs>/<symbol>/<clipPath> subtrees are
+ * skipped (their contents are not directly renderable). Mirrors parseVdGroup.
+ */
+function walkSvgChildren(
+  container: Element,
+  parentId: string | null,
+  counter: { n: number },
+  gradients: Map<string, GradientLookupEntry>,
+  namePrefix: string,
+  layers: Layer[],
+): void {
+  for (const child of Array.from(container.children)) {
+    const tag = child.tagName.toLowerCase();
+    if (tag === "defs" || tag === "symbol" || tag === "clippath") continue;
+
+    if (tag === "g") {
+      const groupId = `${namePrefix}_g_${counter.n++}`;
+      const name = child.getAttribute("id") || `${namePrefix}_group_${counter.n}`;
+      const emptyPath = ensureStableCommandIds(parsePath(""));
+      layers.push({
+        id: groupId,
+        name,
+        type: "group",
+        from: emptyPath,
+        to: emptyPath,
+        pathData: emptyPath,
+        visible: true,
+        locked: false,
+        parentId,
+      } satisfies Layer);
+      walkSvgChildren(child, groupId, counter, gradients, namePrefix, layers);
+      continue;
+    }
+
+    if (SVG_SHAPE_TAGS[tag]) {
+      try {
+        const pathData = svgPathDataFor(child, tag);
+        if (!pathData.trim()) continue;
+        const name = child.getAttribute("id") || `${namePrefix}_${tag}_${counter.n + 1}`;
+        const id = `${Date.now()}_${counter.n++}`;
+        const matrix = getAccumulatedTransform(child);
+        const layer = layerFromPathData(
+          name,
+          pathData,
+          id,
+          matrix,
+          getStyle(child, gradients, pathData),
+          parentId,
+        );
+        // Harden: skip any layer whose parsed geometry contains non-finite coords
+        // (bad path data, NaN from malformed arcs/nums, complex edge cases).
+        const hasNaN = layer.from.subPaths.some((sp) =>
+          sp.commands.some(
+            (c) =>
+              c.points.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y)) ||
+              (c.arcParams &&
+                (!Number.isFinite(c.arcParams.rx) ||
+                  !Number.isFinite(c.arcParams.ry) ||
+                  !Number.isFinite(c.arcParams.xRotation))),
+          ),
+        );
+        if (hasNaN) continue;
+        layers.push(layer);
+      } catch {
+        // Graceful fallback: never crash on a bad element (partial-load recovery).
+      }
+    }
+  }
 }
 
 export function importLayersFromSvg(svgText: string, namePrefix = "svg") {
@@ -364,55 +641,9 @@ export function importLayersFromSvg(svgText: string, namePrefix = "svg") {
   }
 
   const gradients = buildGradientLookup(doc);
-
-  const elements = Array.from(
-    doc.querySelectorAll("path, rect, circle, ellipse, line, polygon, polyline"),
-  ).filter((el) => !isInsideDefs(el));
-
-  return elements.flatMap((element, index) => {
-    try {
-      const tag = element.tagName.toLowerCase();
-      const pathData =
-        tag === "path"
-          ? (element.getAttribute("d") ?? "")
-          : tag === "rect"
-            ? pathFromRect(element)
-            : tag === "circle" || tag === "ellipse"
-              ? pathFromCircle(element)
-              : tag === "line"
-                ? pathFromLine(element)
-                : tag === "polygon"
-                  ? pathFromPoints(element, true)
-                  : pathFromPoints(element, false);
-
-      if (!pathData.trim()) return [];
-      const name = element.getAttribute("id") || `${namePrefix}_${tag}_${index + 1}`;
-      const matrix = getAccumulatedTransform(element);
-      const layer = layerFromPathData(
-        name,
-        pathData,
-        `${Date.now()}_${index}`,
-        matrix,
-        getStyle(element, gradients),
-      );
-      // Harden: skip any layer whose parsed geometry contains non-finite coords (bad path data, NaN from malformed arcs/nums, complex edge cases)
-      const hasNaN = layer.from.subPaths.some((sp) =>
-        sp.commands.some(
-          (c) =>
-            c.points.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y)) ||
-            (c.arcParams &&
-              (!Number.isFinite(c.arcParams.rx) ||
-                !Number.isFinite(c.arcParams.ry) ||
-                !Number.isFinite(c.arcParams.xRotation))),
-        ),
-      );
-      if (hasNaN) return [];
-      return [layer];
-    } catch {
-      // Graceful fallback: never crash on bad element in pro SVG (partial load recovery)
-      return [];
-    }
-  });
+  const layers: Layer[] = [];
+  walkSvgChildren(doc.documentElement, null, { n: 0 }, gradients, namePrefix, layers);
+  return layers;
 }
 
 export interface VectorDrawableImportResult {

@@ -26,16 +26,17 @@ interface ToolDef {
 
 const TOOLS: ToolDef[] = [
   {
-    mode: "select",
-    label: "Move / Select",
-    icon: <MousePointer2 className="h-4 w-4" />,
-    shortcut: "V",
+    // Primary — Figma vector network on the canvas
+    mode: "direct",
+    label: "Vector",
+    icon: <span className="material-symbols text-[18px] leading-none">conversion_path</span>,
+    shortcut: "A",
   },
   {
-    mode: "direct",
-    label: "Direct / Bend",
-    icon: <span className="material-symbols text-[18px] leading-none">conversion_path</span>,
-    shortcut: "D",
+    mode: "select",
+    label: "Move",
+    icon: <MousePointer2 className="h-4 w-4" />,
+    shortcut: "V",
   },
   {
     mode: "pen",
@@ -96,14 +97,24 @@ export function BottomToolPalette() {
                   </kbd>
                 )}
               </div>
+              {tool.mode === "direct" && (
+                <div className="text-[10px] text-muted-foreground leading-tight">
+                  Edit path points (Figma vector). Drag blue squares. Play timeline to preview morph.
+                </div>
+              )}
+              {tool.mode === "select" && (
+                <div className="text-[10px] text-muted-foreground leading-tight">
+                  Move whole shapes or frames. Double-click a shape to edit its vector.
+                </div>
+              )}
               {tool.mode === "pen" && (
                 <div className="text-[10px] text-muted-foreground leading-tight">
-                  Click to place points • Drag for curves • Click first point (or near) to close • Double-click last / Esc / Enter to finish
+                  Click to place points · drag for curves · Esc to finish
                 </div>
               )}
               {tool.mode === "paint" && (
                 <div className="text-[10px] text-muted-foreground leading-tight">
-                  Hover to preview fill with current color • Click valid region to paint • Crosshair + dashed overlay shows valid/invalid
+                  Click a region to fill with the current color
                 </div>
               )}
             </TooltipContent>

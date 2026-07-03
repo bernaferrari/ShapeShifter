@@ -58,14 +58,11 @@ export class SelectDragItemsGesture extends Gesture {
     // TODO: Apply delta to selected layers (respect shift 45deg, alt clone, snap)
   }
 
-  onMouseUp(point: Point, _modifiers: { shift: boolean; alt: boolean; ctrl: boolean }): void {
+  onMouseUp(point: Point, modifiers: { shift: boolean; alt: boolean; ctrl: boolean }): void {
     if (this.startPoint) {
-      // PR-02 start (ShapeShifter-2cq): The gesture owns the commit trigger for the marquee.
-      // The registered commitMarqueeSelection callback (wired by PathCanvas at dispatcher creation)
-      // performs the exact prior AABB collection + store multi-select actions (preview vs edit-path
-      // branching) using the start/end points. This moves commit ownership out of the PathCanvas monolith.
-      // endMarquee (clear) is handled by the dispatcher after this returns.
-      this.callbacks.commitMarqueeSelection?.(this.startPoint, point);
+      // The gesture owns the marquee commit trigger; the callback (wired by PathCanvas) applies
+      // the real AABB collection + store selection, honoring shift = additive union (SEL-1).
+      this.callbacks.commitMarqueeSelection?.(this.startPoint, point, modifiers.shift);
     }
 
     if (!this.didMove) {

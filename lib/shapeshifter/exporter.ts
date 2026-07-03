@@ -54,13 +54,18 @@ export function exportAnimatedSVG(
   const fromD = pathToString(fromPath);
   const toD = pathToString(toPath);
 
-  // Extract numeric values from both d-strings for real per-frame interpolation
-  const numRegex = /[-+]?(?:\d*\.)?\d+(?:e[-+]?\d+)?/gi;
-  const fromNums = fromD.match(numRegex)?.map(Number) ?? [];
-  const toNums = toD.match(numRegex)?.map(Number) ?? [];
-  // Build a template by replacing numbers with placeholders
-  let placeholderIdx = 0;
-  const template = fromD.replace(numRegex, () => `#${placeholderIdx++}#`);
+  // Bake N sampled frames through the SAME getInterpolatedPath the on-canvas
+  // preview uses. This guarantees the exported morph matches the preview even
+  // when from/to have different command structures (the old per-number lerp
+  // over the FROM skeleton silently dropped surplus target numbers and produced
+  // a truncated 'to' shape). Easing is applied at playback via the frame index.
+  const FRAME_COUNT = 60;
+  const frames: string[] = [];
+  for (let i = 0; i < FRAME_COUNT; i++) {
+    const t = i / (FRAME_COUNT - 1);
+    frames.push(getInterpolatedPath(fromPath, toPath, t));
+  }
+  const framesJson = JSON.stringify(frames);
 
   const vbW = viewBoxWidth;
   const vbH = viewBoxHeight;
@@ -94,33 +99,17 @@ export function exportAnimatedSVG(
     (function() {
       var svg = document.currentScript.ownerSVGElement;
       var morph = svg.getElementById('morph');
-      const keyframes = [
-        [${fromNums.join(",")}],
-        [${toNums.join(",")}]
-      ];
-      var from = keyframes[0];
-      var to = keyframes[1];
-      var tpl = ${JSON.stringify(template)};
+      var frames = ${framesJson};
       const duration = ${duration};
       const loop = ${loop};
       var startTime = null;
 
-      // Cubic-bezier easing (FAST_OUT_SLOW_IN)
+      // Cubic-bezier easing (FAST_OUT_SLOW_IN) — matches the canvas preview.
       function ease(t) {
-        // Attempt fast cubic-bezier(0.4, 0, 0.2, 1) via sample table
         var x1=0.4,y1=0,x2=0.2,y2=1;
         var lo=0,hi=1,mid;
         for(var i=0;i<16;i++){mid=(lo+hi)/2;var x=3*(1-mid)*(1-mid)*mid*x1+3*(1-mid)*mid*mid*x2+mid*mid*mid;if(x<t)lo=mid;else hi=mid;}
         return 3*(1-mid)*(1-mid)*mid*y1+3*(1-mid)*mid*mid*y2+mid*mid*mid;
-      }
-
-      function lerp(t) {
-        var i = 0;
-        return tpl.replace(/#\\d+#/g, function() {
-          var v = from[i] + (to[i] - from[i]) * t;
-          i++;
-          return v.toFixed(3);
-        });
       }
 
       function animate(ts) {
@@ -128,8 +117,9 @@ export function exportAnimatedSVG(
         var elapsed = (ts - startTime) / 1000;
         var rawT = (elapsed % duration) / duration;
         if (!loop && elapsed > duration) rawT = 1;
-        var t = ease(rawT);
-        morph.setAttribute('d', lerp(t));
+        var easedT = ease(rawT);
+        var idx = Math.min(frames.length - 1, Math.max(0, Math.round(easedT * (frames.length - 1))));
+        morph.setAttribute('d', frames[idx]);
         if (loop || elapsed < duration) requestAnimationFrame(animate);
       }
 
@@ -356,7 +346,7 @@ export function exportSvgSpritesheet(layer: Layer, options: ExportOptions = {}) 
   const frames = Array.from({ length: frameCount }, (_, index) => {
     const t = frameCount === 1 ? 0 : index / (frameCount - 1);
     const translateX = index * viewBoxWidth;
-    const d = getInterpolatedPath(baseFrom, layer.to, t);
+    const d = getInterpolatedPath(baseFrom, layer.to ?? baseFrom, t);
     return `  <g id="${escapeXml(safeName(layer.name))}_frame_${index}" transform="translate(${translateX} 0)">
     <path d="${escapeXml(d)}" ${styleAttrs(layer)} />
   </g>`;
@@ -475,7 +465,7 @@ export function exportAnimatedVectorDrawable(layer: Layer, options: ExportOption
   const { duration = 1.2 } = options;
   const name = safeName(layer.name);
   const fromD = pathToString(layer.pathData ?? layer.from); // current edited for fidelity
-  const toD = pathToString(layer.to);
+  const toD = pathToString(layer.to ?? layer.from);
   return `<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:drawable="@drawable/${name}_vector">
   <target
@@ -745,7 +735,7 @@ export function exportLottieDocument(layers: Layer[], name: string, duration = 1
 
   const base = exportLottie(
     exportableLayers[0].from,
-    exportableLayers[0].to,
+    exportableLayers[0].to ?? exportableLayers[0].from,
     name,
     duration,
     exportableLayers[0],
@@ -757,7 +747,7 @@ export function exportLottieDocument(layers: Layer[], name: string, duration = 1
     ...base,
     nm: name,
     layers: exportableLayers.map((layer, index) => {
-      const single = exportLottie(layer.from, layer.to, layer.name, duration, layer).layers[0];
+      const single = exportLottie(layer.from, layer.to ?? layer.from, layer.name, duration, layer).layers[0];
       return {
         ...single,
         ind: index + 1,

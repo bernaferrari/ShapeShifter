@@ -8,6 +8,7 @@ import {
   pathToString,
   getInterpolatedPath,
   isPointInFillRegion,
+  scalePathToBounds,
 } from "@/lib/shapeshifter/pathUtils";
 import { evaluateBlock } from "@/lib/shapeshifter/interpolators";
 import type { SegmentSelection, SubPathSelection } from "@/lib/store/editorStore";
@@ -26,7 +27,6 @@ import {
   collectPointsInLasso,
 } from "@/lib/shapeshifter/gestures/HitTests";
 
-type PointSelection = { subPathIndex: number; commandIndex: number; pointIndex: number };
 type ViewBox = Viewport;
 type Bounds = { x: number; y: number; width: number; height: number };
 type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
@@ -78,6 +78,9 @@ export const PathCanvas = React.memo(function PathCanvas({
   const paintPreviewRafRef = useRef<number | null>(null);
   const [, setPaintPreviewFrame] = React.useState(0);
   const paintHitRef = useRef<{ layerId: string | number } | null>(null);
+  // C2 fix: record pointer-down screen pos to distinguish a real click from a drag,
+  // so clicking a point/handle (no movement) doesn't also insert a stray point.
+  const pointerDownPosRef = useRef<{ x: number; y: number } | null>(null);
 
 
 
@@ -95,12 +98,6 @@ export const PathCanvas = React.memo(function PathCanvas({
     current: { x: number; y: number };
   }>(null);
   const [isVectorEditing, setIsVectorEditing] = React.useState(false);
-  // For batch multi-point drag: track last known position of the primary drag point to compute uniform deltas
-  const [dragSession, setDragSession] = React.useState<null | {
-    lastX: number;
-    lastY: number;
-    primarySel: PointSelection | null;
-  }>(null);
 
   const {
     layers,
@@ -121,8 +118,6 @@ export const PathCanvas = React.memo(function PathCanvas({
     selectLayer,
     setEditingSide,
     updateSelectedLayer,
-    resizeSelectedLayer,
-    deleteLayer,
     zoom,
     detailViewport,
     setDetailViewport,
@@ -212,7 +207,7 @@ export const PathCanvas = React.memo(function PathCanvas({
           // References: DESIGN_ID 67dd105e (PR-01/PR-02, Key Decision #2), beads ubf/2cq/v6j/ny0,
           // parity-checklist.md BatchSelect phase. 100% behavioral parity on multi-point, shift-additive,
           // empty-box clear, preview subpath/layer, edit-path point selection.
-          commitMarqueeSelection: (start, end) => {
+          commitMarqueeSelection: (start, end, additive) => {
             const state = useEditorStore.getState();
             const {
               layers: curLayers,
@@ -223,12 +218,12 @@ export const PathCanvas = React.memo(function PathCanvas({
               isActionMode: curIsAction,
               selectMultipleSubPaths: curSelectMultipleSubPaths,
               selectLayer: curSelectLayer,
+              selectLayers: curSelectLayers,
               setEditingSide: curSetEditingSide,
               selectMultiplePoints: curSelectMultiplePoints,
               clearSelection: curClearSelection,
             } = state;
 
-            // Delegate rect construction and point collection to real hit test helpers in the gesture system.
             const selectRect = getMarqueeRect(start, end);
             const isBoxGesture = selectRect.width > 0.2 || selectRect.height > 0.2;
 
@@ -244,9 +239,24 @@ export const PathCanvas = React.memo(function PathCanvas({
                   });
                 });
                 if (subPathHits.length > 0) {
-                  curSelectMultipleSubPaths(subPathHits);
+                  // SEL-1: shift = additive union with existing subpath selection.
+                  const merged = additive
+                    ? [
+                        ...state.selectedSubPaths.filter(
+                          (m) =>
+                            !subPathHits.some(
+                              (h) =>
+                                String(m.layerId) === String(h.layerId) &&
+                                m.side === h.side &&
+                                m.subPathIndex === h.subPathIndex,
+                            ),
+                        ),
+                        ...subPathHits,
+                      ]
+                    : subPathHits;
+                  curSelectMultipleSubPaths(merged);
                   curSetEditingSide("from");
-                  return; // commit done; endMarquee will clear rect
+                  return;
                 }
               }
               const renderedLayers = getPreviewLayers(
@@ -261,29 +271,53 @@ export const PathCanvas = React.memo(function PathCanvas({
                 return bounds ? rectsIntersect(selectRect, bounds) : false;
               });
               if (hitLayer) {
-                curSelectLayer(hitLayer.layer.id);
+                // SEL-1: shift = additive multi-layer selection (Figma).
+                if (additive) {
+                  const ids =
+                    state.selectedLayerIds && state.selectedLayerIds.length > 0
+                      ? state.selectedLayerIds
+                      : [state.selectedLayerId];
+                  if (!ids.some((id) => String(id) === String(hitLayer.layer.id))) {
+                    curSelectLayers([...ids, hitLayer.layer.id]);
+                  }
+                } else {
+                  curSelectLayer(hitLayer.layer.id);
+                }
                 curSetEditingSide("from");
-              } else if (isBoxGesture) {
+              } else if (!additive) {
+                // SEL-4: empty-canvas click/drag deselects (Figma) when not additive.
                 curClearSelection();
               }
               return;
             }
 
-            // Action mode / edit path point selection (multi AABB)
-            // PR-02 completion: delegated to collectPointsInRect (real hit test now in HitTests).
-            // Preserves exact prior AABB behavior + outcomes.
+            // Action mode / edit-path point selection (multi AABB).
             const layer = curLayers.find((l) => l.id === curSelId);
             const pathForEdit = layer
-              ? curEditSide === "from"
-                ? layer.from
-                : layer.to
+              ? curEditSide === "from" ? layer.from : (layer.to ?? layer.from)
               : { subPaths: [] as any[] };
             const hits = collectPointsInRect(pathForEdit as any, selectRect);
             if (hits.length > 0) {
-              const multiSels = hits.map((h) => ({ layerId: curSelId, side: curEditSide, ...h }));
-              curSelectMultiplePoints(multiSels);
-            } else {
-              // empty box click clears (parity with original behavior when a marquee gesture completed)
+              const newSels = hits.map((h) => ({ layerId: curSelId, side: curEditSide, ...h }));
+              // SEL-1: shift = additive union with existing point selection.
+              const merged = additive
+                ? [
+                    ...state.selectedPoints.filter(
+                      (m) =>
+                        !newSels.some(
+                          (s) =>
+                            String(m.layerId) === String(s.layerId) &&
+                            m.side === s.side &&
+                            m.subPathIndex === s.subPathIndex &&
+                            m.commandIndex === s.commandIndex &&
+                            m.pointIndex === s.pointIndex,
+                        ),
+                    ),
+                    ...newSels,
+                  ]
+                : newSels;
+              curSelectMultiplePoints(merged);
+            } else if (!additive) {
               curClearSelection();
             }
           },
@@ -323,12 +357,20 @@ export const PathCanvas = React.memo(function PathCanvas({
       if (!rect) return;
       // Figma model: ⌘/Ctrl+scroll (and trackpad pinch) zooms; plain scroll pans.
       if (e.ctrlKey || e.metaKey) {
-        const mouse = pointFromEvent(e.clientX, e.clientY);
-        if (!mouse) return;
-        // Gentle, clamped zoom (≈0.86× per mouse notch; smooth for trackpad pinch).
+        // Focal zoom computed against the LIVE viewport (functional update) so rapid
+        // trackpad pinch events don't stack on a one-render-stale closure viewport.
         const d = Math.max(-100, Math.min(100, e.deltaY));
         const zoomFactor = Math.exp(-d * 0.0015);
-        setDetailViewport(zoomAtWorldPoint(viewBox, mouse, viewBox.scale * zoomFactor, 0.25, 8));
+        setDetailViewport((prev) => {
+          const vb = fitViewportToAspect(prev, elementAspect);
+          const r = svgRef.current?.getBoundingClientRect();
+          if (!r) return prev;
+          const mouse = {
+            x: vb.x + ((e.clientX - r.left) / r.width) * vb.w,
+            y: vb.y + ((e.clientY - r.top) / r.height) * vb.h,
+          };
+          return zoomAtWorldPoint(vb, mouse, vb.scale * zoomFactor, 0.25, 8);
+        });
         return;
       }
       const perPxX = viewBox.w / rect.width;
@@ -341,7 +383,7 @@ export const PathCanvas = React.memo(function PathCanvas({
         y: prev.y + dyPx * perPxY,
       }));
     },
-    [pointFromEvent, setDetailViewport, viewBox],
+    [elementAspect, pointFromEvent, setDetailViewport, viewBox],
   );
 
   // Paint bucket helpers (rsn): pure hit via imported isPointInFillRegion (pathUtils sampling + parity for holes).
@@ -397,7 +439,10 @@ export const PathCanvas = React.memo(function PathCanvas({
 
   const handleSvgPointerDown = useCallback(
     (e: React.PointerEvent) => {
+      // C2: record down position (for click-vs-drag guard in handleSvgClick).
+      if (e.button === 0) pointerDownPosRef.current = { x: e.clientX, y: e.clientY };
       if (e.button === 1 || e.altKey || isSpaceDown) {
+        e.preventDefault(); // suppress browser middle-click autoscroll / space page-scroll
         setIsPanning(true);
         setLastPan({ x: e.clientX, y: e.clientY });
         svgRef.current?.setPointerCapture(e.pointerId);
@@ -591,9 +636,7 @@ export const PathCanvas = React.memo(function PathCanvas({
 
         const layer = curLayers.find((l) => l.id === curSelId);
         const pathForEdit = layer
-          ? curEditSide === "from"
-            ? layer.from
-            : layer.to
+          ? curEditSide === "from" ? layer.from : (layer.to ?? layer.from)
           : { subPaths: [] as any[] };
 
         const hits = collectPointsInLasso(pathForEdit as any, lassoPointsRef.current, {
@@ -604,15 +647,33 @@ export const PathCanvas = React.memo(function PathCanvas({
         const isAdditive = e.shiftKey;
 
         if (hits.length > 0) {
-          if (!isAdditive) {
-            curClearSelection?.();
-          }
-          const multiSels = hits.map((h) => ({
+          const newSels = hits.map((h) => ({
             layerId: curSelId,
             side: curEditSide as "from" | "to",
             ...h,
           }));
-          curSelectMultiplePoints(multiSels);
+          if (isAdditive) {
+            // SEL-2: union with existing point selection (dedupe).
+            const existing = state.selectedPoints;
+            const merged = [
+              ...existing.filter(
+                (m) =>
+                  !newSels.some(
+                    (s) =>
+                      String(m.layerId) === String(s.layerId) &&
+                      m.side === s.side &&
+                      m.subPathIndex === s.subPathIndex &&
+                      m.commandIndex === s.commandIndex &&
+                      m.pointIndex === s.pointIndex,
+                  ),
+              ),
+              ...newSels,
+            ];
+            curSelectMultiplePoints(merged);
+          } else {
+            curClearSelection?.();
+            curSelectMultiplePoints(newSels);
+          }
         } else if (!isAdditive) {
           curClearSelection?.();
         }
@@ -647,7 +708,7 @@ export const PathCanvas = React.memo(function PathCanvas({
   const isPreviewVectorEditing =
     side === "preview" && (isVectorEditing || selectedSubPaths.length > 0) && !isActionMode;
   const canEditPoints = isEditingThisSide || isPreviewVectorEditing;
-  const targetPathData = side === "to" ? currentLayer.to : currentLayer.from;
+  const targetPathData = side === "to" ? (currentLayer.to ?? currentLayer.from) : currentLayer.from;
 
   // Memoized display path (zero friction polish 19u): avoids repeated getInterpolatedPath work
   // on non-progress re-renders of preview canvas (e.g. selection changes elsewhere) while
@@ -655,7 +716,7 @@ export const PathCanvas = React.memo(function PathCanvas({
   const displayPath = useMemo(() => {
     if (side === "preview") {
       // Real interpolation using the new engine
-      return getInterpolatedPath(currentLayer.from, currentLayer.to, progress);
+      return getInterpolatedPath(currentLayer.from, currentLayer.to ?? currentLayer.from, progress);
     }
     return pathToString(targetPathData);
   }, [side, currentLayer.from, currentLayer.to, progress, targetPathData]);
@@ -775,13 +836,12 @@ export const PathCanvas = React.memo(function PathCanvas({
       const addToMulti = e.shiftKey;
       selectPoint(newSelection, addToMulti);
 
-      // Init batch drag session if we have multi selected (including the one we just selected/toggled)
-      const currentMulti = useEditorStore.getState().selectedPoints || [];
-      if (currentMulti.length > 1) {
-        setDragSession({ lastX: e.clientX, lastY: e.clientY, primarySel: newSelection });
-      } else {
-        setDragSession(null);
-      }
+      // C3 fix: use local mutable last-position instead of React state (dragSession) so the
+      // handleMove closure never goes stale. Matches every sibling drag handler. Also fixes
+      // flex double-apply (BUG-3) and batch snap (BUG-4).
+      let lastX = e.clientX;
+      let lastY = e.clientY;
+      const isBatch = (useEditorStore.getState().selectedPoints || []).length > 1;
 
       const handleMove = (moveEvent: PointerEvent) => {
         const point = pointFromEvent(moveEvent.clientX, moveEvent.clientY);
@@ -793,69 +853,47 @@ export const PathCanvas = React.memo(function PathCanvas({
           y = Math.round(y * 2) / 2;
         }
 
-        const session = dragSession;
-        const multi = useEditorStore.getState().selectedPoints || [];
+        const rect = svgRef.current?.getBoundingClientRect();
+        const scaleX = rect ? viewBox.w / rect.width : 1;
+        const scaleY = rect ? viewBox.h / rect.height : 1;
+        const dx = (moveEvent.clientX - lastX) * scaleX;
+        const dy = (moveEvent.clientY - lastY) * scaleY;
+        lastX = moveEvent.clientX;
+        lastY = moveEvent.clientY;
+
         const state = useEditorStore.getState();
+        const multi = state.selectedPoints || [];
         const isDirectFlexHandle = state.toolMode === "direct" && moveEvent.ctrlKey;
+        const delta = snapToGrid
+          ? { x: Math.round(dx * 2) / 2, y: Math.round(dy * 2) / 2 }
+          : { x: dx, y: dy };
 
-        if (session && multi.length > 1) {
-          // Compute screen-space delta, convert via viewBox scale approx for world delta
-          const rect = svgRef.current?.getBoundingClientRect();
-          if (rect) {
-            const scaleX = viewBox.w / rect.width;
-            const scaleY = viewBox.h / rect.height;
-            const dx = (moveEvent.clientX - session.lastX) * scaleX;
-            const dy = (moveEvent.clientY - session.lastY) * scaleY;
-
-            const { translateSelectedPoints } = useEditorStore.getState();
-            translateSelectedPoints(dx, dy, { recordHistory: false });
-
-            setDragSession({ ...session, lastX: moveEvent.clientX, lastY: moveEvent.clientY });
-          }
-        } else if (isDirectFlexHandle) {
-          // Ctrl+drag on a control handle in direct: flex the curve intelligently (normal offset)
-          // while still moving the primary handle point with the pointer (precise control + smoothness).
-          const rect = svgRef.current?.getBoundingClientRect();
-          let dx = 0;
-          let dy = 0;
-          if (rect) {
-            const scaleX = viewBox.w / rect.width;
-            const scaleY = viewBox.h / rect.height;
-            dx = (moveEvent.clientX - (dragSession?.lastX ?? moveEvent.clientX)) * scaleX;
-            dy = (moveEvent.clientY - (dragSession?.lastY ?? moveEvent.clientY)) * scaleY;
-          }
-          if (dx !== 0 || dy !== 0) {
-            const flexDelta = snapToGrid
-              ? { x: Math.round(dx * 2) / 2, y: Math.round(dy * 2) / 2 }
-              : { x: dx, y: dy };
-            // t biased toward the dragged handle (first handle ~0.33, second ~0.66)
-            const handleT = pointIndex === 0 ? 0.33 : pointIndex === 1 ? 0.66 : 0.5;
-            state.flexSelectedLayerSegment(
-              {
-                layerId: selectedLayerId,
-                side: side === "preview" ? "from" : editingSide,
-                subPathIndex,
-                commandIndex,
-              },
-              flexDelta,
-              handleT,
-              { recordHistory: false },
-            );
-          }
-          // Still move the primary handle point exactly where the user dragged it
-          updateSelectedPoint({ x, y }, { recordHistory: false });
-          if (dragSession) {
-            setDragSession({ ...dragSession, lastX: moveEvent.clientX, lastY: moveEvent.clientY });
-          }
+        if (isBatch && multi.length > 1 && (dx !== 0 || dy !== 0)) {
+          // Uniform batch translate of every selected point (Figma multi-point drag).
+          state.translateSelectedPoints(delta.x, delta.y, { recordHistory: false });
+        } else if (isDirectFlexHandle && (dx !== 0 || dy !== 0)) {
+          // Ctrl+drag a control handle: flex the curve (curvature-preserving bend). Let flex
+          // own both handle positions — do NOT also updateSelectedPoint (BUG-3 double-apply).
+          const handleT = pointIndex === 0 ? 0.33 : pointIndex === 1 ? 0.66 : 0.5;
+          state.flexSelectedLayerSegment(
+            {
+              layerId: selectedLayerId,
+              side: side === "preview" ? "from" : editingSide,
+              subPathIndex,
+              commandIndex,
+            },
+            delta,
+            handleT,
+            { recordHistory: false },
+          );
         } else {
-          updateSelectedPoint({ x, y }, { recordHistory: false });
+          state.updateSelectedPoint({ x, y }, { recordHistory: false });
         }
       };
 
       const handleUp = () => {
         window.removeEventListener("pointermove", handleMove);
         window.removeEventListener("pointerup", handleUp);
-        setDragSession(null);
       };
 
       window.addEventListener("pointermove", handleMove);
@@ -872,6 +910,8 @@ export const PathCanvas = React.memo(function PathCanvas({
       side,
       snapToGrid,
       updateSelectedPoint,
+      viewBox.h,
+      viewBox.w,
     ],
   );
 
@@ -882,6 +922,14 @@ export const PathCanvas = React.memo(function PathCanvas({
         setEditingSide(side);
         return;
       }
+
+      // C2 fix: never insert a point from a click that landed on an editable overlay element
+      // (anchor/handle/segment/midpoint) — those have their own pointerdown handlers and the
+      // bubbling click was corrupting the path. Also ignore drags (pointer moved > 3px).
+      const target = e.target as Element | null;
+      if (target?.closest?.("[data-point],[data-segment]")) return;
+      const down = pointerDownPosRef.current;
+      if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 3) return;
 
       const point = pointFromEvent(e.clientX, e.clientY);
       if (!point) return;
@@ -951,7 +999,11 @@ export const PathCanvas = React.memo(function PathCanvas({
         (item) =>
           item.subPathIndex === subPathIndex && String(item.layerId) === String(selectedLayerId),
       );
-      selectSubPath(subPathSelection, additive);
+      // SEL-3: only (re)select when appropriate so a multi-subpath selection isn't collapsed
+      // the instant you click one of its members to drag (Figma: click selected = keep multi).
+      if (additive || !alreadySelected) {
+        selectSubPath(subPathSelection, additive);
+      }
       setEditingSide("from");
       pushHistory();
 
@@ -970,11 +1022,8 @@ export const PathCanvas = React.memo(function PathCanvas({
           dy = Math.round(dy * 2) / 2;
         }
         if (dx === 0 && dy === 0) return;
-        const state = useEditorStore.getState();
-        if (!additive && !alreadySelected) {
-          state.selectSubPath(subPathSelection);
-        }
-        state.translateSelectedSubPaths(dx, dy, { recordHistory: false });
+        // Selection is settled at pointer-down (SEL-3); just translate the whole selection.
+        useEditorStore.getState().translateSelectedSubPaths(dx, dy, { recordHistory: false });
       };
 
       const handleUp = () => {
@@ -1143,18 +1192,28 @@ export const PathCanvas = React.memo(function PathCanvas({
       e.currentTarget.setPointerCapture(e.pointerId);
       pushHistory();
 
-      const startBounds = selectedLayerBounds;
+      // Frozen-source resize: capture the ORIGINAL geometry + bounds once at pointer-down and
+      // scale THAT every move (never the mutated current). Re-scaling the same original into
+      const layer = useEditorStore.getState().layers.find((l) => l.id === selectedLayerId);
+      if (!layer) return;
+      const origFrom = structuredClone(layer.from);
+      const origTo = layer.to ? structuredClone(layer.to) : null;
+      const origBounds = getPathBounds(origFrom) ?? selectedLayerBounds;
+      const origToBounds = origTo ? getPathBounds(origTo) ?? origBounds : null;
+      // Freeze the layer's world→local mapping for this drag (cursor is world; bounds are local).
+      const toLocal = makeWorldToLocal(selectedPreviewTransform);
 
       const handleMove = (moveEvent: PointerEvent) => {
         const point = pointFromEvent(moveEvent.clientX, moveEvent.clientY);
         if (!point) return;
-        const nextBounds = getBoundsFromResizeHandle(
-          startBounds,
-          handle,
-          point,
-          moveEvent.shiftKey,
-        );
-        resizeSelectedLayer(startBounds, nextBounds, { recordHistory: false });
+        const local = toLocal(point);
+        const nextBounds = getBoundsFromResizeHandle(origBounds, handle, local, moveEvent.shiftKey);
+        const scaledFrom = scalePathToBounds(origFrom, origBounds, nextBounds);
+        const patch: Partial<Layer> = { from: scaledFrom, pathData: scaledFrom };
+        if (origTo && origToBounds) {
+          patch.to = scalePathToBounds(origTo, origToBounds, nextBounds);
+        }
+        useEditorStore.getState().updateSelectedLayer(patch, { recordHistory: false });
       };
 
       const handleUp = () => {
@@ -1165,7 +1224,7 @@ export const PathCanvas = React.memo(function PathCanvas({
       window.addEventListener("pointermove", handleMove);
       window.addEventListener("pointerup", handleUp);
     },
-    [isActionMode, pointFromEvent, pushHistory, resizeSelectedLayer, selectedLayerBounds, side],
+    [isActionMode, pointFromEvent, pushHistory, selectedLayerBounds, selectedLayerId, selectedPreviewTransform, side],
   );
 
   const handleRotatePointerDown = useCallback(
@@ -1178,8 +1237,11 @@ export const PathCanvas = React.memo(function PathCanvas({
 
       const center = getBoundsCenter(selectedLayerBounds);
       const baseRotation = currentLayer.rotation ?? 0;
+      // World→local mapping frozen for this drag so rotation works on transformed layers.
+      const toLocal = makeWorldToLocal(selectedPreviewTransform);
       const startPoint = pointFromEvent(e.clientX, e.clientY);
-      const startAngle = startPoint ? getAngle(center, startPoint) : 0;
+      const startLocal = startPoint ? toLocal(startPoint) : null;
+      const startAngle = startLocal ? getAngle(center, startLocal) : 0;
 
       updateSelectedLayer(
         {
@@ -1193,7 +1255,8 @@ export const PathCanvas = React.memo(function PathCanvas({
       const handleMove = (moveEvent: PointerEvent) => {
         const point = pointFromEvent(moveEvent.clientX, moveEvent.clientY);
         if (!point) return;
-        const rawRotation = baseRotation + getAngle(center, point) - startAngle;
+        const local = toLocal(point);
+        const rawRotation = baseRotation + getAngle(center, local) - startAngle;
         const rotation = moveEvent.shiftKey ? Math.round(rawRotation / 15) * 15 : rawRotation;
         useEditorStore.getState().updateSelectedLayer(
           {
@@ -1252,51 +1315,26 @@ export const PathCanvas = React.memo(function PathCanvas({
         setEditingSide("from");
         return;
       }
-      if (
-        (event.key === "Backspace" || event.key === "Delete") &&
-        layers.length > 1 &&
-        !isVectorEditing
-      ) {
-        event.preventDefault();
-        deleteLayer(selectedLayerId);
-        return;
-      }
-      if (!["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft"].includes(event.key)) return;
-
-      const amount = event.shiftKey ? 2 : 0.5;
-      const dx = event.key === "ArrowLeft" ? -amount : event.key === "ArrowRight" ? amount : 0;
-      const dy = event.key === "ArrowUp" ? -amount : event.key === "ArrowDown" ? amount : 0;
-      event.preventDefault();
-      if (useEditorStore.getState().selectedSubPaths.length > 0) {
-        useEditorStore.getState().translateSelectedSubPaths(dx, dy);
-      } else if (isVectorEditing) {
-        useEditorStore.getState().translateSelectedPoints(dx, dy);
-      } else {
-        useEditorStore.getState().translateSelectedLayer(dx, dy);
-      }
+      // Delete/Backspace + Arrow nudges are owned by the SINGLE global handler in page.tsx
+      // (C1/H2/H3 fix) to stop this listener double-handling them against the global one.
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
-      if (event.code === "Space") {
-        setIsSpaceDown(false);
-      }
+      if (event.code === "Space") setIsSpaceDown(false);
     };
+
+    // L1: clear pan-armed state if the window loses focus while Space is held.
+    const handleBlur = () => setIsSpaceDown(false);
 
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleBlur);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleBlur);
     };
-  }, [
-    deleteLayer,
-    isActionMode,
-    isVectorEditing,
-    layers.length,
-    selectedLayerId,
-    setEditingSide,
-    side,
-  ]);
+  }, [isActionMode, setEditingSide, side]);
 
   const isSelected = (subPathIndex: number, commandIndex: number, pointIndex: number) => {
     // Support multi-point selection (box select + shift)
@@ -1338,8 +1376,13 @@ export const PathCanvas = React.memo(function PathCanvas({
       onPointerMove={handleSvgPointerMove}
       onPointerUp={handleSvgPointerUp}
       onDoubleClick={() => {
-        if (side === "preview") return;
-        fitDetailToVector(viewBox.scale);
+        if (side === "preview") {
+          // Figma: double-clicking empty canvas while editing exits vector-edit mode.
+          if (isVectorEditing) setIsVectorEditing(false);
+          return;
+        }
+        // Detail editor: double-click is intentionally a no-op. (It previously re-fit the
+        // zoom, which was surprising and non-Figma — use the toolbar Fit button / Shift+1.)
       }}
       role="img"
       aria-label={`${side} path canvas — interactive vector editor (pan/zoom, handles, lasso, paint, direct). Keyboard: V/P/D/L/B or bottom palette.`}
@@ -1773,6 +1816,7 @@ export const PathCanvas = React.memo(function PathCanvas({
                 className="cursor-grab"
                 pointerEvents="stroke"
                 onPointerDown={(event) => handleSegmentPointerDown(event, segment)}
+                data-segment="1"
               />
               <path
                 d={segment.d}
@@ -1791,8 +1835,8 @@ export const PathCanvas = React.memo(function PathCanvas({
                 fill="#ffffff"
                 stroke="#0d99ff"
                 strokeWidth={Math.max(selectionStrokeWidth * 0.9, 0.06)}
-                vectorEffect="non-scaling-stroke"
                 onPointerDown={(event) => handleSegmentMidpointPointerDown(event, segment)}
+                data-segment="1"
               />
             </g>
           ))}
@@ -1913,6 +1957,7 @@ export const PathCanvas = React.memo(function PathCanvas({
                     onPointerDown={(e) =>
                       handlePointerDown(e, subPathIndex, commandIndex, pointIndex)
                     }
+                    data-point="1"
                   />
                 ) : (
                   /* Anchor point — hollow square (Figma / reference convention) */
@@ -1926,10 +1971,10 @@ export const PathCanvas = React.memo(function PathCanvas({
                     fill={fill}
                     stroke="#0d99ff"
                     strokeWidth={strokeW}
-                    vectorEffect="non-scaling-stroke"
                     onPointerDown={(e) =>
                       handlePointerDown(e, subPathIndex, commandIndex, pointIndex)
                     }
+                    data-point="1"
                   />
                 )}
               </g>
@@ -2143,6 +2188,38 @@ function getBoundsCenter(bounds: Bounds) {
 function getAngle(center: { x: number; y: number }, point: { x: number; y: number }) {
   return (Math.atan2(point.y - center.y, point.x - center.x) * 180) / Math.PI;
 }
+/**
+ * Build a mapping from world (SVG userspace) points into a layer's path-local space by
+ * inverting its preview transform. Handles render in world space (they carry the layer
+ * transform) but the resize/rotate bounds math is path-local, so the cursor must be
+ * un-transformed for transformed (translated/rotated/scaled) layers. Identity when no
+ * transform is applied.
+ */
+function makeWorldToLocal(transform: string | undefined): (p: Point) => Point {
+  if (!transform || !transform.trim()) return (p) => p;
+  let inv: DOMMatrix | null = null;
+  try {
+    const m = new DOMMatrix();
+    const re = /(matrix|translate|scale|rotate)\s*\(([^)]*)\)/gi;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(transform))) {
+      const op = match[1].toLowerCase();
+      const a = match[2].trim().split(/[\s,]+/).map(Number);
+      if (op === "translate") m.translateSelf(a[0] || 0, a[1] || 0);
+      else if (op === "scale") m.scaleSelf(a[0] ?? 1, a[1] ?? a[0] ?? 1);
+      else if (op === "rotate") m.rotateSelf(a[0] || 0);
+      else if (op === "matrix") m.multiplySelf(new DOMMatrix(a));
+    }
+    inv = m.inverse();
+  } catch {
+    inv = null;
+  }
+  if (!inv) return (p) => p;
+  return (p) => {
+    const pt = inv!.transformPoint(new DOMPoint(p.x, p.y));
+    return { x: pt.x, y: pt.y };
+  };
+}
 
 function getBoundsFromResizeHandle(
   bounds: Bounds,
@@ -2198,13 +2275,14 @@ function getBoundsFromResizeHandle(
     }
   }
 
-  if (next.width < minSize) {
-    if (handle === "nw" || handle === "sw" || handle === "w") next.x = right - minSize;
-    next.width = minSize;
+  // Flip support (Figma): allow negative width/height when dragging an edge/corner past the
+  // opposite edge. Only clamp the magnitude to minSize, preserving sign — the x/y are already
+  // anchored correctly by the handle cases above.
+  if (Math.abs(next.width) < minSize) {
+    next.width = Math.sign(next.width || 1) * minSize;
   }
-  if (next.height < minSize) {
-    if (handle === "nw" || handle === "ne" || handle === "n") next.y = bottom - minSize;
-    next.height = minSize;
+  if (Math.abs(next.height) < minSize) {
+    next.height = Math.sign(next.height || 1) * minSize;
   }
 
   return next;
@@ -2227,13 +2305,12 @@ function getPreviewLayers(
   blocks: TimelineBlock[],
   duration: number,
   progress: number,
-  selectedLayerId: string | number,
+  _selectedLayerId: string | number,
 ): PreviewLayer[] {
-  const sourceLayers =
-    blocks.length > 0
-      ? layers
-      : layers.filter((layer) => String(layer.id) === String(selectedLayerId));
-  return sourceLayers
+  // Always render every visible path/clip layer. Selection must never solo-hide
+  // siblings (that made the default multi-layer project feel broken).
+  void _selectedLayerId;
+  return layers
     .filter(
       (layer) => layer.visible !== false && (layer.type === "path" || layer.type === "clipPath"),
     )
@@ -2294,14 +2371,11 @@ function getAnimatedPath(
   const block = getRelevantBlock(layer.id, "pathData", blocks, duration, progress);
   if (!block) return pathToString(layer.pathData ?? layer.from);
   const blockProgress = evaluateBlock(progress, duration, block);
-  if (blockProgress == null) {
-    return progress * duration < block.startTime ? String(block.fromValue) : String(block.toValue);
-  }
-  return getInterpolatedPath(
-    parsePath(String(block.fromValue)),
-    parsePath(String(block.toValue)),
-    blockProgress,
-  );
+  // BUG-6: morph the LIVE layer geometry (from → to) so the preview never lags behind path
+  // edits. The block contributes only timing + easing; its fromValue/toValue snapshots go stale.
+  // This also keeps PathCanvas consistent with the CanvasArea world view.
+  const t = blockProgress == null ? (progress * duration < block.startTime ? 0 : 1) : blockProgress;
+  return getInterpolatedPath(layer.from, layer.to ?? layer.from, t);
 }
 
 function getLayerTransform(

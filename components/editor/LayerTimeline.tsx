@@ -5,13 +5,12 @@ import {
   ChevronRight,
   Eye,
   EyeOff,
-  FileCode2,
-  FolderOpen,
-  MoreVertical,
+  MoreHorizontal,
+  Pause,
+  Play,
   Plus,
-  Timer,
   Square,
-  Crop,
+  X,
 } from "lucide-react";
 import { MaterialSymbol } from "./MaterialSymbol";
 import { Button } from "@/components/ui/button";
@@ -21,27 +20,42 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useEditorStore } from "@/lib/store/editorStore";
-import type { Layer, VectorMetadata } from "@/lib/shapeshifter/types";
+import type { Layer, TimelineBlock, InterpolatorName } from "@/lib/shapeshifter/types";
 import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
-import { INTERPOLATOR_CURVES } from "@/lib/shapeshifter/interpolators";
-import { EasingCurve } from "./EasingCurve";
+import { cn } from "@/lib/utils";
 
-/** Friendly labels for the real, curve-backed interpolators (Android-named). */
-const INTERPOLATOR_OPTIONS: { value: keyof typeof INTERPOLATOR_CURVES; label: string }[] = [
-  { value: "FAST_OUT_SLOW_IN", label: "Standard" },
-  { value: "LINEAR_OUT_SLOW_IN", label: "Decelerate" },
-  { value: "FAST_OUT_LINEAR_IN", label: "Accelerate" },
-  { value: "ACCELERATE_DECELERATE", label: "Ease in-out" },
-  { value: "LINEAR", label: "Linear" },
+/**
+ * Android AVD-supported named interpolators (ObjectAnimator / PathInterpolator presets).
+ * Kept as a compact menu on the track — not a big curve editor (Android has no freehand ease UI).
+ */
+const INTERPOLATOR_OPTIONS: { value: InterpolatorName; label: string; hint: string }[] = [
+  { value: "FAST_OUT_SLOW_IN", label: "Standard", hint: "fast_out_slow_in" },
+  { value: "LINEAR_OUT_SLOW_IN", label: "Decelerate", hint: "linear_out_slow_in" },
+  { value: "FAST_OUT_LINEAR_IN", label: "Accelerate", hint: "fast_out_linear_in" },
+  { value: "ACCELERATE_DECELERATE", label: "Accelerate–decelerate", hint: "accelerate_decelerate" },
+  { value: "LINEAR", label: "Linear", hint: "linear" },
 ];
+
+/** Figma playhead */
+const PLAYHEAD = "#F24822";
+/** Selected / active clip accent */
+const FIGMA_BLUE = "#0C8CE9";
+/** Figma inactive clip fill (muted graphite) */
+const CLIP_IDLE = "#555555";
+const CLIP_IDLE_BORDER = "rgba(255,255,255,0.12)";
+/** Selected property row band */
+const ROW_SEL = "bg-[#2A3544]";
+const SURFACE = "bg-[#2C2C2C]";
+const SURFACE_TRACK = "bg-[#1E1E1E]";
+
+const ROW_LAYER = 30;
+const ROW_PROP = 28;
+const HEADER_H = 36;
+const LAYERS_W = 200;
+/** Figma clip heights — object slightly thicker than property */
+const CLIP_H_OBJ = 10;
+const CLIP_H_PROP = 18;
 
 interface LayerTimelineProps {
   onOpenSVGImport: () => void;
@@ -49,11 +63,70 @@ interface LayerTimelineProps {
   onLoadSample: (index: number) => void;
 }
 
+function formatCompactValue(
+  value: string | number | undefined,
+  propertyName?: string,
+): string {
+  if (value == null || value === "") return "—";
+  // Never dump raw path data into the timeline (Figma shows tidy property values)
+  if (propertyName === "pathData" || (typeof value === "string" && /^[MmLlHhVvCcSsQqTtAaZz]/.test(value.trim()))) {
+    return "Morph";
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return "—";
+    const abs = Math.abs(value);
+    if (propertyName === "rotation") return `${Number(value.toFixed(1))}°`;
+    if (propertyName === "scaleX" || propertyName === "scaleY")
+      return `${Math.round(value * 100)}%`;
+    if (abs >= 100) return String(Math.round(value));
+    if (abs >= 10) return value.toFixed(1).replace(/\.0$/, "");
+    return value.toFixed(2).replace(/\.?0+$/, "");
+  }
+  const s = String(value);
+  if (s.startsWith("#") && (s.length === 7 || s.length === 9)) return s.toUpperCase();
+  if (s.length > 10) return `${s.slice(0, 8)}…`;
+  return s;
+}
+
+/** Hollow diamond keyframes — Figma motion timeline */
+function KeyframeDiamond({
+  active,
+  size = 7,
+  className,
+}: {
+  active?: boolean;
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-block shrink-0 rotate-45 rounded-[0.5px] border transition-colors",
+        active ? "bg-[#0C8CE9]" : "bg-[#2C2C2C] hover:bg-[#0C8CE9]/20",
+        className,
+      )}
+      style={{
+        width: size,
+        height: size,
+        borderColor: FIGMA_BLUE,
+        borderWidth: 1.25,
+        backgroundColor: active ? FIGMA_BLUE : undefined,
+      }}
+      aria-hidden
+    />
+  );
+}
+
 export function LayerTimeline(_props: LayerTimelineProps) {
   const {
+    frames,
+    selectedFrameId,
+    selectFrame,
     layers,
     selectedLayerId,
     selectLayer,
+    selectionKind,
+    hasCanvasSelection,
     toggleLayerVisibility,
     toggleLayerExpanded,
     convertLayerType,
@@ -63,89 +136,165 @@ export function LayerTimeline(_props: LayerTimelineProps) {
     updateTimelineBlock,
     progress,
     animation,
-    vector,
     selectBlocks,
     timelineCollapsed,
     toggleTimelineCollapsed,
     setAnimationDuration,
+    isPlaying,
+    togglePlayback,
   } = useEditorStore();
-  const currentTimeMs = Math.round(progress * animation.duration);
-  const formatTimeMark = (timeMs: number) =>
-    animation.duration < 1000 ? `${Math.round(timeMs)}ms` : `${(timeMs / 1000).toFixed(1)}s`;
 
-  const [draggingBlock, setDraggingBlock] = React.useState<null | {
-    id: string;
+  const currentTimeMs = Math.round(progress * animation.duration);
+  const currentTimeSec = currentTimeMs / 1000;
+  const durationSec = animation.duration / 1000;
+  /** Figma motion ruler uses seconds with one decimal (0.0 · 0.2 · 0.4…). */
+  const formatTimeMark = (timeMs: number) => (timeMs / 1000).toFixed(1);
+  const isTimelineEmpty = frames.every((f) => (f.animation?.blocks?.length ?? 0) === 0) &&
+    animation.blocks.length === 0;
+  const [emptyHintDismissed, setEmptyHintDismissed] = React.useState(false);
+  React.useEffect(() => {
+    // Re-show the empty card when the timeline becomes empty again
+    if (isTimelineEmpty) setEmptyHintDismissed(false);
+  }, [isTimelineEmpty]);
+
+  /** Drag one or many blocks (layer summary bar moves all layer blocks together). */
+  type DragSession = {
     startX: number;
-    originalStart: number;
-    originalEnd: number;
-  }>(null);
-  const [resizingBlock, setResizingBlock] = React.useState<null | {
+    items: { id: string; originalStart: number; originalEnd: number }[];
+  };
+  type ResizeSession = {
     id: string;
     edge: "start" | "end";
     startX: number;
     originalStart: number;
     originalEnd: number;
-  }>(null);
-
-  type TimelineLayer =
-    | Layer
-    | (VectorMetadata & {
-        type: "vector";
-        visible: boolean;
-        locked: boolean;
-        expanded?: boolean;
-        parentId?: null;
-      });
-  type TimelineRow =
-    | { kind: "layer"; layer: TimelineLayer; depth: number }
-    | { kind: "property"; layer: TimelineLayer; propertyName: string; depth: number };
-
-  const vectorRow: TimelineLayer = {
-    ...vector,
-    type: "vector",
-    visible: true,
-    locked: false,
-    expanded: true,
-    parentId: null,
   };
-  const depthById = new Map<string, number>();
-  const childCountById = new Map<string, number>();
-  for (const layer of layers) {
-    if (layer.parentId != null) {
-      const key = String(layer.parentId);
-      childCountById.set(key, (childCountById.get(key) ?? 0) + 1);
+  const draggingRef = React.useRef<DragSession | null>(null);
+  const resizingRef = React.useRef<ResizeSession | null>(null);
+  const [, bumpDrag] = React.useState(0);
+  const setDraggingBlocks = (session: DragSession | null) => {
+    draggingRef.current = session;
+    bumpDrag((n) => n + 1);
+  };
+  const setResizingBlock = (session: ResizeSession | null) => {
+    resizingRef.current = session;
+    bumpDrag((n) => n + 1);
+  };
+  const [hoveredRowKey, setHoveredRowKey] = React.useState<string | null>(null);
+
+  const leftScrollRef = React.useRef<HTMLDivElement>(null);
+  const rightScrollRef = React.useRef<HTMLDivElement>(null);
+  const syncingScroll = React.useRef(false);
+
+  const syncScroll = (source: "left" | "right") => {
+    if (syncingScroll.current) return;
+    syncingScroll.current = true;
+    const from = source === "left" ? leftScrollRef.current : rightScrollRef.current;
+    const to = source === "left" ? rightScrollRef.current : leftScrollRef.current;
+    if (from && to) to.scrollTop = from.scrollTop;
+    requestAnimationFrame(() => {
+      syncingScroll.current = false;
+    });
+  };
+
+  type TimelineRow =
+    | {
+        kind: "frame";
+        frameId: string;
+        name: string;
+        depth: number;
+        key: string;
+        expanded: boolean;
+      }
+    | {
+        kind: "object";
+        /** Figma object row: one layer = one blue clip bar */
+        frameId: string;
+        layer: Layer;
+        name: string;
+        depth: number;
+        key: string;
+        /** Group rows can expand/collapse nested children */
+        expandable?: boolean;
+        expanded?: boolean;
+      }
+    | {
+        kind: "property";
+        frameId: string;
+        layer: Layer;
+        propertyName: string;
+        depth: number;
+        key: string;
+      };
+
+  // Document-wide tree (Figma): every frame, then its layers, then animated properties.
+  // Active frame uses live `layers`/`animation`; others use the snapshot on `frames[]`.
+  const [collapsedFrameIds, setCollapsedFrameIds] = React.useState<Set<string>>(() => new Set());
+  const toggleFrameExpanded = (frameId: string) => {
+    setCollapsedFrameIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(frameId)) next.delete(frameId);
+      else next.add(frameId);
+      return next;
+    });
+  };
+
+  const contentForFrame = (frameId: string) => {
+    if (frameId === selectedFrameId) {
+      return { layers, animation };
     }
-    let depth = 0;
-    let parentId = layer.parentId;
-    while (parentId != null) {
-      depth++;
-      parentId = layers.find((candidate) => String(candidate.id) === String(parentId))?.parentId;
-    }
-    depthById.set(String(layer.id), depth);
-  }
-  for (const layer of layers) {
-    if (layer.parentId == null) {
-      childCountById.set(String(vector.id), (childCountById.get(String(vector.id)) ?? 0) + 1);
-    }
-  }
-  const visibleLayers = layers.filter((layer) => {
-    let parentId = layer.parentId;
-    while (parentId != null) {
-      const parent = layers.find((candidate) => String(candidate.id) === String(parentId));
-      if (!parent) return true;
-      if (parent.expanded === false) return false;
-      parentId = parent.parentId;
-    }
-    return true;
-  });
-  const propertiesForLayer = (layerId: string | number) =>
-    Array.from(
+    const fr = frames.find((f) => f.id === frameId);
+    return {
+      layers: fr?.layers ?? [],
+      animation: fr?.animation ?? { id: "", name: "", duration: 1000, blocks: [] as typeof animation.blocks },
+    };
+  };
+
+  /**
+   * Timeline property tracks under a layer — excludes `pathData`.
+   * Path morph *is* the shape (the layer/object clip bar), not a nested "Path" row.
+   * Only secondary attrs (fill, stroke, trim, transforms…) get property tracks.
+   */
+  const propertiesFor = (frameId: string, layerId: string | number) => {
+    const { animation: anim } = contentForFrame(frameId);
+    const names = Array.from(
       new Set(
-        animation.blocks
+        anim.blocks
           .filter((block) => String(block.layerId) === String(layerId))
-          .map((block) => block.propertyName),
+          .map((block) => block.propertyName)
+          .filter((name) => name !== "pathData"),
       ),
     );
+    // Prefer a single Position track (X) when both axes exist — Figma shows one "Position" row.
+    // Y still animates via its block; we only de-clutter the tree. Full dual-axis editor later.
+    const hasX = names.includes("translateX");
+    const ordered = names.filter((n) => !(n === "translateY" && hasX));
+    const rank = (n: string) =>
+      n === "translateX" || n === "translateY"
+        ? 0
+        : n === "rotation"
+          ? 1
+          : n.startsWith("scale")
+            ? 2
+            : 3;
+    return ordered.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+  };
+  const blocksForLayerInFrame = (frameId: string, layerId: string | number) => {
+    const { animation: anim } = contentForFrame(frameId);
+    return anim.blocks.filter((block) => String(block.layerId) === String(layerId));
+  };
+  const blocksForPropertyInFrame = (
+    frameId: string,
+    layerId: string | number,
+    propertyName: string,
+  ) => {
+    const { animation: anim } = contentForFrame(frameId);
+    return anim.blocks.filter(
+      (block) =>
+        String(block.layerId) === String(layerId) && block.propertyName === propertyName,
+    );
+  };
+
   const animatableProperties = (layerType: string) =>
     layerType === "vector"
       ? ["alpha"]
@@ -153,6 +302,8 @@ export function LayerTimeline(_props: LayerTimelineProps) {
         ? ["rotation", "scaleX", "scaleY", "pivotX", "pivotY", "translateX", "translateY"]
         : [
             "pathData",
+            "translateX",
+            "translateY",
             "fillColor",
             "fillAlpha",
             "strokeColor",
@@ -162,563 +313,1157 @@ export function LayerTimeline(_props: LayerTimelineProps) {
             "trimPathEnd",
             "trimPathOffset",
           ];
-  const timelineRows: TimelineRow[] = [{ kind: "layer", layer: vectorRow, depth: 0 }];
-  for (const layer of visibleLayers) {
-    const depth = (depthById.get(String(layer.id)) ?? 0) + 1;
-    timelineRows.push({ kind: "layer", layer, depth });
-    if (layer.expanded !== false) {
-      for (const propertyName of propertiesForLayer(layer.id)) {
-        timelineRows.push({ kind: "property", layer, propertyName, depth: depth + 1 });
+
+  /**
+   * Figma motion timeline model:
+   *   Frame (container, collapsible)
+   *     └─ Layer (object row + blue clip bar)  ← every layer, never flattened
+   *          └─ Property tracks (fill, stroke, … — not pathData)
+   * Nested group children are listed under their group when expanded.
+   */
+  const [collapsedGroupKeys, setCollapsedGroupKeys] = React.useState<Set<string>>(
+    () => new Set(),
+  );
+  const toggleGroupExpanded = (key: string) => {
+    setCollapsedGroupKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const pushLayerTree = (
+    rows: TimelineRow[],
+    frameId: string,
+    layerList: Layer[],
+    depth: number,
+  ) => {
+    for (const layer of layerList) {
+      // Skip pure vector metadata nodes; path / clip / group are timeline objects
+      if (layer.type === "vector") continue;
+
+      const objectKey = `object-${frameId}-${layer.id}`;
+      const childLayers = layer.children?.filter(Boolean) ?? [];
+      const hasChildren = childLayers.length > 0;
+      const groupExpanded = !collapsedGroupKeys.has(objectKey);
+
+      rows.push({
+        kind: "object",
+        frameId,
+        layer,
+        name: layer.name || "Layer",
+        depth,
+        key: objectKey,
+        expandable: hasChildren || layer.type === "group",
+        expanded: hasChildren ? groupExpanded : undefined,
+      });
+
+      // Non-path property tracks sit under this object (Figma: Position, Rotation, …)
+      for (const propertyName of propertiesFor(frameId, layer.id)) {
+        rows.push({
+          kind: "property",
+          frameId,
+          layer,
+          propertyName,
+          depth: depth + 1,
+          key: `prop-${frameId}-${layer.id}-${propertyName}`,
+        });
+      }
+
+      if (hasChildren && groupExpanded) {
+        pushLayerTree(rows, frameId, childLayers, depth + 1);
       }
     }
-  }
-  for (const propertyName of propertiesForLayer(vector.id)) {
-    timelineRows.splice(1, 0, { kind: "property", layer: vectorRow, propertyName, depth: 1 });
+  };
+
+  // Figma-like: show ONLY the selected frame's tracks (the frame itself, or the frame that
+  // contains the selected layer). Listing every frame at once is the clutter the user wants gone.
+  const timelineRows: TimelineRow[] = [];
+  const framesToShow =
+    frames.some((f) => f.id === selectedFrameId)
+      ? frames.filter((f) => f.id === selectedFrameId)
+      : frames;
+  for (const frame of framesToShow) {
+    const { layers: frameLayers } = contentForFrame(frame.id);
+    // Top-level layers only (children nest under groups). Also surface root layers
+    // that use parentId so flat lists still work.
+    const roots = frameLayers.filter((l) => {
+      if (l.parentId != null && l.parentId !== "") {
+        // Has a parent — only show at root if parent isn't in this list (orphan safety)
+        return !frameLayers.some((p) => String(p.id) === String(l.parentId));
+      }
+      return true;
+    });
+
+    const frameExpanded = !collapsedFrameIds.has(frame.id);
+    timelineRows.push({
+      kind: "frame",
+      frameId: frame.id,
+      name: frame.name,
+      depth: 0,
+      key: `frame-${frame.id}`,
+      expanded: frameExpanded,
+    });
+
+    if (!frameExpanded) continue;
+
+    // Every layer gets its own row under the frame — Figma never flattens this away
+    pushLayerTree(timelineRows, frame.id, roots.length ? roots : frameLayers, 1);
   }
 
+  // Active-frame helpers used by track rendering (selected frame only for editing blocks)
+  const blocksForLayer = (layerId: string | number) =>
+    blocksForLayerInFrame(selectedFrameId, layerId);
+  const blocksForProperty = (layerId: string | number, propertyName: string) =>
+    blocksForPropertyInFrame(selectedFrameId, layerId, propertyName);
+
+    const setProgressFromClientX = (clientX: number, el: HTMLElement) => {
+    const rect = el.getBoundingClientRect();
+    const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+    useEditorStore.getState().setProgress(x / Math.max(1, rect.width));
+  };
+
+  const beginScrub = (e: React.PointerEvent<HTMLElement>) => {
+    // Figma pauses playback while you scrub the ruler, so the playhead RAF
+    // loop can't fight the drag. Just pause — don't auto-resume on release.
+    if (useEditorStore.getState().isPlaying) {
+      useEditorStore.getState().togglePlayback();
+    }
+    const element = e.currentTarget;
+    setProgressFromClientX(e.clientX, element);
+    element.setPointerCapture(e.pointerId);
+    const onMove = (moveEvent: PointerEvent) => setProgressFromClientX(moveEvent.clientX, element);
+    const onUp = (upEvent: PointerEvent) => {
+      try {
+        element.releasePointerCapture(upEvent.pointerId);
+      } catch {
+        /* ignore */
+      }
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  const jumpToMs = (ms: number) => {
+    useEditorStore
+      .getState()
+      .setProgress(Math.max(0, Math.min(1, ms / Math.max(1, animation.duration))));
+  };
+
+  const renderPropertyBlock = (block: TimelineBlock) => {
+    const isSelected = selectedBlockIds.includes(block.id);
+    const leftPct = (block.startTime / animation.duration) * 100;
+    const widthPct = Math.max(
+      0.8,
+      ((block.endTime - block.startTime) / animation.duration) * 100,
+    );
+    const interp = block.interpolator || "FAST_OUT_SLOW_IN";
+    const isLinear = interp === "LINEAR";
+
+    const handleDragStart = (e: React.PointerEvent) => {
+      e.stopPropagation();
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      setDraggingBlocks({
+        startX: e.clientX,
+        items: [{ id: block.id, originalStart: block.startTime, originalEnd: block.endTime }],
+      });
+      useEditorStore.getState().selectBlocks([block.id]);
+    };
+
+    const trackWidth = (el: HTMLElement) => {
+      const track = el.closest("[data-timeline-row]") as HTMLElement | null;
+      return Math.max(1, track?.getBoundingClientRect().width ?? 300);
+    };
+
+    const handleDragMove = (e: React.PointerEvent) => {
+      const session = draggingRef.current;
+      if (!session || !session.items.some((i) => i.id === block.id)) return;
+      const width = trackWidth(e.currentTarget as HTMLElement);
+      const deltaTime = ((e.clientX - session.startX) / width) * animation.duration;
+      const store = useEditorStore.getState();
+      let shift = deltaTime;
+      for (const item of session.items) {
+        const dur = item.originalEnd - item.originalStart;
+        const maxStart = animation.duration - dur;
+        const proposed = item.originalStart + shift;
+        if (proposed < 0) shift = -item.originalStart;
+        if (proposed > maxStart) shift = maxStart - item.originalStart;
+      }
+      for (const item of session.items) {
+        const itemDur = item.originalEnd - item.originalStart;
+        // ROUND first, then RE-CLAMP so the 50ms snap can never shrink a
+        // block below its own duration or push it outside the timeline.
+        let newStart = Math.round((item.originalStart + shift) / 50) * 50;
+        newStart = Math.max(0, Math.min(animation.duration - itemDur, newStart));
+        const newEnd = newStart + itemDur;
+        store.updateTimelineBlock(item.id, { startTime: newStart, endTime: newEnd });
+      }
+    };
+
+    const handleDragEnd = (e: React.PointerEvent) => {
+      setDraggingBlocks(null);
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const handleResizeStart = (edge: "start" | "end") => (e: React.PointerEvent) => {
+      e.stopPropagation();
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      setResizingBlock({
+        id: block.id,
+        edge,
+        startX: e.clientX,
+        originalStart: block.startTime,
+        originalEnd: block.endTime,
+      });
+      useEditorStore.getState().selectBlocks([block.id]);
+    };
+
+    const handleResizeMove = (e: React.PointerEvent) => {
+      const resizingBlock = resizingRef.current;
+      if (!resizingBlock || resizingBlock.id !== block.id) return;
+      const width = trackWidth(e.currentTarget as HTMLElement);
+      const deltaTime = ((e.clientX - resizingBlock.startX) / width) * animation.duration;
+      const minDur = 50;
+      let newStart = resizingBlock.originalStart;
+      let newEnd = resizingBlock.originalEnd;
+      if (resizingBlock.edge === "start") {
+        // ROUND first, then RE-CLAMP so the 50ms snap can't push the edge
+        // past the minimum-size boundary (originalEnd - minDur).
+        newStart = Math.round((resizingBlock.originalStart + deltaTime) / 50) * 50;
+        newStart = Math.max(0, Math.min(resizingBlock.originalEnd - minDur, newStart));
+      } else {
+        newEnd = Math.round((resizingBlock.originalEnd + deltaTime) / 50) * 50;
+        newEnd = Math.max(
+          resizingBlock.originalStart + minDur,
+          Math.min(animation.duration, newEnd),
+        );
+      }
+      useEditorStore.getState().updateTimelineBlock(block.id, {
+        startTime: newStart,
+        endTime: newEnd,
+      });
+    };
+
+    const handleResizeEnd = (e: React.PointerEvent) => {
+      setResizingBlock(null);
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const label = propertyLabel(block.propertyName);
+    const fromN = Number(block.fromValue);
+    const toN = Number(block.toValue);
+    const isStaticPose =
+      typeof block.fromValue === "number" &&
+      typeof block.toValue === "number" &&
+      Math.abs(fromN - toN) < 1e-6;
+
+    // Figma-style: labeled graphite clip with end grips (+ optional diamond keyframes)
+    return (
+      <div
+        key={block.id}
+        className="absolute inset-y-0 z-[1] flex items-center"
+        style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+      >
+        <div
+          className={cn(
+            "relative flex h-full max-h-[18px] w-full min-w-[28px] cursor-grab items-center justify-center overflow-hidden rounded-[5px] border active:cursor-grabbing",
+            isSelected
+              ? "border-[#0C8CE9]/50 bg-[#3D4F63] ring-1 ring-[#0C8CE9]/25"
+              : "border-white/[0.08] bg-[#444444] hover:bg-[#4C4C4C]",
+          )}
+          style={{ height: CLIP_H_PROP }}
+          title={`${label}: ${block.startTime}–${block.endTime}ms`}
+          onPointerDown={handleDragStart}
+          onPointerMove={handleDragMove}
+          onPointerUp={handleDragEnd}
+          onPointerCancel={handleDragEnd}
+          onClick={(e) => {
+            e.stopPropagation();
+            useEditorStore.getState().toggleBlockSelection(block.id);
+          }}
+        >
+          <span className="pointer-events-none absolute inset-y-[3px] left-[3px] w-[2px] rounded-full bg-white/25" />
+          <span className="pointer-events-none absolute inset-y-[3px] right-[3px] w-[2px] rounded-full bg-white/25" />
+          <span
+            className={cn(
+              "pointer-events-none truncate px-3 text-center text-[10px] font-medium tracking-tight",
+              isSelected ? "text-white/90" : "text-white/55",
+            )}
+          >
+            {label}
+          </span>
+          {/* End keyframe diamonds when values actually change (Figma Position rail) */}
+          {!isStaticPose && (
+            <>
+              <button
+                type="button"
+                className="absolute left-0 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize p-1"
+                title={`Keyframe @ ${block.startTime}ms`}
+                onPointerDown={handleResizeStart("start")}
+                onPointerMove={handleResizeMove}
+                onPointerUp={handleResizeEnd}
+                onPointerCancel={handleResizeEnd}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  useEditorStore.getState().selectBlocks([block.id]);
+                  jumpToMs(block.startTime);
+                }}
+              >
+                <KeyframeDiamond active={isSelected} size={6} />
+              </button>
+              <button
+                type="button"
+                className="absolute right-0 top-1/2 z-10 translate-x-1/2 -translate-y-1/2 cursor-ew-resize p-1"
+                title={`Keyframe @ ${block.endTime}ms`}
+                onPointerDown={handleResizeStart("end")}
+                onPointerMove={handleResizeMove}
+                onPointerUp={handleResizeEnd}
+                onPointerCancel={handleResizeEnd}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  useEditorStore.getState().selectBlocks([block.id]);
+                  jumpToMs(block.endTime);
+                }}
+              >
+                <KeyframeDiamond active={isSelected} size={6} />
+              </button>
+            </>
+          )}
+          {isSelected && (
+            <div className="absolute left-1/2 top-1/2 z-[3] -translate-x-1/2 -translate-y-1/2">
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <button
+                      type="button"
+                      className="flex size-4 items-center justify-center rounded-[3px] border border-white/12 bg-[#2C2C2C] text-[#0C8CE9] shadow-sm outline-none hover:border-[#0C8CE9]/45 hover:bg-[#333] active:scale-[0.96]"
+                      title={`Interpolator: ${INTERPOLATOR_OPTIONS.find((o) => o.value === interp)?.label ?? interp}`}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  }
+                >
+                {isLinear ? (
+                  <svg width="11" height="9" viewBox="0 0 12 10" fill="none" aria-hidden>
+                    <path
+                      d="M1.5 8.5 L10.5 1.5"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                ) : (
+                  <svg width="11" height="9" viewBox="0 0 12 10" fill="none" aria-hidden>
+                    <path
+                      d="M1 8.5C3.5 8.5 4 1.5 11 1.5"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                )}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="center" className="w-52 text-xs" side="top">
+                <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Android interpolator
+                </div>
+                {INTERPOLATOR_OPTIONS.map((opt) => (
+                  <DropdownMenuItem
+                    key={opt.value}
+                    className={cn(interp === opt.value && "bg-primary/10 text-primary")}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      updateTimelineBlock(block.id, { interpolator: opt.value });
+                    }}
+                  >
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span>{opt.label}</span>
+                      <span className="font-mono text-[10px] text-muted-foreground/80">
+                        {opt.hint}
+                      </span>
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          )}
+          {/* Edge resize hit targets */}
+          <button
+            type="button"
+            className="absolute inset-y-0 left-0 z-10 w-2 cursor-ew-resize"
+            aria-label="Trim start"
+            onPointerDown={handleResizeStart("start")}
+            onPointerMove={handleResizeMove}
+            onPointerUp={handleResizeEnd}
+            onPointerCancel={handleResizeEnd}
+          />
+          <button
+            type="button"
+            className="absolute inset-y-0 right-0 z-10 w-2 cursor-ew-resize"
+            aria-label="Trim end"
+            onPointerDown={handleResizeStart("end")}
+            onPointerMove={handleResizeMove}
+            onPointerUp={handleResizeEnd}
+            onPointerCancel={handleResizeEnd}
+          />
+        </div>
+      </div>
+    );
+  };
+
+  // Major ruler divisions — Figma uses ~0.2s steps on short clips, coarser on long ones
+  const rulerMajorCount = Math.max(
+    4,
+    Math.min(12, Math.round(durationSec / (durationSec <= 1 ? 0.1 : durationSec <= 2 ? 0.2 : 0.5))),
+  );
+
   return (
-    <section className="z-20 flex h-full min-h-0 shrink-0 bg-card text-card-foreground shadow-md">
-      <div className="flex min-h-0 w-[300px] shrink-0 flex-col border-r border-border/60 bg-sidebar">
-        <div className="flex h-10 items-center justify-between border-b border-border/60 bg-card px-3">
-          <span className="text-[13px] font-semibold tracking-tight">Layers</span>
+    <section
+      className={cn(
+        "relative z-20 flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-t border-black/40",
+        SURFACE,
+      )}
+    >
+      {/* ── Unified playhead (head in ruler, needle through tracks) ── */}
+      {!isTimelineEmpty && (
+        <div
+          className="pointer-events-none absolute bottom-0 top-0 z-[60] w-0"
+          style={{
+            left: `calc(${LAYERS_W}px + (100% - ${LAYERS_W}px) * ${progress})`,
+          }}
+          aria-hidden
+        >
+          {/* Head sits in the header/ruler band */}
+          <div
+            className="absolute left-1/2 -translate-x-1/2"
+            style={{ top: HEADER_H - 9 }}
+          >
+            <svg width="10" height="9" viewBox="0 0 10 9" fill="none">
+              <path d="M0 0H10V5.5L5 9L0 5.5V0Z" fill={PLAYHEAD} />
+            </svg>
+          </div>
+          {/* Hairline needle — full track height under the head */}
+          <div
+            className="absolute bottom-0 left-1/2 w-px -translate-x-1/2"
+            style={{ top: HEADER_H - 1, backgroundColor: PLAYHEAD }}
+          />
+        </div>
+      )}
+
+      {/* ══ Top bar: transport | ruler (one continuous Figma row) ══ */}
+      <div
+        className="relative z-10 flex shrink-0 border-b border-white/[0.06]"
+        style={{ height: HEADER_H }}
+      >
+        <div
+          className="flex shrink-0 items-center gap-0.5 border-r border-white/[0.06] px-1.5"
+          style={{ width: LAYERS_W }}
+        >
+          <button
+            type="button"
+            className="grid size-6 place-items-center rounded text-white/70 transition-colors hover:bg-white/[0.07] hover:text-white active:scale-[0.96]"
+            aria-label={isPlaying ? "Pause" : "Play"}
+            onClick={() => togglePlayback()}
+          >
+            {isPlaying ? (
+              <Pause className="size-3 fill-current" strokeWidth={0} />
+            ) : (
+              <Play className="size-3 fill-current" strokeWidth={0} />
+            )}
+          </button>
+          <div className="flex min-w-0 items-baseline gap-[3px] font-mono text-[11px] tabular-nums leading-none tracking-tight">
+            <span className="font-medium" style={{ color: PLAYHEAD }}>
+              {currentTimeSec.toFixed(2)}
+            </span>
+            <span className="text-white/20">/</span>
+            <input
+              type="number"
+              min={0.1}
+              step={0.05}
+              value={Number(durationSec.toFixed(2))}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                // Match the store's >=100ms clamp so the input round-trips:
+                // e.g. typing 0.05 lands on 0.10 instead of being silently clamped.
+                if (Number.isFinite(n) && n > 0) {
+                  setAnimationDuration(Math.max(100, Math.round(n * 1000)));
+                }
+              }}
+              aria-label="Animation duration in seconds"
+              className="h-4 w-[34px] border-0 bg-transparent p-0 text-[11px] tabular-nums text-white/50 outline-none [appearance:textfield] hover:text-white/80 focus:text-white [&::-webkit-inner-spin-button]:appearance-none"
+            />
+            <span className="text-white/25">s</span>
+          </div>
+          <div className="flex-1" />
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
                 <Button
                   size="icon-sm"
                   variant="ghost"
-                  className="text-muted-foreground hover:text-foreground"
+                  className="size-6 rounded text-white/30 hover:bg-white/[0.06] hover:text-white/80"
                   aria-label="Add layer"
                 />
               }
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-3 w-3" strokeWidth={1.75} />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
               <DropdownMenuItem onClick={() => addLayer("path")}>New path</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => addLayer("clipPath")}>
-                New clip path
-              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => addLayer("clipPath")}>New clip path</DropdownMenuItem>
               <DropdownMenuItem onClick={() => addLayer("group")}>New group layer</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto p-2">
-          {timelineRows.map((row) => {
-            if (row.kind === "property") {
-              const blockIds = animation.blocks
-                .filter(
-                  (block) =>
-                    String(block.layerId) === String(row.layer.id) &&
-                    block.propertyName === row.propertyName,
-                )
-                .map((block) => block.id);
-              const isSelected =
-                blockIds.length > 0 && blockIds.every((id) => selectedBlockIds.includes(id));
+
+        {/* Ruler — labels above ticks, Figma cadence */}
+        <div
+          className={cn(
+            "relative min-w-0 flex-1 select-none",
+            isTimelineEmpty ? "cursor-default" : "cursor-ew-resize",
+          )}
+          onPointerDown={isTimelineEmpty ? undefined : beginScrub}
+        >
+          <div className="pointer-events-none absolute inset-0">
+            {Array.from({ length: rulerMajorCount + 1 }, (_, index) => {
+              const t = index / rulerMajorCount;
+              const isLast = index === rulerMajorCount;
               return (
-                <button
-                  key={`${row.layer.id}-${row.propertyName}`}
-                  className={`flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[11px] ${
-                    isSelected
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:bg-muted/70"
-                  }`}
-                  style={{ paddingLeft: `${8 + row.depth * 18}px` }}
-                  onClick={() => selectBlocks(blockIds)}
-                >
-                  <Timer className="h-3 w-3 shrink-0" />
-                  <span className="min-w-0 truncate">{propertyLabel(row.propertyName)}</span>
-                </button>
-              );
-            }
-            const layer = row.layer;
-            const isSelected = selectedLayerId === layer.id;
-            const isExpandable = (childCountById.get(String(layer.id)) ?? 0) > 0;
-            return (
-              <React.Fragment key={layer.id}>
                 <div
-                  role={layer.type === "vector" ? undefined : "button"}
-                  tabIndex={layer.type === "vector" ? undefined : 0}
-                  className={`flex h-8 w-full items-center gap-2 px-2 text-left transition-all border-l-2 ${
-                    isSelected
-                      ? "bg-primary/10 border-primary text-foreground font-semibold"
-                      : "bg-transparent border-transparent text-foreground hover:bg-muted/70"
-                  }`}
-                  onClick={() => layer.type !== "vector" && selectLayer(layer.id)}
-                  onDoubleClick={() => isExpandable && toggleLayerExpanded(layer.id)}
-                  onKeyDown={(event) => {
-                    if (layer.type === "vector") return;
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      selectLayer(layer.id);
-                    }
-                    if (event.key === "ArrowRight" && isExpandable && layer.expanded === false) {
-                      event.preventDefault();
-                      toggleLayerExpanded(layer.id);
-                    }
-                    if (event.key === "ArrowLeft" && isExpandable && layer.expanded !== false) {
-                      event.preventDefault();
-                      toggleLayerExpanded(layer.id);
-                    }
-                  }}
+                  key={index}
+                  className="absolute top-0 bottom-0"
+                  style={{ left: `${t * 100}%`, width: isLast ? 0 : `${100 / rulerMajorCount}%` }}
                 >
-                  <span style={{ width: `${row.depth * 12}px` }} />
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    className="grid h-5 w-5 place-items-center rounded hover:bg-foreground/10"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      if (isExpandable) toggleLayerExpanded(layer.id);
-                    }}
-                    onKeyDown={(event) => {
-                      if ((event.key === "Enter" || event.key === " ") && isExpandable) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        toggleLayerExpanded(layer.id);
-                      }
-                    }}
-                    aria-label={
-                      layer.expanded === false ? `Expand ${layer.name}` : `Collapse ${layer.name}`
-                    }
-                  >
-                    {isExpandable ? (
-                      <ChevronRight
-                        className={`h-3 w-3 transition-transform ${layer.expanded === false ? "" : "rotate-90"}`}
-                      />
-                    ) : (
-                      <span className="h-3 w-3" />
-                    )}
-                  </span>
-
-                  {layer.type === "vector" ? (
-                    <FileCode2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  ) : layer.type === "group" ? (
-                    <FolderOpen
-                      className={`h-3.5 w-3.5 shrink-0 ${isSelected ? "text-primary" : "text-muted-foreground"}`}
-                    />
-                  ) : layer.type === "clipPath" ? (
-                    <Crop
-                      className={`h-3.5 w-3.5 shrink-0 ${isSelected ? "text-primary" : "text-muted-foreground"}`}
-                    />
-                  ) : (
-                    <Square
-                      className={`h-3.5 w-3.5 shrink-0 ${isSelected ? "text-primary" : "text-muted-foreground"}`}
-                    />
+                  {/* Major tick + label */}
+                  <span className="absolute left-0 top-[7px] h-[5px] w-px bg-white/22" />
+                  {!isLast && (
+                    <span className="absolute left-1/2 top-[9px] h-[3px] w-px -translate-x-1/2 bg-white/[0.1]" />
                   )}
-
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-xs font-medium">{layer.name}</span>
+                  <span className="absolute left-0 top-[15px] pl-[3px] font-mono text-[9px] tabular-nums leading-none text-white/35">
+                    {formatTimeMark(animation.duration * t)}
                   </span>
-
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={
-                        <Button
-                          type="button"
-                          size="icon-xs"
-                          variant="ghost"
-                          className="size-5 text-muted-foreground hover:text-foreground"
-                          onClick={(event) => event.stopPropagation()}
-                        />
-                      }
-                    >
-                      <MoreVertical className="h-3 w-3" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-44 text-xs">
-                      {layer.type === "path" && (
-                        <DropdownMenuItem onClick={() => convertLayerType(layer.id, "clipPath")}>
-                          Convert to clip path
-                        </DropdownMenuItem>
-                      )}
-                      {layer.type === "clipPath" && (
-                        <DropdownMenuItem onClick={() => convertLayerType(layer.id, "path")}>
-                          Convert to path
-                        </DropdownMenuItem>
-                      )}
-                      {animatableProperties(layer.type).map((propertyName) => (
-                        <DropdownMenuItem
-                          key={propertyName}
-                          onClick={() => addTimelineBlock(layer.id, propertyName)}
-                        >
-                          Animate {propertyName}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-
-                  {layer.type === "vector" ? (
-                    <span className="h-5 w-5" />
-                  ) : (
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      className="grid h-5 w-5 place-items-center rounded hover:bg-foreground/10"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        toggleLayerVisibility(layer.id);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          toggleLayerVisibility(layer.id);
-                        }
-                      }}
-                      aria-label={layer.visible ? `Hide ${layer.name}` : `Show ${layer.name}`}
-                    >
-                      {layer.visible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
-                    </span>
-                  )}
                 </div>
-              </React.Fragment>
-            );
-          })}
+              );
+            })}
+          </div>
+          {/* Draggable duration grip (Figma): drag the ruler's right edge to change duration.
+              Left = shorter, right = longer, scaled to the drag distance. */}
+          {!isTimelineEmpty && (
+            <div
+              role="slider"
+              aria-label="Animation duration"
+              title="Drag to change duration"
+              className="absolute right-0 top-0 bottom-0 z-10 w-2 cursor-ew-resize bg-white/0 hover:bg-white/[0.12]"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation(); // don't start a scrub
+                const ruler = e.currentTarget.parentElement;
+                if (!ruler) return;
+                const startWidth = Math.max(1, ruler.getBoundingClientRect().width);
+                const startDur = animation.duration;
+                const startX = e.clientX;
+                e.currentTarget.setPointerCapture(e.pointerId);
+                const move = (ev: PointerEvent) => {
+                  const dx = ev.clientX - startX;
+                  const factor = Math.max(0.1, (startWidth + dx) / startWidth);
+                  setAnimationDuration(Math.max(100, Math.round(startDur * factor)));
+                };
+                const up = () => {
+                  window.removeEventListener("pointermove", move);
+                  window.removeEventListener("pointerup", up);
+                };
+                window.addEventListener("pointermove", move);
+                window.addEventListener("pointerup", up);
+              }}
+            />
+          )}
         </div>
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-card">
-        <div className="flex h-10 items-center gap-2 border-b border-border/60 bg-card px-3">
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            className="text-muted-foreground hover:text-foreground"
-            aria-label={timelineCollapsed ? "Expand timeline tracks" : "Collapse timeline tracks"}
-            onClick={toggleTimelineCollapsed}
-          >
-            <ChevronRight
-              className={`h-3.5 w-3.5 transition-transform ${timelineCollapsed ? "" : "rotate-90"}`}
-            />
-          </Button>
-          <span className="text-[13px] font-semibold tracking-tight">Timeline</span>
-          <span className="text-[11px] text-muted-foreground">
-            {animation.blocks.length} {animation.blocks.length === 1 ? "track" : "tracks"}
-          </span>
-          <div className="flex-1" />
-          {/* Live playhead time + editable total duration */}
-          <span className="font-mono text-[11px] tabular-nums text-primary">
-            {currentTimeMs}
-            <span className="text-muted-foreground/60">ms</span>
-          </span>
-          <span className="text-[11px] text-muted-foreground/50">/</span>
-          <div className="flex items-center rounded-md border border-border bg-background focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-            <input
-              type="number"
-              min={100}
-              step={50}
-              value={animation.duration}
-              onChange={(e) => {
-                const n = Number(e.target.value);
-                if (Number.isFinite(n)) setAnimationDuration(n);
-              }}
-              aria-label="Animation duration in milliseconds"
-              title="Total animation duration"
-              className="h-6 w-14 bg-transparent px-1.5 text-right font-mono text-[11px] tabular-nums text-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
-            />
-            <span className="pr-1.5 text-[10px] text-muted-foreground/60">ms</span>
-          </div>
-        </div>
+      {/* ══ Body: names | tracks ══ */}
+      <div className="relative flex min-h-0 flex-1">
+        {/* Names */}
         <div
-          className="relative grid h-7 grid-cols-11 border-b border-border/60 bg-muted/20 text-[11px] text-muted-foreground select-none cursor-ew-resize hover:bg-muted/35 active:bg-muted/50 transition-colors"
-          onPointerDown={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            const updateProgress = (clientX: number) => {
-              const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
-              const newProgress = x / rect.width;
-              useEditorStore.getState().setProgress(newProgress);
-            };
-
-            updateProgress(e.clientX);
-            const element = e.currentTarget;
-            element.setPointerCapture(e.pointerId);
-
-            const handlePointerMove = (moveEvent: PointerEvent) => {
-              updateProgress(moveEvent.clientX);
-            };
-
-            const handlePointerUp = (upEvent: PointerEvent) => {
-              try {
-                element.releasePointerCapture(upEvent.pointerId);
-              } catch {}
-              window.removeEventListener("pointermove", handlePointerMove);
-              window.removeEventListener("pointerup", handlePointerUp);
-            };
-
-            window.addEventListener("pointermove", handlePointerMove);
-            window.addEventListener("pointerup", handlePointerUp);
-          }}
+          ref={leftScrollRef}
+          className="min-h-0 shrink-0 overflow-y-auto overflow-x-hidden border-r border-white/[0.06]"
+          style={{ width: LAYERS_W }}
+          onScroll={() => syncScroll("left")}
         >
-          {Array.from({ length: 11 }, (_, index) => (
-            <span key={index} className="border-l border-border/45 pl-1 leading-7">
-              {formatTimeMark((animation.duration * index) / 10)}
-            </span>
-          ))}
-        </div>
-
-        {selectedBlockIds.length > 0 &&
-          (() => {
-            const selBlock = animation.blocks.find((b) => selectedBlockIds.includes(b.id));
-            const interp = selBlock?.interpolator || "FAST_OUT_SLOW_IN";
-            const isNamed = interp in INTERPOLATOR_CURVES;
-            // Resolve the curve points: a named Android interpolator, or a custom
-            // "x1 y1 x2 y2" string (which evaluateInterpolator already understands).
-            const curve = isNamed
-              ? INTERPOLATOR_CURVES[interp as keyof typeof INTERPOLATOR_CURVES]
-              : ((interp.match(/[-+]?(?:\d*\.)?\d+/g)?.map(Number).slice(0, 4) as
-                  | [number, number, number, number]
-                  | undefined) ?? INTERPOLATOR_CURVES.FAST_OUT_SLOW_IN);
-            // Apply an interpolator value to every selected block.
-            const setInterp = (value: string) =>
-              selectedBlockIds.forEach((id) => updateTimelineBlock(id, { interpolator: value }));
-            // Local progress within the selected block, for the travelling dot.
-            const localT = selBlock
-              ? Math.max(
-                  0,
-                  Math.min(
-                    1,
-                    (currentTimeMs - selBlock.startTime) /
-                      Math.max(1, selBlock.endTime - selBlock.startTime),
-                  ),
-                )
-              : undefined;
-            return (
-              <div className="flex h-16 items-center gap-3 border-b bg-muted/40 px-3 text-[11px]">
-                <EasingCurve
-                  points={curve}
-                  progress={localT}
-                  size={52}
-                  onChange={(pts) => setInterp(pts.join(" "))}
-                />
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground">Easing</span>
-                    <Select
-                      value={isNamed ? interp : "__custom__"}
-                      onValueChange={(value) => {
-                        if (!value) return;
-                        // Selecting "Custom" seeds an editable curve from the
-                        // current shape; named options apply their preset.
-                        setInterp(value === "__custom__" ? curve.join(" ") : value);
-                      }}
-                    >
-                      <SelectTrigger size="sm" className="h-7 w-36 bg-background text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {INTERPOLATOR_OPTIONS.map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </SelectItem>
-                        ))}
-                        <SelectItem value="__custom__">Custom…</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <span className="font-mono text-[10px] tabular-nums text-muted-foreground/80">
-                    {isNamed
-                      ? selBlock
-                        ? `${selBlock.startTime}–${selBlock.endTime}ms`
-                        : ""
-                      : `cubic-bezier(${curve.map((n) => Number(n).toFixed(2)).join(", ")})`}
-                    {selectedBlockIds.length > 1 && ` · ${selectedBlockIds.length} blocks`}
+          {timelineRows.map((row) => {
+            if (row.kind === "frame") {
+              // Figma: frame row is selected only when selectionKind is the frame (not a child).
+              const isActive =
+                hasCanvasSelection &&
+                selectionKind === "frame" &&
+                row.frameId === selectedFrameId;
+              return (
+                <div
+                  key={row.key}
+                  role="button"
+                  tabIndex={0}
+                  className={cn(
+                    "group flex w-full items-center gap-1 pr-2 text-left",
+                    isActive ? "bg-white/[0.05] text-white/90" : "text-white/55 hover:bg-white/[0.03]",
+                  )}
+                  style={{ height: ROW_LAYER, paddingLeft: 8 }}
+                  onClick={() => selectFrame(row.frameId)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      selectFrame(row.frameId);
+                    }
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="grid size-4 shrink-0 place-items-center rounded-sm hover:bg-white/[0.08]"
+                    aria-label={row.expanded ? `Collapse ${row.name}` : `Expand ${row.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFrameExpanded(row.frameId);
+                    }}
+                  >
+                    <ChevronRight
+                      className={cn(
+                        "h-2.5 w-2.5 text-white/30 transition-transform duration-100",
+                        row.expanded ? "rotate-90" : "",
+                      )}
+                    />
+                  </button>
+                  <span className="min-w-0 flex-1 truncate text-[11px] font-normal tracking-[-0.01em]">
+                    {row.name}
                   </span>
                 </div>
-              </div>
-            );
-          })()}
+              );
+            }
 
+            if (row.kind === "object") {
+              const isSelected =
+                hasCanvasSelection &&
+                selectionKind === "layer" &&
+                row.frameId === selectedFrameId &&
+                String(selectedLayerId) === String(row.layer.id);
+              const showChrome = hoveredRowKey === row.key || isSelected;
+              return (
+                <div
+                  key={row.key}
+                  role="button"
+                  tabIndex={0}
+                  className={cn(
+                    "group flex w-full items-center gap-1 pr-1.5 text-left",
+                    isSelected
+                      ? "bg-white/[0.055] text-white"
+                      : "text-white/80 hover:bg-white/[0.03]",
+                  )}
+                  style={{ height: ROW_LAYER, paddingLeft: 6 + row.depth * 12 }}
+                  onMouseEnter={() => setHoveredRowKey(row.key)}
+                  onMouseLeave={() => setHoveredRowKey(null)}
+                  onClick={() => {
+                    // Layer row → that layer is the selection (selectFrame first only to load doc).
+                    if (row.frameId !== selectedFrameId) selectFrame(row.frameId);
+                    selectLayer(row.layer.id);
+                    const morphBlocks = blocksForLayerInFrame(row.frameId, row.layer.id).filter(
+                      (b) => b.propertyName === "pathData",
+                    );
+                    if (morphBlocks.length) selectBlocks(morphBlocks.map((b) => b.id));
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      if (row.frameId !== selectedFrameId) selectFrame(row.frameId);
+                      selectLayer(row.layer.id);
+                    }
+                  }}
+                >
+                  {/* Group expand — reserves space so leaf layers stay aligned (Figma) */}
+                  <span className="grid size-4 shrink-0 place-items-center">
+                    {row.expandable ? (
+                      <button
+                        type="button"
+                        className="grid size-4 place-items-center rounded-sm hover:bg-white/[0.08]"
+                        aria-label={row.expanded ? `Collapse ${row.name}` : `Expand ${row.name}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleGroupExpanded(row.key);
+                        }}
+                      >
+                        <ChevronRight
+                          className={cn(
+                            "h-2.5 w-2.5 text-white/30 transition-transform duration-100",
+                            row.expanded ? "rotate-90" : "",
+                          )}
+                        />
+                      </button>
+                    ) : null}
+                  </span>
+                  {/* Figma layer glyph — empty rounded square */}
+                  <span
+                    className="flex size-[12px] shrink-0 items-center justify-center rounded-[2px] border"
+                    style={{
+                      borderColor: isSelected ? FIGMA_BLUE : "rgba(255,255,255,0.28)",
+                      background: "transparent",
+                    }}
+                    aria-hidden
+                  >
+                    <Square
+                      className="size-[7px]"
+                      style={{ color: isSelected ? FIGMA_BLUE : "rgba(255,255,255,0.35)" }}
+                      strokeWidth={1.75}
+                    />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[11px] font-normal tracking-[-0.01em]">
+                    {row.name}
+                  </span>
+                  <div
+                    className={cn(
+                      "flex shrink-0 items-center transition-opacity duration-100",
+                      showChrome ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                    )}
+                  >
+                    {row.frameId === selectedFrameId && (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className="grid size-5 place-items-center rounded-sm text-white/30 hover:bg-white/[0.07] hover:text-white/75"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          toggleLayerVisibility(row.layer.id);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            toggleLayerVisibility(row.layer.id);
+                          }
+                        }}
+                        aria-label={row.layer.visible ? `Hide ${row.name}` : `Show ${row.name}`}
+                      >
+                        {row.layer.visible ? (
+                          <Eye className="h-3 w-3" strokeWidth={1.75} />
+                        ) : (
+                          <EyeOff className="h-3 w-3" strokeWidth={1.75} />
+                        )}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            if (row.kind === "property") {
+              const blocks = blocksForPropertyInFrame(
+                row.frameId,
+                row.layer.id,
+                row.propertyName,
+              );
+              const blockIds = blocks.map((b) => b.id);
+              const isSelected =
+                row.frameId === selectedFrameId &&
+                blockIds.length > 0 &&
+                blockIds.every((id) => selectedBlockIds.includes(id));
+              const first = blocks[0];
+              const displayValue = first
+                ? formatCompactValue(
+                    currentTimeMs < (first.startTime + first.endTime) / 2
+                      ? first.fromValue
+                      : first.toValue,
+                    row.propertyName,
+                  )
+                : "";
+              const valueTitle = first
+                ? `${formatCompactValue(first.fromValue, row.propertyName)} → ${formatCompactValue(first.toValue, row.propertyName)}`
+                : "";
+              const earliest = blocks.reduce(
+                (min, b) => Math.min(min, b.startTime),
+                Number.POSITIVE_INFINITY,
+              );
+              const latest = blocks.reduce((max, b) => Math.max(max, b.endTime), 0);
+
+              return (
+                <div
+                  key={row.key}
+                  className={cn(
+                    "group flex w-full items-center gap-0.5 pr-1.5 text-left",
+                    isSelected ? ROW_SEL : "hover:bg-white/[0.025]",
+                  )}
+                  style={{ height: ROW_PROP, paddingLeft: 24 + row.depth * 6 }}
+                  onMouseEnter={() => setHoveredRowKey(row.key)}
+                  onMouseLeave={() => setHoveredRowKey(null)}
+                  onClick={() => {
+                    if (row.frameId !== selectedFrameId) selectFrame(row.frameId);
+                    // Property belongs to a layer — select the layer, then the block.
+                    selectLayer(row.layer.id);
+                    selectBlocks(blockIds);
+                  }}
+                >
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 truncate text-[11px]",
+                      isSelected ? "text-white/90" : "text-white/45",
+                    )}
+                  >
+                    {propertyLabel(row.propertyName)}
+                  </span>
+                  <div
+                    className={cn(
+                      "flex shrink-0 items-center",
+                      isSelected ? "opacity-100" : "opacity-50 group-hover:opacity-100",
+                    )}
+                  >
+                    <button
+                      type="button"
+                      className="grid size-4 place-items-center rounded text-white/35 hover:bg-white/[0.08] disabled:opacity-20"
+                      disabled={!Number.isFinite(earliest)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (Number.isFinite(earliest)) jumpToMs(earliest);
+                      }}
+                    >
+                      <ChevronRight className="h-2.5 w-2.5 rotate-180" strokeWidth={2} />
+                    </button>
+                    <button
+                      type="button"
+                      className="grid size-4 place-items-center rounded hover:bg-white/[0.08]"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        selectBlocks(blockIds);
+                      }}
+                    >
+                      <KeyframeDiamond active={isSelected} size={6} />
+                    </button>
+                    <button
+                      type="button"
+                      className="grid size-4 place-items-center rounded text-white/35 hover:bg-white/[0.08] disabled:opacity-20"
+                      disabled={!latest}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (latest) jumpToMs(latest);
+                      }}
+                    >
+                      <ChevronRight className="h-2.5 w-2.5" strokeWidth={2} />
+                    </button>
+                  </div>
+                  <span
+                    className={cn(
+                      "w-[48px] shrink-0 truncate text-right font-mono text-[10px] tabular-nums",
+                      isSelected ? "text-white/70" : "text-white/35",
+                    )}
+                    title={valueTitle}
+                  >
+                    {displayValue}
+                  </span>
+                </div>
+              );
+            }
+
+            return null;
+          })}
+        </div>
+
+        {/* Tracks */}
         <div
-          className="relative min-h-0 flex-1 bg-muted/15 pt-2.5"
-          style={{
-            backgroundImage:
-              "linear-gradient(90deg, color-mix(in oklab, var(--border) 45%, transparent) 1px, transparent 1px)",
-            backgroundSize: "10% 100%",
-          }}
+          ref={rightScrollRef}
+          className={cn(
+            "relative min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden",
+            SURFACE_TRACK,
+          )}
+          onScroll={() => syncScroll("right")}
         >
           <div
-            className="absolute bottom-0 top-0 z-10 w-0.5 bg-primary before:absolute before:-left-1 before:-top-px before:h-2.5 before:w-2.5 before:rounded-full before:bg-primary"
-            style={{ left: `${Math.round(progress * 100)}%` }}
-          />
-          {!timelineCollapsed && animation.blocks.length === 0 && (
-            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center p-5">
-              <div className="w-full max-w-[260px] rounded-2xl border border-border/50 bg-card/75 px-4 py-4 text-center shadow-sm backdrop-blur-md">
-                <div className="mx-auto mb-2.5 flex size-8 items-center justify-center rounded-full bg-muted">
-                  <MaterialSymbol name="animation" size={17} className="text-muted-foreground" />
-                </div>
-                <div className="text-[13px] font-semibold tracking-[-0.1px] text-foreground/90">
-                  No animations yet
-                </div>
-                <div className="mt-1.5 text-[11.5px] leading-snug text-muted-foreground/90">
-                  Click <MaterialSymbol name="animation" size={13} className="inline align-text-bottom text-foreground/70" /> next to a property in the Inspector, or choose <span className="font-medium text-foreground/70">Animate</span> from a layer’s menu.
+            className="relative min-h-full"
+            style={
+              isTimelineEmpty
+                ? undefined
+                : {
+                    // Subtle major grid only — Figma avoids a busy cage
+                    backgroundImage: `repeating-linear-gradient(
+                      90deg,
+                      transparent 0,
+                      transparent calc(${100 / rulerMajorCount}% - 1px),
+                      rgba(255,255,255,0.035) calc(${100 / rulerMajorCount}% - 1px),
+                      rgba(255,255,255,0.035) calc(${100 / rulerMajorCount}%)
+                    )`,
+                  }
+            }
+          >
+            {!timelineCollapsed && isTimelineEmpty && !emptyHintDismissed && (
+              <div className="absolute inset-0 z-[5] flex items-center justify-center p-6">
+                <div className="relative w-full max-w-[300px] rounded-xl border border-white/10 bg-[#2C2C2C]/95 px-5 py-4 text-center shadow-lg">
+                  <button
+                    type="button"
+                    className="absolute right-2 top-2 grid size-7 place-items-center rounded-md text-white/40 hover:bg-white/10 hover:text-white/80"
+                    aria-label="Dismiss"
+                    onClick={() => setEmptyHintDismissed(true)}
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                  <div className="text-[13px] font-medium text-white/90">No animations yet</div>
+                  <div className="mt-1.5 text-[12px] leading-relaxed text-white/45">
+                    Select a layer and animate a property, or use a layer menu.
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
-          {!timelineCollapsed &&
-            timelineRows.map((row) => (
-              <div
-                key={row.kind === "property" ? `${row.layer.id}-${row.propertyName}` : row.layer.id}
-                className={`${row.kind === "property" ? "h-7" : "h-8"} relative border-b border-border/45`}
-              >
-                {row.kind === "property" &&
-                  animation.blocks
-                    .filter(
-                      (block) =>
-                        String(block.layerId) === String(row.layer.id) &&
-                        block.propertyName === row.propertyName,
+            )}
+
+            {!timelineCollapsed &&
+              timelineRows.map((row) => {
+                if (row.kind === "frame") {
+                  const isActive = row.frameId === selectedFrameId;
+                  return (
+                    <div
+                      key={row.key}
+                      data-timeline-row
+                      className={cn(
+                        "relative border-b border-white/[0.03]",
+                        isActive ? "bg-white/[0.025]" : "",
+                      )}
+                      style={{ height: ROW_LAYER }}
+                      onClick={() => selectFrame(row.frameId)}
+                    />
+                  );
+                }
+
+                const isObject = row.kind === "object";
+                const frameAnim =
+                  row.frameId === selectedFrameId
+                    ? animation
+                    : frames.find((f) => f.id === row.frameId)?.animation ?? animation;
+                const dur = Math.max(1, frameAnim.duration || 1000);
+                const propBlocks =
+                  row.kind === "property"
+                    ? blocksForPropertyInFrame(row.frameId, row.layer.id, row.propertyName)
+                    : [];
+                // Object bar = morph (pathData) only — other props get their own labeled rows
+                const morphBlocks = isObject
+                  ? blocksForLayerInFrame(row.frameId, row.layer.id).filter(
+                      (b) => b.propertyName === "pathData",
                     )
-                    .map((block) => {
-                      const isSelected = selectedBlockIds.includes(block.id);
-                      const leftPct = (block.startTime / animation.duration) * 100;
-                      const widthPct = Math.max(
-                        1,
-                        ((block.endTime - block.startTime) / animation.duration) * 100,
-                      );
-                      const interp = block.interpolator || "FAST_OUT_SLOW_IN";
-                      const handleDragStart = (e: React.PointerEvent) => {
-                        e.stopPropagation();
-                        (e.target as HTMLElement).setPointerCapture(e.pointerId);
-                        setDraggingBlock({
-                          id: block.id,
-                          startX: e.clientX,
-                          originalStart: block.startTime,
-                          originalEnd: block.endTime,
-                        });
-                        const store = useEditorStore.getState();
-                        store.selectBlocks([block.id]);
-                      };
+                  : [];
+                const propSelected =
+                  row.kind === "property" &&
+                  hasCanvasSelection &&
+                  selectionKind === "layer" &&
+                  row.frameId === selectedFrameId &&
+                  propBlocks.length > 0 &&
+                  propBlocks.every((b) => selectedBlockIds.includes(b.id));
+                const objectSelected =
+                  isObject &&
+                  hasCanvasSelection &&
+                  selectionKind === "layer" &&
+                  row.frameId === selectedFrameId &&
+                  String(selectedLayerId) === String(row.layer.id);
 
-                      const handleDragMove = (e: React.PointerEvent) => {
-                        if (!draggingBlock || draggingBlock.id !== block.id) return;
-                        const rect = e.currentTarget.parentElement?.getBoundingClientRect();
-                        const width = Math.max(1, rect?.width ?? 300);
-                        const deltaX = e.clientX - draggingBlock.startX;
-                        const deltaTime = (deltaX / width) * animation.duration;
-                        let newStart = Math.max(
-                          0,
-                          Math.min(
-                            animation.duration - 50,
-                            draggingBlock.originalStart + deltaTime,
-                          ),
-                        );
-                        let newEnd = Math.max(
-                          newStart + 50,
-                          Math.min(animation.duration, draggingBlock.originalEnd + deltaTime),
-                        );
-                        newStart = Math.round(newStart / 50) * 50;
-                        newEnd = Math.round(newEnd / 50) * 50;
-                        const store = useEditorStore.getState();
-                        store.updateTimelineBlock(block.id, {
-                          startTime: newStart,
-                          endTime: newEnd,
-                        });
-                      };
+                const hasImplicitMorph =
+                  isObject &&
+                  morphBlocks.length === 0 &&
+                  row.layer.type !== "group" &&
+                  row.layer.from &&
+                  row.layer.to &&
+                  JSON.stringify(row.layer.from) !== JSON.stringify(row.layer.to);
 
-                      const handleDragEnd = (e: React.PointerEvent) => {
-                        setDraggingBlock(null);
-                        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-                      };
+                const objectSpan = isObject
+                  ? morphBlocks.length > 0
+                    ? {
+                        start: Math.min(...morphBlocks.map((b) => b.startTime)),
+                        end: Math.max(...morphBlocks.map((b) => b.endTime)),
+                        blocks: morphBlocks,
+                      }
+                    : hasImplicitMorph
+                      ? { start: 0, end: dur, blocks: [] as TimelineBlock[] }
+                      : null
+                  : null;
 
-                      // Resize edge handlers (Figma/Framer pro timeline block duration editing)
-                      const handleResizeStart =
-                        (edge: "start" | "end") => (e: React.PointerEvent) => {
-                          e.stopPropagation();
-                          (e.target as HTMLElement).setPointerCapture(e.pointerId);
-                          setResizingBlock({
-                            id: block.id,
-                            edge,
-                            startX: e.clientX,
-                            originalStart: block.startTime,
-                            originalEnd: block.endTime,
-                          });
-                          const store = useEditorStore.getState();
-                          store.selectBlocks([block.id]);
-                        };
-
-                      const handleResizeMove = (e: React.PointerEvent) => {
-                        if (!resizingBlock || resizingBlock.id !== block.id) return;
-                        const rect =
-                          e.currentTarget.parentElement?.parentElement?.getBoundingClientRect() ??
-                          e.currentTarget.parentElement?.getBoundingClientRect();
-                        const width = Math.max(1, rect?.width ?? 300);
-                        const deltaX = e.clientX - resizingBlock.startX;
-                        const deltaTime = (deltaX / width) * animation.duration;
-                        const minDur = 50;
-                        let newStart = resizingBlock.originalStart;
-                        let newEnd = resizingBlock.originalEnd;
-                        if (resizingBlock.edge === "start") {
-                          newStart = Math.max(
-                            0,
-                            Math.min(
-                              resizingBlock.originalEnd - minDur,
-                              resizingBlock.originalStart + deltaTime,
-                            ),
-                          );
-                          newStart = Math.round(newStart / 50) * 50;
-                        } else {
-                          newEnd = Math.max(
-                            resizingBlock.originalStart + minDur,
-                            Math.min(animation.duration, resizingBlock.originalEnd + deltaTime),
-                          );
-                          newEnd = Math.round(newEnd / 50) * 50;
+                return (
+                  <div
+                    key={row.key}
+                    data-timeline-row
+                    className={cn(
+                      "relative border-b border-white/[0.03]",
+                      propSelected
+                        ? ROW_SEL
+                        : objectSelected
+                          ? "bg-white/[0.035]"
+                          : "bg-transparent",
+                      row.kind === "property" && !propSelected && "hover:bg-white/[0.02]",
+                      isObject && !objectSelected && "hover:bg-white/[0.02]",
+                    )}
+                    style={{ height: isObject ? ROW_LAYER : ROW_PROP }}
+                    onClick={() => {
+                      if (row.frameId !== selectedFrameId) selectFrame(row.frameId);
+                      if (row.kind === "property") {
+                        selectBlocks(propBlocks.map((b) => b.id));
+                      } else if (row.kind === "object") {
+                        selectLayer(row.layer.id);
+                        if (objectSpan?.blocks.length) {
+                          selectBlocks(objectSpan.blocks.map((b) => b.id));
                         }
-                        const store = useEditorStore.getState();
-                        store.updateTimelineBlock(block.id, {
-                          startTime: newStart,
-                          endTime: newEnd,
-                        });
-                      };
+                      }
+                    }}
+                  >
+                    {row.kind === "property" &&
+                      row.frameId === selectedFrameId &&
+                      propBlocks.map((block) => renderPropertyBlock(block))}
 
-                      const handleResizeEnd = (e: React.PointerEvent) => {
-                        setResizingBlock(null);
-                        try {
-                          (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-                        } catch {}
-                      };
+                    {row.kind === "property" &&
+                      row.frameId !== selectedFrameId &&
+                      propBlocks.map((block) => {
+                        const leftPct = (block.startTime / dur) * 100;
+                        const widthPct = Math.max(
+                          1.2,
+                          ((block.endTime - block.startTime) / dur) * 100,
+                        );
+                        return (
+                          <div
+                            key={block.id}
+                            className="pointer-events-none absolute top-1/2 flex h-[18px] -translate-y-1/2 items-center justify-center overflow-hidden rounded-[5px] border border-white/[0.06] bg-[#3A3A3A]"
+                            style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                          >
+                            <span className="truncate px-2 text-[9px] text-white/35">
+                              {propertyLabel(block.propertyName)}
+                            </span>
+                          </div>
+                        );
+                      })}
 
+                    {isObject && objectSpan && (() => {
+                      const span = objectSpan;
+                      const leftPct = (span.start / dur) * 100;
+                      const widthPct = Math.max(
+                        1.2,
+                        ((span.end - span.start) / dur) * 100,
+                      );
+                      const anySelected =
+                        objectSelected ||
+                        (row.frameId === selectedFrameId &&
+                          span.blocks.some((b) => selectedBlockIds.includes(b.id)));
+                      const primaryId = span.blocks[0]?.id;
+                      const interactive =
+                        row.frameId === selectedFrameId && span.blocks.length > 0;
                       return (
                         <div
-                          key={block.id}
-                          className={`absolute top-1 h-5 rounded-md cursor-grab active:cursor-grabbing transition-colors relative overflow-visible shadow-sm ${isSelected ? "bg-primary ring-1 ring-ring" : "bg-primary/65 hover:bg-primary/80"} ${interp === "LINEAR" ? "border border-dashed border-primary/70" : ""}`}
+                          className={cn(
+                            // Figma object clip: muted graphite bar, blue only when selected
+                            "absolute top-1/2 z-[1] flex -translate-y-1/2 items-center justify-center overflow-hidden rounded-[5px] border",
+                            interactive
+                              ? "cursor-grab active:cursor-grabbing"
+                              : "pointer-events-none",
+                            anySelected
+                              ? "border-[#0C8CE9]/45 bg-[#0C8CE9] shadow-[0_0_0_1px_rgba(12,140,233,0.2)]"
+                              : "border-white/[0.08] bg-[#555555] hover:bg-[#5C5C5C]",
+                          )}
                           style={{
                             left: `${leftPct}%`,
                             width: `${widthPct}%`,
+                            height: CLIP_H_OBJ,
                           }}
-                          title={`${block.propertyName}: ${block.startTime}-${block.endTime}ms [${interp}] (drag center to move • drag edges to resize duration, snaps to 50ms) — click to multi-select`}
-                          onPointerDown={handleDragStart}
-                          onPointerMove={handleDragMove}
-                          onPointerUp={handleDragEnd}
-                          onPointerCancel={handleDragEnd}
+                          title={`Morph · ${span.start}–${span.end}ms`}
+                          onPointerDown={
+                            interactive
+                              ? (e) => {
+                                  e.stopPropagation();
+                                  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                                  setDraggingBlocks({
+                                    startX: e.clientX,
+                                    items: span.blocks.map((b) => ({
+                                      id: b.id,
+                                      originalStart: b.startTime,
+                                      originalEnd: b.endTime,
+                                    })),
+                                  });
+                                  useEditorStore
+                                    .getState()
+                                    .selectBlocks(span.blocks.map((b) => b.id));
+                                }
+                              : undefined
+                          }
+                          onPointerMove={(e) => {
+                            const session = draggingRef.current;
+                            if (
+                              !session ||
+                              !primaryId ||
+                              !session.items.some((i) => i.id === primaryId)
+                            )
+                              return;
+                            const track = (e.currentTarget as HTMLElement).closest(
+                              "[data-timeline-row]",
+                            ) as HTMLElement | null;
+                            const width = Math.max(
+                              1,
+                              track?.getBoundingClientRect().width ?? 300,
+                            );
+                            const deltaTime = ((e.clientX - session.startX) / width) * dur;
+                            let shift = deltaTime;
+                            for (const item of session.items) {
+                              const itemDur = item.originalEnd - item.originalStart;
+                              const maxStart = dur - itemDur;
+                              const proposed = item.originalStart + shift;
+                              if (proposed < 0) shift = -item.originalStart;
+                              if (proposed > maxStart) shift = maxStart - item.originalStart;
+                            }
+                            const store = useEditorStore.getState();
+                            for (const item of session.items) {
+                              const itemDur = item.originalEnd - item.originalStart;
+                              let newStart = Math.round((item.originalStart + shift) / 50) * 50;
+                              newStart = Math.max(0, Math.min(dur - itemDur, newStart));
+                              const newEnd = newStart + itemDur;
+                              store.updateTimelineBlock(item.id, {
+                                startTime: newStart,
+                                endTime: newEnd,
+                              });
+                            }
+                          }}
+                          onPointerUp={(e) => {
+                            setDraggingBlocks(null);
+                            try {
+                              (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+                            } catch {
+                              /* ignore */
+                            }
+                          }}
+                          onPointerCancel={() => setDraggingBlocks(null)}
                           onClick={(e) => {
                             e.stopPropagation();
-                            useEditorStore.getState().toggleBlockSelection(block.id);
+                            if (span.blocks.length) {
+                              useEditorStore
+                                .getState()
+                                .selectBlocks(span.blocks.map((b) => b.id));
+                            }
                           }}
                         >
-                          {/* Left edge resize handle (pro timeline UX) */}
-                          <div
-                            className="absolute left-0 top-0 h-full w-2 cursor-ew-resize z-20 rounded-l-sm active:bg-primary/80 hover:bg-primary/40"
-                            onPointerDown={handleResizeStart("start")}
-                            onPointerMove={handleResizeMove}
-                            onPointerUp={handleResizeEnd}
-                            onPointerCancel={handleResizeEnd}
-                            aria-hidden="true"
-                          />
-                          {/* Right edge resize handle */}
-                          <div
-                            className="absolute right-0 top-0 h-full w-2 cursor-ew-resize z-20 rounded-r-sm active:bg-primary/80 hover:bg-primary/40"
-                            onPointerDown={handleResizeStart("end")}
-                            onPointerMove={handleResizeMove}
-                            onPointerUp={handleResizeEnd}
-                            onPointerCancel={handleResizeEnd}
-                            aria-hidden="true"
-                          />
+                          <span className="pointer-events-none absolute inset-y-[2px] left-[2.5px] w-[1.5px] rounded-full bg-white/35" />
+                          <span className="pointer-events-none absolute inset-y-[2px] right-[2.5px] w-[1.5px] rounded-full bg-white/35" />
+                          {widthPct > 12 && (
+                            <span
+                              className={cn(
+                                "pointer-events-none truncate px-2 text-[9px] font-medium",
+                                anySelected ? "text-white/95" : "text-white/50",
+                              )}
+                            >
+                              Morph
+                            </span>
+                          )}
                         </div>
                       );
-                    })}
-              </div>
-            ))}
+                    })()}
+                  </div>
+                );
+              })}
+          </div>
         </div>
       </div>
     </section>
   );
 }
+

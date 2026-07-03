@@ -36,14 +36,28 @@ export function EasingCurve({ points, progress, onChange, className, size = 96 }
 
   const d = `M ${px(0)} ${py(0)} C ${px(x1)} ${py(y1)}, ${px(x2)} ${py(y2)}, ${px(1)} ${py(1)}`;
 
-  // Sample the eased point for the moving dot (Bézier value at parametric t).
+  // Sample the eased point for the moving dot. This is a *timing* curve, so
+  // the horizontal axis is time (progress) and the dot must plot the EASED
+  // value at that time. Solve bx(t*) = progress for the parametric t* via
+  // binary search (like exporter ease()), then read by(t*). For LINEAR
+  // points bx≡by so the dot lands exactly on the diagonal. Cosmetic only —
+  // actual easing applied elsewhere is unaffected.
   let dot: { x: number; y: number } | null = null;
   if (progress != null) {
-    const t = Math.max(0, Math.min(1, progress));
-    const mt = 1 - t;
-    const bx = 3 * mt * mt * t * x1 + 3 * mt * t * t * x2 + t * t * t;
-    const by = 3 * mt * mt * t * y1 + 3 * mt * t * t * y2 + t * t * t;
-    dot = { x: px(bx), y: py(by) };
+    const p = Math.max(0, Math.min(1, progress));
+    let lo = 0;
+    let hi = 1;
+    let mid = p;
+    for (let i = 0; i < 16; i++) {
+      mid = (lo + hi) / 2;
+      const mt = 1 - mid;
+      const bx = 3 * mt * mt * mid * x1 + 3 * mt * mid * mid * x2 + mid * mid * mid;
+      if (bx < p) lo = mid;
+      else hi = mid;
+    }
+    const mt = 1 - mid;
+    const by = 3 * mt * mt * mid * y1 + 3 * mt * mid * mid * y2 + mid * mid * mid;
+    dot = { x: px(p), y: py(by) };
   }
 
   const round = (n: number) => Math.round(n * 100) / 100;
