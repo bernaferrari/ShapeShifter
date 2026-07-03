@@ -147,8 +147,17 @@ export function LayerTimeline(_props: LayerTimelineProps) {
   const currentTimeMs = Math.round(progress * animation.duration);
   const currentTimeSec = currentTimeMs / 1000;
   const durationSec = animation.duration / 1000;
-  /** Figma motion ruler uses seconds with one decimal (0.0 · 0.2 · 0.4…). */
-  const formatTimeMark = (timeMs: number) => (timeMs / 1000).toFixed(1);
+  /**
+   * Figma motion ruler labels: short clips in whole ms (0 · 200 · 400),
+   * longer clips in seconds with one decimal (0.0 · 0.5 · 1.0).
+   */
+  const formatTimeMark = (timeMs: number) => {
+    if (animation.duration <= 2000) return String(Math.round(timeMs));
+    return (timeMs / 1000).toFixed(1);
+  };
+  /** Position (translate) uses Figma keyframe diamonds, not a filled clip bar. */
+  const isPositionProperty = (name: string) =>
+    name === "translateX" || name === "translateY";
   const isTimelineEmpty = frames.every((f) => (f.animation?.blocks?.length ?? 0) === 0) &&
     animation.blocks.length === 0;
   const [emptyHintDismissed, setEmptyHintDismissed] = React.useState(false);
@@ -462,6 +471,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
     );
     const interp = block.interpolator || "FAST_OUT_SLOW_IN";
     const isLinear = interp === "LINEAR";
+    const asKeyframes = isPositionProperty(block.propertyName);
 
     const handleDragStart = (e: React.PointerEvent) => {
       e.stopPropagation();
@@ -561,14 +571,137 @@ export function LayerTimeline(_props: LayerTimelineProps) {
     };
 
     const label = propertyLabel(block.propertyName);
-    const fromN = Number(block.fromValue);
-    const toN = Number(block.toValue);
-    const isStaticPose =
-      typeof block.fromValue === "number" &&
-      typeof block.toValue === "number" &&
-      Math.abs(fromN - toN) < 1e-6;
 
-    // Figma-style: labeled graphite clip with end grips (+ optional diamond keyframes)
+    // ── Figma Position: thin rail + diamond keyframe breakpoints (not a clip bar) ──
+    if (asKeyframes) {
+      const startPct = (block.startTime / animation.duration) * 100;
+      const endPct = (block.endTime / animation.duration) * 100;
+      return (
+        <div key={block.id} className="pointer-events-none absolute inset-0 z-[1]">
+          {/* Segment rail between keyframes */}
+          <div
+            className={cn(
+              "pointer-events-auto absolute top-1/2 h-px -translate-y-1/2 cursor-grab active:cursor-grabbing",
+              isSelected ? "bg-[#0C8CE9]/55" : "bg-white/20 hover:bg-white/30",
+            )}
+            style={{
+              left: `${startPct}%`,
+              width: `${Math.max(0, endPct - startPct)}%`,
+            }}
+            title={`${label}: ${block.startTime}–${block.endTime}ms`}
+            onPointerDown={handleDragStart}
+            onPointerMove={handleDragMove}
+            onPointerUp={handleDragEnd}
+            onPointerCancel={handleDragEnd}
+            onClick={(e) => {
+              e.stopPropagation();
+              useEditorStore.getState().toggleBlockSelection(block.id);
+            }}
+          />
+          {/* Start keyframe */}
+          <button
+            type="button"
+            className="pointer-events-auto absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize p-1.5"
+            style={{ left: `${startPct}%` }}
+            title={`Keyframe @ ${block.startTime}ms`}
+            onPointerDown={handleResizeStart("start")}
+            onPointerMove={handleResizeMove}
+            onPointerUp={handleResizeEnd}
+            onPointerCancel={handleResizeEnd}
+            onClick={(e) => {
+              e.stopPropagation();
+              useEditorStore.getState().selectBlocks([block.id]);
+              jumpToMs(block.startTime);
+            }}
+          >
+            <KeyframeDiamond active={isSelected} size={7} />
+          </button>
+          {/* End keyframe */}
+          <button
+            type="button"
+            className="pointer-events-auto absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize p-1.5"
+            style={{ left: `${endPct}%` }}
+            title={`Keyframe @ ${block.endTime}ms`}
+            onPointerDown={handleResizeStart("end")}
+            onPointerMove={handleResizeMove}
+            onPointerUp={handleResizeEnd}
+            onPointerCancel={handleResizeEnd}
+            onClick={(e) => {
+              e.stopPropagation();
+              useEditorStore.getState().selectBlocks([block.id]);
+              jumpToMs(block.endTime);
+            }}
+          >
+            <KeyframeDiamond active={isSelected} size={7} />
+          </button>
+          {/* Interpolator control when selected (mid-rail) */}
+          {isSelected && (
+            <div
+              className="pointer-events-auto absolute top-1/2 z-[3] -translate-x-1/2 -translate-y-1/2"
+              style={{ left: `${(startPct + endPct) / 2}%` }}
+            >
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <button
+                      type="button"
+                      className="flex size-4 items-center justify-center rounded-[3px] border border-white/12 bg-[#2C2C2C] text-[#0C8CE9] shadow-sm outline-none hover:border-[#0C8CE9]/45 hover:bg-[#333] active:scale-[0.96]"
+                      title={`Interpolator: ${INTERPOLATOR_OPTIONS.find((o) => o.value === interp)?.label ?? interp}`}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  }
+                >
+                  {isLinear ? (
+                    <svg width="11" height="9" viewBox="0 0 12 10" fill="none" aria-hidden>
+                      <path
+                        d="M1.5 8.5 L10.5 1.5"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  ) : (
+                    <svg width="11" height="9" viewBox="0 0 12 10" fill="none" aria-hidden>
+                      <path
+                        d="M1 8.5C3.5 8.5 4 1.5 11 1.5"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  )}
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="center" className="w-52 text-xs" side="top">
+                  <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Android interpolator
+                  </div>
+                  {INTERPOLATOR_OPTIONS.map((opt) => (
+                    <DropdownMenuItem
+                      key={opt.value}
+                      className={cn(interp === opt.value && "bg-primary/10 text-primary")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateTimelineBlock(block.id, { interpolator: opt.value });
+                      }}
+                    >
+                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span>{opt.label}</span>
+                        <span className="font-mono text-[10px] text-muted-foreground/80">
+                          {opt.hint}
+                        </span>
+                      </span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Figma-style: labeled graphite clip with end grips (Rotation, fill, trim, …)
     return (
       <div
         key={block.id}
@@ -603,43 +736,6 @@ export function LayerTimeline(_props: LayerTimelineProps) {
           >
             {label}
           </span>
-          {/* End keyframe diamonds when values actually change (Figma Position rail) */}
-          {!isStaticPose && (
-            <>
-              <button
-                type="button"
-                className="absolute left-0 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize p-1"
-                title={`Keyframe @ ${block.startTime}ms`}
-                onPointerDown={handleResizeStart("start")}
-                onPointerMove={handleResizeMove}
-                onPointerUp={handleResizeEnd}
-                onPointerCancel={handleResizeEnd}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  useEditorStore.getState().selectBlocks([block.id]);
-                  jumpToMs(block.startTime);
-                }}
-              >
-                <KeyframeDiamond active={isSelected} size={6} />
-              </button>
-              <button
-                type="button"
-                className="absolute right-0 top-1/2 z-10 translate-x-1/2 -translate-y-1/2 cursor-ew-resize p-1"
-                title={`Keyframe @ ${block.endTime}ms`}
-                onPointerDown={handleResizeStart("end")}
-                onPointerMove={handleResizeMove}
-                onPointerUp={handleResizeEnd}
-                onPointerCancel={handleResizeEnd}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  useEditorStore.getState().selectBlocks([block.id]);
-                  jumpToMs(block.endTime);
-                }}
-              >
-                <KeyframeDiamond active={isSelected} size={6} />
-              </button>
-            </>
-          )}
           {isSelected && (
             <div className="absolute left-1/2 top-1/2 z-[3] -translate-x-1/2 -translate-y-1/2">
               <DropdownMenu>
@@ -723,11 +819,31 @@ export function LayerTimeline(_props: LayerTimelineProps) {
     );
   };
 
-  // Major ruler divisions — Figma uses ~0.2s steps on short clips, coarser on long ones
-  const rulerMajorCount = Math.max(
-    4,
-    Math.min(12, Math.round(durationSec / (durationSec <= 1 ? 0.1 : durationSec <= 2 ? 0.2 : 0.5))),
-  );
+  /**
+   * Figma-style time ruler: pick a “nice” major step in ms, subdivide with minor ticks.
+   * Short clips → 100/200ms majors (labels 0 · 200 · 400); longer → 0.5s / 1s majors.
+   */
+  const rulerMajorStepMs = (() => {
+    const d = Math.max(100, animation.duration);
+    const candidates = [50, 100, 200, 250, 500, 1000, 2000, 5000, 10000];
+    // Aim for ~5–8 labeled majors across the visible width
+    const target = d / 6;
+    let best = candidates[0];
+    for (const c of candidates) {
+      if (c <= target * 1.35) best = c;
+      else break;
+    }
+    // Prefer at least 4 majors when possible
+    while (best > 50 && d / best < 3.5) {
+      const idx = candidates.indexOf(best);
+      best = candidates[Math.max(0, idx - 1)] ?? best;
+      if (idx <= 0) break;
+    }
+    return best;
+  })();
+  const rulerMajorCount = Math.max(1, Math.round(animation.duration / rulerMajorStepMs));
+  const rulerMinorPerMajor = rulerMajorStepMs >= 500 ? 5 : rulerMajorStepMs >= 200 ? 4 : 2;
+  const rulerMinorStepMs = rulerMajorStepMs / rulerMinorPerMajor;
 
   return (
     <section
@@ -828,7 +944,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
           </DropdownMenu>
         </div>
 
-        {/* Ruler — labels above ticks, Figma cadence */}
+        {/* Ruler — Figma motion: continuous baseline, major labels, minor ticks */}
         <div
           className={cn(
             "relative min-w-0 flex-1 select-none",
@@ -836,24 +952,69 @@ export function LayerTimeline(_props: LayerTimelineProps) {
           )}
           onPointerDown={isTimelineEmpty ? undefined : beginScrub}
         >
-          <div className="pointer-events-none absolute inset-0">
+          <div className="pointer-events-none absolute inset-0 overflow-hidden">
+            {/* Continuous top baseline (the “ruler edge”) */}
+            <div className="absolute inset-x-0 top-0 h-px bg-white/[0.08]" />
+            {/* Continuous bottom rail where ticks rest */}
+            <div className="absolute inset-x-0 bottom-0 h-px bg-white/[0.1]" />
+
+            {/* Minor ticks (skip majors) */}
+            {Array.from(
+              {
+                length: Math.floor(animation.duration / rulerMinorStepMs) + 1,
+              },
+              (_, index) => {
+                const ms = index * rulerMinorStepMs;
+                if (ms <= 0 || ms >= animation.duration) return null;
+                // Skip major positions (integer-safe via nearest major)
+                const nearMajor =
+                  Math.round(ms / rulerMajorStepMs) * rulerMajorStepMs;
+                if (Math.abs(ms - nearMajor) < 0.01) return null;
+                const t = ms / animation.duration;
+                return (
+                  <span
+                    key={`min-${index}`}
+                    className="absolute bottom-0 w-px bg-white/[0.14]"
+                    style={{ left: `${t * 100}%`, height: 4 }}
+                  />
+                );
+              },
+            )}
+
+            {/* Major ticks + labels */}
             {Array.from({ length: rulerMajorCount + 1 }, (_, index) => {
-              const t = index / rulerMajorCount;
-              const isLast = index === rulerMajorCount;
+              const atEnd = index === rulerMajorCount;
+              const ms = atEnd
+                ? animation.duration
+                : Math.min(animation.duration, index * rulerMajorStepMs);
+              const t = ms / Math.max(1, animation.duration);
+              // Drop end label when the last major already sits on duration (duplicate)
+              // or when the partial tail is too short to read.
+              const prevMs = atEnd ? (index - 1) * rulerMajorStepMs : -1;
+              const showLabel =
+                !atEnd ||
+                (animation.duration - prevMs > rulerMajorStepMs * 0.4 &&
+                  Math.abs(animation.duration - prevMs - rulerMajorStepMs) > 1);
               return (
                 <div
-                  key={index}
-                  className="absolute top-0 bottom-0"
-                  style={{ left: `${t * 100}%`, width: isLast ? 0 : `${100 / rulerMajorCount}%` }}
+                  key={`maj-${index}`}
+                  className="absolute bottom-0"
+                  style={{
+                    left: `${t * 100}%`,
+                    transform: atEnd ? "translateX(-1px)" : undefined,
+                  }}
                 >
-                  {/* Major tick + label */}
-                  <span className="absolute left-0 top-[7px] h-[5px] w-px bg-white/22" />
-                  {!isLast && (
-                    <span className="absolute left-1/2 top-[9px] h-[3px] w-px -translate-x-1/2 bg-white/[0.1]" />
+                  <span className="absolute bottom-0 left-0 h-[7px] w-px bg-white/30" />
+                  {showLabel && (
+                    <span
+                      className={cn(
+                        "absolute bottom-[10px] whitespace-nowrap font-mono text-[10px] tabular-nums leading-none text-white/42",
+                        atEnd ? "-translate-x-full pr-0.5" : "left-0 pl-[3px]",
+                      )}
+                    >
+                      {formatTimeMark(ms)}
+                    </span>
                   )}
-                  <span className="absolute left-0 top-[15px] pl-[3px] font-mono text-[9px] tabular-nums leading-none text-white/35">
-                    {formatTimeMark(animation.duration * t)}
-                  </span>
                 </div>
               );
             })}
@@ -1319,16 +1480,40 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                     {row.kind === "property" &&
                       row.frameId !== selectedFrameId &&
                       propBlocks.map((block) => {
-                        const leftPct = (block.startTime / dur) * 100;
-                        const widthPct = Math.max(
-                          1.2,
-                          ((block.endTime - block.startTime) / dur) * 100,
-                        );
+                        const startPct = (block.startTime / dur) * 100;
+                        const endPct = (block.endTime / dur) * 100;
+                        const widthPct = Math.max(1.2, endPct - startPct);
+                        // Position = Figma keyframe rail (diamonds), not a clip bar
+                        if (isPositionProperty(block.propertyName)) {
+                          return (
+                            <div
+                              key={block.id}
+                              className="pointer-events-none absolute inset-0"
+                            >
+                              <div
+                                className="absolute top-1/2 h-px -translate-y-1/2 bg-white/12"
+                                style={{ left: `${startPct}%`, width: `${widthPct}%` }}
+                              />
+                              <span
+                                className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
+                                style={{ left: `${startPct}%` }}
+                              >
+                                <KeyframeDiamond size={6} />
+                              </span>
+                              <span
+                                className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
+                                style={{ left: `${endPct}%` }}
+                              >
+                                <KeyframeDiamond size={6} />
+                              </span>
+                            </div>
+                          );
+                        }
                         return (
                           <div
                             key={block.id}
                             className="pointer-events-none absolute top-1/2 flex h-[18px] -translate-y-1/2 items-center justify-center overflow-hidden rounded-[5px] border border-white/[0.06] bg-[#3A3A3A]"
-                            style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+                            style={{ left: `${startPct}%`, width: `${widthPct}%` }}
                           >
                             <span className="truncate px-2 text-[9px] text-white/35">
                               {propertyLabel(block.propertyName)}
