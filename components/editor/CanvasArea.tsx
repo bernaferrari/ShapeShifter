@@ -32,6 +32,13 @@ import {
   updateCommandPoint,
 } from "@/lib/shapeshifter/pathUtils";
 import { evaluateBlock } from "@/lib/shapeshifter/interpolators";
+import {
+  numberAtTime,
+  pathDAtTime,
+  sampleMotionPath,
+  colorAtTime,
+} from "@/lib/shapeshifter/playheadResolve";
+import { snapRectToGuides, type GuideLine } from "@/lib/shapeshifter/smartGuides";
 import { collectPointsInLasso, pointInPolygon } from "@/lib/shapeshifter/gestures/HitTests";
 import { generateId } from "@/lib/shapeshifter/ids";
 import { gradientDomId, gradientToSvg } from "@/lib/shapeshifter/gradients";
@@ -80,6 +87,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     hasCanvasSelection,
     selectionKind,
     deselectAll,
+    spacePanActive,
+    animation,
   } = useEditorStore();
 
   /** Figma mental model: Select = objects; Direct = vector points. */
@@ -162,6 +171,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const [isWorldPanning, setIsWorldPanning] = useState(false);
   const [lastWorldPan, setLastWorldPan] = useState({ x: 0, y: 0 });
   const [renamingFrameId, setRenamingFrameId] = useState<string | null>(null);
+  const [smartGuides, setSmartGuides] = useState<GuideLine[]>([]);
+  const altCloneDoneRef = useRef(false);
   /** Figma selection scope — driven by the store (frame | layer | none). */
   const selectTarget = selectionKind === "none" ? "frame" : selectionKind;
   const [marquee, setMarquee] = useState<{
@@ -388,6 +399,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     fillType?: string;
     translateX: number;
     translateY: number;
+    rotation?: number;
   };
 
   /** Numeric property at playhead — prefers timeline block, else layer field. */
@@ -422,59 +434,74 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
 
   const frameLayerDraws = useCallback(
     (frame: (typeof frames)[number], morph: boolean): WorldLayerDraw[] => {
-      const layers = (frame.layers ?? []).filter(
+      // Active frame uses live store layers so multi-edit + playhead stay in sync.
+      const sourceLayers =
+        frame.id === selectedFrameId ? layers : (frame.layers ?? []);
+      const layerList = sourceLayers.filter(
         (l: any) =>
           l &&
           l.visible !== false &&
           (l.type === "path" || l.type === "clipPath" || l.from || l.pathData),
       );
-      const dur = Math.max(1, frame.animation?.duration || 1000);
+      const blocks =
+        frame.id === selectedFrameId
+          ? animation.blocks
+          : (frame.animation?.blocks ?? []);
+      const dur = Math.max(
+        1,
+        frame.id === selectedFrameId
+          ? animation.duration
+          : frame.animation?.duration || 1000,
+      );
       const curMs = progress * dur;
-      return layers.map((layer: any) => {
-        const from = layer.from || layer.pathData;
-        const to = layer.to || from;
-        let d = "";
-        if (from) {
-          if (!morph || !to || to === from) {
-            d = pathToString(from);
-          } else {
-            const block = frame.animation?.blocks?.find(
-              (b: any) =>
-                b.propertyName === "pathData" && String(b.layerId) === String(layer.id),
-            );
-            let t = morph ? progress : 0;
-            if (block) {
-              if (curMs <= block.startTime) t = 0;
-              else if (curMs >= block.endTime) t = 1;
-              else
-                t =
-                  evaluateBlock(progress, dur, block) ??
-                  (curMs - block.startTime) / Math.max(1, block.endTime - block.startTime);
-            }
-            d = getInterpolatedPath(from, to, Math.max(0, Math.min(1, t)));
-          }
-        }
-        const tx = numberPropAt(frame, layer, "translateX", morph || progress > 0);
-        const ty = numberPropAt(frame, layer, "translateY", morph || progress > 0);
+      const useTime = morph || progress > 0.001 || isPlaying;
+      return layerList.map((layer: any) => {
+        const d = useTime
+          ? pathDAtTime(layer, blocks, curMs, dur, progress)
+          : pathToString(layer.from || layer.pathData);
+        const tx = useTime
+          ? numberAtTime(layer, blocks, "translateX", curMs, dur)
+          : Number(layer.translateX) || 0;
+        const ty = useTime
+          ? numberAtTime(layer, blocks, "translateY", curMs, dur)
+          : Number(layer.translateY) || 0;
+        const fillColor = useTime
+          ? colorAtTime(
+              layer,
+              blocks,
+              "fillColor",
+              curMs,
+              dur,
+              layer.fillColor || "",
+            )
+          : layer.fillColor;
+        const fillAlpha = useTime
+          ? numberAtTime(layer, blocks, "fillAlpha", curMs, dur)
+          : (layer.fillAlpha ?? 1);
+        const strokeAlpha = useTime
+          ? numberAtTime(layer, blocks, "strokeAlpha", curMs, dur)
+          : (layer.strokeAlpha ?? 1);
+        const rot = useTime
+          ? numberAtTime(layer, blocks, "rotation", curMs, dur)
+          : Number(layer.rotation) || 0;
         return {
           id: layer.id,
           d,
           fill:
-            layer.fillColor && layer.fillColor !== "none" && layer.fillColor !== ""
-              ? layer.fillColor
-              : null,
+            fillColor && fillColor !== "none" && fillColor !== "" ? fillColor : null,
           stroke:
             layer.strokeColor && layer.strokeColor !== "" ? layer.strokeColor : null,
-          fillOpacity: layer.fillAlpha ?? 1,
-          strokeOpacity: layer.strokeAlpha ?? 1,
+          fillOpacity: fillAlpha,
+          strokeOpacity: strokeAlpha,
           fillGradient: layer.fillGradient,
           fillType: layer.fillType,
           translateX: tx,
           translateY: ty,
+          rotation: rot,
         };
       });
     },
-    [progress, numberPropAt],
+    [progress, layers, selectedFrameId, animation, isPlaying],
   );
 
   const handleWorldWheel = useCallback(
@@ -849,13 +876,18 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const handleWorldPointerDown = useCallback(
     (e: React.PointerEvent) => {
       const p = worldPointFromEvent(e.clientX, e.clientY);
-      if (e.button === 1 || e.altKey) {
+      // Middle, Alt, or Space/H pan (Figma hand)
+      if (e.button === 1 || e.altKey || spacePanActive) {
+        if (spacePanActive) {
+          (window as unknown as { __ssSpacePanUsed?: boolean }).__ssSpacePanUsed = true;
+        }
         setIsWorldPanning(true);
         setLastWorldPan({ x: e.clientX, y: e.clientY });
         worldSvgRef.current?.setPointerCapture(e.pointerId);
         return;
       }
       if (!p) return;
+      altCloneDoneRef.current = false;
 
       // Pen / Paint operate in the focused frame's local space.
       const rawLocal = { x: p.x - (editOrigin?.x ?? 0), y: p.y - (editOrigin?.y ?? 0) };
@@ -1000,6 +1032,9 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       penPointerDown,
       applyWorldPaint,
       editOrigin,
+      spacePanActive,
+      getFrameBounds,
+      worldPerPx,
     ],
   );
 
@@ -1105,7 +1140,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         }));
       };
 
-      // Layer object drag
+      // Layer object drag (multi-select + smart guides + Alt-clone)
       if (layerDragRef.current) {
         const drag = layerDragRef.current;
         let totalDx = p.x - drag.start.x;
@@ -1114,9 +1149,71 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
           if (Math.abs(totalDx) > Math.abs(totalDy)) totalDy = 0;
           else totalDx = 0;
         }
+        // Alt-drag: duplicate once at drag start (Figma clone)
+        if (e.altKey && !altCloneDoneRef.current && (Math.abs(totalDx) > 2 || Math.abs(totalDy) > 2)) {
+          useEditorStore.getState().duplicateSelectedLayersOffset(0, 0);
+          altCloneDoneRef.current = true;
+        }
         if (snapToGrid && !(e.metaKey || e.ctrlKey)) {
           totalDx = snapValueToStep(totalDx, editSnap);
           totalDy = snapValueToStep(totalDy, editSnap);
+        }
+        // Smart guides: snap multi-select AABB to siblings + frame
+        if (!(e.metaKey || e.ctrlKey) && editOrigin && editFrame) {
+          const st = useEditorStore.getState();
+          const ids = st.selectedLayerIds;
+          let minX = Infinity,
+            minY = Infinity,
+            maxX = -Infinity,
+            maxY = -Infinity;
+          for (const id of ids) {
+            const layer = st.layers.find((l) => String(l.id) === String(id));
+            if (!layer?.from) continue;
+            const bb = getPathDataBounds(layer.from as PathData);
+            if (!bb) continue;
+            const tx = (layer.translateX ?? 0) + totalDx;
+            const ty = (layer.translateY ?? 0) + totalDy;
+            minX = Math.min(minX, editOrigin.x + bb.x + tx);
+            minY = Math.min(minY, editOrigin.y + bb.y + ty);
+            maxX = Math.max(maxX, editOrigin.x + bb.x + bb.w + tx);
+            maxY = Math.max(maxY, editOrigin.y + bb.y + bb.h + ty);
+          }
+          if (Number.isFinite(minX)) {
+            const moving = {
+              x: minX,
+              y: minY,
+              w: maxX - minX,
+              h: maxY - minY,
+            };
+            const targets: Array<{ x: number; y: number; w: number; h: number }> = [];
+            const fb = getFrameBounds(editFrame);
+            targets.push({ x: fb.x, y: fb.y, w: fb.w, h: fb.h });
+            targets.push({
+              x: fb.x + fb.w / 2,
+              y: fb.y,
+              w: 0,
+              h: fb.h,
+            });
+            for (const layer of st.layers) {
+              if (ids.some((id) => String(id) === String(layer.id))) continue;
+              if (!layer.from || layer.visible === false) continue;
+              const bb = getPathDataBounds(layer.from as PathData);
+              if (!bb) continue;
+              targets.push({
+                x: editOrigin.x + bb.x + (layer.translateX ?? 0),
+                y: editOrigin.y + bb.y + (layer.translateY ?? 0),
+                w: bb.w,
+                h: bb.h,
+              });
+            }
+            const thr = worldPerPx * 6;
+            const snapped = snapRectToGuides(moving, targets, thr);
+            totalDx += snapped.x - moving.x;
+            totalDy += snapped.y - moving.y;
+            setSmartGuides(snapped.guides);
+          }
+        } else {
+          setSmartGuides([]);
         }
         const dx = totalDx - drag.applied.x;
         const dy = totalDy - drag.applied.y;
@@ -1373,6 +1470,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       const hadLayerGesture = !!(layerDragSession || layerResizeRef.current);
       layerDragRef.current = null;
       layerResizeRef.current = null;
+      setSmartGuides([]);
+      altCloneDoneRef.current = false;
       if (hadLayerGesture) {
         try {
           worldSvgRef.current?.releasePointerCapture(e.pointerId);
@@ -1958,10 +2057,16 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                               draw.d
                                 ? boundsFromPathD(draw.d)
                                 : null;
-                            const tform =
-                              draw.translateX || draw.translateY
-                                ? `translate(${draw.translateX} ${draw.translateY})`
-                                : undefined;
+                            const tformParts: string[] = [];
+                            if (draw.translateX || draw.translateY) {
+                              tformParts.push(
+                                `translate(${draw.translateX || 0} ${draw.translateY || 0})`,
+                              );
+                            }
+                            if (draw.rotation) {
+                              tformParts.push(`rotate(${draw.rotation})`);
+                            }
+                            const tform = tformParts.length ? tformParts.join(" ") : undefined;
                             return (
                               <g key={String(draw.id)} transform={tform}>
                                 {draw.fillGradient && gradId && (
@@ -2025,6 +2130,100 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                         </g>
                       );
                     })}
+                    {/* Smart guides (magenta, Figma-like) */}
+                    {smartGuides.map((g, i) =>
+                      g.orientation === "v" ? (
+                        <line
+                          key={`sg-v-${i}`}
+                          x1={g.pos}
+                          y1={g.from}
+                          x2={g.pos}
+                          y2={g.to}
+                          stroke="#FF00FF"
+                          strokeWidth={1}
+                          vectorEffect="non-scaling-stroke"
+                          pointerEvents="none"
+                        />
+                      ) : (
+                        <line
+                          key={`sg-h-${i}`}
+                          x1={g.from}
+                          y1={g.pos}
+                          x2={g.to}
+                          y2={g.pos}
+                          stroke="#FF00FF"
+                          strokeWidth={1}
+                          vectorEffect="non-scaling-stroke"
+                          pointerEvents="none"
+                        />
+                      ),
+                    )}
+
+                    {/* Motion path trajectory for selected layer Position tracks */}
+                    {!isPlaying &&
+                      selectTarget === "layer" &&
+                      editOrigin &&
+                      selectedLayerId != null &&
+                      (() => {
+                        const layer = layers.find(
+                          (l) => String(l.id) === String(selectedLayerId),
+                        );
+                        if (!layer) return null;
+                        const pts = sampleMotionPath(
+                          layer,
+                          animation.blocks,
+                          animation.duration,
+                          40,
+                        );
+                        if (pts.length < 2) return null;
+                        const poly = pts
+                          .map(
+                            (pt) =>
+                              `${editOrigin.x + pt.x},${editOrigin.y + pt.y}`,
+                          )
+                          .join(" ");
+                        const cur = {
+                          x:
+                            editOrigin.x +
+                            numberAtTime(
+                              layer,
+                              animation.blocks,
+                              "translateX",
+                              progress * animation.duration,
+                              animation.duration,
+                            ),
+                          y:
+                            editOrigin.y +
+                            numberAtTime(
+                              layer,
+                              animation.blocks,
+                              "translateY",
+                              progress * animation.duration,
+                              animation.duration,
+                            ),
+                        };
+                        return (
+                          <g pointerEvents="none">
+                            <polyline
+                              points={poly}
+                              fill="none"
+                              stroke="#0d99ff"
+                              strokeWidth={1.25}
+                              strokeDasharray={`${worldPerPx * 4} ${worldPerPx * 3}`}
+                              opacity={0.75}
+                              vectorEffect="non-scaling-stroke"
+                            />
+                            <circle
+                              cx={cur.x}
+                              cy={cur.y}
+                              r={worldPerPx * 3.5}
+                              fill="#0d99ff"
+                              opacity={0.9}
+                            />
+                          </g>
+                        );
+                      })()}
+
                     {/* Live world lasso polyline (60fps via raf, dashed, exact PathCanvas/9rp visual) */}
                     {worldLassoRef.current.length > 1 && (
                       <polyline

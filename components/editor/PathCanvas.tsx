@@ -440,9 +440,13 @@ export const PathCanvas = React.memo(function PathCanvas({
     (e: React.PointerEvent) => {
       // C2: record down position (for click-vs-drag guard in handleSvgClick).
       if (e.button === 0) pointerDownPosRef.current = { x: e.clientX, y: e.clientY };
-      // Pan: middle-click or Alt-drag. Space is reserved for play/pause (page.tsx).
-      if (e.button === 1 || e.altKey) {
-        e.preventDefault(); // suppress browser middle-click autoscroll
+      // Pan: middle-click, Alt-drag, or Space/H pan (store.spacePanActive).
+      const spacePan = useEditorStore.getState().spacePanActive;
+      if (e.button === 1 || e.altKey || spacePan) {
+        e.preventDefault();
+        if (spacePan) {
+          (window as unknown as { __ssSpacePanUsed?: boolean }).__ssSpacePanUsed = true;
+        }
         setIsPanning(true);
         setLastPan({ x: e.clientX, y: e.clientY });
         svgRef.current?.setPointerCapture(e.pointerId);

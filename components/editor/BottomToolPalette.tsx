@@ -26,17 +26,17 @@ interface ToolDef {
 
 const TOOLS: ToolDef[] = [
   {
-    // Primary — Figma vector network on the canvas
-    mode: "direct",
-    label: "Vector",
-    icon: <span className="material-symbols text-[18px] leading-none">conversion_path</span>,
-    shortcut: "A",
-  },
-  {
     mode: "select",
     label: "Move",
     icon: <MousePointer2 className="h-4 w-4" />,
     shortcut: "V",
+  },
+  {
+    // Figma A = vector/direct — must match page.tsx (not Auto Fix)
+    mode: "direct",
+    label: "Vector",
+    icon: <span className="material-symbols text-[18px] leading-none">conversion_path</span>,
+    shortcut: "A",
   },
   {
     mode: "pen",

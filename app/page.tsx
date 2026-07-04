@@ -83,97 +83,107 @@ export default function ShapeShifter2026() {
       }
 
 
-      // Magic tools - very intuitive single keys
-      if (e.key.toLowerCase() === "a" && !e.metaKey) {
-        e.preventDefault();
-        store.autoFixSelectedLayer();
-        return;
-      }
-      if (e.key.toLowerCase() === "r" && !e.metaKey) {
-        e.preventDefault();
-        store.reverseSelectedLayer();
-        return;
-      }
-
-      if (e.key.toLowerCase() === "s" && !e.metaKey) {
-        e.preventDefault();
-        store.shiftSelectedLayer(1);
-        return;
-      }
-
-      // Delete (single owner — C1/H2 fix). Priority: points → subpaths → layer (last resort).
-      if (e.key === "Delete" || e.key === "Backspace") {
-        e.preventDefault();
-        if ((store.selectedPoints && store.selectedPoints.length > 0) || store.selection) {
-          store.deleteSelectedPoint();
-        } else if (store.selectedSubPaths && store.selectedSubPaths.length > 0) {
-          store.deleteSelectedSubPath();
-        } else if (store.layers.length > 1) {
-          store.deleteLayer(store.selectedLayerId);
-        }
-        return;
-      }
-
-      // Tool mode switches (original Action Mode toolbar parity)
+      // Tools — Figma-aligned single keys (A = vector, not auto-fix)
       if (e.key.toLowerCase() === "v" && !e.metaKey) {
-        // Select / move
         e.preventDefault();
         store.setToolMode("select");
         return;
       }
+      if (e.key.toLowerCase() === "a" && !e.metaKey) {
+        // Vector / Direct (palette + Figma A muscle memory)
+        e.preventDefault();
+        store.setToolMode("direct");
+        return;
+      }
       if (e.key.toLowerCase() === "p" && !e.metaKey) {
-        // Pen
         e.preventDefault();
         store.setToolMode("pen");
         return;
       }
       if (e.key.toLowerCase() === "d" && !e.metaKey) {
-        // Vector editor (Figma: edit points on the path)
+        // Alias: Direct (also A)
         e.preventDefault();
         store.setToolMode("direct");
         return;
       }
-
-      // Palette keyboard parity for Lasso (9rp under v6j): 'L' activates pencil (current Lasso tool entry
-      // in BottomToolPalette with Lasso icon + L shortcut). Matches the vision reference (Figma-style
-      // bottom toolbar: Move/Lasso/Bend/Cut/Paint/Pen/Direct + More) and ensures muscle memory parity with the
-      // rendered tooltips. Direct/Bend already covered by 'D'. Paint bucket (rsn / v6j completeness) uses 'B'.
-      // References: DESIGN_ID 67dd105e, beads 9rp/v6j/rsn, BottomToolPalette.tsx.
       if (e.key.toLowerCase() === "l" && !e.metaKey) {
         e.preventDefault();
         store.setToolMode("pencil");
         return;
       }
       if (e.key.toLowerCase() === "b" && !e.metaKey) {
-        // Paint / Fill bucket (v6j rsn)
         e.preventDefault();
         store.setToolMode("paint");
         return;
       }
+      if (e.key.toLowerCase() === "h" && !e.metaKey) {
+        // Hand tool (temporary pan via space is primary; H arms pan mode)
+        e.preventDefault();
+        store.setSpacePanActive(true);
+        return;
+      }
 
-      // More original actions
-      if (e.key.toLowerCase() === "x" && !e.metaKey) {
-        // Split (like onSplitInHalfClick)
+      // Morph power actions require Shift so they never steal Figma tool letters.
+      if (e.key.toLowerCase() === "r" && e.shiftKey && !e.metaKey) {
+        e.preventDefault();
+        store.reverseSelectedLayer();
+        return;
+      }
+      if (e.key.toLowerCase() === "s" && e.shiftKey && !e.metaKey) {
+        e.preventDefault();
+        store.shiftSelectedLayer(1);
+        return;
+      }
+      if (e.key.toLowerCase() === "f" && e.shiftKey && !e.metaKey) {
+        e.preventDefault();
+        store.autoFixSelectedLayer();
+        return;
+      }
+
+      // Delete — multi-layer aware
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        if ((store.selectedPoints && store.selectedPoints.length > 0) || store.selection) {
+          store.deleteSelectedPoint();
+        } else if (store.selectedSubPaths && store.selectedSubPaths.length > 0) {
+          store.deleteSelectedSubPath();
+        } else if (store.selectionKind === "layer") {
+          store.deleteSelectedLayers();
+        }
+        return;
+      }
+
+      if (e.key.toLowerCase() === "x" && !e.metaKey && !e.shiftKey) {
         e.preventDefault();
         store.splitSelectedCommand?.();
         return;
       }
-      if (e.key.toLowerCase() === "f" && !e.metaKey) {
-        // Set as first
-        e.preventDefault();
-        store.setSelectedCommandAsFirst?.();
-        return;
-      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w") {
-        // Close action mode
         e.preventDefault();
         store.closeActionMode?.();
         return;
       }
-      // Clipboard (M2 wiring) — copy/paste/cut/duplicate were dead code with no key bindings.
+      // Group / Ungroup (Figma ⌘G / ⇧⌘G)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "g") {
+        e.preventDefault();
+        if (e.shiftKey) store.ungroupSelectedLayer();
+        else store.groupSelectedLayers();
+        return;
+      }
+      // Lock toggle
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "l" && e.shiftKey) {
+        e.preventDefault();
+        store.toggleLayerLock(store.selectedLayerId);
+        return;
+      }
+      // Clipboard — full multi-select set
+      const multiIds =
+        store.selectedLayerIds?.length > 0
+          ? store.selectedLayerIds
+          : [store.selectedLayerId];
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c") {
         e.preventDefault();
-        store.copyLayers?.([store.selectedLayerId]);
+        store.copyLayers?.(multiIds);
         return;
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v") {
@@ -183,18 +193,17 @@ export default function ShapeShifter2026() {
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "x") {
         e.preventDefault();
-        store.cutLayers?.([store.selectedLayerId]);
+        store.cutLayers?.(multiIds);
         return;
       }
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "d") {
         e.preventDefault();
-        store.copyLayers?.([store.selectedLayerId]);
+        store.copyLayers?.(multiIds);
         store.pasteLayers?.();
         return;
       }
 
-      // Arrow nudges — single owner (H3 fix: no more double-transform vs the canvas listener).
-      // Priority: multi-point → single point → subpaths → whole layer.
+      // Arrow nudges — multi-layer translate when no points selected
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
         e.preventDefault();
         const step = e.shiftKey ? 5 : 0.5;
@@ -214,12 +223,13 @@ export default function ShapeShifter2026() {
         return;
       }
 
-      // Play / Pause — Space (toolbar, command palette, and onboarding all document this).
-      // Ignore key-repeat so holding Space doesn't flicker play/pause.
+      // Space: arm pan on keydown; play/pause on keyup if no pan happened (Figma-like hold-to-pan).
       if (e.code === "Space" || e.key === " ") {
         if (e.repeat) return;
         e.preventDefault();
-        store.togglePlayback();
+        store.setSpacePanActive(true);
+        (window as unknown as { __ssSpacePanUsed?: boolean }).__ssSpacePanUsed = false;
+        (window as unknown as { __ssSpaceDownAt?: number }).__ssSpaceDownAt = performance.now();
         return;
       }
 
@@ -231,8 +241,32 @@ export default function ShapeShifter2026() {
         store.setEditingSide("to");
       }
     };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (isEditableTarget(e.target)) return;
+      if (e.code === "Space" || e.key === " ") {
+        e.preventDefault();
+        const store = useEditorStore.getState();
+        const panUsed = !!(window as unknown as { __ssSpacePanUsed?: boolean }).__ssSpacePanUsed;
+        const downAt = (window as unknown as { __ssSpaceDownAt?: number }).__ssSpaceDownAt ?? 0;
+        const brief = performance.now() - downAt < 450;
+        store.setSpacePanActive(false);
+        // H tool stays pan until another tool key — only clear H if it was space
+        if (!panUsed && brief) {
+          store.togglePlayback();
+        }
+      }
+      if (e.key.toLowerCase() === "h" && !e.metaKey) {
+        useEditorStore.getState().setSpacePanActive(false);
+      }
+    };
+
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
   }, []);
 
   // BUG-9: only run the playback RAF while actually playing (no perpetual 60fps no-op when paused).

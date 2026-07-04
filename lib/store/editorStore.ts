@@ -243,9 +243,24 @@ interface EditorState {
   }) => void;
   replaceSelectedLayerPaths: (paths: Partial<Pick<Layer, "from" | "to" | "name">>) => void;
   updateSelectedLayer: (patch: Partial<Layer>, options?: { recordHistory?: boolean }) => void;
+  /** Apply patch to every id in selectedLayerIds (or explicit ids). */
+  updateSelectedLayers: (
+    patch: Partial<Layer>,
+    options?: { recordHistory?: boolean; ids?: (string | number)[] },
+  ) => void;
   selectLayer: (id: string | number) => void;
   /** Figma marquee / shift-multi: select several layers at once. */
   selectLayers: (ids: (string | number)[]) => void;
+  deleteSelectedLayers: () => void;
+  toggleLayerLock: (id: string | number) => void;
+  reorderLayer: (id: string | number, toIndex: number) => void;
+  groupSelectedLayers: () => void;
+  ungroupSelectedLayer: () => void;
+  /** Space-hold temporary pan (Figma hand); keyup without pan = play/pause. */
+  spacePanActive: boolean;
+  setSpacePanActive: (active: boolean) => void;
+  /** Alt-drag duplicate: clone selected layers offset by dx/dy and select clones. */
+  duplicateSelectedLayersOffset: (dx: number, dy: number) => void;
   setEditingSide: (side: "from" | "to") => void;
   startActionMode: () => void;
   closeActionMode: () => void;
@@ -288,6 +303,7 @@ interface EditorState {
   /**
    * Figma motion: after moving a layer, register/update translateX/Y timeline tracks
    * at the current playhead so the move appears under the layer in the timeline.
+   * Multi-keyframe: mid-timeline inserts a split (two segments) instead of only rewriting toValue.
    */
   recordLayerTranslationAtPlayhead: () => void;
   resizeSelectedLayer: (
@@ -295,6 +311,8 @@ interface EditorState {
     toBounds: { x: number; y: number; width: number; height: number },
     options?: { recordHistory?: boolean },
   ) => void;
+  /** Rotate primary (or all multi-selected) layers by delta degrees around each bounds center. */
+  rotateSelectedLayers: (deltaDeg: number, options?: { recordHistory?: boolean }) => void;
 
   // Playback
   togglePlayback: () => void;
@@ -722,12 +740,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   // World camera (1el Phase 2 foundation)
   worldViewport: computeFramesViewport(initialFrames),
   detailViewport: computeVectorViewport(initialVector),
-  // Core loop: edit vectors + play morph (default into the vector editor).
-  toolMode: "direct",
+  // Figma default: Move tool (vector via A / double-click).
+  toolMode: "select",
   cursorType: "default",
   hoveredItem: null,
   dragState: null,
   clipboard: null,
+  spacePanActive: false,
 
   pushHistory: () => {
     set({
@@ -1196,9 +1215,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({ layers: newLayers });
   },
   updateSelectedLayer: (patch, options) => {
+    // Multi-select: apply shared props to all selected (Figma batch edit).
+    const ids = get().selectedLayerIds;
+    if (ids.length > 1) {
+      get().updateSelectedLayers(patch, options);
+      return;
+    }
     const { layers, selectedLayerId } = get();
     const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
     if (layerIndex === -1) return;
+    if (layers[layerIndex]?.locked) return;
 
     const newLayers = [...layers];
     newLayers[layerIndex] = { ...newLayers[layerIndex], ...patch };
@@ -1207,6 +1233,23 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }
     set({ layers: newLayers });
   },
+
+  updateSelectedLayers: (patch, options) => {
+    const ids = options?.ids ?? get().selectedLayerIds;
+    if (ids.length === 0) return;
+    const idSet = new Set(ids.map(String));
+    const newLayers = get().layers.map((l) => {
+      if (!idSet.has(String(l.id)) || l.locked) return l;
+      return { ...l, ...patch };
+    });
+    if (options?.recordHistory !== false) {
+      get().pushHistory();
+    }
+    set({ layers: newLayers });
+  },
+
+  setSpacePanActive: (active) => set({ spacePanActive: active }),
+
   selectLayer: (id) =>
     set({
       selectedLayerId: id,
@@ -1377,20 +1420,27 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   translateSelectedLayer: (dx, dy, options) => {
-    const { layers, selectedLayerId } = get();
+    const { layers, selectedLayerIds, selectedLayerId } = get();
     if (dx === 0 && dy === 0) return;
 
-    const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
-    if (layerIndex === -1) return;
+    const ids =
+      selectedLayerIds.length > 0
+        ? selectedLayerIds
+        : selectedLayerId != null
+          ? [selectedLayerId]
+          : [];
+    if (ids.length === 0) return;
+    const idSet = new Set(ids.map(String));
 
-    const layer = layers[layerIndex];
-    // Object move uses layer transforms (Figma Position) — not baked into path morph data.
-    const newLayers = [...layers];
-    newLayers[layerIndex] = {
-      ...layer,
-      translateX: (layer.translateX ?? 0) + dx,
-      translateY: (layer.translateY ?? 0) + dy,
-    };
+    // Object move uses layer transforms (Figma Position) — multi-select moves all.
+    const newLayers = layers.map((layer) => {
+      if (!idSet.has(String(layer.id)) || layer.locked) return layer;
+      return {
+        ...layer,
+        translateX: (layer.translateX ?? 0) + dx,
+        translateY: (layer.translateY ?? 0) + dy,
+      };
+    });
 
     if (options?.recordHistory !== false) {
       get().pushHistory();
@@ -1399,79 +1449,137 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   recordLayerTranslationAtPlayhead: () => {
-    const { layers, selectedLayerId, animation, progress } = get();
-    const layer = layers.find((l) => String(l.id) === String(selectedLayerId));
-    if (!layer) return;
+    const { layers, selectedLayerIds, selectedLayerId, animation, progress } = get();
+    const targets =
+      selectedLayerIds.length > 0
+        ? layers.filter((l) => selectedLayerIds.some((id) => String(id) === String(l.id)))
+        : layers.filter((l) => String(l.id) === String(selectedLayerId));
+    if (targets.length === 0) return;
 
     const duration = Math.max(1, animation.duration);
-    const ms = progress * duration;
+    const ms = Math.round(progress * duration);
     const nearStart = ms <= duration * 0.05;
     const nearEnd = ms >= duration * 0.95;
+    const minSeg = 50;
 
-    const upsert = (
+    /** Insert or update keys for one property — splits segments at playhead (multi-keyframe). */
+    const upsertKey = (
       blocks: typeof animation.blocks,
+      layer: Layer,
       propertyName: "translateX" | "translateY",
       value: number,
     ) => {
-      const idx = blocks.findIndex(
-        (b) =>
-          String(b.layerId) === String(layer.id) && b.propertyName === propertyName,
-      );
-      if (idx === -1) {
-        // First registration of this property on the timeline
-        const fromValue = nearStart ? value : 0;
-        const toValue = nearEnd || nearStart ? value : value;
-        // Static place at t≈0 → both ends equal. Mid/end scrub → animate 0 → value.
-        const staticPose = nearStart;
+      const segs = blocks
+        .map((b, i) => ({ b, i }))
+        .filter(
+          ({ b }) =>
+            String(b.layerId) === String(layer.id) && b.propertyName === propertyName,
+        )
+        .sort((a, c) => a.b.startTime - c.b.startTime);
+
+      if (segs.length === 0) {
         return [
           ...blocks,
           {
-            id: `block-${layer.id}-${propertyName}-${Date.now()}`,
+            id: `block-${layer.id}-${propertyName}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             layerId: layer.id,
             propertyName,
             type: "number" as const,
-            fromValue: staticPose ? value : fromValue,
-            toValue: staticPose ? value : toValue,
+            fromValue: nearStart ? value : 0,
+            toValue: value,
             startTime: 0,
             endTime: duration,
             interpolator: "FAST_OUT_SLOW_IN" as const,
           },
         ];
       }
-      const prev = blocks[idx]!;
+
+      // Find covering segment
+      const cover = segs.find(
+        ({ b }) => ms >= b.startTime && ms <= b.endTime,
+      );
+      if (!cover) {
+        // Between segments or past end — extend last or create new
+        const last = segs[segs.length - 1]!.b;
+        if (ms > last.endTime) {
+          return [
+            ...blocks,
+            {
+              id: `block-${layer.id}-${propertyName}-${Date.now()}-tail`,
+              layerId: layer.id,
+              propertyName,
+              type: "number" as const,
+              fromValue: Number(last.toValue) || 0,
+              toValue: value,
+              startTime: last.endTime,
+              endTime: duration,
+              interpolator: last.interpolator || "FAST_OUT_SLOW_IN",
+            },
+          ];
+        }
+        const first = segs[0]!.b;
+        return [
+          ...blocks,
+          {
+            id: `block-${layer.id}-${propertyName}-${Date.now()}-head`,
+            layerId: layer.id,
+            propertyName,
+            type: "number" as const,
+            fromValue: value,
+            toValue: Number(first.fromValue) || 0,
+            startTime: 0,
+            endTime: first.startTime,
+            interpolator: first.interpolator || "FAST_OUT_SLOW_IN",
+          },
+        ];
+      }
+
+      const prev = cover.b;
       const fromV = Number(prev.fromValue) || 0;
       const toV = Number(prev.toValue) || 0;
-      const wasStatic = Math.abs(fromV - toV) < 1e-6;
-      let nextFrom = fromV;
-      let nextTo = toV;
-      if (nearStart) {
-        nextFrom = value;
-        if (wasStatic) nextTo = value;
-      } else if (nearEnd) {
-        nextTo = value;
-        if (wasStatic) nextFrom = value;
-      } else {
-        // Mid playhead: keep start, set end to the new pose (Figma-ish key at playhead → end)
-        nextTo = value;
-        if (wasStatic) nextFrom = fromV;
+
+      if (nearStart || Math.abs(ms - prev.startTime) < minSeg) {
+        const next = [...blocks];
+        next[cover.i] = { ...prev, fromValue: value, type: "number" };
+        return next;
       }
-      const next = [...blocks];
-      next[idx] = {
+      if (nearEnd || Math.abs(ms - prev.endTime) < minSeg) {
+        const next = [...blocks];
+        next[cover.i] = { ...prev, toValue: value, type: "number" };
+        return next;
+      }
+
+      // Mid-segment: SPLIT into two blocks at playhead (true multi-keyframe).
+      const left = {
         ...prev,
-        fromValue: nextFrom,
-        toValue: nextTo,
-        type: "number",
+        id: `${prev.id}-L`,
+        toValue: value,
+        endTime: ms,
+        type: "number" as const,
       };
-      return next;
+      const right = {
+        ...prev,
+        id: `${prev.id}-R-${Date.now()}`,
+        fromValue: value,
+        toValue: toV,
+        startTime: ms,
+        type: "number" as const,
+      };
+      // Keep left from as fromV
+      left.fromValue = fromV;
+      const without = blocks.filter((_, i) => i !== cover.i);
+      return [...without, left, right];
     };
 
     let blocks = animation.blocks;
-    blocks = upsert(blocks, "translateX", layer.translateX ?? 0);
-    blocks = upsert(blocks, "translateY", layer.translateY ?? 0);
+    for (const layer of targets) {
+      blocks = upsertKey(blocks, layer, "translateX", layer.translateX ?? 0);
+      blocks = upsertKey(blocks, layer, "translateY", layer.translateY ?? 0);
+    }
 
-    // Expand layer in timeline so the new Position tracks are visible
+    const targetIds = new Set(targets.map((l) => String(l.id)));
     const newLayers = layers.map((l) =>
-      String(l.id) === String(layer.id) ? { ...l, expanded: true } : l,
+      targetIds.has(String(l.id)) ? { ...l, expanded: true } : l,
     );
 
     set({
@@ -1482,29 +1590,187 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   /**
    * Scale the selected layer path into `toBounds`.
-   *
-   * IMPORTANT: `fromBounds` must describe the geometry of the path being scaled
-   * *in this call*. If you resize across many pointer-move events, freeze the
-   * original path + bounds at pointer-down and pass those every time — never
-   * re-scale the already-mutated live path from the original bounds (that
-   * compounds and feels extremely buggy). Prefer updating via
-   * `scalePathToBounds(frozen, frozenBounds, next)` + `updateSelectedLayer`.
+   * Multi-select: scales every selected unlocked path by the same delta bounds.
    */
   resizeSelectedLayer: (fromBounds, toBounds, options) => {
-    const { layers, selectedLayerId } = get();
-    const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
-    if (layerIndex === -1) return;
-
-    const layer = layers[layerIndex];
-    const from = scalePathToBounds(layer.from, fromBounds, toBounds);
-    const to = mapToEnd(layer, (p) => scalePathToBounds(p, fromBounds, toBounds));
-    const newLayers = [...layers];
-    newLayers[layerIndex] = { ...layer, from, to, pathData: from };
+    const { layers, selectedLayerIds, selectedLayerId } = get();
+    const ids =
+      selectedLayerIds.length > 0
+        ? selectedLayerIds
+        : selectedLayerId != null
+          ? [selectedLayerId]
+          : [];
+    const idSet = new Set(ids.map(String));
+    const newLayers = layers.map((layer) => {
+      if (!idSet.has(String(layer.id)) || layer.locked) return layer;
+      if (layer.type === "group") return layer;
+      const from = scalePathToBounds(layer.from, fromBounds, toBounds);
+      const to = mapToEnd(layer, (p) => scalePathToBounds(p, fromBounds, toBounds));
+      return { ...layer, from, to, pathData: from };
+    });
 
     if (options?.recordHistory !== false) {
       get().pushHistory();
     }
     set({ layers: newLayers });
+  },
+
+  rotateSelectedLayers: (deltaDeg, options) => {
+    if (!deltaDeg) return;
+    const { layers, selectedLayerIds, selectedLayerId } = get();
+    const ids =
+      selectedLayerIds.length > 0
+        ? selectedLayerIds
+        : selectedLayerId != null
+          ? [selectedLayerId]
+          : [];
+    const idSet = new Set(ids.map(String));
+    const newLayers = layers.map((layer) => {
+      if (!idSet.has(String(layer.id)) || layer.locked) return layer;
+      return {
+        ...layer,
+        rotation: (Number(layer.rotation) || 0) + deltaDeg,
+      };
+    });
+    if (options?.recordHistory !== false) get().pushHistory();
+    set({ layers: newLayers });
+  },
+
+  deleteSelectedLayers: () => {
+    const { layers, selectedLayerIds, selectedLayerId } = get();
+    const ids =
+      selectedLayerIds.length > 0
+        ? selectedLayerIds
+        : selectedLayerId != null
+          ? [selectedLayerId]
+          : [];
+    if (ids.length === 0 || layers.length <= ids.length) return;
+    const idSet = new Set(ids.map(String));
+    const remaining = layers.filter((l) => !idSet.has(String(l.id)));
+    get().pushHistory();
+    set({
+      layers: remaining,
+      selectedLayerId: remaining[0]?.id ?? 0,
+      selectedLayerIds: remaining[0] ? [remaining[0].id] : [],
+      selection: null,
+      selectedPoints: [],
+      selectedSubPaths: [],
+      hasCanvasSelection: remaining.length > 0,
+      selectionKind: remaining.length > 0 ? "layer" : "none",
+    });
+  },
+
+  toggleLayerLock: (id) => {
+    const { layers } = get();
+    get().pushHistory();
+    set({
+      layers: layers.map((l) =>
+        String(l.id) === String(id) ? { ...l, locked: !l.locked } : l,
+      ),
+    });
+  },
+
+  reorderLayer: (id, toIndex) => {
+    const { layers } = get();
+    const fromIndex = layers.findIndex((l) => String(l.id) === String(id));
+    if (fromIndex === -1) return;
+    const clamped = Math.max(0, Math.min(layers.length - 1, toIndex));
+    if (clamped === fromIndex) return;
+    const next = [...layers];
+    const [item] = next.splice(fromIndex, 1);
+    next.splice(clamped, 0, item!);
+    get().pushHistory();
+    set({ layers: next });
+  },
+
+  groupSelectedLayers: () => {
+    const { layers, selectedLayerIds, selectedLayerId } = get();
+    const ids =
+      selectedLayerIds.length > 0
+        ? selectedLayerIds
+        : selectedLayerId != null
+          ? [selectedLayerId]
+          : [];
+    if (ids.length < 1) return;
+    const idSet = new Set(ids.map(String));
+    const groupId = `group-${Date.now()}`;
+    const groupLayer: Layer = createPathLayer({
+      id: groupId,
+      name: "Group",
+      type: "group",
+      from: parsePath("M 0 0 Z"),
+      visible: true,
+      locked: false,
+      expanded: true,
+    });
+    const reparented = layers.map((l) =>
+      idSet.has(String(l.id)) ? { ...l, parentId: groupId } : l,
+    );
+    // Insert group before first selected
+    const firstIdx = reparented.findIndex((l) => idSet.has(String(l.id)));
+    const next = [...reparented];
+    next.splice(Math.max(0, firstIdx), 0, groupLayer);
+    get().pushHistory();
+    set({
+      layers: next,
+      selectedLayerId: groupId,
+      selectedLayerIds: [groupId],
+      hasCanvasSelection: true,
+      selectionKind: "layer",
+    });
+  },
+
+  ungroupSelectedLayer: () => {
+    const { layers, selectedLayerId } = get();
+    const group = layers.find((l) => String(l.id) === String(selectedLayerId));
+    if (!group || group.type !== "group") return;
+    const gid = String(group.id);
+    const children = layers.filter((l) => String(l.parentId) === gid);
+    const childIds = children.map((c) => c.id);
+    const next = layers
+      .filter((l) => String(l.id) !== gid)
+      .map((l) =>
+        String(l.parentId) === gid
+          ? { ...l, parentId: group.parentId ?? undefined }
+          : l,
+      );
+    get().pushHistory();
+    set({
+      layers: next,
+      selectedLayerId: childIds[0] ?? next[0]?.id ?? 0,
+      selectedLayerIds: childIds.length ? childIds : next[0] ? [next[0].id] : [],
+      hasCanvasSelection: true,
+      selectionKind: "layer",
+    });
+  },
+
+  duplicateSelectedLayersOffset: (dx, dy) => {
+    const { layers, selectedLayerIds, selectedLayerId } = get();
+    const ids =
+      selectedLayerIds.length > 0
+        ? selectedLayerIds
+        : selectedLayerId != null
+          ? [selectedLayerId]
+          : [];
+    if (ids.length === 0) return;
+    const idSet = new Set(ids.map(String));
+    const clones = layers
+      .filter((l) => idSet.has(String(l.id)))
+      .map((l) => ({
+        ...structuredClone(l),
+        id: `${l.id}-dup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        name: `${l.name} copy`,
+        translateX: (l.translateX ?? 0) + dx,
+        translateY: (l.translateY ?? 0) + dy,
+      }));
+    get().pushHistory();
+    set({
+      layers: [...layers, ...clones],
+      selectedLayerId: clones[clones.length - 1]?.id ?? selectedLayerId,
+      selectedLayerIds: clones.map((c) => c.id),
+      hasCanvasSelection: true,
+      selectionKind: "layer",
+    });
   },
 
   addPointOnPath: (clickX, clickY) => {
@@ -1983,22 +2249,28 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   copyLayers: (layerIds) => {
     const { layers } = get();
-    const copied = layers.filter((l) => layerIds.includes(l.id));
+    const idSet = new Set(layerIds.map(String));
+    const copied = layers.filter((l) => idSet.has(String(l.id)));
     if (copied.length === 0) return;
     set({ clipboard: { layers: structuredClone(copied), timestamp: Date.now() } });
   },
   pasteLayers: () => {
     const { clipboard, layers } = get();
     if (!clipboard || clipboard.layers.length === 0) return;
-    const pasted = clipboard.layers.map((l) => ({
+    const pasted = clipboard.layers.map((l, i) => ({
       ...structuredClone(l),
-      id: Date.now() + Math.random(),
+      id: `paste-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
       name: `${l.name} copy`,
+      translateX: (l.translateX ?? 0) + 8,
+      translateY: (l.translateY ?? 0) + 8,
     }));
     get().pushHistory();
     set({
       layers: [...layers, ...pasted],
-      selectedLayerId: pasted[0]?.id ?? layers[0]?.id ?? 0,
+      selectedLayerId: pasted[pasted.length - 1]?.id ?? layers[0]?.id ?? 0,
+      selectedLayerIds: pasted.map((p) => p.id),
+      hasCanvasSelection: true,
+      selectionKind: "layer",
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -2006,13 +2278,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
   cutLayers: (layerIds) => {
     const { layers } = get();
-    if (layers.length <= layerIds.length) return;
+    const idSet = new Set(layerIds.map(String));
+    if (layers.length <= idSet.size) return;
     get().copyLayers(layerIds);
-    const remaining = layers.filter((l) => !layerIds.includes(l.id));
+    const remaining = layers.filter((l) => !idSet.has(String(l.id)));
     get().pushHistory();
     set({
       layers: remaining,
       selectedLayerId: remaining[0]?.id ?? 0,
+      selectedLayerIds: remaining[0] ? [remaining[0].id] : [],
+      hasCanvasSelection: remaining.length > 0,
+      selectionKind: remaining.length > 0 ? "layer" : "none",
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -2064,15 +2340,30 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   booleanCombine: (op) => {
-    const { layers, selectedLayerId } = get();
+    const { layers, selectedLayerId, selectedLayerIds } = get();
     if (layers.length < 2) return;
-    const idxA = layers.findIndex((l) => l.id === selectedLayerId);
+    // Prefer first two multi-selected path layers; else primary + next.
+    let layerA =
+      selectedLayerIds.length >= 2
+        ? layers.find((l) => String(l.id) === String(selectedLayerIds[0]))
+        : layers.find((l) => l.id === selectedLayerId);
+    let layerB =
+      selectedLayerIds.length >= 2
+        ? layers.find((l) => String(l.id) === String(selectedLayerIds[1]))
+        : undefined;
+    const idxA = layerA
+      ? layers.findIndex((l) => String(l.id) === String(layerA!.id))
+      : layers.findIndex((l) => l.id === selectedLayerId);
     if (idxA === -1) return;
-    // Operate on selected (A) + next layer (B) for multi-select parity (first two or pairwise); smallest, no selection model change
-    const idxB = (idxA + 1) % layers.length;
+    layerA = layers[idxA]!;
+    let idxB = layerB
+      ? layers.findIndex((l) => String(l.id) === String(layerB!.id))
+      : -1;
+    if (idxB === -1 || idxB === idxA) {
+      idxB = (idxA + 1) % layers.length;
+    }
     if (idxB === idxA) return;
-    const layerA = layers[idxA];
-    const layerB = layers[idxB];
+    layerB = layers[idxB]!;
     const combined = booleanCombine(op, layerA.from, layerB.from);
     const resultLayer = {
       ...layerA,
@@ -2083,15 +2374,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     };
     let newLayers = [...layers];
     newLayers[idxA] = resultLayer;
-    // Remove B (adjust for splice order)
-    const removeIdx = idxB > idxA ? idxB : idxB;
-    if (removeIdx < newLayers.length) {
-      newLayers = newLayers.filter((_, i) => i !== removeIdx);
-    }
+    newLayers = newLayers.filter((_, i) => i !== idxB);
     get().pushHistory();
     set({
       layers: newLayers,
       selectedLayerId: resultLayer.id,
+      selectedLayerIds: [resultLayer.id],
+      hasCanvasSelection: true,
+      selectionKind: "layer",
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],

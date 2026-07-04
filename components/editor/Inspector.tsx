@@ -441,6 +441,7 @@ export function Inspector() {
     updateSelectedPoint,
     deleteSelectedPoint,
     selectedLayerId,
+    selectedLayerIds,
     editingSide,
     layers,
     updateSelectedLayer,
@@ -450,10 +451,12 @@ export function Inspector() {
     selectedPoints,
     selectPoint,
     booleanCombine,
+    toggleLayerLock,
   } = useEditorStore();
 
   const point = getCurrentSelectedPoint ? getCurrentSelectedPoint() : null;
   const currentLayer = layers.find((l) => l.id === selectedLayerId);
+  const multiCount = selectedLayerIds?.length ?? 0;
   const updateLayer = (patch: Partial<Layer>) => updateSelectedLayer(patch);
   const setPath = (parsed: ReturnType<typeof parsePath>) =>
     updateLayer(editingSide === "from" ? { from: parsed, pathData: parsed } : { to: parsed });
@@ -807,6 +810,14 @@ export function Inspector() {
                 </div>
               </div>
 
+              <div className="flex items-center gap-2">
+                <span className="w-[58px] shrink-0 text-[11px] text-muted-foreground">Dash</span>
+                <TextInput
+                  value={currentLayer.strokeDasharray ?? ""}
+                  placeholder="e.g. 4 2"
+                  onChange={(v) => updateLayer({ strokeDasharray: v || undefined })}
+                />
+              </div>
               {/* Clarify scope: stroke is per-layer (affects every subpath). Users can split for independent styling. */}
               {currentLayer.from?.subPaths && currentLayer.from.subPaths.length > 1 && (
                 <p className="mt-1 text-[9px] leading-tight text-muted-foreground/60">
@@ -927,48 +938,63 @@ export function Inspector() {
           </>
         )}
 
-        {isGroup && (
-          <Section title="Transform">
-            <NumberRow
-              label="Rotation"
-              value={currentLayer.rotation ?? 0}
-              suffix="°"
-              onChange={(v) => updateLayer({ rotation: v })}
-            />
-            <NumberRow
-              label="Scale X"
-              value={currentLayer.scaleX ?? 1}
-              step={0.1}
-              onChange={(v) => updateLayer({ scaleX: v })}
-            />
-            <NumberRow
-              label="Scale Y"
-              value={currentLayer.scaleY ?? 1}
-              step={0.1}
-              onChange={(v) => updateLayer({ scaleY: v })}
-            />
-            <NumberRow
-              label="Pivot X"
-              value={currentLayer.pivotX ?? 0}
-              onChange={(v) => updateLayer({ pivotX: v })}
-            />
-            <NumberRow
-              label="Pivot Y"
-              value={currentLayer.pivotY ?? 0}
-              onChange={(v) => updateLayer({ pivotY: v })}
-            />
-            <NumberRow
-              label="Move X"
-              value={currentLayer.translateX ?? 0}
-              onChange={(v) => updateLayer({ translateX: v })}
-            />
-            <NumberRow
-              label="Move Y"
-              value={currentLayer.translateY ?? 0}
-              onChange={(v) => updateLayer({ translateY: v })}
-            />
-          </Section>
-        )}
+        {/* Position / transform for every selection (Figma Design top block) */}
+        <Section title={multiCount > 1 ? `Transform · ${multiCount} layers` : "Transform"}>
+          {multiCount > 1 && (
+            <p className="mb-1 text-[10px] leading-relaxed text-muted-foreground">
+              Edits apply to all selected layers.
+            </p>
+          )}
+          <NumberRow
+            label="X"
+            value={currentLayer.translateX ?? 0}
+            onChange={(v) => updateLayer({ translateX: v })}
+          />
+          <NumberRow
+            label="Y"
+            value={currentLayer.translateY ?? 0}
+            onChange={(v) => updateLayer({ translateY: v })}
+          />
+          <NumberRow
+            label="Rotation"
+            value={currentLayer.rotation ?? 0}
+            suffix="°"
+            onChange={(v) => updateLayer({ rotation: v })}
+          />
+          <NumberRow
+            label="Scale X"
+            value={currentLayer.scaleX ?? 1}
+            step={0.1}
+            onChange={(v) => updateLayer({ scaleX: v })}
+          />
+          <NumberRow
+            label="Scale Y"
+            value={currentLayer.scaleY ?? 1}
+            step={0.1}
+            onChange={(v) => updateLayer({ scaleY: v })}
+          />
+          {(isGroup || multiCount === 1) && (
+            <>
+              <NumberRow
+                label="Pivot X"
+                value={currentLayer.pivotX ?? 0}
+                onChange={(v) => updateLayer({ pivotX: v })}
+              />
+              <NumberRow
+                label="Pivot Y"
+                value={currentLayer.pivotY ?? 0}
+                onChange={(v) => updateLayer({ pivotY: v })}
+              />
+            </>
+          )}
+          <button
+            type="button"
+            className="mt-1 flex h-7 w-full items-center justify-center rounded-md border border-border text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={() => toggleLayerLock(currentLayer.id)}
+          >
+            {currentLayer.locked ? "Unlock layer" : "Lock layer"}
+          </button>
+        </Section>
 
         {/* Selected point(s) - supports lasso multi-select */}
         {(selection || (selectedPoints && selectedPoints.length > 0)) && (

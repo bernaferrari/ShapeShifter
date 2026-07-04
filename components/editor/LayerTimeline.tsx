@@ -5,11 +5,13 @@ import {
   ChevronRight,
   Eye,
   EyeOff,
+  Lock,
   MoreHorizontal,
   Pause,
   Play,
   Plus,
   Square,
+  Unlock,
   X,
 } from "lucide-react";
 import { MaterialSymbol } from "./MaterialSymbol";
@@ -24,18 +26,31 @@ import { useEditorStore } from "@/lib/store/editorStore";
 import type { Layer, TimelineBlock, InterpolatorName } from "@/lib/shapeshifter/types";
 import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
 import { cn } from "@/lib/utils";
+import { EasingCurve } from "./EasingCurve";
+import { INTERPOLATOR_CURVES } from "@/lib/shapeshifter/interpolators";
 
 /**
  * Android AVD-supported named interpolators (ObjectAnimator / PathInterpolator presets).
  * Kept as a compact menu on the track — not a big curve editor (Android has no freehand ease UI).
  */
-const INTERPOLATOR_OPTIONS: { value: InterpolatorName; label: string; hint: string }[] = [
+const INTERPOLATOR_OPTIONS: { value: InterpolatorName | string; label: string; hint: string }[] = [
   { value: "FAST_OUT_SLOW_IN", label: "Standard", hint: "fast_out_slow_in" },
   { value: "LINEAR_OUT_SLOW_IN", label: "Decelerate", hint: "linear_out_slow_in" },
   { value: "FAST_OUT_LINEAR_IN", label: "Accelerate", hint: "fast_out_linear_in" },
   { value: "ACCELERATE_DECELERATE", label: "Accelerate–decelerate", hint: "accelerate_decelerate" },
   { value: "LINEAR", label: "Linear", hint: "linear" },
 ];
+
+function curvePointsFor(interp: string | undefined): [number, number, number, number] {
+  if (interp && interp in INTERPOLATOR_CURVES) {
+    return INTERPOLATOR_CURVES[interp as InterpolatorName];
+  }
+  const m = interp?.match(
+    /cubic-bezier\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/i,
+  );
+  if (m) return [Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4])];
+  return INTERPOLATOR_CURVES.FAST_OUT_SLOW_IN;
+}
 
 /** Figma playhead */
 const PLAYHEAD = "#F24822";
@@ -129,9 +144,11 @@ export function LayerTimeline(_props: LayerTimelineProps) {
     layers,
     selectedLayerId,
     selectLayer,
+    selectedLayerIds,
     selectionKind,
     hasCanvasSelection,
     toggleLayerVisibility,
+    toggleLayerLock,
     toggleLayerExpanded,
     convertLayerType,
     addTimelineBlock,
@@ -689,9 +706,24 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                     </svg>
                   )}
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="center" className="w-52 text-xs" side="top">
+                <DropdownMenuContent align="center" className="w-56 text-xs" side="top">
                   <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                    Android interpolator
+                    Easing
+                  </div>
+                  <div
+                    className="flex justify-center border-b border-border/60 px-2 py-2"
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <EasingCurve
+                      size={88}
+                      points={curvePointsFor(interp)}
+                      progress={progress}
+                      onChange={([x1, y1, x2, y2]) => {
+                        updateTimelineBlock(block.id, {
+                          interpolator: `cubic-bezier(${x1}, ${y1}, ${x2}, ${y2})`,
+                        });
+                      }}
+                    />
                   </div>
                   {INTERPOLATOR_OPTIONS.map((opt) => (
                     <DropdownMenuItem
@@ -1132,7 +1164,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                 hasCanvasSelection &&
                 selectionKind === "layer" &&
                 row.frameId === selectedFrameId &&
-                String(selectedLayerId) === String(row.layer.id);
+                selectedLayerIds.some((id) => String(id) === String(row.layer.id));
               const showChrome = hoveredRowKey === row.key || isSelected;
               return (
                 <div
@@ -1148,9 +1180,19 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                   style={{ height: ROW_LAYER, paddingLeft: 6 + row.depth * 12 }}
                   onMouseEnter={() => setHoveredRowKey(row.key)}
                   onMouseLeave={() => setHoveredRowKey(null)}
-                  onClick={() => {
-                    // Layer row → that layer is the selection (selectFrame first only to load doc).
+                  onClick={(e) => {
                     if (row.frameId !== selectedFrameId) selectFrame(row.frameId);
+                    // Shift multi-select on timeline rows (Figma layers list)
+                    if (e.shiftKey) {
+                      const cur = selectedLayerIds.map(String);
+                      const id = String(row.layer.id);
+                      const next = cur.includes(id)
+                        ? selectedLayerIds.filter((x) => String(x) !== id)
+                        : [...selectedLayerIds, row.layer.id];
+                      if (next.length === 0) selectLayer(row.layer.id);
+                      else useEditorStore.getState().selectLayers(next);
+                      return;
+                    }
                     selectLayer(row.layer.id);
                     const morphBlocks = blocksForLayerInFrame(row.frameId, row.layer.id).filter(
                       (b) => b.propertyName === "pathData",
@@ -1211,29 +1253,54 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                     )}
                   >
                     {row.frameId === selectedFrameId && (
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        className="grid size-5 place-items-center rounded-sm text-white/30 hover:bg-white/[0.07] hover:text-white/75"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          toggleLayerVisibility(row.layer.id);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
+                      <>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="grid size-5 place-items-center rounded-sm text-white/30 hover:bg-white/[0.07] hover:text-white/75"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            toggleLayerLock(row.layer.id);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              toggleLayerLock(row.layer.id);
+                            }
+                          }}
+                          aria-label={row.layer.locked ? `Unlock ${row.name}` : `Lock ${row.name}`}
+                        >
+                          {row.layer.locked ? (
+                            <Lock className="h-3 w-3" strokeWidth={1.75} />
+                          ) : (
+                            <Unlock className="h-3 w-3 opacity-40" strokeWidth={1.75} />
+                          )}
+                        </span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="grid size-5 place-items-center rounded-sm text-white/30 hover:bg-white/[0.07] hover:text-white/75"
+                          onClick={(event) => {
                             event.stopPropagation();
                             toggleLayerVisibility(row.layer.id);
-                          }
-                        }}
-                        aria-label={row.layer.visible ? `Hide ${row.name}` : `Show ${row.name}`}
-                      >
-                        {row.layer.visible ? (
-                          <Eye className="h-3 w-3" strokeWidth={1.75} />
-                        ) : (
-                          <EyeOff className="h-3 w-3" strokeWidth={1.75} />
-                        )}
-                      </span>
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              toggleLayerVisibility(row.layer.id);
+                            }
+                          }}
+                          aria-label={row.layer.visible ? `Hide ${row.name}` : `Show ${row.name}`}
+                        >
+                          {row.layer.visible ? (
+                            <Eye className="h-3 w-3" strokeWidth={1.75} />
+                          ) : (
+                            <EyeOff className="h-3 w-3" strokeWidth={1.75} />
+                          )}
+                        </span>
+                      </>
                     )}
                   </div>
                 </div>
