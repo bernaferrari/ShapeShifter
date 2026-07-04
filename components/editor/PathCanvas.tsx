@@ -91,7 +91,6 @@ export const PathCanvas = React.memo(function PathCanvas({
   const dispatcherRef = useRef<GestureDispatcher | null>(null);
 
   const [isPanning, setIsPanning] = React.useState(false);
-  const [isSpaceDown, setIsSpaceDown] = React.useState(false);
   const [lastPan, setLastPan] = React.useState({ x: 0, y: 0 });
   const [boxSelect, setBoxSelect] = React.useState<null | {
     start: { x: number; y: number };
@@ -441,8 +440,9 @@ export const PathCanvas = React.memo(function PathCanvas({
     (e: React.PointerEvent) => {
       // C2: record down position (for click-vs-drag guard in handleSvgClick).
       if (e.button === 0) pointerDownPosRef.current = { x: e.clientX, y: e.clientY };
-      if (e.button === 1 || e.altKey || isSpaceDown) {
-        e.preventDefault(); // suppress browser middle-click autoscroll / space page-scroll
+      // Pan: middle-click or Alt-drag. Space is reserved for play/pause (page.tsx).
+      if (e.button === 1 || e.altKey) {
+        e.preventDefault(); // suppress browser middle-click autoscroll
         setIsPanning(true);
         setLastPan({ x: e.clientX, y: e.clientY });
         svgRef.current?.setPointerCapture(e.pointerId);
@@ -509,7 +509,7 @@ export const PathCanvas = React.memo(function PathCanvas({
         }
       }
     },
-    [isActionMode, isSpaceDown, pointFromEvent, side, computePaintHitAt, applyPaintFill],
+    [isActionMode, pointFromEvent, side, computePaintHitAt, applyPaintFill],
   );
 
   const handleSvgPointerMove = useCallback(
@@ -1295,11 +1295,7 @@ export const PathCanvas = React.memo(function PathCanvas({
       const isEditableTarget =
         target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable;
       if (isEditableTarget) return;
-      if (event.code === "Space") {
-        event.preventDefault();
-        setIsSpaceDown(true);
-        return;
-      }
+      // Space → play/pause is owned by the global handler in page.tsx.
       if (event.key === "Escape") {
         if (useEditorStore.getState().selectedSubPaths.length > 0) {
           event.preventDefault();
@@ -1319,20 +1315,9 @@ export const PathCanvas = React.memo(function PathCanvas({
       // (C1/H2/H3 fix) to stop this listener double-handling them against the global one.
     };
 
-    const handleKeyUp = (event: KeyboardEvent) => {
-      if (event.code === "Space") setIsSpaceDown(false);
-    };
-
-    // L1: clear pan-armed state if the window loses focus while Space is held.
-    const handleBlur = () => setIsSpaceDown(false);
-
     window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
-    window.addEventListener("blur", handleBlur);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
-      window.removeEventListener("blur", handleBlur);
     };
   }, [isActionMode, setEditingSide, side]);
 
@@ -1363,7 +1348,7 @@ export const PathCanvas = React.memo(function PathCanvas({
       height={height}
       viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
       className={`h-full w-full min-w-0 touch-none select-none bg-card ${
-        isSpaceDown || isPanning
+        isPanning
           ? "cursor-grab"
           : side === "preview" && !isActionMode
             ? "cursor-default"

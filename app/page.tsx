@@ -214,6 +214,15 @@ export default function ShapeShifter2026() {
         return;
       }
 
+      // Play / Pause — Space (toolbar, command palette, and onboarding all document this).
+      // Ignore key-repeat so holding Space doesn't flicker play/pause.
+      if (e.code === "Space" || e.key === " ") {
+        if (e.repeat) return;
+        e.preventDefault();
+        store.togglePlayback();
+        return;
+      }
+
       // Quick side switching
       if (e.key === "1") {
         store.setEditingSide("from");
