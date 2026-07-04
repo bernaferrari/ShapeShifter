@@ -26,6 +26,7 @@ import {
   getInterpolatedPath,
   isPointInFillRegion,
   pathToString,
+  scalePathToBounds,
   updateCommandPoint,
 } from "@/lib/shapeshifter/pathUtils";
 import { evaluateBlock } from "@/lib/shapeshifter/interpolators";
@@ -177,10 +178,21 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     frameId?: string;
   } | null>(null);
   const marqueeBaseRef = useRef<string[]>([]);
+  /**
+   * Layer AABB resize session. Geometry is frozen at pointer-down and re-projected
+   * every move (Figma / PathCanvas pattern). Scaling the *already-mutated* path from
+   * the original bounds each frame compounds and feels wildly buggy.
+   */
   const layerResizeRef = useRef<{
     handle: "nw" | "ne" | "sw" | "se" | "e" | "w" | "n" | "s";
-    start: { x: number; y: number };
+    /** Path-local AABB at drag start (no frame origin, no translate, no chrome pad). */
     origin: { x: number; y: number; w: number; h: number };
+    /** Layer translate frozen for the drag (cursor → path-local). */
+    translate: { x: number; y: number };
+    /** Pointer offset from the logical handle corner at grab (kills pad jump). */
+    grabOffset: { x: number; y: number };
+    origFrom: PathData;
+    origTo: PathData | null;
     moved: boolean;
   } | null>(null);
   const worldSvgRef = useRef<SVGSVGElement>(null);
@@ -1126,44 +1138,72 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         return;
       }
 
-      // Layer resize (Figma object handles)
+      // Layer resize (Figma object handles) — always scale FROZEN geometry
       if (layerResizeRef.current && editOrigin) {
         const rz = layerResizeRef.current;
         const o = rz.origin;
+        // World → frame → path-local (undo layer translate), then remove grab offset
+        // so the first frame doesn't jump by chrome pad.
+        const localX = p.x - editOrigin.x - rz.translate.x - rz.grabOffset.x;
+        const localY = p.y - editOrigin.y - rz.translate.y - rz.grabOffset.y;
+        const minSize = Math.max(editSnap, 0.5);
+        const right0 = o.x + o.w;
+        const bottom0 = o.y + o.h;
         let nx = o.x;
         let ny = o.y;
         let nw = o.w;
         let nh = o.h;
-        const lx = p.x - editOrigin.x;
-        const ly = p.y - editOrigin.y;
         const h = rz.handle;
-        if (h.includes("e")) nw = Math.max(editSnap, lx - o.x);
-        if (h.includes("s")) nh = Math.max(editSnap, ly - o.y);
+        if (h.includes("e")) nw = Math.max(minSize, localX - o.x);
+        if (h.includes("s")) nh = Math.max(minSize, localY - o.y);
         if (h.includes("w")) {
-          const right = o.x + o.w;
-          nx = Math.min(lx, right - editSnap);
-          nw = right - nx;
+          nx = Math.min(localX, right0 - minSize);
+          nw = right0 - nx;
         }
         if (h.includes("n")) {
-          const bottom = o.y + o.h;
-          ny = Math.min(ly, bottom - editSnap);
-          nh = bottom - ny;
+          ny = Math.min(localY, bottom0 - minSize);
+          nh = bottom0 - ny;
+        }
+        // Shift = lock aspect ratio (Figma), anchored on the opposite edge/corner.
+        if (e.shiftKey && o.w > 1e-6 && o.h > 1e-6) {
+          const aspect = o.w / o.h;
+          const isCorner = h === "nw" || h === "ne" || h === "sw" || h === "se";
+          if (isCorner) {
+            if (nw / Math.max(nh, minSize) > aspect) nh = nw / aspect;
+            else nw = nh * aspect;
+            if (h.includes("w")) nx = right0 - nw;
+            if (h.includes("n")) ny = bottom0 - nh;
+          } else if (h === "e" || h === "w") {
+            nh = nw / aspect;
+            ny = o.y + (o.h - nh) / 2;
+          } else if (h === "n" || h === "s") {
+            nw = nh * aspect;
+            nx = o.x + (o.w - nw) / 2;
+          }
         }
         if (snapToGrid && !(e.metaKey || e.ctrlKey)) {
           nx = snapValueToStep(nx, editSnap);
           ny = snapValueToStep(ny, editSnap);
-          nw = Math.max(editSnap, snapValueToStep(nw, editSnap));
-          nh = Math.max(editSnap, snapValueToStep(nh, editSnap));
+          nw = Math.max(minSize, snapValueToStep(nw, editSnap));
+          nh = Math.max(minSize, snapValueToStep(nh, editSnap));
+          if (h.includes("w")) nx = right0 - nw;
+          if (h.includes("n")) ny = bottom0 - nh;
         }
         if (!rz.moved) {
           useEditorStore.getState().pushHistory?.();
           rz.moved = true;
         }
-        useEditorStore.getState().resizeSelectedLayer(
-          { x: o.x, y: o.y, width: o.w, height: o.h },
-          { x: nx, y: ny, width: nw, height: nh },
-          { recordHistory: false },
-        );
+        const fromBounds = { x: o.x, y: o.y, width: o.w, height: o.h };
+        const toBounds = { x: nx, y: ny, width: nw, height: nh };
+        const scaledFrom = scalePathToBounds(rz.origFrom, fromBounds, toBounds);
+        const patch: Partial<(typeof layers)[number]> = {
+          from: scaledFrom,
+          pathData: scaledFrom,
+        };
+        if (rz.origTo) {
+          patch.to = scalePathToBounds(rz.origTo, fromBounds, toBounds);
+        }
+        useEditorStore.getState().updateSelectedLayer(patch, { recordHistory: false });
         syncActiveFrameLayers();
         return;
       }
@@ -2324,10 +2364,43 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                                 onPointerDown={(e) => {
                                   e.stopPropagation();
                                   e.preventDefault();
+                                  // Freeze path at grab — every move re-projects THIS geometry.
+                                  const origFrom = structuredClone(
+                                    (layer.from ?? layer.pathData) as PathData,
+                                  );
+                                  const origTo = layer.to
+                                    ? structuredClone(layer.to as PathData)
+                                    : null;
+                                  const world = worldPointFromEvent(e.clientX, e.clientY);
+                                  // Logical handle corner in path-local space (no chrome pad).
+                                  const cornerX =
+                                    hh.h.includes("w")
+                                      ? bb.x
+                                      : hh.h.includes("e")
+                                        ? bb.x + bb.w
+                                        : bb.x + bb.w / 2;
+                                  const cornerY =
+                                    hh.h.includes("n")
+                                      ? bb.y
+                                      : hh.h.includes("s")
+                                        ? bb.y + bb.h
+                                        : bb.y + bb.h / 2;
+                                  const localAtGrab = world
+                                    ? {
+                                        x: world.x - editOrigin.x - tx,
+                                        y: world.y - editOrigin.y - ty,
+                                      }
+                                    : { x: cornerX, y: cornerY };
                                   layerResizeRef.current = {
                                     handle: hh.h,
-                                    start: { x: e.clientX, y: e.clientY },
                                     origin: { ...bb },
+                                    translate: { x: tx, y: ty },
+                                    grabOffset: {
+                                      x: localAtGrab.x - cornerX,
+                                      y: localAtGrab.y - cornerY,
+                                    },
+                                    origFrom,
+                                    origTo,
                                     moved: false,
                                   };
                                   worldSvgRef.current?.setPointerCapture(e.pointerId);

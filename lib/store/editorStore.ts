@@ -1480,6 +1480,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
   },
 
+  /**
+   * Scale the selected layer path into `toBounds`.
+   *
+   * IMPORTANT: `fromBounds` must describe the geometry of the path being scaled
+   * *in this call*. If you resize across many pointer-move events, freeze the
+   * original path + bounds at pointer-down and pass those every time — never
+   * re-scale the already-mutated live path from the original bounds (that
+   * compounds and feels extremely buggy). Prefer updating via
+   * `scalePathToBounds(frozen, frozenBounds, next)` + `updateSelectedLayer`.
+   */
   resizeSelectedLayer: (fromBounds, toBounds, options) => {
     const { layers, selectedLayerId } = get();
     const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
