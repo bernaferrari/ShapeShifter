@@ -5,6 +5,8 @@ import {
   ChevronRight,
   Eye,
   EyeOff,
+  ArrowDown,
+  ArrowUp,
   Lock,
   MoreHorizontal,
   Pause,
@@ -149,6 +151,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
     hasCanvasSelection,
     toggleLayerVisibility,
     toggleLayerLock,
+    nudgeLayerZOrder,
     toggleLayerExpanded,
     convertLayerType,
     addTimelineBlock,
@@ -1254,6 +1257,32 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                   >
                     {row.frameId === selectedFrameId && (
                       <>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="grid size-5 place-items-center rounded-sm text-white/30 hover:bg-white/[0.07] hover:text-white/75"
+                          title="Bring forward (])"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            nudgeLayerZOrder(row.layer.id, 1);
+                          }}
+                          aria-label={`Bring ${row.name} forward`}
+                        >
+                          <ArrowUp className="h-3 w-3" strokeWidth={1.75} />
+                        </span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="grid size-5 place-items-center rounded-sm text-white/30 hover:bg-white/[0.07] hover:text-white/75"
+                          title="Send backward ([)"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            nudgeLayerZOrder(row.layer.id, -1);
+                          }}
+                          aria-label={`Send ${row.name} backward`}
+                        >
+                          <ArrowDown className="h-3 w-3" strokeWidth={1.75} />
+                        </span>
                         <span
                           role="button"
                           tabIndex={0}

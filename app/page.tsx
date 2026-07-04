@@ -116,6 +116,11 @@ export default function ShapeShifter2026() {
         store.setToolMode("paint");
         return;
       }
+      if (e.key.toLowerCase() === "k" && !e.metaKey) {
+        e.preventDefault();
+        store.setToolMode("knife");
+        return;
+      }
       if (e.key.toLowerCase() === "h" && !e.metaKey) {
         // Hand tool (temporary pan via space is primary; H arms pan mode)
         e.preventDefault();
@@ -168,6 +173,17 @@ export default function ShapeShifter2026() {
         e.preventDefault();
         if (e.shiftKey) store.ungroupSelectedLayer();
         else store.groupSelectedLayers();
+        return;
+      }
+      // Z-order (Figma ] / [ )
+      if (e.key === "]" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        store.nudgeLayerZOrder(store.selectedLayerId, 1);
+        return;
+      }
+      if (e.key === "[" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        store.nudgeLayerZOrder(store.selectedLayerId, -1);
         return;
       }
       // Lock toggle

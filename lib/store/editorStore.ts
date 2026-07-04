@@ -255,6 +255,8 @@ interface EditorState {
   deleteSelectedLayers: () => void;
   toggleLayerLock: (id: string | number) => void;
   reorderLayer: (id: string | number, toIndex: number) => void;
+  /** Z-order: +1 bring forward, -1 send backward (Figma ] / [ style). */
+  nudgeLayerZOrder: (id: string | number, delta: number) => void;
   groupSelectedLayers: () => void;
   ungroupSelectedLayer: () => void;
   /** Space-hold temporary pan (Figma hand); keyup without pan = play/pause. */
@@ -1067,6 +1069,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
     if (layerIndex === -1) return false;
     const layer = layers[layerIndex];
+    if (layer.locked) return false;
 
     if (!layer.to) return false; // static layer — nothing to auto-fix.
     const [from, to] = autoFixPathPair(layer.from, layer.to);
@@ -1725,6 +1728,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({ layers: next });
   },
 
+  nudgeLayerZOrder: (id, delta) => {
+    const { layers } = get();
+    const fromIndex = layers.findIndex((l) => String(l.id) === String(id));
+    if (fromIndex === -1 || !delta) return;
+    get().reorderLayer(id, fromIndex + delta);
+  },
+
   groupSelectedLayers: () => {
     const { layers, selectedLayerIds, selectedLayerId } = get();
     const ids =
@@ -1821,6 +1831,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (layerIndex === -1) return;
 
     const layer = layers[layerIndex];
+    if (layer.locked) return;
     // Structural op: keep from/to command counts equal by splitting BOTH sides at the
     // same (subIdx, cmdIdx). The click determines the position on the active side; we
     // mirror the insertion onto the other side so the morph stays interpolatable.
@@ -1898,6 +1909,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (layerIndex === -1) return;
 
     const layer = layers[layerIndex];
+    if (layer.locked) return;
     const bendPath = (pathData: typeof layer.from) => {
       const next = structuredClone(pathData);
       const subPath = next.subPaths[segment.subPathIndex];
@@ -1966,6 +1978,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (layerIndex === -1) return;
 
     const layer = layers[layerIndex];
+    if (layer.locked) return;
     const flexPath = (pathData: typeof layer.from) => {
       const next = structuredClone(pathData);
       const subPath = next.subPaths[segment.subPathIndex];
@@ -2049,6 +2062,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (layerIndex === -1) return;
 
     const layer = layers[layerIndex];
+    if (layer.locked) return;
 
     // Structural op: delete the SAME command indices on BOTH sides so the morph stays
     // interpolatable. Group by subpath, delete highest index first to preserve indices.
@@ -2195,6 +2209,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
     if (layerIndex === -1) return;
     const layer = layers[layerIndex];
+    if (layer.locked) return;
     const targetPath = editingSide === "from" ? layer.from : endOf(layer);
     const updatedPath = splitCommandInHalf(
       targetPath,
@@ -2344,6 +2359,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (layerIndex === -1) return;
 
     const layer = layers[layerIndex];
+    if (layer.locked) return;
     const targetPath = editingSide === "from" ? layer.from : endOf(layer);
 
     const updatedPath = reversePath(targetPath);
@@ -2365,6 +2381,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (layerIndex === -1) return false;
 
     const layer = layers[layerIndex];
+    if (layer.locked) return false;
     const targetPath = editingSide === "from" ? layer.from : endOf(layer);
 
     const updatedPath = shiftPath(targetPath, steps);

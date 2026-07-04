@@ -12,6 +12,7 @@ export type ToolMode =
   | "hand"
   | "pencil"
   | "paint"
+  | "knife"
   | "ellipse"
   | "rectangle"
   | "zoomPan"
@@ -56,6 +57,7 @@ export const ALL_TOOL_MODES: ToolMode[] = [
   "hand",
   "pencil",
   "paint",
+  "knife",
   "ellipse",
   "rectangle",
   "zoomPan",

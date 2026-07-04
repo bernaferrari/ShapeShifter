@@ -495,6 +495,11 @@ export function Inspector() {
       ? ["rotation", "scaleX", "scaleY", "pivotX", "pivotY", "translateX", "translateY"]
       : [
           "pathData",
+          "translateX",
+          "translateY",
+          "rotation",
+          "scaleX",
+          "scaleY",
           "fillColor",
           "fillAlpha",
           "strokeColor",

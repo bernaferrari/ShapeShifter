@@ -173,6 +173,13 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const [renamingFrameId, setRenamingFrameId] = useState<string | null>(null);
   const [smartGuides, setSmartGuides] = useState<GuideLine[]>([]);
   const altCloneDoneRef = useRef(false);
+  /** World-canvas rotation session (degrees). */
+  const layerRotateRef = useRef<{
+    center: { x: number; y: number };
+    startAngle: number;
+    baseRotations: Array<{ id: string | number; rotation: number }>;
+    moved: boolean;
+  } | null>(null);
   /** Figma selection scope — driven by the store (frame | layer | none). */
   const selectTarget = selectionKind === "none" ? "frame" : selectionKind;
   const [marquee, setMarquee] = useState<{
@@ -199,7 +206,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       id: string | number;
       origFrom: PathData;
       origTo: PathData | null;
+      /** Path-local AABB freeze */
       origin: { x: number; y: number; w: number; h: number };
+      /** Frame-local AABB (path + translate) at grab */
+      frameOrigin?: { x: number; y: number; w: number; h: number };
+      baseTranslate?: { x: number; y: number };
     }>;
     moved: boolean;
   } | null>(null);
@@ -913,6 +924,20 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         applyWorldPaint(rawLocal);
         return;
       }
+      // Knife: click nearest point on selected path → insert cut (split) there
+      if (toolMode === "knife") {
+        if (!editOrigin) {
+          const fid = hitArtboard(p);
+          if (fid) selectFrame(fid);
+          return;
+        }
+        const layer = layers.find((l) => String(l.id) === String(selectedLayerId));
+        if (!layer || layer.locked) return;
+        const lx = rawLocal.x - (Number(layer.translateX) || 0);
+        const ly = rawLocal.y - (Number(layer.translateY) || 0);
+        useEditorStore.getState().addPointOnPath(lx, ly);
+        return;
+      }
 
       // ── Vector tool: point edit on anchors; empty drag = marquee (Figma) ──
       if (isPointTool && editPath && editOrigin) {
@@ -1232,14 +1257,35 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         return;
       }
 
-      // Layer resize (Figma object handles) — always scale FROZEN geometry
+      // Layer rotation (world handle above selection)
+      if (layerRotateRef.current) {
+        const rz = layerRotateRef.current;
+        const ang = (Math.atan2(p.y - rz.center.y, p.x - rz.center.x) * 180) / Math.PI;
+        let delta = ang - rz.startAngle;
+        if (e.shiftKey) delta = Math.round(delta / 15) * 15;
+        if (!rz.moved) {
+          useEditorStore.getState().pushHistory?.();
+          rz.moved = true;
+        }
+        const st = useEditorStore.getState();
+        const map = new Map(rz.baseRotations.map((b) => [String(b.id), b.rotation]));
+        useEditorStore.setState({
+          layers: st.layers.map((layer) => {
+            const base = map.get(String(layer.id));
+            if (base == null || layer.locked) return layer;
+            return { ...layer, rotation: base + delta };
+          }),
+        });
+        syncActiveFrameLayers();
+        return;
+      }
+
+      // Layer resize — control AABB is frame-local union; each item scales from freeze.
       if (layerResizeRef.current && editOrigin) {
         const rz = layerResizeRef.current;
         const o = rz.origin;
-        // World → frame → path-local (undo layer translate), then remove grab offset
-        // so the first frame doesn't jump by chrome pad.
-        const localX = p.x - editOrigin.x - rz.translate.x - rz.grabOffset.x;
-        const localY = p.y - editOrigin.y - rz.translate.y - rz.grabOffset.y;
+        const localX = p.x - editOrigin.x - rz.grabOffset.x;
+        const localY = p.y - editOrigin.y - rz.grabOffset.y;
         const minSize = Math.max(editSnap, 0.5);
         const right0 = o.x + o.w;
         const bottom0 = o.y + o.h;
@@ -1258,7 +1304,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
           ny = Math.min(localY, bottom0 - minSize);
           nh = bottom0 - ny;
         }
-        // Shift = lock aspect ratio (Figma), anchored on the opposite edge/corner.
         if (e.shiftKey && o.w > 1e-6 && o.h > 1e-6) {
           const aspect = o.w / o.h;
           const isCorner = h === "nw" || h === "ne" || h === "sw" || h === "se";
@@ -1287,32 +1332,47 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
           useEditorStore.getState().pushHistory?.();
           rz.moved = true;
         }
-        const controlFrom = { x: o.x, y: o.y, width: o.w, height: o.h };
-        const controlTo = { x: nx, y: ny, width: nw, height: nh };
-        const sx = controlTo.width / Math.max(0.001, controlFrom.width);
-        const sy = controlTo.height / Math.max(0.001, controlFrom.height);
-        // Re-project each frozen item (multi-safe — never clone primary onto siblings).
+        const sx = nw / Math.max(0.001, o.w);
+        const sy = nh / Math.max(0.001, o.h);
         const st = useEditorStore.getState();
         const nextLayers = st.layers.map((layer) => {
-          const item = rz.items.find((it) => String(it.id) === String(layer.id));
+          const item = rz.items.find((it) => String(it.id) === String(layer.id)) as
+            | (typeof rz.items)[number] & {
+                frameOrigin?: { x: number; y: number; w: number; h: number };
+                baseTranslate?: { x: number; y: number };
+              }
+            | undefined;
           if (!item) return layer;
-          const ownFrom = {
-            x: item.origin.x,
-            y: item.origin.y,
-            width: item.origin.w,
-            height: item.origin.h,
+          const po = item.origin; // path-local freeze
+          const fo = item.frameOrigin ?? {
+            x: po.x + (item.baseTranslate?.x ?? 0),
+            y: po.y + (item.baseTranslate?.y ?? 0),
+            w: po.w,
+            h: po.h,
           };
-          const ownTo = {
-            x: controlTo.x + (ownFrom.x - controlFrom.x) * sx,
-            y: controlTo.y + (ownFrom.y - controlFrom.y) * sy,
-            width: ownFrom.width * sx,
-            height: ownFrom.height * sy,
+          // New frame-local rect for this object under the scaled control AABB
+          const nfx = nx + (fo.x - o.x) * sx;
+          const nfy = ny + (fo.y - o.y) * sy;
+          const pathFrom = { x: po.x, y: po.y, width: po.w, height: po.h };
+          const pathTo = {
+            x: po.x,
+            y: po.y,
+            width: po.w * sx,
+            height: po.h * sy,
           };
-          const from = scalePathToBounds(item.origFrom, ownFrom, ownTo);
+          const from = scalePathToBounds(item.origFrom, pathFrom, pathTo);
           const to = item.origTo
-            ? scalePathToBounds(item.origTo, ownFrom, ownTo)
+            ? scalePathToBounds(item.origTo, pathFrom, pathTo)
             : layer.to;
-          return { ...layer, from, to, pathData: from };
+          // Keep path origin; move via translate so the object sits in nfx/nfy
+          return {
+            ...layer,
+            from,
+            to,
+            pathData: from,
+            translateX: nfx - po.x,
+            translateY: nfy - po.y,
+          };
         });
         useEditorStore.setState({ layers: nextLayers });
         syncActiveFrameLayers();
@@ -1487,9 +1547,14 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     (e: React.PointerEvent) => {
       const layerDragSession = layerDragRef.current;
       const hadLayerMove = !!(layerDragSession && layerDragSession.moved);
-      const hadLayerGesture = !!(layerDragSession || layerResizeRef.current);
+      const hadLayerGesture = !!(
+        layerDragSession ||
+        layerResizeRef.current ||
+        layerRotateRef.current
+      );
       layerDragRef.current = null;
       layerResizeRef.current = null;
+      layerRotateRef.current = null;
       setSmartGuides([]);
       altCloneDoneRef.current = false;
       if (hadLayerGesture) {
@@ -2039,6 +2104,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                             fill="url(#frame-grid-major)"
                             pointerEvents="none"
                           />
+                          {/* Clip layer content to artboard (Figma “Clip content”) */}
+                          <clipPath id={`frame-clip-${frame.id}`}>
+                            <rect x={0} y={0} width={b.w} height={b.h} rx={rx} />
+                          </clipPath>
+                          <g clipPath={`url(#frame-clip-${frame.id})`}>
                           {/* End-state morph ghost (Figma-like spatial feedback for from→to) */}
                           {onionD && !isPlaying && progress < 0.001 && (
                             <path
@@ -2133,6 +2203,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                               </g>
                             );
                           })}
+                          </g>
                           {/* thin, zoom-independent border / selection */}
                           <rect
                             x={0}
@@ -2179,15 +2250,17 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       ),
                     )}
 
-                    {/* Motion path trajectory for selected layer Position tracks */}
+                    {/* Motion paths for all selected layers with Position tracks */}
                     {!isPlaying &&
                       selectTarget === "layer" &&
                       editOrigin &&
-                      selectedLayerId != null &&
-                      (() => {
-                        const layer = layers.find(
-                          (l) => String(l.id) === String(selectedLayerId),
-                        );
+                      (selectedLayerIds.length
+                        ? selectedLayerIds
+                        : selectedLayerId != null
+                          ? [selectedLayerId]
+                          : []
+                      ).map((id) => {
+                        const layer = layers.find((l) => String(l.id) === String(id));
                         if (!layer) return null;
                         const pts = sampleMotionPath(
                           layer,
@@ -2222,27 +2295,28 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                               animation.duration,
                             ),
                         };
+                        const primary = String(id) === String(selectedLayerId);
                         return (
-                          <g pointerEvents="none">
+                          <g key={`mp-${id}`} pointerEvents="none">
                             <polyline
                               points={poly}
                               fill="none"
                               stroke="#0d99ff"
-                              strokeWidth={1.25}
+                              strokeWidth={primary ? 1.25 : 1}
                               strokeDasharray={`${worldPerPx * 4} ${worldPerPx * 3}`}
-                              opacity={0.75}
+                              opacity={primary ? 0.75 : 0.4}
                               vectorEffect="non-scaling-stroke"
                             />
                             <circle
                               cx={cur.x}
                               cy={cur.y}
-                              r={worldPerPx * 3.5}
+                              r={worldPerPx * (primary ? 3.5 : 2.5)}
                               fill="#0d99ff"
-                              opacity={0.9}
+                              opacity={primary ? 0.9 : 0.5}
                             />
                           </g>
                         );
-                      })()}
+                      })}
 
                     {/* Live world lasso polyline (60fps via raf, dashed, exact PathCanvas/9rp visual) */}
                     {worldLassoRef.current.length > 1 && (
@@ -2523,7 +2597,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                         );
                       })()}
 
-                    {/* Layer object selection — one tight AABB + Figma handles (Select only) */}
+                    {/* Layer selection — union AABB for multi + rotate handle (Select only) */}
                     {!isPlaying &&
                       isObjectTool &&
                       hasCanvasSelection &&
@@ -2531,35 +2605,53 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       editFrame &&
                       editOrigin &&
                       (() => {
-                        const layer = layers.find((l) => String(l.id) === String(selectedLayerId));
-                        if (!layer || layer.type === "group") return null;
-                        // Live store geometry (same source the selected path override uses).
-                        // Prefer morph-interpolated outline when scrubbing so the box hugs the fill.
-                        const sourcePath = (layer.pathData ?? layer.from) as PathData;
-                        let bb = getPathDataBounds(sourcePath);
-                        if (progress > 0.001 && layer.to && layer.from) {
-                          try {
-                            const morphD = getInterpolatedPath(
-                              layer.from as PathData,
-                              layer.to as PathData,
-                              progress,
-                            );
-                            bb = boundsFromPathD(morphD) ?? bb;
-                          } catch {
-                            /* keep source bounds */
-                          }
+                        const ids =
+                          selectedLayerIds.length > 0
+                            ? selectedLayerIds
+                            : selectedLayerId != null
+                              ? [selectedLayerId]
+                              : [];
+                        if (ids.length === 0) return null;
+                        // Frame-local union of path AABB + translate for all selected
+                        let uMinX = Infinity,
+                          uMinY = Infinity,
+                          uMaxX = -Infinity,
+                          uMaxY = -Infinity;
+                        const itemsMeta: Array<{
+                          id: string | number;
+                          bb: { x: number; y: number; w: number; h: number };
+                          tx: number;
+                          ty: number;
+                        }> = [];
+                        for (const id of ids) {
+                          const L = layers.find((l) => String(l.id) === String(id));
+                          if (!L || L.type === "group") continue;
+                          const sourcePath = (L.pathData ?? L.from) as PathData;
+                          let bb = getPathDataBounds(sourcePath);
+                          if (!bb) continue;
+                          const tx = Number(L.translateX) || 0;
+                          const ty = Number(L.translateY) || 0;
+                          itemsMeta.push({ id: L.id, bb, tx, ty });
+                          uMinX = Math.min(uMinX, bb.x + tx);
+                          uMinY = Math.min(uMinY, bb.y + ty);
+                          uMaxX = Math.max(uMaxX, bb.x + bb.w + tx);
+                          uMaxY = Math.max(uMaxY, bb.y + bb.h + ty);
                         }
-                        if (!bb) return null;
-                        const tx = Number(layer.translateX) || 0;
-                        const ty = Number(layer.translateY) || 0;
-                        // Tight world-space box — no chrome pad (pad made boxes look loose & misaligned).
-                        const ox = editOrigin.x + bb.x + tx;
-                        const oy = editOrigin.y + bb.y + ty;
-                        const ow = bb.w;
-                        const oh = bb.h;
-                        // Constant on-screen handle size (Figma ~6–7px).
-                        const hs = worldPerPx * 3; // half-size → 6 screen-px square
-                        const hit = worldPerPx * 5; // larger invisible hit for edges/corners
+                        if (!Number.isFinite(uMinX)) return null;
+                        // World coords for chrome
+                        const ox = editOrigin.x + uMinX;
+                        const oy = editOrigin.y + uMinY;
+                        const ow = Math.max(0.01, uMaxX - uMinX);
+                        const oh = Math.max(0.01, uMaxY - uMinY);
+                        // Control AABB in frame-local (includes translate) for resize math
+                        const controlLocal = {
+                          x: uMinX,
+                          y: uMinY,
+                          w: ow,
+                          h: oh,
+                        };
+                        const hs = worldPerPx * 3;
+                        const hit = worldPerPx * 5;
                         const handles: Array<{
                           h: "nw" | "ne" | "sw" | "se" | "e" | "w" | "n" | "s";
                           x: number;
@@ -2575,33 +2667,41 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                           { h: "w", x: ox, y: oy + oh / 2, cursor: "ew-resize" },
                           { h: "e", x: ox + ow, y: oy + oh / 2, cursor: "ew-resize" },
                         ];
+                        const rotHandleY = oy - worldPerPx * 18;
+                        const rotHandleX = ox + ow / 2;
                         const beginResize = (
                           e: React.PointerEvent,
                           handle: (typeof handles)[number]["h"],
                         ) => {
                           e.stopPropagation();
                           e.preventDefault();
-                          const freezeBounds = getPathDataBounds(
-                            (layer.from ?? layer.pathData) as PathData,
-                          ) ?? bb;
-                          const ids =
-                            selectedLayerIds.length > 0
-                              ? selectedLayerIds
-                              : [layer.id];
-                          const items = ids
-                            .map((id) => {
-                              const L = layers.find((l) => String(l.id) === String(id));
-                              if (!L || L.locked || L.type === "group") return null;
+                          const items = itemsMeta
+                            .map((m) => {
+                              const L = layers.find((l) => String(l.id) === String(m.id));
+                              if (!L || L.locked) return null;
                               const of = structuredClone(
                                 (L.from ?? L.pathData) as PathData,
                               );
-                              const ob = getPathDataBounds(of);
-                              if (!ob) return null;
                               return {
                                 id: L.id,
                                 origFrom: of,
-                                origTo: L.to ? structuredClone(L.to as PathData) : null,
-                                origin: { x: ob.x, y: ob.y, w: ob.w, h: ob.h },
+                                origTo: L.to
+                                  ? structuredClone(L.to as PathData)
+                                  : null,
+                                // Store frame-local bounds (path + translate) for proportional scale
+                                origin: {
+                                  x: m.bb.x + m.tx,
+                                  y: m.bb.y + m.ty,
+                                  w: m.bb.w,
+                                  h: m.bb.h,
+                                },
+                                pathOrigin: {
+                                  x: m.bb.x,
+                                  y: m.bb.y,
+                                  w: m.bb.w,
+                                  h: m.bb.h,
+                                },
+                                translate: { x: m.tx, y: m.ty },
                               };
                             })
                             .filter(Boolean) as Array<{
@@ -2609,45 +2709,71 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                             origFrom: PathData;
                             origTo: PathData | null;
                             origin: { x: number; y: number; w: number; h: number };
+                            pathOrigin: { x: number; y: number; w: number; h: number };
+                            translate: { x: number; y: number };
                           }>;
                           const world = worldPointFromEvent(e.clientX, e.clientY);
                           const cornerX = handle.includes("w")
-                            ? freezeBounds.x
+                            ? controlLocal.x
                             : handle.includes("e")
-                              ? freezeBounds.x + freezeBounds.w
-                              : freezeBounds.x + freezeBounds.w / 2;
+                              ? controlLocal.x + controlLocal.w
+                              : controlLocal.x + controlLocal.w / 2;
                           const cornerY = handle.includes("n")
-                            ? freezeBounds.y
+                            ? controlLocal.y
                             : handle.includes("s")
-                              ? freezeBounds.y + freezeBounds.h
-                              : freezeBounds.y + freezeBounds.h / 2;
+                              ? controlLocal.y + controlLocal.h
+                              : controlLocal.y + controlLocal.h / 2;
                           const localAtGrab = world
                             ? {
-                                x: world.x - editOrigin.x - tx,
-                                y: world.y - editOrigin.y - ty,
+                                x: world.x - editOrigin.x,
+                                y: world.y - editOrigin.y,
                               }
                             : { x: cornerX, y: cornerY };
                           layerResizeRef.current = {
                             handle,
-                            origin: {
-                              x: freezeBounds.x,
-                              y: freezeBounds.y,
-                              w: freezeBounds.w,
-                              h: freezeBounds.h,
-                            },
-                            translate: { x: tx, y: ty },
+                            origin: { ...controlLocal },
+                            translate: { x: 0, y: 0 },
                             grabOffset: {
                               x: localAtGrab.x - cornerX,
                               y: localAtGrab.y - cornerY,
                             },
-                            items,
+                            items: items.map((it) => ({
+                              id: it.id,
+                              origFrom: it.origFrom,
+                              origTo: it.origTo,
+                              origin: it.pathOrigin,
+                              frameOrigin: it.origin,
+                              baseTranslate: it.translate,
+                            })),
+                            moved: false,
+                          };
+                          worldSvgRef.current?.setPointerCapture(e.pointerId);
+                        };
+                        const beginRotate = (e: React.PointerEvent) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          const world = worldPointFromEvent(e.clientX, e.clientY);
+                          if (!world) return;
+                          const center = { x: ox + ow / 2, y: oy + oh / 2 };
+                          const startAngle =
+                            (Math.atan2(world.y - center.y, world.x - center.x) * 180) /
+                            Math.PI;
+                          layerRotateRef.current = {
+                            center,
+                            startAngle,
+                            baseRotations: ids.map((id) => {
+                              const L = layers.find((l) => String(l.id) === String(id));
+                              return {
+                                id,
+                                rotation: Number(L?.rotation) || 0,
+                              };
+                            }),
                             moved: false,
                           };
                           worldSvgRef.current?.setPointerCapture(e.pointerId);
                         };
                         return (
                           <g pointerEvents="none">
-                            {/* Tight selection stroke */}
                             <rect
                               x={ox}
                               y={oy}
@@ -2658,13 +2784,62 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                               strokeWidth={1.5}
                               vectorEffect="non-scaling-stroke"
                             />
-                            {/* Edge hit strips (invisible, easier grab) */}
+                            {/* Rotate stem + handle (Figma-style above center) */}
+                            <line
+                              x1={rotHandleX}
+                              y1={oy}
+                              x2={rotHandleX}
+                              y2={rotHandleY}
+                              stroke="#0d99ff"
+                              strokeWidth={1}
+                              vectorEffect="non-scaling-stroke"
+                            />
+                            <circle
+                              cx={rotHandleX}
+                              cy={rotHandleY}
+                              r={hs * 1.1}
+                              fill="#ffffff"
+                              stroke="#0d99ff"
+                              strokeWidth={1.25}
+                              vectorEffect="non-scaling-stroke"
+                              pointerEvents="all"
+                              style={{ cursor: "grab", pointerEvents: "auto" }}
+                              onPointerDown={beginRotate}
+                            />
                             {(
                               [
-                                { h: "n" as const, x1: ox, y1: oy, x2: ox + ow, y2: oy, c: "ns-resize" },
-                                { h: "s" as const, x1: ox, y1: oy + oh, x2: ox + ow, y2: oy + oh, c: "ns-resize" },
-                                { h: "w" as const, x1: ox, y1: oy, x2: ox, y2: oy + oh, c: "ew-resize" },
-                                { h: "e" as const, x1: ox + ow, y1: oy, x2: ox + ow, y2: oy + oh, c: "ew-resize" },
+                                {
+                                  h: "n" as const,
+                                  x1: ox,
+                                  y1: oy,
+                                  x2: ox + ow,
+                                  y2: oy,
+                                  c: "ns-resize",
+                                },
+                                {
+                                  h: "s" as const,
+                                  x1: ox,
+                                  y1: oy + oh,
+                                  x2: ox + ow,
+                                  y2: oy + oh,
+                                  c: "ns-resize",
+                                },
+                                {
+                                  h: "w" as const,
+                                  x1: ox,
+                                  y1: oy,
+                                  x2: ox,
+                                  y2: oy + oh,
+                                  c: "ew-resize",
+                                },
+                                {
+                                  h: "e" as const,
+                                  x1: ox + ow,
+                                  y1: oy,
+                                  x2: ox + ow,
+                                  y2: oy + oh,
+                                  c: "ew-resize",
+                                },
                               ] as const
                             ).map((edge) => (
                               <line
