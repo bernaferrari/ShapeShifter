@@ -11,6 +11,7 @@ import {
   pathToString,
   updatePoint,
   scalePathToBounds,
+  getPathDataBounds,
   deleteCommand,
   deleteSubPath,
   extractSubPath,
@@ -1215,9 +1216,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({ layers: newLayers });
   },
   updateSelectedLayer: (patch, options) => {
-    // Multi-select: apply shared props to all selected (Figma batch edit).
     const ids = get().selectedLayerIds;
-    if (ids.length > 1) {
+    // Path geometry must never be batch-copied onto multi-select (corrupts siblings).
+    const isPathPatch =
+      patch.from != null || patch.to != null || patch.pathData != null;
+    if (ids.length > 1 && !isPathPatch) {
+      // Shared style/transform props → all selected (Figma batch).
       get().updateSelectedLayers(patch, options);
       return;
     }
@@ -1315,6 +1319,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (layerIndex === -1) return;
 
     const layer = layers[layerIndex];
+    if (layer.locked) return;
     const targetPath = editingSide === "from" ? layer.from : endOf(layer);
 
     const updatedPath = updatePoint(
@@ -1346,6 +1351,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (layerIndex === -1) return;
 
     const layer = layers[layerIndex];
+    if (layer.locked) return;
     let targetPath = editingSide === "from" ? layer.from : endOf(layer);
 
     // Apply delta to every selected point (uniform translate for batch drag)
@@ -1589,8 +1595,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   /**
-   * Scale the selected layer path into `toBounds`.
-   * Multi-select: scales every selected unlocked path by the same delta bounds.
+   * Scale selected path(s). `fromBounds`/`toBounds` are the control AABB (usually
+   * the primary layer's frozen path-local bounds). Each selected layer scales
+   * from its *own* bounds by the same factors, so multi-select never clones one
+   * path onto another.
    */
   resizeSelectedLayer: (fromBounds, toBounds, options) => {
     const { layers, selectedLayerIds, selectedLayerId } = get();
@@ -1601,11 +1609,45 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           ? [selectedLayerId]
           : [];
     const idSet = new Set(ids.map(String));
+    const sx = toBounds.width / Math.max(0.001, fromBounds.width);
+    const sy = toBounds.height / Math.max(0.001, fromBounds.height);
+    const mapOwn = (
+      path: PathData,
+      frozenOwn: { x: number; y: number; width: number; height: number } | null,
+    ) => {
+      const ownFrom =
+        frozenOwn ??
+        (() => {
+          const b = getPathDataBounds(path);
+          return b
+            ? { x: b.x, y: b.y, width: b.w, height: b.h }
+            : { x: 0, y: 0, width: 1, height: 1 };
+        })();
+      const ownTo = {
+        x: toBounds.x + (ownFrom.x - fromBounds.x) * sx,
+        y: toBounds.y + (ownFrom.y - fromBounds.y) * sy,
+        width: ownFrom.width * sx,
+        height: ownFrom.height * sy,
+      };
+      return scalePathToBounds(path, ownFrom, ownTo);
+    };
     const newLayers = layers.map((layer) => {
       if (!idSet.has(String(layer.id)) || layer.locked) return layer;
       if (layer.type === "group") return layer;
-      const from = scalePathToBounds(layer.from, fromBounds, toBounds);
-      const to = mapToEnd(layer, (p) => scalePathToBounds(p, fromBounds, toBounds));
+      const ownB = getPathDataBounds(layer.from);
+      const frozenOwn = ownB
+        ? { x: ownB.x, y: ownB.y, width: ownB.w, height: ownB.h }
+        : null;
+      // Note: live bounds each move is ok when we use proportional mapping from control AABB;
+      // for frozen-source multi, canvas should pass control AABB from primary freeze.
+      const from = mapOwn(layer.from, frozenOwn);
+      const to = mapToEnd(layer, (p) => {
+        const ob = getPathDataBounds(p);
+        return mapOwn(
+          p,
+          ob ? { x: ob.x, y: ob.y, width: ob.w, height: ob.h } : null,
+        );
+      });
       return { ...layer, from, to, pathData: from };
     });
 

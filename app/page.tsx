@@ -918,7 +918,11 @@ export default function ShapeShifter2026() {
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">Space</kbd>
-                  <span className="text-muted-foreground">Play / Pause</span>
+                  <span className="text-muted-foreground">Tap play · hold+drag pan</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">H</kbd>
+                  <span className="text-muted-foreground">Hand / pan</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">
@@ -938,20 +942,20 @@ export default function ShapeShifter2026() {
                   <span className="text-muted-foreground">Move / Select</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">P</kbd>
-                  <span className="text-muted-foreground">Pen (click points, drag curves; dbl-click last/Esc/Enter finish, click start to close)</span>
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">A / D</kbd>
+                  <span className="text-muted-foreground">Vector / Direct</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">D</kbd>
-                  <span className="text-muted-foreground">Direct / Bend (Ctrl+drag flex)</span>
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">P</kbd>
+                  <span className="text-muted-foreground">Pen</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">L</kbd>
-                  <span className="text-muted-foreground">Lasso / Pencil</span>
+                  <span className="text-muted-foreground">Lasso</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">B</kbd>
-                  <span className="text-muted-foreground">Paint / Fill bucket</span>
+                  <span className="text-muted-foreground">Paint / Fill</span>
                 </div>
               </div>
             </div>
@@ -961,20 +965,24 @@ export default function ShapeShifter2026() {
               </div>
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
-                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">A</kbd>
-                  <span className="text-muted-foreground">Auto Fix</span>
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">⇧F</kbd>
+                  <span className="text-muted-foreground">Auto Fix morph</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">R</kbd>
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">⇧R</kbd>
                   <span className="text-muted-foreground">Reverse path</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">S</kbd>
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">⇧S</kbd>
                   <span className="text-muted-foreground">Shift points</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">X / F</kbd>
-                  <span className="text-muted-foreground">Split / Set first (Action)</span>
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">⌘G / ⇧⌘G</kbd>
+                  <span className="text-muted-foreground">Group / Ungroup</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">X</kbd>
+                  <span className="text-muted-foreground">Split command</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">Delete / ⌫</kbd>
@@ -1107,7 +1115,7 @@ export default function ShapeShifter2026() {
                 })
               }
             >
-              <Zap className="mr-2 h-4 w-4" /> Auto Fix <CommandShortcut>A</CommandShortcut>
+              <Zap className="mr-2 h-4 w-4" /> Auto Fix <CommandShortcut>⇧F</CommandShortcut>
             </CommandItem>
             <CommandItem
               onSelect={() =>
@@ -1117,7 +1125,7 @@ export default function ShapeShifter2026() {
                 })
               }
             >
-              <RotateCw className="mr-2 h-4 w-4" /> Reverse <CommandShortcut>R</CommandShortcut>
+              <RotateCw className="mr-2 h-4 w-4" /> Reverse <CommandShortcut>⇧R</CommandShortcut>
             </CommandItem>
             <CommandItem
               onSelect={() =>
@@ -1128,7 +1136,7 @@ export default function ShapeShifter2026() {
               }
             >
               <ArrowLeftRight className="mr-2 h-4 w-4" /> Shift Points{" "}
-              <CommandShortcut>S</CommandShortcut>
+              <CommandShortcut>⇧S</CommandShortcut>
             </CommandItem>
             <CommandItem
               onSelect={() =>

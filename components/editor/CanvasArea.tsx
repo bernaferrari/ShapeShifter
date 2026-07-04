@@ -190,14 +190,17 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
    */
   const layerResizeRef = useRef<{
     handle: "nw" | "ne" | "sw" | "se" | "e" | "w" | "n" | "s";
-    /** Path-local AABB at drag start (no frame origin, no translate, no chrome pad). */
+    /** Control AABB (primary path-local) at drag start. */
     origin: { x: number; y: number; w: number; h: number };
-    /** Layer translate frozen for the drag (cursor → path-local). */
     translate: { x: number; y: number };
-    /** Pointer offset from the logical handle corner at grab (kills pad jump). */
     grabOffset: { x: number; y: number };
-    origFrom: PathData;
-    origTo: PathData | null;
+    /** Frozen source geometry per selected layer (never re-scale live paths). */
+    items: Array<{
+      id: string | number;
+      origFrom: PathData;
+      origTo: PathData | null;
+      origin: { x: number; y: number; w: number; h: number };
+    }>;
     moved: boolean;
   } | null>(null);
   const worldSvgRef = useRef<SVGSVGElement>(null);
@@ -1284,17 +1287,34 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
           useEditorStore.getState().pushHistory?.();
           rz.moved = true;
         }
-        const fromBounds = { x: o.x, y: o.y, width: o.w, height: o.h };
-        const toBounds = { x: nx, y: ny, width: nw, height: nh };
-        const scaledFrom = scalePathToBounds(rz.origFrom, fromBounds, toBounds);
-        const patch: Partial<(typeof layers)[number]> = {
-          from: scaledFrom,
-          pathData: scaledFrom,
-        };
-        if (rz.origTo) {
-          patch.to = scalePathToBounds(rz.origTo, fromBounds, toBounds);
-        }
-        useEditorStore.getState().updateSelectedLayer(patch, { recordHistory: false });
+        const controlFrom = { x: o.x, y: o.y, width: o.w, height: o.h };
+        const controlTo = { x: nx, y: ny, width: nw, height: nh };
+        const sx = controlTo.width / Math.max(0.001, controlFrom.width);
+        const sy = controlTo.height / Math.max(0.001, controlFrom.height);
+        // Re-project each frozen item (multi-safe — never clone primary onto siblings).
+        const st = useEditorStore.getState();
+        const nextLayers = st.layers.map((layer) => {
+          const item = rz.items.find((it) => String(it.id) === String(layer.id));
+          if (!item) return layer;
+          const ownFrom = {
+            x: item.origin.x,
+            y: item.origin.y,
+            width: item.origin.w,
+            height: item.origin.h,
+          };
+          const ownTo = {
+            x: controlTo.x + (ownFrom.x - controlFrom.x) * sx,
+            y: controlTo.y + (ownFrom.y - controlFrom.y) * sy,
+            width: ownFrom.width * sx,
+            height: ownFrom.height * sy,
+          };
+          const from = scalePathToBounds(item.origFrom, ownFrom, ownTo);
+          const to = item.origTo
+            ? scalePathToBounds(item.origTo, ownFrom, ownTo)
+            : layer.to;
+          return { ...layer, from, to, pathData: from };
+        });
+        useEditorStore.setState({ layers: nextLayers });
         syncActiveFrameLayers();
         return;
       }
@@ -2561,14 +2581,35 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                         ) => {
                           e.stopPropagation();
                           e.preventDefault();
-                          // Freeze source geometry (from/to), not the morph-preview path.
-                          const origFrom = structuredClone(
+                          const freezeBounds = getPathDataBounds(
                             (layer.from ?? layer.pathData) as PathData,
-                          );
-                          const freezeBounds = getPathDataBounds(origFrom) ?? bb;
-                          const origTo = layer.to
-                            ? structuredClone(layer.to as PathData)
-                            : null;
+                          ) ?? bb;
+                          const ids =
+                            selectedLayerIds.length > 0
+                              ? selectedLayerIds
+                              : [layer.id];
+                          const items = ids
+                            .map((id) => {
+                              const L = layers.find((l) => String(l.id) === String(id));
+                              if (!L || L.locked || L.type === "group") return null;
+                              const of = structuredClone(
+                                (L.from ?? L.pathData) as PathData,
+                              );
+                              const ob = getPathDataBounds(of);
+                              if (!ob) return null;
+                              return {
+                                id: L.id,
+                                origFrom: of,
+                                origTo: L.to ? structuredClone(L.to as PathData) : null,
+                                origin: { x: ob.x, y: ob.y, w: ob.w, h: ob.h },
+                              };
+                            })
+                            .filter(Boolean) as Array<{
+                            id: string | number;
+                            origFrom: PathData;
+                            origTo: PathData | null;
+                            origin: { x: number; y: number; w: number; h: number };
+                          }>;
                           const world = worldPointFromEvent(e.clientX, e.clientY);
                           const cornerX = handle.includes("w")
                             ? freezeBounds.x
@@ -2588,14 +2629,18 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                             : { x: cornerX, y: cornerY };
                           layerResizeRef.current = {
                             handle,
-                            origin: { ...freezeBounds },
+                            origin: {
+                              x: freezeBounds.x,
+                              y: freezeBounds.y,
+                              w: freezeBounds.w,
+                              h: freezeBounds.h,
+                            },
                             translate: { x: tx, y: ty },
                             grabOffset: {
                               x: localAtGrab.x - cornerX,
                               y: localAtGrab.y - cornerY,
                             },
-                            origFrom,
-                            origTo,
+                            items,
                             moved: false,
                           };
                           worldSvgRef.current?.setPointerCapture(e.pointerId);
