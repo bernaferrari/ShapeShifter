@@ -24,7 +24,9 @@ import {
 } from "@/lib/shapeshifter/camera";
 import {
   getInterpolatedPath,
+  getPathDataBounds,
   isPointInFillRegion,
+  parsePath,
   pathToString,
   scalePathToBounds,
   updateCommandPoint,
@@ -144,25 +146,17 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   // for the 24×24 case) and never finer than the grid you can actually see.
   const editSnap = Math.min(gridSpec.minor, 1);
 
-  /** Axis-aligned bounds from a path `d` string (for Figma-style object selection box). */
+  /**
+   * Bounds from a path `d` string via real parse (not naive number pairing — that
+   * mis-reads arcs/flags and produced wrong, jumpy selection boxes).
+   */
   const boundsFromPathD = (d: string) => {
-    const nums = d.match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi)?.map(Number) ?? [];
-    if (nums.length < 2) return null;
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (let i = 0; i + 1 < nums.length; i += 2) {
-      const x = nums[i];
-      const y = nums[i + 1];
-      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-      minX = Math.min(minX, x);
-      minY = Math.min(minY, y);
-      maxX = Math.max(maxX, x);
-      maxY = Math.max(maxY, y);
+    if (!d?.trim()) return null;
+    try {
+      return getPathDataBounds(parsePath(d));
+    } catch {
+      return null;
     }
-    if (!Number.isFinite(minX)) return null;
-    return { x: minX, y: minY, w: Math.max(0.01, maxX - minX), h: Math.max(0.01, maxY - minY) };
   };
 
   const [isWorldPanning, setIsWorldPanning] = useState(false);
@@ -1955,14 +1949,15 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                               selectedLayerIds.some((id) => String(id) === String(draw.id));
                             const isLayerHover =
                               hoveredLayerKey === `${frame.id}:${draw.id}` && !isLayerSel;
-                            // Object mode only: AABB resize box. Vector edit shows anchors instead.
-                            const bb =
+                            // Hover outline only here (tight AABB). Selected chrome is a
+                            // single world-space overlay below so box + handles never desync.
+                            const hoverBb =
                               !isPointTool &&
-                              (isLayerSel || isLayerHover) &&
+                              isLayerHover &&
+                              !isLayerSel &&
                               draw.d
                                 ? boundsFromPathD(draw.d)
                                 : null;
-                            const pad = worldPerPx * 2;
                             const tform =
                               draw.translateX || draw.translateY
                                 ? `translate(${draw.translateX} ${draw.translateY})`
@@ -1996,17 +1991,16 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                                     pointerEvents="none"
                                   />
                                 )}
-                                {/* Figma: thin blue AABB only — no heavy chrome */}
-                                {bb && (
+                                {hoverBb && (
                                   <rect
-                                    x={bb.x - pad}
-                                    y={bb.y - pad}
-                                    width={bb.w + pad * 2}
-                                    height={bb.h + pad * 2}
+                                    x={hoverBb.x}
+                                    y={hoverBb.y}
+                                    width={hoverBb.w}
+                                    height={hoverBb.h}
                                     fill="none"
                                     stroke="#0d99ff"
                                     strokeWidth={1}
-                                    strokeOpacity={isLayerSel ? 1 : 0.45}
+                                    strokeOpacity={0.55}
                                     vectorEffect="non-scaling-stroke"
                                     pointerEvents="none"
                                   />
@@ -2277,7 +2271,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       editFrame &&
                       (() => {
                         const b = getFrameBounds(editFrame);
-                        const hs = worldPerPx * 4;
+                        const hs = worldPerPx * 3;
                         const handles: Array<{
                           h: "se" | "e" | "s";
                           x: number;
@@ -2297,7 +2291,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                                 y={hh.y - hs}
                                 width={hs * 2}
                                 height={hs * 2}
-                                rx={hs * 0.3}
+                                rx={worldPerPx * 1}
                                 fill="#ffffff"
                                 stroke="#0d99ff"
                                 strokeWidth={1.25}
@@ -2310,7 +2304,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                         );
                       })()}
 
-                    {/* Layer object resize — Select tool only (hidden in vector edit) */}
+                    {/* Layer object selection — one tight AABB + Figma handles (Select only) */}
                     {!isPlaying &&
                       isObjectTool &&
                       hasCanvasSelection &&
@@ -2320,18 +2314,33 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       (() => {
                         const layer = layers.find((l) => String(l.id) === String(selectedLayerId));
                         if (!layer || layer.type === "group") return null;
-                        const d = pathToString((layer.pathData ?? layer.from) as PathData);
-                        const bb = boundsFromPathD(d);
+                        // Live store geometry (same source the selected path override uses).
+                        // Prefer morph-interpolated outline when scrubbing so the box hugs the fill.
+                        const sourcePath = (layer.pathData ?? layer.from) as PathData;
+                        let bb = getPathDataBounds(sourcePath);
+                        if (progress > 0.001 && layer.to && layer.from) {
+                          try {
+                            const morphD = getInterpolatedPath(
+                              layer.from as PathData,
+                              layer.to as PathData,
+                              progress,
+                            );
+                            bb = boundsFromPathD(morphD) ?? bb;
+                          } catch {
+                            /* keep source bounds */
+                          }
+                        }
                         if (!bb) return null;
-                        const pad = worldPerPx * 2;
                         const tx = Number(layer.translateX) || 0;
                         const ty = Number(layer.translateY) || 0;
-                        const ox = editOrigin.x + bb.x - pad + tx;
-                        const oy = editOrigin.y + bb.y - pad + ty;
-                        const ow = bb.w + pad * 2;
-                        const oh = bb.h + pad * 2;
-                        // ~7 screen-px handles (constant size)
-                        const hs = worldPerPx * 3.5;
+                        // Tight world-space box — no chrome pad (pad made boxes look loose & misaligned).
+                        const ox = editOrigin.x + bb.x + tx;
+                        const oy = editOrigin.y + bb.y + ty;
+                        const ow = bb.w;
+                        const oh = bb.h;
+                        // Constant on-screen handle size (Figma ~6–7px).
+                        const hs = worldPerPx * 3; // half-size → 6 screen-px square
+                        const hit = worldPerPx * 5; // larger invisible hit for edges/corners
                         const handles: Array<{
                           h: "nw" | "ne" | "sw" | "se" | "e" | "w" | "n" | "s";
                           x: number;
@@ -2347,8 +2356,87 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                           { h: "w", x: ox, y: oy + oh / 2, cursor: "ew-resize" },
                           { h: "e", x: ox + ow, y: oy + oh / 2, cursor: "ew-resize" },
                         ];
+                        const beginResize = (
+                          e: React.PointerEvent,
+                          handle: (typeof handles)[number]["h"],
+                        ) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          // Freeze source geometry (from/to), not the morph-preview path.
+                          const origFrom = structuredClone(
+                            (layer.from ?? layer.pathData) as PathData,
+                          );
+                          const freezeBounds = getPathDataBounds(origFrom) ?? bb;
+                          const origTo = layer.to
+                            ? structuredClone(layer.to as PathData)
+                            : null;
+                          const world = worldPointFromEvent(e.clientX, e.clientY);
+                          const cornerX = handle.includes("w")
+                            ? freezeBounds.x
+                            : handle.includes("e")
+                              ? freezeBounds.x + freezeBounds.w
+                              : freezeBounds.x + freezeBounds.w / 2;
+                          const cornerY = handle.includes("n")
+                            ? freezeBounds.y
+                            : handle.includes("s")
+                              ? freezeBounds.y + freezeBounds.h
+                              : freezeBounds.y + freezeBounds.h / 2;
+                          const localAtGrab = world
+                            ? {
+                                x: world.x - editOrigin.x - tx,
+                                y: world.y - editOrigin.y - ty,
+                              }
+                            : { x: cornerX, y: cornerY };
+                          layerResizeRef.current = {
+                            handle,
+                            origin: { ...freezeBounds },
+                            translate: { x: tx, y: ty },
+                            grabOffset: {
+                              x: localAtGrab.x - cornerX,
+                              y: localAtGrab.y - cornerY,
+                            },
+                            origFrom,
+                            origTo,
+                            moved: false,
+                          };
+                          worldSvgRef.current?.setPointerCapture(e.pointerId);
+                        };
                         return (
-                          <g>
+                          <g pointerEvents="none">
+                            {/* Tight selection stroke */}
+                            <rect
+                              x={ox}
+                              y={oy}
+                              width={ow}
+                              height={oh}
+                              fill="none"
+                              stroke="#0d99ff"
+                              strokeWidth={1.5}
+                              vectorEffect="non-scaling-stroke"
+                            />
+                            {/* Edge hit strips (invisible, easier grab) */}
+                            {(
+                              [
+                                { h: "n" as const, x1: ox, y1: oy, x2: ox + ow, y2: oy, c: "ns-resize" },
+                                { h: "s" as const, x1: ox, y1: oy + oh, x2: ox + ow, y2: oy + oh, c: "ns-resize" },
+                                { h: "w" as const, x1: ox, y1: oy, x2: ox, y2: oy + oh, c: "ew-resize" },
+                                { h: "e" as const, x1: ox + ow, y1: oy, x2: ox + ow, y2: oy + oh, c: "ew-resize" },
+                              ] as const
+                            ).map((edge) => (
+                              <line
+                                key={`hit-${edge.h}`}
+                                x1={edge.x1}
+                                y1={edge.y1}
+                                x2={edge.x2}
+                                y2={edge.y2}
+                                stroke="transparent"
+                                strokeWidth={hit * 2}
+                                pointerEvents="stroke"
+                                vectorEffect="non-scaling-stroke"
+                                style={{ cursor: edge.c, pointerEvents: "stroke" }}
+                                onPointerDown={(e) => beginResize(e, edge.h)}
+                              />
+                            ))}
                             {handles.map((hh) => (
                               <rect
                                 key={hh.h}
@@ -2356,55 +2444,14 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                                 y={hh.y - hs}
                                 width={hs * 2}
                                 height={hs * 2}
+                                rx={worldPerPx * 1}
                                 fill="#ffffff"
                                 stroke="#0d99ff"
-                                strokeWidth={1}
+                                strokeWidth={1.25}
                                 vectorEffect="non-scaling-stroke"
-                                style={{ cursor: hh.cursor }}
-                                onPointerDown={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  // Freeze path at grab — every move re-projects THIS geometry.
-                                  const origFrom = structuredClone(
-                                    (layer.from ?? layer.pathData) as PathData,
-                                  );
-                                  const origTo = layer.to
-                                    ? structuredClone(layer.to as PathData)
-                                    : null;
-                                  const world = worldPointFromEvent(e.clientX, e.clientY);
-                                  // Logical handle corner in path-local space (no chrome pad).
-                                  const cornerX =
-                                    hh.h.includes("w")
-                                      ? bb.x
-                                      : hh.h.includes("e")
-                                        ? bb.x + bb.w
-                                        : bb.x + bb.w / 2;
-                                  const cornerY =
-                                    hh.h.includes("n")
-                                      ? bb.y
-                                      : hh.h.includes("s")
-                                        ? bb.y + bb.h
-                                        : bb.y + bb.h / 2;
-                                  const localAtGrab = world
-                                    ? {
-                                        x: world.x - editOrigin.x - tx,
-                                        y: world.y - editOrigin.y - ty,
-                                      }
-                                    : { x: cornerX, y: cornerY };
-                                  layerResizeRef.current = {
-                                    handle: hh.h,
-                                    origin: { ...bb },
-                                    translate: { x: tx, y: ty },
-                                    grabOffset: {
-                                      x: localAtGrab.x - cornerX,
-                                      y: localAtGrab.y - cornerY,
-                                    },
-                                    origFrom,
-                                    origTo,
-                                    moved: false,
-                                  };
-                                  worldSvgRef.current?.setPointerCapture(e.pointerId);
-                                }}
+                                pointerEvents="all"
+                                style={{ cursor: hh.cursor, pointerEvents: "auto" }}
+                                onPointerDown={(e) => beginResize(e, hh.h)}
                               />
                             ))}
                           </g>

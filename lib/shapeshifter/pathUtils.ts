@@ -315,6 +315,37 @@ export function pathToString(pathData: PathData): string {
   return d.trim();
 }
 
+/** Axis-aligned bounds of path command points (object-selection / resize AABB). */
+export function getPathDataBounds(
+  pathData: PathData | null | undefined,
+): { x: number; y: number; w: number; h: number } | null {
+  if (!pathData?.subPaths?.length) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let any = false;
+  for (const sub of pathData.subPaths) {
+    for (const cmd of sub.commands) {
+      for (const p of cmd.points ?? []) {
+        if (!Number.isFinite(p?.x) || !Number.isFinite(p?.y)) continue;
+        any = true;
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x);
+        maxY = Math.max(maxY, p.y);
+      }
+    }
+  }
+  if (!any) return null;
+  return {
+    x: minX,
+    y: minY,
+    w: Math.max(0.01, maxX - minX),
+    h: Math.max(0.01, maxY - minY),
+  };
+}
+
 /**
  * Get all commands flattened (for the current simple model).
  */
