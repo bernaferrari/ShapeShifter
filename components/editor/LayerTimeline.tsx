@@ -88,7 +88,7 @@ function formatCompactValue(
   return s;
 }
 
-/** Hollow diamond keyframes — Figma motion timeline */
+/** Hollow diamond keyframes — Figma motion timeline (losange). */
 function KeyframeDiamond({
   active,
   size = 7,
@@ -101,16 +101,20 @@ function KeyframeDiamond({
   return (
     <span
       className={cn(
-        "inline-block shrink-0 rotate-45 rounded-[0.5px] border transition-colors",
+        // block + fixed box so rotate-45 pivots on true geometric center
+        // (inline-block + line-height was offsetting the diamond vs the rail).
+        "block shrink-0 rotate-45 rounded-[0.5px] border border-solid transition-colors",
         active ? "bg-[#0C8CE9]" : "bg-[#2C2C2C] hover:bg-[#0C8CE9]/20",
         className,
       )}
       style={{
         width: size,
         height: size,
+        boxSizing: "border-box",
         borderColor: FIGMA_BLUE,
         borderWidth: 1.25,
         backgroundColor: active ? FIGMA_BLUE : undefined,
+        transformOrigin: "center center",
       }}
       aria-hidden
     />
@@ -576,12 +580,16 @@ export function LayerTimeline(_props: LayerTimelineProps) {
     if (asKeyframes) {
       const startPct = (block.startTime / animation.duration) * 100;
       const endPct = (block.endTime / animation.duration) * 100;
+      const diamondSize = 7;
+      // Shared mid-line for rail + diamonds so the line threads the lozenge centers.
+      const midY = "top-1/2 -translate-y-1/2";
       return (
         <div key={block.id} className="pointer-events-none absolute inset-0 z-[1]">
-          {/* Segment rail between keyframes */}
+          {/* Segment rail — same vertical mid as the diamonds */}
           <div
             className={cn(
-              "pointer-events-auto absolute top-1/2 h-px -translate-y-1/2 cursor-grab active:cursor-grabbing",
+              "pointer-events-auto absolute h-px cursor-grab active:cursor-grabbing",
+              midY,
               isSelected ? "bg-[#0C8CE9]/55" : "bg-white/20 hover:bg-white/30",
             )}
             style={{
@@ -598,10 +606,13 @@ export function LayerTimeline(_props: LayerTimelineProps) {
               useEditorStore.getState().toggleBlockSelection(block.id);
             }}
           />
-          {/* Start keyframe */}
+          {/* Start keyframe — flex box so the rotated diamond sits on the rail mid-line */}
           <button
             type="button"
-            className="pointer-events-auto absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize p-1.5"
+            className={cn(
+              "pointer-events-auto absolute z-10 flex size-5 -translate-x-1/2 cursor-ew-resize items-center justify-center p-0",
+              midY,
+            )}
             style={{ left: `${startPct}%` }}
             title={`Keyframe @ ${block.startTime}ms`}
             onPointerDown={handleResizeStart("start")}
@@ -614,12 +625,15 @@ export function LayerTimeline(_props: LayerTimelineProps) {
               jumpToMs(block.startTime);
             }}
           >
-            <KeyframeDiamond active={isSelected} size={7} />
+            <KeyframeDiamond active={isSelected} size={diamondSize} />
           </button>
           {/* End keyframe */}
           <button
             type="button"
-            className="pointer-events-auto absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize p-1.5"
+            className={cn(
+              "pointer-events-auto absolute z-10 flex size-5 -translate-x-1/2 cursor-ew-resize items-center justify-center p-0",
+              midY,
+            )}
             style={{ left: `${endPct}%` }}
             title={`Keyframe @ ${block.endTime}ms`}
             onPointerDown={handleResizeStart("end")}
@@ -632,12 +646,15 @@ export function LayerTimeline(_props: LayerTimelineProps) {
               jumpToMs(block.endTime);
             }}
           >
-            <KeyframeDiamond active={isSelected} size={7} />
+            <KeyframeDiamond active={isSelected} size={diamondSize} />
           </button>
           {/* Interpolator control when selected (mid-rail) */}
           {isSelected && (
             <div
-              className="pointer-events-auto absolute top-1/2 z-[3] -translate-x-1/2 -translate-y-1/2"
+              className={cn(
+                "pointer-events-auto absolute z-[3] -translate-x-1/2",
+                midY,
+              )}
               style={{ left: `${(startPct + endPct) / 2}%` }}
             >
               <DropdownMenu>
@@ -1495,13 +1512,13 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                                 style={{ left: `${startPct}%`, width: `${widthPct}%` }}
                               />
                               <span
-                                className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
+                                className="absolute top-1/2 flex size-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center"
                                 style={{ left: `${startPct}%` }}
                               >
                                 <KeyframeDiamond size={6} />
                               </span>
                               <span
-                                className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
+                                className="absolute top-1/2 flex size-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center"
                                 style={{ left: `${endPct}%` }}
                               >
                                 <KeyframeDiamond size={6} />
