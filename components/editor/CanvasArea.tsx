@@ -36,9 +36,7 @@ import {
 } from "@/lib/shapeshifter/pathUtils";
 import {
   numberAtTime,
-  pathDAtTime,
   sampleMotionPath,
-  colorAtTime,
 } from "@/lib/shapeshifter/playheadResolve";
 import { snapRectToGuides, type GuideLine } from "@/lib/shapeshifter/smartGuides";
 import { collectPointsInLasso, pointInPolygon } from "@/lib/shapeshifter/gestures/HitTests";
@@ -54,6 +52,11 @@ import {
   unionOwnedLayerBounds,
   type SceneOwner,
 } from "@/lib/shapeshifter/scene/selection";
+import {
+  resolveWorldLayerDraws,
+  type WorldLayerDraw,
+} from "@/lib/shapeshifter/scene/render";
+import { hitTestOwnedLayers } from "@/lib/shapeshifter/scene/hitTest";
 import type { Command, PathData, Selection } from "@/lib/shapeshifter/types";
 
 interface CanvasAreaProps {
@@ -457,91 +460,16 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   // Eliminates repeated .find + pathToString on every world pan/zoom/selection change
   // for large multi-frame docs. Recomputes only when frames change (correct). Exact
   // pattern + location as culledFrames useMemo immediately above.
-  /** Per-frame path layers for world render (all visible path/clip layers, not just first). */
-  type WorldLayerDraw = {
-    id: string | number;
-    d: string;
-    fill: string | null;
-    stroke: string | null;
-    fillOpacity: number;
-    strokeOpacity: number;
-    strokeWidth: number;
-    fillGradient: any;
-    fillType?: string;
-    translateX: number;
-    translateY: number;
-    rotation?: number;
-  };
-
   const frameLayerDraws = useCallback(
     (frame: (typeof frames)[number], morph: boolean): WorldLayerDraw[] => {
       // Active frame uses live store layers so multi-edit + playhead stay in sync.
-      const sourceLayers =
-        frame.id === selectedFrameId ? layers : (frame.layers ?? []);
-      const layerList = sourceLayers.filter(
-        (l: any) =>
-          l &&
-          l.visible !== false &&
-          (l.type === "path" || l.type === "clipPath" || l.from || l.pathData),
+      const active = frame.id === selectedFrameId;
+      return resolveWorldLayerDraws(
+        active ? layers : (frame.layers ?? []),
+        active ? animation : frame.animation,
+        progress,
+        morph || progress > 0.001 || isPlaying,
       );
-      const blocks =
-        frame.id === selectedFrameId
-          ? animation.blocks
-          : (frame.animation?.blocks ?? []);
-      const dur = Math.max(
-        1,
-        frame.id === selectedFrameId
-          ? animation.duration
-          : frame.animation?.duration || 1000,
-      );
-      const curMs = progress * dur;
-      const useTime = morph || progress > 0.001 || isPlaying;
-      return layerList.map((layer: any) => {
-        const d = useTime
-          ? pathDAtTime(layer, blocks, curMs, dur, progress)
-          : pathToString(layer.from || layer.pathData);
-        const tx = useTime
-          ? numberAtTime(layer, blocks, "translateX", curMs, dur)
-          : Number(layer.translateX) || 0;
-        const ty = useTime
-          ? numberAtTime(layer, blocks, "translateY", curMs, dur)
-          : Number(layer.translateY) || 0;
-        const fillColor = useTime
-          ? colorAtTime(
-              layer,
-              blocks,
-              "fillColor",
-              curMs,
-              dur,
-              layer.fillColor || "",
-            )
-          : layer.fillColor;
-        const fillAlpha = useTime
-          ? numberAtTime(layer, blocks, "fillAlpha", curMs, dur)
-          : (layer.fillAlpha ?? 1);
-        const strokeAlpha = useTime
-          ? numberAtTime(layer, blocks, "strokeAlpha", curMs, dur)
-          : (layer.strokeAlpha ?? 1);
-        const rot = useTime
-          ? numberAtTime(layer, blocks, "rotation", curMs, dur)
-          : Number(layer.rotation) || 0;
-        return {
-          id: layer.id,
-          d,
-          fill:
-            fillColor && fillColor !== "none" && fillColor !== "" ? fillColor : null,
-          stroke:
-            layer.strokeColor && layer.strokeColor !== "" ? layer.strokeColor : null,
-          fillOpacity: fillAlpha,
-          strokeOpacity: strokeAlpha,
-          strokeWidth: Number(layer.strokeWidth) || 0,
-          fillGradient: layer.fillGradient,
-          fillType: layer.fillType,
-          translateX: tx,
-          translateY: ty,
-          rotation: rot,
-        };
-      });
     },
     [progress, layers, selectedFrameId, animation, isPlaying],
   );
@@ -615,17 +543,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     [frames, getFrameBounds],
   );
 
-  /** Distance from point to segment AB (local frame space). */
-  const distToSeg = (px: number, py: number, ax: number, ay: number, bx: number, by: number) => {
-    const abx = bx - ax;
-    const aby = by - ay;
-    const len2 = abx * abx + aby * aby;
-    if (len2 < 1e-12) return Math.hypot(px - ax, py - ay);
-    let t = ((px - ax) * abx + (py - ay) * aby) / len2;
-    t = Math.max(0, Math.min(1, t));
-    return Math.hypot(px - (ax + t * abx), py - (ay + t * aby));
-  };
-
   /**
    * Figma-style hit: topmost path/clip layer under the cursor (any frame).
    * Local frame coordinates; fill hit or stroke proximity.
@@ -633,107 +550,29 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const hitLayerAtWorld = useCallback(
     (pt: { x: number; y: number } | null): { frameId: string; layerId: string | number } | null => {
       if (!pt) return null;
-      const strokeTol = Math.max(worldPerPx * 10, 2);
-      const hitOwner = (
-        ownerId: string,
-        ownerLayers: typeof layers,
-        origin: { x: number; y: number },
-      ) => {
-        const local = { x: pt.x - origin.x, y: pt.y - origin.y };
-        const candidates = [...ownerLayers]
-          .filter(
-            (l: any) =>
-              l &&
-              l.visible !== false &&
-              l.locked !== true &&
-              (l.type === "path" || l.type === "clipPath" || l.from || l.pathData),
-          )
-          .reverse();
-        for (const layer of candidates) {
-          const path: PathData = layer.pathData ?? layer.from;
-          if (!path?.subPaths?.length) continue;
-          // Hit in path-local space (inverse of layer translate)
-          const tx = Number(layer.translateX) || 0;
-          const ty = Number(layer.translateY) || 0;
-          const localPath = { x: local.x - tx, y: local.y - ty };
-          const hasFill = Boolean(
-            layer.fillColor && layer.fillColor !== "none" && layer.fillColor !== "",
+      const rootOwner = sceneOwners.find((owner) => owner.ownerId === PAGE_ROOT_ID);
+      const frameOwners = [...sceneOwners]
+        .filter((owner) => owner.ownerId !== PAGE_ROOT_ID)
+        .filter((owner) => {
+          const frame = frames.find((candidate) => candidate.id === owner.ownerId);
+          if (!frame) return false;
+          const bounds = getFrameBounds(frame);
+          return (
+            pt.x >= bounds.x &&
+            pt.x <= bounds.x + bounds.w &&
+            pt.y >= bounds.y &&
+            pt.y <= bounds.y + bounds.h
           );
-          if (hasFill && isPointInFillRegion(localPath, path)) {
-            return { frameId: ownerId, layerId: layer.id };
-          }
-          // Stroke / open paths: near anchors or polyline segments of each command
-          let nearStroke = false;
-          for (const sp of path.subPaths) {
-            let prev: { x: number; y: number } | null = null;
-            for (const cmd of sp.commands) {
-              const pts = cmd.points ?? [];
-              if (pts.length === 0) continue;
-              const end = pts[pts.length - 1];
-              for (const p of pts) {
-                if (Math.hypot(localPath.x - p.x, localPath.y - p.y) <= strokeTol) {
-                  nearStroke = true;
-                  break;
-                }
-              }
-              if (nearStroke) break;
-              if (
-                prev &&
-                distToSeg(localPath.x, localPath.y, prev.x, prev.y, end.x, end.y) <= strokeTol
-              ) {
-                nearStroke = true;
-                break;
-              }
-              // Cubic: also check control-point polyline approximation
-              if (pts.length >= 3 && prev) {
-                for (let i = 0; i < pts.length - 1; i++) {
-                  if (
-                    distToSeg(
-                      localPath.x,
-                      localPath.y,
-                      pts[i].x,
-                      pts[i].y,
-                      pts[i + 1].x,
-                      pts[i + 1].y,
-                    ) <=
-                    strokeTol
-                  ) {
-                    nearStroke = true;
-                    break;
-                  }
-                }
-              }
-              if (nearStroke) break;
-              prev = end;
-            }
-            if (nearStroke) break;
-          }
-          if (nearStroke) return { frameId: ownerId, layerId: layer.id };
-          if (!hasFill && isPointInFillRegion(localPath, path)) {
-            return { frameId: ownerId, layerId: layer.id };
-          }
-        }
-        return null;
-      };
-
-      // Root vectors render above frames and therefore win hit testing first.
-      const rootHit = hitOwner(
-        PAGE_ROOT_ID,
-        selectedFrameId === PAGE_ROOT_ID ? layers : rootLayers,
-        { x: 0, y: 0 },
+        })
+        .reverse();
+      const hit = hitTestOwnedLayers(
+        rootOwner ? [rootOwner, ...frameOwners] : frameOwners,
+        pt,
+        Math.max(worldPerPx * 10, 2),
       );
-      if (rootHit) return rootHit;
-
-      for (const f of [...frames].reverse()) {
-        const b = getFrameBounds(f);
-        if (pt.x < b.x || pt.x > b.x + b.w || pt.y < b.y || pt.y > b.y + b.h) continue;
-        const ownerLayers = f.id === selectedFrameId ? layers : (f.layers ?? []);
-        const hit = hitOwner(f.id, ownerLayers, { x: b.x, y: b.y });
-        if (hit) return hit;
-      }
-      return null;
+      return hit ? { frameId: hit.ownerId, layerId: hit.layerId } : null;
     },
-    [frames, getFrameBounds, layers, rootLayers, selectedFrameId, worldPerPx],
+    [frames, getFrameBounds, sceneOwners, worldPerPx],
   );
 
   const selectOwnedLayer = useCallback(
