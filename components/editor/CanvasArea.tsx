@@ -13,7 +13,11 @@ import {
   Trash2,
 } from "lucide-react";
 import { PathCanvas } from "./PathCanvas";
-import { PAGE_ROOT_ID, useEditorStore } from "@/lib/store/editorStore";
+import {
+  PAGE_ROOT_ID,
+  useEditorStore,
+  type LayerSelectionRef,
+} from "@/lib/store/editorStore";
 import type { Viewport } from "@/lib/shapeshifter/camera";
 import {
   clientToWorld,
@@ -44,6 +48,12 @@ import {
 } from "@/lib/shapeshifter/gestures/select/ObjectDragGesture";
 import { generateId } from "@/lib/shapeshifter/ids";
 import { gradientDomId, gradientToSvg } from "@/lib/shapeshifter/gradients";
+import {
+  collectOwnedLayersInRect,
+  getOwnedLayerBounds,
+  unionOwnedLayerBounds,
+  type SceneOwner,
+} from "@/lib/shapeshifter/scene/selection";
 import type { Command, PathData, Selection } from "@/lib/shapeshifter/types";
 
 interface CanvasAreaProps {
@@ -81,7 +91,9 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     selectPoint,
     selectLayer,
     selectLayers,
+    selectLayerRefs,
     selectedLayerIds,
+    selectedLayerRefs,
     selectedPoints,
     updateSelectedLayer,
     setToolMode,
@@ -138,6 +150,36 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       : editFrame
         ? { x: editFrame.x || 0, y: editFrame.y || 0 }
         : null;
+  const sceneOwners = useMemo<SceneOwner[]>(
+    () => [
+      {
+        ownerId: PAGE_ROOT_ID,
+        origin: { x: 0, y: 0 },
+        layers: selectedFrameId === PAGE_ROOT_ID ? layers : rootLayers,
+      },
+      ...frames.map((frame) => ({
+        ownerId: frame.id,
+        origin: { x: frame.x || 0, y: frame.y || 0 },
+        layers: frame.id === selectedFrameId ? layers : (frame.layers ?? []),
+      })),
+    ],
+    [frames, layers, rootLayers, selectedFrameId],
+  );
+  const selectedLayerRefKeys = useMemo(
+    () =>
+      new Set(
+        selectedLayerRefs.map((ref) => `${ref.ownerId}:${String(ref.layerId)}`),
+      ),
+    [selectedLayerRefs],
+  );
+  const selectedLayerOwnerCount = useMemo(
+    () => new Set(selectedLayerRefs.map((ref) => ref.ownerId)).size,
+    [selectedLayerRefs],
+  );
+  const documentSelectionBounds = useMemo(
+    () => unionOwnedLayerBounds(sceneOwners, selectedLayerRefs),
+    [sceneOwners, selectedLayerRefs],
+  );
   /** Layer Position transform — anchors live in path space, then this offset. */
   const editLayerTx = Number(editLayer?.translateX) || 0;
   const editLayerTy = Number(editLayer?.translateY) || 0;
@@ -197,6 +239,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     frameId?: string;
   } | null>(null);
   const marqueeBaseRef = useRef<string[]>([]);
+  const marqueeLayerBaseRef = useRef<LayerSelectionRef[]>([]);
   /**
    * Layer AABB resize session. Geometry is frozen at pointer-down and re-projected
    * every move (Figma / PathCanvas pattern). Scaling the *already-mutated* path from
@@ -745,60 +788,38 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         };
       }
 
-      if (!modifiers.bypassSnap && editOrigin && editFrame) {
-        const state = useEditorStore.getState();
-        const ids = state.selectedLayerIds;
-        let minX = Infinity;
-        let minY = Infinity;
-        let maxX = -Infinity;
-        let maxY = -Infinity;
-        for (const id of ids) {
-          const layer = state.layers.find((candidate) => String(candidate.id) === String(id));
-          if (!layer?.from) continue;
-          const bounds = getPathDataBounds(layer.from as PathData);
-          if (!bounds) continue;
-          const tx = (layer.translateX ?? 0) + next.x;
-          const ty = (layer.translateY ?? 0) + next.y;
-          minX = Math.min(minX, editOrigin.x + bounds.x + tx);
-          minY = Math.min(minY, editOrigin.y + bounds.y + ty);
-          maxX = Math.max(maxX, editOrigin.x + bounds.x + bounds.w + tx);
-          maxY = Math.max(maxY, editOrigin.y + bounds.y + bounds.h + ty);
-        }
-        if (Number.isFinite(minX)) {
-          const moving = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
-          const frameBounds = getFrameBounds(editFrame);
-          const targets = [
-            { x: frameBounds.x, y: frameBounds.y, w: frameBounds.w, h: frameBounds.h },
-            {
-              x: frameBounds.x + frameBounds.w / 2,
-              y: frameBounds.y,
-              w: 0,
-              h: frameBounds.h,
-            },
-          ];
-          for (const layer of state.layers) {
-            if (ids.some((id) => String(id) === String(layer.id))) continue;
-            if (!layer.from || layer.visible === false) continue;
-            const bounds = getPathDataBounds(layer.from as PathData);
-            if (!bounds) continue;
-            targets.push({
-              x: editOrigin.x + bounds.x + (layer.translateX ?? 0),
-              y: editOrigin.y + bounds.y + (layer.translateY ?? 0),
-              w: bounds.w,
-              h: bounds.h,
-            });
+      if (!modifiers.bypassSnap && documentSelectionBounds) {
+        const moving = {
+          ...documentSelectionBounds,
+          x: documentSelectionBounds.x + next.x,
+          y: documentSelectionBounds.y + next.y,
+        };
+        const targets = frames.map((frame) => getFrameBounds(frame));
+        for (const owner of sceneOwners) {
+          for (const item of getOwnedLayerBounds(owner)) {
+            if (selectedLayerRefKeys.has(`${item.ownerId}:${String(item.layerId)}`)) continue;
+            targets.push(item.bounds);
           }
-          const snapped = snapRectToGuides(moving, targets, worldPerPx * 6);
-          next.x += snapped.x - moving.x;
-          next.y += snapped.y - moving.y;
-          setSmartGuides(snapped.guides);
         }
+        const snapped = snapRectToGuides(moving, targets, worldPerPx * 6);
+        next.x += snapped.x - moving.x;
+        next.y += snapped.y - moving.y;
+        setSmartGuides(snapped.guides);
       } else {
         setSmartGuides([]);
       }
       return next;
     },
-    [editFrame, editOrigin, editSnap, getFrameBounds, snapToGrid, worldPerPx],
+    [
+      documentSelectionBounds,
+      editSnap,
+      frames,
+      getFrameBounds,
+      sceneOwners,
+      selectedLayerRefKeys,
+      snapToGrid,
+      worldPerPx,
+    ],
   );
 
   const beginObjectDrag = useCallback(
@@ -820,6 +841,16 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
           const store = useEditorStore.getState();
           store.recordLayerTranslationAtPlayhead();
           syncActiveOwner(true);
+          const selectionOwners = new Set(
+            useEditorStore.getState().selectedLayerRefs.map((ref) => ref.ownerId),
+          );
+          // A cross-owner group retains each object's parent. Reparenting the group
+          // is a separate document command; collapsing it into one hit frame here
+          // would destroy its owner-relative hierarchy.
+          if (selectionOwners.size > 1) {
+            setSmartGuides([]);
+            return;
+          }
           const dropFrameId = hitArtboard(result.end);
           if (dropFrameId && dropFrameId !== useEditorStore.getState().selectedFrameId) {
             const moved = useEditorStore
@@ -1200,20 +1231,20 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       if (isObjectTool) {
         const layerHit = hitLayerAtWorld(p);
         if (layerHit) {
-          if (
-            additive &&
-            selectionKind === "layer" &&
-            layerHit.frameId === selectedFrameId
-          ) {
-            // Shift+click toggle layer into multi-select
-            const cur = selectedLayerIds.map(String);
-            const id = String(layerHit.layerId);
-            const next = cur.includes(id)
-              ? selectedLayerIds.filter((x) => String(x) !== id)
-              : [...selectedLayerIds, layerHit.layerId];
-            selectLayers(next);
+          const hitKey = `${layerHit.frameId}:${String(layerHit.layerId)}`;
+          if (additive && selectionKind === "layer") {
+            const next = selectedLayerRefKeys.has(hitKey)
+              ? selectedLayerRefs.filter(
+                  (ref) => `${ref.ownerId}:${String(ref.layerId)}` !== hitKey,
+                )
+              : [
+                  ...selectedLayerRefs,
+                  { ownerId: layerHit.frameId, layerId: layerHit.layerId },
+                ];
+            selectLayerRefs(next);
           } else {
-            selectOwnedLayer(layerHit);
+            // Grabbing any member of an existing multi-selection moves the group.
+            if (!selectedLayerRefKeys.has(hitKey)) selectOwnedLayer(layerHit);
             layerDragRef.current = beginObjectDrag(p);
           }
           setWorldSelectedIds(layerHit.frameId === PAGE_ROOT_ID ? [] : [layerHit.frameId]);
@@ -1255,6 +1286,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         if (!additive) {
           setWorldSelectedIds([hitId]);
         }
+        marqueeLayerBaseRef.current = additive ? selectedLayerRefs : [];
         marqueeBaseRef.current = [];
         setMarquee({ start: p, current: p, scope: "layers", frameId: hitId });
       } else {
@@ -1277,6 +1309,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       hitArtboard,
       hitLayerAtWorld,
       selectOwnedLayer,
+      selectLayerRefs,
       beginObjectDrag,
       toolMode,
       isObjectTool,
@@ -1286,6 +1319,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       selectLayers,
       selectedFrameId,
       selectedLayerIds,
+      selectedLayerRefs,
+      selectedLayerRefKeys,
       worldSelectedIds,
       hasCanvasSelection,
       selectionKind,
@@ -1575,51 +1610,30 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         setMarquee({ ...marquee, current: p });
 
         if (marquee.scope === "layers" && marquee.frameId) {
-          const fr = frames.find((f) => f.id === marquee.frameId);
-          if (fr) {
-            const fb = getFrameBounds(fr);
-            // Prefer live layers when this is the active frame
-            const layerList =
-              fr.id === selectedFrameId ? layers : (fr.layers ?? []);
-            const hitIds: (string | number)[] = [];
-            for (const layer of layerList) {
-              if (
-                !layer ||
-                layer.visible === false ||
-                (layer.type !== "path" &&
-                  layer.type !== "clipPath" &&
-                  !layer.from &&
-                  !layer.pathData)
-              )
-                continue;
-              const path = layer.pathData ?? layer.from;
-              const d = pathToString(path);
-              const bb = boundsFromPathD(d);
-              if (!bb) continue;
-              const tx = Number(layer.translateX) || 0;
-              const ty = Number(layer.translateY) || 0;
-              const wx = fb.x + bb.x + tx;
-              const wy = fb.y + bb.y + ty;
-              const intersects = !(
-                wx + bb.w < minX ||
-                wx > maxX ||
-                wy + bb.h < minY ||
-                wy > maxY
-              );
-              if (intersects) hitIds.push(layer.id);
+          if (dragDist >= worldPerPx * 4) {
+            const hits = collectOwnedLayersInRect(sceneOwners, {
+              x: minX,
+              y: minY,
+              w: maxX - minX,
+              h: maxY - minY,
+            });
+            const byKey = new Map<string, LayerSelectionRef>();
+            for (const ref of [...marqueeLayerBaseRef.current, ...hits]) {
+              byKey.set(`${ref.ownerId}:${String(ref.layerId)}`, ref);
             }
-            if (dragDist < worldPerPx * 4) {
-              // Still a click — wait for a real drag distance
-            } else if (hitIds.length > 0) {
-              if (String(selectedFrameId) !== String(marquee.frameId)) {
-                selectFrame(marquee.frameId);
-              }
-              // Load frame doc without wiping multi-select: selectFrame clears layers;
-              // re-apply multi after if we had to switch frames.
-              selectLayers(hitIds);
-              setWorldSelectedIds([marquee.frameId]);
+            const next = [...byKey.values()];
+            if (next.length > 0) {
+              selectLayerRefs(next);
+              setWorldSelectedIds(
+                Array.from(
+                  new Set(
+                    next
+                      .map((ref) => ref.ownerId)
+                      .filter((ownerId) => ownerId !== PAGE_ROOT_ID),
+                  ),
+                ),
+              );
             } else {
-              // Marquee open but nothing hit yet — select the frame shell
               selectFrame(marquee.frameId);
               setWorldSelectedIds([marquee.frameId]);
             }
@@ -1696,6 +1710,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       selectedFrameId,
       editSnap,
       syncActiveOwner,
+      sceneOwners,
+      selectLayerRefs,
     ],
   );
 
@@ -2295,7 +2311,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                           </clipPath>
                           <g
                             clipPath={
-                              frame.id === selectedFrameId && layerDragRef.current
+                              layerDragRef.current &&
+                              selectedLayerRefs.some((ref) => ref.ownerId === frame.id)
                                 ? undefined
                                 : `url(#frame-clip-${frame.id})`
                             }
@@ -2325,8 +2342,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                             const isLayerSel =
                               hasCanvasSelection &&
                               selectTarget === "layer" &&
-                              frame.id === selectedFrameId &&
-                              selectedLayerIds.some((id) => String(id) === String(draw.id));
+                              selectedLayerRefKeys.has(`${frame.id}:${String(draw.id)}`);
                             const isLayerHover =
                               hoveredLayerKey === `${frame.id}:${draw.id}` && !isLayerSel;
                             // Hover outline only here (tight AABB). Selected chrome is a
@@ -2420,9 +2436,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                         ? `${gradientDomId(PAGE_ROOT_ID)}-${draw.id}`
                         : null;
                       const selected =
-                        selectedFrameId === PAGE_ROOT_ID &&
                         hasCanvasSelection &&
-                        selectedLayerIds.some((id) => String(id) === String(draw.id));
+                        selectedLayerRefKeys.has(`${PAGE_ROOT_ID}:${String(draw.id)}`);
                       const hovered = hoveredLayerKey === `${PAGE_ROOT_ID}:${draw.id}` && !selected;
                       const bounds = hovered && draw.d ? boundsFromPathD(draw.d) : null;
                       const transform = [
@@ -2500,6 +2515,25 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                         />
                       ),
                     )}
+
+                    {/* One world-space group box when selection spans owners. */}
+                    {!isPlaying &&
+                      isObjectTool &&
+                      hasCanvasSelection &&
+                      selectedLayerOwnerCount > 1 &&
+                      documentSelectionBounds && (
+                        <rect
+                          x={documentSelectionBounds.x}
+                          y={documentSelectionBounds.y}
+                          width={Math.max(0.01, documentSelectionBounds.w)}
+                          height={Math.max(0.01, documentSelectionBounds.h)}
+                          fill="none"
+                          stroke="#0d99ff"
+                          strokeWidth={1.5}
+                          vectorEffect="non-scaling-stroke"
+                          pointerEvents="none"
+                        />
+                      )}
 
                     {/* Motion paths for all selected layers with Position tracks */}
                     {!isPlaying &&
@@ -2853,6 +2887,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       isObjectTool &&
                       hasCanvasSelection &&
                       selectTarget === "layer" &&
+                      selectedLayerOwnerCount <= 1 &&
                       editOrigin &&
                       (() => {
                         const ids =

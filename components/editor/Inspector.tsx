@@ -523,9 +523,11 @@ export function Inspector() {
     deleteSelectedPoint,
     selectedLayerId,
     selectedLayerIds,
+    selectedLayerRefs,
     editingSide,
     layers,
     updateSelectedLayer,
+    translateSelectedLayer,
     startActionMode,
     animation,
     selectedPoints,
@@ -536,7 +538,7 @@ export function Inspector() {
 
   const point = getCurrentSelectedPoint ? getCurrentSelectedPoint() : null;
   const currentLayer = layers.find((l) => l.id === selectedLayerId);
-  const multiCount = selectedLayerIds?.length ?? 0;
+  const multiCount = selectedLayerRefs.length || selectedLayerIds?.length || 0;
   const updateLayer = (patch: Partial<Layer>) => updateSelectedLayer(patch);
   const setPath = (parsed: ReturnType<typeof parsePath>) =>
     updateLayer(editingSide === "from" ? { from: parsed, pathData: parsed } : { to: parsed });
@@ -1066,13 +1068,21 @@ export function Inspector() {
           <NumberRow
             label="X"
             value={currentLayer.translateX ?? 0}
-            onChange={(v) => updateLayer({ translateX: v })}
+            onChange={(v) =>
+              multiCount > 1
+                ? translateSelectedLayer(v - (currentLayer.translateX ?? 0), 0)
+                : updateLayer({ translateX: v })
+            }
             animate={multiCount <= 1 ? { layerId: currentLayer.id, propertyName: "translateX" } : undefined}
           />
           <NumberRow
             label="Y"
             value={currentLayer.translateY ?? 0}
-            onChange={(v) => updateLayer({ translateY: v })}
+            onChange={(v) =>
+              multiCount > 1
+                ? translateSelectedLayer(0, v - (currentLayer.translateY ?? 0))
+                : updateLayer({ translateY: v })
+            }
             animate={multiCount <= 1 ? { layerId: currentLayer.id, propertyName: "translateY" } : undefined}
           />
           <NumberRow

@@ -109,6 +109,95 @@ describe("editorStore", () => {
   });
 
   describe("cross-frame layer reparenting", () => {
+    it("moves a document-wide selection across owners as one group", () => {
+      const first = getStore().frames[0];
+      const second = getStore().frames[1];
+      const firstLayer = first.layers[0];
+      const secondLayer = second.layers[0];
+      const firstX = firstLayer.translateX ?? 0;
+      const secondX = secondLayer.translateX ?? 0;
+
+      getStore().selectLayerRefs([
+        { ownerId: first.id, layerId: firstLayer.id },
+        { ownerId: second.id, layerId: secondLayer.id },
+      ]);
+      getStore().translateSelectedLayer(7, -2);
+
+      const state = getStore();
+      expect(
+        state.frames
+          .find((frame) => frame.id === first.id)!
+          .layers.find((layer) => layer.id === firstLayer.id)!.translateX,
+      ).toBe(firstX + 7);
+      expect(
+        state.frames
+          .find((frame) => frame.id === second.id)!
+          .layers.find((layer) => layer.id === secondLayer.id)!.translateX,
+      ).toBe(secondX + 7);
+      expect(state.selectedLayerRefs).toEqual([
+        { ownerId: first.id, layerId: firstLayer.id },
+        { ownerId: second.id, layerId: secondLayer.id },
+      ]);
+
+      getStore().undo();
+      expect(
+        getStore().frames
+          .find((frame) => frame.id === first.id)!
+          .layers.find((layer) => layer.id === firstLayer.id)!.translateX ?? 0,
+      ).toBe(firstX);
+    });
+
+    it("Alt-duplicates every member of a cross-owner selection", () => {
+      const first = getStore().frames[0];
+      const second = getStore().frames[1];
+      getStore().selectLayerRefs([
+        { ownerId: first.id, layerId: first.layers[0].id },
+        { ownerId: second.id, layerId: second.layers[0].id },
+      ]);
+
+      getStore().duplicateSelectedLayersOffset(3, 4);
+
+      expect(getStore().selectedLayerRefs).toHaveLength(2);
+      expect(new Set(getStore().selectedLayerRefs.map((ref) => ref.ownerId))).toEqual(
+        new Set([first.id, second.id]),
+      );
+      expect(getStore().frames.find((frame) => frame.id === first.id)!.layers).toHaveLength(
+        first.layers.length + 1,
+      );
+      expect(getStore().frames.find((frame) => frame.id === second.id)!.layers).toHaveLength(
+        second.layers.length + 1,
+      );
+    });
+
+    it("records position motion tracks for every selected owner", () => {
+      const first = getStore().frames[0];
+      const second = getStore().frames[1];
+      const firstLayer = first.layers[0];
+      const secondLayer = second.layers[0];
+      getStore().selectLayerRefs([
+        { ownerId: first.id, layerId: firstLayer.id },
+        { ownerId: second.id, layerId: secondLayer.id },
+      ]);
+      getStore().translateSelectedLayer(4, 3, { recordHistory: false });
+
+      getStore().recordLayerTranslationAtPlayhead();
+
+      const state = getStore();
+      for (const [ownerId, layerId] of [
+        [first.id, firstLayer.id],
+        [second.id, secondLayer.id],
+      ] as const) {
+        const frame = state.frames.find((candidate) => candidate.id === ownerId)!;
+        expect(
+          frame.animation.blocks.some(
+            (block) =>
+              String(block.layerId) === String(layerId) &&
+              block.propertyName === "translateX",
+          ),
+        ).toBe(true);
+      }
+    });
+
     it("moves selected layers to the destination frame without changing world position", () => {
       const source = getStore().frames[0];
       const target = getStore().frames[1];

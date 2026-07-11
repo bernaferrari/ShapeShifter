@@ -141,7 +141,8 @@ export function LayerTimeline(_props: LayerTimelineProps) {
     layers,
     selectedLayerId,
     selectLayer,
-    selectedLayerIds,
+    selectedLayerRefs,
+    selectLayerRefs,
     selectionKind,
     hasCanvasSelection,
     toggleLayerVisibility,
@@ -1168,8 +1169,11 @@ export function LayerTimeline(_props: LayerTimelineProps) {
               const isSelected =
                 hasCanvasSelection &&
                 selectionKind === "layer" &&
-                row.frameId === selectedFrameId &&
-                selectedLayerIds.some((id) => String(id) === String(row.layer.id));
+                selectedLayerRefs.some(
+                  (ref) =>
+                    ref.ownerId === row.frameId &&
+                    String(ref.layerId) === String(row.layer.id),
+                );
               const showChrome = hoveredRowKey === row.key || isSelected;
               return (
                 <div
@@ -1186,18 +1190,24 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                   onMouseEnter={() => setHoveredRowKey(row.key)}
                   onMouseLeave={() => setHoveredRowKey(null)}
                   onClick={(e) => {
-                    if (row.frameId !== selectedFrameId) selectFrame(row.frameId);
                     // Shift multi-select on timeline rows (Figma layers list)
                     if (e.shiftKey) {
-                      const cur = selectedLayerIds.map(String);
-                      const id = String(row.layer.id);
-                      const next = cur.includes(id)
-                        ? selectedLayerIds.filter((x) => String(x) !== id)
-                        : [...selectedLayerIds, row.layer.id];
-                      if (next.length === 0) selectLayer(row.layer.id);
-                      else useEditorStore.getState().selectLayers(next);
+                      const key = `${row.frameId}:${String(row.layer.id)}`;
+                      const exists = selectedLayerRefs.some(
+                        (ref) => `${ref.ownerId}:${String(ref.layerId)}` === key,
+                      );
+                      const next = exists
+                        ? selectedLayerRefs.filter(
+                            (ref) => `${ref.ownerId}:${String(ref.layerId)}` !== key,
+                          )
+                        : [
+                            ...selectedLayerRefs,
+                            { ownerId: row.frameId, layerId: row.layer.id },
+                          ];
+                      selectLayerRefs(next);
                       return;
                     }
+                    if (row.frameId !== selectedFrameId) selectFrame(row.frameId);
                     selectLayer(row.layer.id);
                     const morphBlocks = blocksForLayerInFrame(row.frameId, row.layer.id).filter(
                       (b) => b.propertyName === "pathData",
@@ -1804,4 +1814,3 @@ export function LayerTimeline(_props: LayerTimelineProps) {
     </section>
   );
 }
-

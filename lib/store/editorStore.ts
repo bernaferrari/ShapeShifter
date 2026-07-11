@@ -42,6 +42,7 @@ import type {
 import type { ToolMode, CursorType } from "../shapeshifter/toolModes";
 import { getDemoProject } from "../shapeshifter/demoProjects";
 import { flexCurvature } from "../shapeshifter/gestures/HitTests";
+import { recordTranslationAtProgress } from "../shapeshifter/motion/recordTranslation";
 
 export interface HoveredItem {
   type: "point" | "command" | "layer" | "block";
@@ -77,6 +78,24 @@ export interface CanvasFrame {
 
 /** Stable owner id for vectors placed directly on the infinite page. */
 export const PAGE_ROOT_ID = "__page_root__";
+
+/** Document-wide object identity. Layer ids are stable; owner ids preserve scene scope. */
+export interface LayerSelectionRef {
+  ownerId: string;
+  layerId: string | number;
+}
+
+function dedupeLayerSelectionRefs(refs: LayerSelectionRef[]): LayerSelectionRef[] {
+  const unique: LayerSelectionRef[] = [];
+  const seen = new Set<string>();
+  for (const ref of refs) {
+    const key = `${ref.ownerId}:${String(ref.layerId)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push({ ...ref });
+  }
+  return unique;
+}
 
 export interface SubPathSelection {
   layerId: string | number;
@@ -137,6 +156,7 @@ interface HistoryEntry {
   hiddenLayerIds: string[];
   selectedLayerId: string | number;
   selectedLayerIds: Array<string | number>;
+  selectedLayerRefs: LayerSelectionRef[];
   selection: Selection | null;
   selectedPoints: Selection[];
   selectedSubPaths: SubPathSelection[];
@@ -185,6 +205,8 @@ interface EditorState {
   selectionKind: "none" | "frame" | "layer";
   /** Figma multi-select: one or more layers (primary = selectedLayerId). */
   selectedLayerIds: (string | number)[];
+  /** Document-wide selection; selectedLayerIds is the active-owner projection. */
+  selectedLayerRefs: LayerSelectionRef[];
 
   // Playback
   isPlaying: boolean;
@@ -277,6 +299,8 @@ interface EditorState {
   selectLayer: (id: string | number) => void;
   /** Figma marquee / shift-multi: select several layers at once. */
   selectLayers: (ids: (string | number)[]) => void;
+  /** Select objects across page/frame owners, loading the last ref as inspector primary. */
+  selectLayerRefs: (refs: LayerSelectionRef[]) => void;
   deleteSelectedLayers: () => void;
   toggleLayerLock: (id: string | number) => void;
   reorderLayer: (id: string | number, toIndex: number) => void;
@@ -640,6 +664,7 @@ const snapshotHistoryEntry = (s: EditorState): HistoryEntry => {
     hiddenLayerIds: [...s.hiddenLayerIds],
     selectedLayerId: s.selectedLayerId,
     selectedLayerIds: [...s.selectedLayerIds],
+    selectedLayerRefs: s.selectedLayerRefs.map((ref) => ({ ...ref })),
     selection: s.selection ? structuredClone(s.selection) : null,
     selectedPoints: s.selectedPoints.map((p) => structuredClone(p)),
     selectedSubPaths: s.selectedSubPaths.map((p) => structuredClone(p)),
@@ -664,6 +689,7 @@ const restoreHistoryEntry = (s: EditorState, entry: HistoryEntry) => {
     hiddenLayerIds: entry.hiddenLayerIds,
     selectedLayerId: layerExists ? entry.selectedLayerId : (entry.layers[0]?.id ?? 0),
     selectedLayerIds: entry.selectedLayerIds,
+    selectedLayerRefs: entry.selectedLayerRefs.map((ref) => ({ ...ref })),
     selection: entry.selection,
     selectedPoints: entry.selectedPoints,
     selectedSubPaths: entry.selectedSubPaths,
@@ -792,6 +818,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   canRedo: false,
   selectedLayerId: getFirstEditableLayerId(initialLayers),
   selectedLayerIds: [getFirstEditableLayerId(initialLayers)],
+  selectedLayerRefs: [
+    { ownerId: initialFrame.id, layerId: getFirstEditableLayerId(initialLayers) },
+  ],
   editingSide: "from",
   isActionMode: false,
   selection: null,
@@ -909,6 +938,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       animation: structuredClone(frame.animation),
       hiddenLayerIds: [],
       selectedLayerId: getFirstEditableLayerId(frame.layers),
+      selectedLayerIds: [],
+      selectedLayerRefs: [],
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -950,6 +981,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       animation: structuredClone(frame.animation),
       hiddenLayerIds: [...frame.hiddenLayerIds],
       selectedLayerId: getFirstEditableLayerId(frame.layers),
+      selectedLayerIds: [],
+      selectedLayerRefs: [],
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -1004,6 +1037,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       animation: structuredClone(fallbackFrame.animation),
       hiddenLayerIds: [...fallbackFrame.hiddenLayerIds],
       selectedLayerId: getFirstEditableLayerId(fallbackFrame.layers),
+      selectedLayerIds: [],
+      selectedLayerRefs: [],
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -1026,6 +1061,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedSubPaths: [] as [],
       selectedBlockIds: [] as string[],
       selectedLayerIds: [] as (string | number)[],
+      selectedLayerRefs: [] as LayerSelectionRef[],
       hasCanvasSelection: true as const,
       selectionKind: "frame" as const,
       // Selecting the frame (not a path) leaves vector edit for Move
@@ -1077,6 +1113,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       hiddenLayerIds: [...savedRoot.hiddenLayerIds],
       selectedLayerId: id,
       selectedLayerIds: [id],
+      selectedLayerRefs: [{ ownerId: PAGE_ROOT_ID, layerId: id }],
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -1271,6 +1308,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       hiddenLayerIds: [...targetHiddenIds],
       selectedLayerId: primaryId,
       selectedLayerIds: retainedSelectionIds.length ? retainedSelectionIds : [primaryId],
+      selectedLayerRefs: (retainedSelectionIds.length ? retainedSelectionIds : [primaryId]).map(
+        (layerId) => ({ ownerId: target.id, layerId }),
+      ),
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -1406,6 +1446,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       hiddenLayerIds: [...nextRootHiddenLayerIds],
       selectedLayerId: primaryId,
       selectedLayerIds: retainedSelectionIds.length ? retainedSelectionIds : [primaryId],
+      selectedLayerRefs: (retainedSelectionIds.length ? retainedSelectionIds : [primaryId]).map(
+        (layerId) => ({ ownerId: PAGE_ROOT_ID, layerId }),
+      ),
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -1543,6 +1586,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       animation: structuredClone(project.animation),
       hiddenLayerIds: [...project.hiddenLayerIds],
       selectedLayerId: getFirstEditableLayerId(normalized),
+      selectedLayerIds: [getFirstEditableLayerId(normalized)],
+      selectedLayerRefs: [
+        { ownerId: frame.id, layerId: getFirstEditableLayerId(normalized) },
+      ],
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -1571,10 +1618,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   setLayers: (layers) => {
     const normalized = normalizeLayers(layers);
+    const selectedLayerId = normalized[0]?.id ?? 0;
     get().pushHistory();
     set({
       layers: normalized,
-      selectedLayerId: normalized[0]?.id ?? 0,
+      selectedLayerId,
+      selectedLayerIds: normalized[0] ? [selectedLayerId] : [],
+      selectedLayerRefs: normalized[0]
+        ? [{ ownerId: get().selectedFrameId, layerId: selectedLayerId }]
+        : [],
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -1585,10 +1637,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (!incomingLayers.length) return;
     const { layers } = get();
     const normalizedIncoming = normalizeLayers(incomingLayers);
+    const selectedLayerId = normalizedIncoming[0]?.id ?? layers[0]?.id ?? 0;
     get().pushHistory();
     set({
       layers: [...layers, ...normalizedIncoming],
-      selectedLayerId: normalizedIncoming[0]?.id ?? layers[0]?.id ?? 0,
+      selectedLayerId,
+      selectedLayerIds: [selectedLayerId],
+      selectedLayerRefs: [{ ownerId: get().selectedFrameId, layerId: selectedLayerId }],
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -1620,6 +1675,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       animation: structuredClone(project.animation),
       hiddenLayerIds: [...project.hiddenLayerIds],
       selectedLayerId: getFirstEditableLayerId(normalized),
+      selectedLayerIds: [getFirstEditableLayerId(normalized)],
+      selectedLayerRefs: [
+        { ownerId: frame.id, layerId: getFirstEditableLayerId(normalized) },
+      ],
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -1660,11 +1719,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({ layers: newLayers });
   },
   updateSelectedLayer: (patch, options) => {
-    const ids = get().selectedLayerIds;
+    const state = get();
+    const ids = state.selectedLayerIds;
     // Path geometry must never be batch-copied onto multi-select (corrupts siblings).
     const isPathPatch =
       patch.from != null || patch.to != null || patch.pathData != null;
-    if (ids.length > 1 && !isPathPatch) {
+    if ((ids.length > 1 || state.selectedLayerRefs.length > 1) && !isPathPatch) {
       // Shared style/transform props → all selected (Figma batch).
       get().updateSelectedLayers(patch, options);
       return;
@@ -1683,25 +1743,53 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   updateSelectedLayers: (patch, options) => {
-    const ids = options?.ids ?? get().selectedLayerIds;
-    if (ids.length === 0) return;
-    const idSet = new Set(ids.map(String));
-    const newLayers = get().layers.map((l) => {
-      if (!idSet.has(String(l.id)) || l.locked) return l;
-      return { ...l, ...patch };
-    });
+    const state = get();
+    const refs = options?.ids
+      ? options.ids.map((layerId) => ({ ownerId: state.selectedFrameId, layerId }))
+      : state.selectedLayerRefs.length > 0
+        ? state.selectedLayerRefs
+        : state.selectedLayerIds.map((layerId) => ({
+            ownerId: state.selectedFrameId,
+            layerId,
+          }));
+    if (refs.length === 0) return;
+    const idsByOwner = new Map<string, Set<string>>();
+    for (const ref of refs) {
+      const ids = idsByOwner.get(ref.ownerId) ?? new Set<string>();
+      ids.add(String(ref.layerId));
+      idsByOwner.set(ref.ownerId, ids);
+    }
+    const updateOwner = (ownerId: string, ownerLayers: Layer[]) => {
+      const ids = idsByOwner.get(ownerId);
+      if (!ids) return ownerLayers;
+      return ownerLayers.map((layer) =>
+        !ids.has(String(layer.id)) || layer.locked ? layer : { ...layer, ...patch },
+      );
+    };
+    const savedFrames = saveActiveFrame(state);
+    const savedRoot = saveActiveRoot(state);
+    const nextFrames = savedFrames.map((frame) => ({
+      ...frame,
+      layers: updateOwner(frame.id, frame.layers),
+    }));
+    const nextRootLayers = updateOwner(PAGE_ROOT_ID, savedRoot.layers);
+    const nextLayers =
+      state.selectedFrameId === PAGE_ROOT_ID
+        ? nextRootLayers
+        : (nextFrames.find((frame) => frame.id === state.selectedFrameId)?.layers ?? state.layers);
     if (options?.recordHistory !== false) {
       get().pushHistory();
     }
-    set({ layers: newLayers });
+    set({ frames: nextFrames, rootLayers: nextRootLayers, layers: nextLayers });
   },
 
   setSpacePanActive: (active) => set({ spacePanActive: active }),
 
   selectLayer: (id) =>
-    set({
+    set((state) => ({
       selectedLayerId: id,
       selectedLayerIds: [id],
+      selectedLayerRefs: [{ ownerId: state.selectedFrameId, layerId: id }],
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -1709,7 +1797,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       hasCanvasSelection: true,
       // Figma: selecting a child replaces frame selection — the layer is the selection.
       selectionKind: "layer",
-    }),
+    })),
 
   selectLayers: (ids) => {
     const unique: (string | number)[] = [];
@@ -1727,6 +1815,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       selectedLayerId: unique[unique.length - 1]!,
       selectedLayerIds: unique,
+      selectedLayerRefs: unique.map((layerId) => ({
+        ownerId: get().selectedFrameId,
+        layerId,
+      })),
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -1735,6 +1827,74 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectionKind: "layer",
       // Multi-object selection uses Move tool (Figma leaves vector edit)
       toolMode: unique.length > 1 ? "select" : get().toolMode,
+    });
+  },
+
+  selectLayerRefs: (refs) => {
+    const unique = dedupeLayerSelectionRefs(refs);
+    if (unique.length === 0) {
+      get().deselectAll();
+      return;
+    }
+    const state = get();
+    const primary = unique[unique.length - 1]!;
+    const ownerIds = unique
+      .filter((ref) => ref.ownerId === primary.ownerId)
+      .map((ref) => ref.layerId);
+    if (primary.ownerId === state.selectedFrameId) {
+      if (!state.layers.some((layer) => String(layer.id) === String(primary.layerId))) return;
+      set({
+        selectedLayerId: primary.layerId,
+        selectedLayerIds: ownerIds,
+        selectedLayerRefs: unique,
+        selection: null,
+        selectedPoints: [],
+        selectedSubPaths: [],
+        selectedBlockIds: [],
+        hasCanvasSelection: true,
+        selectionKind: "layer",
+        toolMode: "select",
+      });
+      return;
+    }
+    const savedFrames = saveActiveFrame(state);
+    const savedRoot = saveActiveRoot(state);
+    const ownerLayers =
+      primary.ownerId === PAGE_ROOT_ID
+        ? savedRoot.layers
+        : savedFrames.find((frame) => frame.id === primary.ownerId)?.layers;
+    if (!ownerLayers?.some((layer) => String(layer.id) === String(primary.layerId))) return;
+    const primaryFrame = savedFrames.find((frame) => frame.id === primary.ownerId);
+    set({
+      frames: savedFrames,
+      rootLayers: cloneLayers(savedRoot.layers),
+      rootAnimation: structuredClone(savedRoot.animation),
+      rootHiddenLayerIds: [...savedRoot.hiddenLayerIds],
+      selectedFrameId: primary.ownerId,
+      layers: cloneLayers(ownerLayers),
+      ...(primary.ownerId === PAGE_ROOT_ID
+        ? {
+            vector: { id: PAGE_ROOT_ID, name: "Page", width: 1, height: 1, alpha: 1 },
+            animation: structuredClone(savedRoot.animation),
+            hiddenLayerIds: [...savedRoot.hiddenLayerIds],
+          }
+        : primaryFrame
+          ? {
+              vector: structuredClone(primaryFrame.vector),
+              animation: structuredClone(primaryFrame.animation),
+              hiddenLayerIds: [...primaryFrame.hiddenLayerIds],
+            }
+          : {}),
+      selectedLayerId: primary.layerId,
+      selectedLayerIds: ownerIds,
+      selectedLayerRefs: unique,
+      selection: null,
+      selectedPoints: [],
+      selectedSubPaths: [],
+      selectedBlockIds: [],
+      hasCanvasSelection: true,
+      selectionKind: "layer",
+      toolMode: "select",
     });
   },
   setEditingSide: (side) =>
@@ -1870,32 +2030,59 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   translateSelectedLayer: (dx, dy, options) => {
-    const { layers, selectedLayerIds, selectedLayerId } = get();
+    const state = get();
+    const { selectedLayerIds, selectedLayerId } = state;
     if (dx === 0 && dy === 0) return;
 
-    const ids =
-      selectedLayerIds.length > 0
-        ? selectedLayerIds
-        : selectedLayerId != null
-          ? [selectedLayerId]
-          : [];
-    if (ids.length === 0) return;
-    const idSet = new Set(ids.map(String));
-
-    // Object move uses layer transforms (Figma Position) — multi-select moves all.
-    const newLayers = layers.map((layer) => {
-      if (!idSet.has(String(layer.id)) || layer.locked) return layer;
-      return {
-        ...layer,
-        translateX: (layer.translateX ?? 0) + dx,
-        translateY: (layer.translateY ?? 0) + dy,
-      };
-    });
+    const refs =
+      state.selectedLayerRefs.length > 0
+        ? state.selectedLayerRefs
+        : (selectedLayerIds.length > 0
+            ? selectedLayerIds
+            : selectedLayerId != null
+              ? [selectedLayerId]
+              : []
+          ).map((layerId) => ({ ownerId: state.selectedFrameId, layerId }));
+    if (refs.length === 0) return;
+    const idsByOwner = new Map<string, Set<string>>();
+    for (const ref of refs) {
+      const ids = idsByOwner.get(ref.ownerId) ?? new Set<string>();
+      ids.add(String(ref.layerId));
+      idsByOwner.set(ref.ownerId, ids);
+    }
+    const moveOwnerLayers = (ownerId: string, ownerLayers: Layer[]) => {
+      const ids = idsByOwner.get(ownerId);
+      if (!ids) return ownerLayers;
+      return ownerLayers.map((layer) =>
+        !ids.has(String(layer.id)) || layer.locked
+          ? layer
+          : {
+              ...layer,
+              translateX: (layer.translateX ?? 0) + dx,
+              translateY: (layer.translateY ?? 0) + dy,
+            },
+      );
+    };
+    const savedFrames = saveActiveFrame(state);
+    const savedRoot = saveActiveRoot(state);
+    const nextFrames = savedFrames.map((frame) => ({
+      ...frame,
+      layers: moveOwnerLayers(frame.id, frame.layers),
+    }));
+    const nextRootLayers = moveOwnerLayers(PAGE_ROOT_ID, savedRoot.layers);
+    const nextLayers =
+      state.selectedFrameId === PAGE_ROOT_ID
+        ? nextRootLayers
+        : (nextFrames.find((frame) => frame.id === state.selectedFrameId)?.layers ?? state.layers);
 
     if (options?.recordHistory !== false) {
       get().pushHistory();
     }
-    set({ layers: newLayers });
+    set({
+      frames: nextFrames,
+      rootLayers: nextRootLayers,
+      layers: nextLayers,
+    });
   },
 
   recordLayerTranslationAtPlayhead: () => {
@@ -2032,8 +2219,45 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       targetIds.has(String(l.id)) ? { ...l, expanded: true } : l,
     );
 
+    const current = get();
+    const idsByOwner = new Map<string, Array<string | number>>();
+    for (const ref of current.selectedLayerRefs) {
+      idsByOwner.set(ref.ownerId, [...(idsByOwner.get(ref.ownerId) ?? []), ref.layerId]);
+    }
+    const activeAnimation = { ...animation, blocks };
+    const savedFrames = saveActiveFrame(current);
+    const savedRoot = saveActiveRoot(current);
+    const nextFrames = savedFrames.map((frame) => {
+      if (frame.id === current.selectedFrameId) {
+        return { ...frame, layers: newLayers, animation: activeAnimation };
+      }
+      const ownerIds = idsByOwner.get(frame.id);
+      if (!ownerIds?.length) return frame;
+      const recorded = recordTranslationAtProgress(
+        frame.layers,
+        frame.animation,
+        ownerIds,
+        progress,
+      );
+      return { ...frame, layers: recorded.layers, animation: recorded.animation };
+    });
+    const rootRecorded =
+      current.selectedFrameId === PAGE_ROOT_ID
+        ? { layers: newLayers, animation: activeAnimation }
+        : idsByOwner.get(PAGE_ROOT_ID)?.length
+          ? recordTranslationAtProgress(
+              savedRoot.layers,
+              savedRoot.animation,
+              idsByOwner.get(PAGE_ROOT_ID)!,
+              progress,
+            )
+          : { layers: savedRoot.layers, animation: savedRoot.animation };
+
     set({
-      animation: { ...animation, blocks },
+      frames: nextFrames,
+      rootLayers: rootRecorded.layers,
+      rootAnimation: rootRecorded.animation,
+      animation: activeAnimation,
       layers: newLayers,
     });
   },
@@ -2123,26 +2347,88 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   deleteSelectedLayers: () => {
-    const { layers, selectedLayerIds, selectedLayerId } = get();
-    const ids =
-      selectedLayerIds.length > 0
-        ? selectedLayerIds
-        : selectedLayerId != null
-          ? [selectedLayerId]
-          : [];
-    if (ids.length === 0 || layers.length <= ids.length) return;
-    const idSet = new Set(ids.map(String));
-    const remaining = layers.filter((l) => !idSet.has(String(l.id)));
+    const state = get();
+    const refs =
+      state.selectedLayerRefs.length > 0
+        ? state.selectedLayerRefs
+        : state.selectedLayerIds.map((layerId) => ({
+            ownerId: state.selectedFrameId,
+            layerId,
+          }));
+    if (refs.length === 0) return;
+    const idsByOwner = new Map<string, Set<string>>();
+    for (const ref of refs) {
+      const ids = idsByOwner.get(ref.ownerId) ?? new Set<string>();
+      ids.add(String(ref.layerId));
+      idsByOwner.set(ref.ownerId, ids);
+    }
+    const savedFrames = saveActiveFrame(state);
+    const savedRoot = saveActiveRoot(state);
+    const nextFrames = savedFrames.map((frame) => {
+      const selectedIds = idsByOwner.get(frame.id);
+      if (!selectedIds) return frame;
+      const ids = new Set(
+        frame.layers
+          .filter((layer) => selectedIds.has(String(layer.id)) && !layer.locked)
+          .map((layer) => String(layer.id)),
+      );
+      return {
+        ...frame,
+        layers: frame.layers.filter((layer) => !ids.has(String(layer.id)) || layer.locked),
+        animation: {
+          ...frame.animation,
+          blocks: frame.animation.blocks.filter((block) => !ids.has(String(block.layerId))),
+        },
+        hiddenLayerIds: frame.hiddenLayerIds.filter((id) => !ids.has(String(id))),
+      };
+    });
+    const selectedRootIds = idsByOwner.get(PAGE_ROOT_ID);
+    const rootIds = selectedRootIds
+      ? new Set(
+          savedRoot.layers
+            .filter((layer) => selectedRootIds.has(String(layer.id)) && !layer.locked)
+            .map((layer) => String(layer.id)),
+        )
+      : undefined;
+    const nextRootLayers = rootIds
+      ? savedRoot.layers.filter((layer) => !rootIds.has(String(layer.id)) || layer.locked)
+      : savedRoot.layers;
+    const nextRootAnimation = rootIds
+      ? {
+          ...savedRoot.animation,
+          blocks: savedRoot.animation.blocks.filter(
+            (block) => !rootIds.has(String(block.layerId)),
+          ),
+        }
+      : savedRoot.animation;
+    const nextRootHidden = rootIds
+      ? savedRoot.hiddenLayerIds.filter((id) => !rootIds.has(String(id)))
+      : savedRoot.hiddenLayerIds;
+    const activeFrame = nextFrames.find((frame) => frame.id === state.selectedFrameId);
+    const nextLayers =
+      state.selectedFrameId === PAGE_ROOT_ID
+        ? nextRootLayers
+        : (activeFrame?.layers ?? state.layers);
     get().pushHistory();
     set({
-      layers: remaining,
-      selectedLayerId: remaining[0]?.id ?? 0,
-      selectedLayerIds: remaining[0] ? [remaining[0].id] : [],
+      frames: nextFrames,
+      rootLayers: nextRootLayers,
+      rootAnimation: nextRootAnimation,
+      rootHiddenLayerIds: nextRootHidden,
+      layers: nextLayers,
+      ...(state.selectedFrameId === PAGE_ROOT_ID
+        ? { animation: nextRootAnimation, hiddenLayerIds: nextRootHidden }
+        : activeFrame
+          ? { animation: activeFrame.animation, hiddenLayerIds: activeFrame.hiddenLayerIds }
+          : {}),
+      selectedLayerId: nextLayers[0]?.id ?? 0,
+      selectedLayerIds: [],
+      selectedLayerRefs: [],
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
-      hasCanvasSelection: remaining.length > 0,
-      selectionKind: remaining.length > 0 ? "layer" : "none",
+      hasCanvasSelection: false,
+      selectionKind: "none",
     });
   },
 
@@ -2208,6 +2494,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       layers: next,
       selectedLayerId: groupId,
       selectedLayerIds: [groupId],
+      selectedLayerRefs: [{ ownerId: get().selectedFrameId, layerId: groupId }],
       hasCanvasSelection: true,
       selectionKind: "layer",
     });
@@ -2232,35 +2519,74 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       layers: next,
       selectedLayerId: childIds[0] ?? next[0]?.id ?? 0,
       selectedLayerIds: childIds.length ? childIds : next[0] ? [next[0].id] : [],
+      selectedLayerRefs: (childIds.length ? childIds : next[0] ? [next[0].id] : []).map(
+        (layerId) => ({ ownerId: get().selectedFrameId, layerId }),
+      ),
       hasCanvasSelection: true,
       selectionKind: "layer",
     });
   },
 
   duplicateSelectedLayersOffset: (dx, dy, options) => {
-    const { layers, selectedLayerIds, selectedLayerId } = get();
-    const ids =
-      selectedLayerIds.length > 0
-        ? selectedLayerIds
-        : selectedLayerId != null
-          ? [selectedLayerId]
-          : [];
-    if (ids.length === 0) return;
-    const idSet = new Set(ids.map(String));
-    const clones = layers
-      .filter((l) => idSet.has(String(l.id)))
-      .map((l) => ({
-        ...structuredClone(l),
-        id: `${l.id}-dup-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        name: `${l.name} copy`,
-        translateX: (l.translateX ?? 0) + dx,
-        translateY: (l.translateY ?? 0) + dy,
-      }));
+    const state = get();
+    const refs =
+      state.selectedLayerRefs.length > 0
+        ? state.selectedLayerRefs
+        : (state.selectedLayerIds.length > 0
+            ? state.selectedLayerIds
+            : state.selectedLayerId != null
+              ? [state.selectedLayerId]
+              : []
+          ).map((layerId) => ({ ownerId: state.selectedFrameId, layerId }));
+    if (refs.length === 0) return;
+    const savedFrames = saveActiveFrame(state);
+    const savedRoot = saveActiveRoot(state);
+    const layersForOwner = (ownerId: string) =>
+      ownerId === PAGE_ROOT_ID
+        ? savedRoot.layers
+        : (savedFrames.find((frame) => frame.id === ownerId)?.layers ?? []);
+    const timestamp = Date.now();
+    const clonesByOwner = new Map<string, Layer[]>();
+    const cloneRefs: LayerSelectionRef[] = [];
+    for (const ref of refs) {
+      const layer = layersForOwner(ref.ownerId).find(
+        (candidate) => String(candidate.id) === String(ref.layerId),
+      );
+      if (!layer || layer.locked) continue;
+      const clone: Layer = {
+        ...structuredClone(layer),
+        id: `${layer.id}-dup-${timestamp}-${Math.random().toString(36).slice(2, 6)}`,
+        name: `${layer.name} copy`,
+        translateX: (layer.translateX ?? 0) + dx,
+        translateY: (layer.translateY ?? 0) + dy,
+      };
+      clonesByOwner.set(ref.ownerId, [...(clonesByOwner.get(ref.ownerId) ?? []), clone]);
+      cloneRefs.push({ ownerId: ref.ownerId, layerId: clone.id });
+    }
+    if (cloneRefs.length === 0) return;
+    const nextFrames = savedFrames.map((frame) => ({
+      ...frame,
+      layers: [...frame.layers, ...(clonesByOwner.get(frame.id) ?? [])],
+    }));
+    const nextRootLayers = [
+      ...savedRoot.layers,
+      ...(clonesByOwner.get(PAGE_ROOT_ID) ?? []),
+    ];
+    const activeClones = cloneRefs
+      .filter((ref) => ref.ownerId === state.selectedFrameId)
+      .map((ref) => ref.layerId);
+    const nextLayers =
+      state.selectedFrameId === PAGE_ROOT_ID
+        ? nextRootLayers
+        : (nextFrames.find((frame) => frame.id === state.selectedFrameId)?.layers ?? state.layers);
     if (options?.recordHistory !== false) get().pushHistory();
     set({
-      layers: [...layers, ...clones],
-      selectedLayerId: clones[clones.length - 1]?.id ?? selectedLayerId,
-      selectedLayerIds: clones.map((c) => c.id),
+      frames: nextFrames,
+      rootLayers: nextRootLayers,
+      layers: nextLayers,
+      selectedLayerId: activeClones.at(-1) ?? cloneRefs.at(-1)!.layerId,
+      selectedLayerIds: activeClones,
+      selectedLayerRefs: cloneRefs,
       hasCanvasSelection: true,
       selectionKind: "layer",
     });
@@ -2767,6 +3093,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       layers: [...layers, ...pasted],
       selectedLayerId: pasted[pasted.length - 1]?.id ?? layers[0]?.id ?? 0,
       selectedLayerIds: pasted.map((p) => p.id),
+      selectedLayerRefs: pasted.map((layer) => ({
+        ownerId: get().selectedFrameId,
+        layerId: layer.id,
+      })),
       hasCanvasSelection: true,
       selectionKind: "layer",
       selection: null,
@@ -2785,6 +3115,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       layers: remaining,
       selectedLayerId: remaining[0]?.id ?? 0,
       selectedLayerIds: remaining[0] ? [remaining[0].id] : [],
+      selectedLayerRefs: remaining[0]
+        ? [{ ownerId: get().selectedFrameId, layerId: remaining[0].id }]
+        : [],
       hasCanvasSelection: remaining.length > 0,
       selectionKind: remaining.length > 0 ? "layer" : "none",
       selection: null,
@@ -2880,6 +3213,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       layers: newLayers,
       selectedLayerId: resultLayer.id,
       selectedLayerIds: [resultLayer.id],
+      selectedLayerRefs: [{ ownerId: get().selectedFrameId, layerId: resultLayer.id }],
       hasCanvasSelection: true,
       selectionKind: "layer",
       selection: null,
@@ -2981,6 +3315,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       hasCanvasSelection: false,
       selectionKind: "none",
       selectedLayerIds: [],
+      selectedLayerRefs: [],
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -3018,6 +3353,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       layers: [...layers, newLayer],
       selectedLayerId: newLayer.id,
+      selectedLayerIds: [newLayer.id],
+      selectedLayerRefs: [{ ownerId: get().selectedFrameId, layerId: newLayer.id }],
+      hasCanvasSelection: true,
+      selectionKind: "layer",
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -3037,6 +3376,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       layers: newLayers,
       selectedLayerId: newSelected,
+      selectedLayerIds: newLayers.length ? [newSelected] : [],
+      selectedLayerRefs: newLayers.length
+        ? [{ ownerId: get().selectedFrameId, layerId: newSelected }]
+        : [],
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -3162,6 +3505,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       detailViewport: computeVectorViewport(active.vector),
       layers: cloneLayers(active.layers),
       selectedLayerId: getFirstEditableLayerId(active.layers),
+      selectedLayerIds: [getFirstEditableLayerId(active.layers)],
+      selectedLayerRefs: [
+        { ownerId: active.id, layerId: getFirstEditableLayerId(active.layers) },
+      ],
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
