@@ -252,6 +252,8 @@ interface EditorState {
   pushHistory: () => void; // internal
   /** Restore and discard the latest snapshot for a cancelled in-flight gesture. */
   cancelLastHistoryTransaction: () => void;
+  /** Persist the live active-owner projection back into its page/frame document. */
+  syncActiveOwner: (options?: { includeAnimation?: boolean }) => void;
 
   // Workspace frame actions
   addFrame: () => void;
@@ -875,6 +877,31 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       canUndo: history.length > 0,
       canRedo: false,
     });
+  },
+
+  syncActiveOwner: (options) => {
+    set((state) =>
+      state.selectedFrameId === PAGE_ROOT_ID
+        ? {
+            rootLayers: cloneLayers(state.layers),
+            ...(options?.includeAnimation
+              ? { rootAnimation: structuredClone(state.animation) }
+              : {}),
+          }
+        : {
+            frames: state.frames.map((frame) =>
+              frame.id === state.selectedFrameId
+                ? {
+                    ...frame,
+                    layers: cloneLayers(state.layers),
+                    ...(options?.includeAnimation
+                      ? { animation: structuredClone(state.animation) }
+                      : {}),
+                  }
+                : frame,
+            ),
+          },
+    );
   },
 
   undo: () => {

@@ -14,6 +14,11 @@ import {
 } from "lucide-react";
 import { PathCanvas } from "./PathCanvas";
 import {
+  WorldSelectionOverlay,
+  type LayerResizeSession,
+  type LayerRotateSession,
+} from "./canvas/WorldSelectionOverlay";
+import {
   PAGE_ROOT_ID,
   useEditorStore,
   type LayerSelectionRef,
@@ -44,6 +49,10 @@ import {
   ObjectDragGesture,
   type ObjectDragModifiers,
 } from "@/lib/shapeshifter/gestures/select/ObjectDragGesture";
+import {
+  FrameResizeGesture,
+  type FrameResizeHandle,
+} from "@/lib/shapeshifter/gestures/select/FrameResizeGesture";
 import { generateId } from "@/lib/shapeshifter/ids";
 import { gradientDomId, gradientToSvg } from "@/lib/shapeshifter/gradients";
 import {
@@ -64,6 +73,13 @@ interface CanvasAreaProps {
   resetPreview: number;
   resetTo: number;
   resetAllViews: () => void;
+}
+
+interface WorldMarquee {
+  start: { x: number; y: number };
+  current: { x: number; y: number };
+  scope: "frames" | "layers";
+  frameId?: string;
 }
 
 export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: CanvasAreaProps) {
@@ -108,6 +124,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     deselectAll,
     spacePanActive,
     animation,
+    syncActiveOwner,
   } = useEditorStore();
 
   /** Figma mental model: Select = objects; Direct = vector points. */
@@ -147,12 +164,15 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const editLayer = layers.find((l) => l.id === selectedLayerId);
   const editPath: PathData | null =
     editLayer && editLayer.type !== "group" ? (editLayer[editingSide] as PathData) : null;
-  const editOrigin =
-    selectedFrameId === PAGE_ROOT_ID
-      ? { x: 0, y: 0 }
-      : editFrame
-        ? { x: editFrame.x || 0, y: editFrame.y || 0 }
-        : null;
+  const editOrigin = useMemo(
+    () =>
+      selectedFrameId === PAGE_ROOT_ID
+        ? { x: 0, y: 0 }
+        : editFrame
+          ? { x: editFrame.x || 0, y: editFrame.y || 0 }
+          : null,
+    [editFrame?.x, editFrame?.y, selectedFrameId],
+  );
   const sceneOwners = useMemo<SceneOwner[]>(
     () => [
       {
@@ -182,6 +202,15 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const documentSelectionBounds = useMemo(
     () => unionOwnedLayerBounds(sceneOwners, selectedLayerRefs),
     [sceneOwners, selectedLayerRefs],
+  );
+  const activeSelectedLayerIds = useMemo(
+    () =>
+      selectedLayerIds.length > 0
+        ? selectedLayerIds
+        : selectedLayerId != null
+          ? [selectedLayerId]
+          : [],
+    [selectedLayerId, selectedLayerIds],
   );
   /** Layer Position transform — anchors live in path space, then this offset. */
   const editLayerTx = Number(editLayer?.translateX) || 0;
@@ -226,21 +255,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const [renamingFrameId, setRenamingFrameId] = useState<string | null>(null);
   const [smartGuides, setSmartGuides] = useState<GuideLine[]>([]);
   /** World-canvas rotation session (degrees). */
-  const layerRotateRef = useRef<{
-    center: { x: number; y: number };
-    startAngle: number;
-    baseRotations: Array<{ id: string | number; rotation: number }>;
-    moved: boolean;
-  } | null>(null);
+  const layerRotateRef = useRef<LayerRotateSession | null>(null);
   /** Figma selection scope — driven by the store (frame | layer | none). */
   const selectTarget = selectionKind === "none" ? "frame" : selectionKind;
-  const [marquee, setMarquee] = useState<{
-    start: { x: number; y: number };
-    current: { x: number; y: number };
-    /** frames on empty canvas; layers when starting inside an artboard */
-    scope: "frames" | "layers";
-    frameId?: string;
-  } | null>(null);
+  const [marquee, setMarquee] = useState<WorldMarquee | null>(null);
+  const marqueeRef = useRef<WorldMarquee | null>(null);
   const marqueeBaseRef = useRef<string[]>([]);
   const marqueeLayerBaseRef = useRef<LayerSelectionRef[]>([]);
   /**
@@ -248,25 +267,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
    * every move (Figma / PathCanvas pattern). Scaling the *already-mutated* path from
    * the original bounds each frame compounds and feels wildly buggy.
    */
-  const layerResizeRef = useRef<{
-    handle: "nw" | "ne" | "sw" | "se" | "e" | "w" | "n" | "s";
-    /** Control AABB (primary path-local) at drag start. */
-    origin: { x: number; y: number; w: number; h: number };
-    translate: { x: number; y: number };
-    grabOffset: { x: number; y: number };
-    /** Frozen source geometry per selected layer (never re-scale live paths). */
-    items: Array<{
-      id: string | number;
-      origFrom: PathData;
-      origTo: PathData | null;
-      /** Path-local AABB freeze */
-      origin: { x: number; y: number; w: number; h: number };
-      /** Frame-local AABB (path + translate) at grab */
-      frameOrigin?: { x: number; y: number; w: number; h: number };
-      baseTranslate?: { x: number; y: number };
-    }>;
-    moved: boolean;
-  } | null>(null);
+  const layerResizeRef = useRef<LayerResizeSession | null>(null);
+  const frameResizeRef = useRef<FrameResizeGesture | null>(null);
   const worldSvgRef = useRef<SVGSVGElement>(null);
   const worldLassoRef = useRef<Array<{ x: number; y: number }>>([]);
   const worldLassoRafRef = useRef<number | null>(null);
@@ -363,24 +365,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   // Artboard dragging state.
   const [isDraggingArtboards, setIsDraggingArtboards] = useState(false);
   const [draggingArtboardIds, setDraggingArtboardIds] = useState<string[]>([]);
-  const [artboardDragStart, setArtboardDragStart] = useState<{ x: number; y: number } | null>(null);
-  const artboardDragMovedRef = useRef(false);
-  // Total delta already committed this drag — lets us snap the *absolute* offset
-  // each frame instead of accumulating sub-pixel deltas into 0.0123px drift.
-  const artboardAppliedRef = useRef({ x: 0, y: 0 });
-  // World artboard dragging.
-  // Called from pointer down when artboards are hit in select mode.
-  const startWorldArtboardDrag = (clientX: number, clientY: number, ids: string[]) => {
-    if (!ids.length) return;
-    const p = worldPointFromEvent(clientX, clientY);
-    if (!p) return;
-
-    setIsDraggingArtboards(true);
-    setDraggingArtboardIds(ids);
-    setArtboardDragStart(p);
-    artboardAppliedRef.current = { x: 0, y: 0 };
-    artboardDragMovedRef.current = false;
-  };
+  const artboardDragRef = useRef<ObjectDragGesture | null>(null);
 
   const worldPointFromEvent = useCallback(
     (cx: number, cy: number) => {
@@ -390,6 +375,117 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     },
     [worldView],
   );
+
+  const clearArtboardDrag = useCallback(() => {
+    setIsDraggingArtboards(false);
+    setDraggingArtboardIds([]);
+  }, []);
+
+  const cancelArtboardDrag = useCallback(() => {
+    const gesture = artboardDragRef.current;
+    artboardDragRef.current = null;
+    gesture?.cancel();
+    clearArtboardDrag();
+  }, [clearArtboardDrag]);
+
+  const startWorldArtboardDrag = useCallback(
+    (clientX: number, clientY: number, ids: string[]) => {
+      if (!ids.length) return;
+      const start = worldPointFromEvent(clientX, clientY);
+      if (!start) return;
+      setIsDraggingArtboards(true);
+      setDraggingArtboardIds(ids);
+      artboardDragRef.current = new ObjectDragGesture(start, {
+        beginTransaction: () => useEditorStore.getState().pushHistory(),
+        cloneSelection: () => undefined,
+        resolveTotalDelta: (total, modifiers) =>
+          snapToGrid && !modifiers.bypassSnap
+            ? {
+                x: snapValueToStep(total.x, 1),
+                y: snapValueToStep(total.y, 1),
+              }
+            : total,
+        applyDelta: (delta) =>
+          useEditorStore.getState().moveFrames(ids, delta.x, delta.y),
+        commit: clearArtboardDrag,
+        rollback: () => useEditorStore.getState().cancelLastHistoryTransaction(),
+        cancelled: clearArtboardDrag,
+      });
+    },
+    [clearArtboardDrag, snapToGrid, worldPointFromEvent],
+  );
+
+  const updateArtboardDrag = useCallback(
+    (
+      clientX: number,
+      clientY: number,
+      modifiers: { shift: boolean; bypassSnap: boolean },
+    ) => {
+      const gesture = artboardDragRef.current;
+      if (!gesture) return false;
+      const point = worldPointFromEvent(clientX, clientY);
+      if (!point) return true;
+      gesture.update(point, {
+        shift: modifiers.shift,
+        alt: false,
+        bypassSnap: modifiers.bypassSnap,
+      });
+      return true;
+    },
+    [worldPointFromEvent],
+  );
+
+  const finishArtboardDrag = useCallback(
+    (
+      clientX: number,
+      clientY: number,
+      modifiers: { shift: boolean; bypassSnap: boolean },
+    ) => {
+      const gesture = artboardDragRef.current;
+      if (!gesture) return false;
+      const point = worldPointFromEvent(clientX, clientY);
+      artboardDragRef.current = null;
+      if (point) {
+        gesture.update(point, {
+          shift: modifiers.shift,
+          alt: false,
+          bypassSnap: modifiers.bypassSnap,
+        });
+        gesture.finish(point);
+      } else {
+        gesture.cancel();
+      }
+      clearArtboardDrag();
+      return true;
+    },
+    [clearArtboardDrag, worldPointFromEvent],
+  );
+
+  // Frame titles are constant-size HTML layered above the SVG. Relay their native
+  // pointer stream into the same gesture authority without per-drag listeners.
+  useEffect(() => {
+    const move = (event: PointerEvent) => {
+      updateArtboardDrag(event.clientX, event.clientY, {
+        shift: event.shiftKey,
+        bypassSnap: event.metaKey || event.ctrlKey,
+      });
+    };
+    const up = (event: PointerEvent) => {
+      finishArtboardDrag(event.clientX, event.clientY, {
+        shift: event.shiftKey,
+        bypassSnap: event.metaKey || event.ctrlKey,
+      });
+    };
+    const cancel = () => cancelArtboardDrag();
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+    };
+  }, [cancelArtboardDrag, finishArtboardDrag, updateArtboardDrag]);
 
   const getFrameBounds = useCallback(
     (f: any) => ({
@@ -592,31 +688,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   // Layer object drag (Figma: grab selected shape and move it inside the frame)
   const layerDragRef = useRef<ObjectDragGesture | null>(null);
 
-  const syncActiveOwner = useCallback((includeAnimation = false) => {
-    useEditorStore.setState((state) =>
-      state.selectedFrameId === PAGE_ROOT_ID
-        ? {
-            rootLayers: structuredClone(state.layers),
-            ...(includeAnimation
-              ? { rootAnimation: structuredClone(state.animation) }
-              : {}),
-          }
-        : {
-            frames: state.frames.map((frame) =>
-              frame.id === state.selectedFrameId
-                ? {
-                    ...frame,
-                    layers: structuredClone(state.layers),
-                    ...(includeAnimation
-                      ? { animation: structuredClone(state.animation) }
-                      : {}),
-                  }
-                : frame,
-            ),
-          },
-    );
-  }, []);
-
   const resolveObjectDragTotal = useCallback(
     (total: { x: number; y: number }, modifiers: ObjectDragModifiers) => {
       let next = { ...total };
@@ -679,7 +750,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         commit: (result) => {
           const store = useEditorStore.getState();
           store.recordLayerTranslationAtPlayhead();
-          syncActiveOwner(true);
+          syncActiveOwner({ includeAnimation: true });
           const selectionOwners = new Set(
             useEditorStore.getState().selectedLayerRefs.map((ref) => ref.ownerId),
           );
@@ -730,12 +801,60 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     setSmartGuides([]);
   }, []);
 
+  const cancelFrameResize = useCallback(() => {
+    const gesture = frameResizeRef.current;
+    frameResizeRef.current = null;
+    gesture?.cancel();
+  }, []);
+
+  const cancelPointDrag = useCallback(() => {
+    pointDragRef.current = null;
+    if (pointDragMovedRef.current) {
+      pointDragMovedRef.current = false;
+      useEditorStore.getState().cancelLastHistoryTransaction();
+    }
+  }, []);
+
+  const startLayerResize = useCallback(
+    (session: LayerResizeSession, pointerId: number) => {
+      layerResizeRef.current = session;
+      try {
+        worldSvgRef.current?.setPointerCapture(pointerId);
+      } catch {
+        /* The SVG may have lost capture before React receives the handle event. */
+      }
+    },
+    [],
+  );
+
+  const startLayerRotate = useCallback(
+    (session: LayerRotateSession, pointerId: number) => {
+      layerRotateRef.current = session;
+      try {
+        worldSvgRef.current?.setPointerCapture(pointerId);
+      } catch {
+        /* The SVG may have lost capture before React receives the handle event. */
+      }
+    },
+    [],
+  );
+
   useEffect(
     () => () => {
       cancelObjectDrag();
       cancelLayerTransform();
+      cancelFrameResize();
+      cancelPointDrag();
+      cancelArtboardDrag();
     },
-    [cancelLayerTransform, cancelObjectDrag, toolMode],
+    [
+      cancelArtboardDrag,
+      cancelFrameResize,
+      cancelLayerTransform,
+      cancelObjectDrag,
+      cancelPointDrag,
+      toolMode,
+    ],
   );
 
   // Hit-test the selected layer's anchor points in world space (path + Position).
@@ -902,32 +1021,27 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   // Resize the selected artboard from its right / bottom / corner (top-left stays
   // put so content stays anchored). Snaps to whole pixels like everything else.
   const startFrameResize = useCallback(
-    (e: React.PointerEvent, handle: "se" | "e" | "s") => {
+    (e: React.PointerEvent, handle: FrameResizeHandle) => {
       if (!editFrame) return;
       e.stopPropagation();
       e.preventDefault();
-      const b = getFrameBounds(editFrame);
-      useEditorStore.getState().pushHistory?.();
-      const move = (ev: PointerEvent) => {
-        const p = worldPointFromEvent(ev.clientX, ev.clientY);
-        if (!p) return;
-        let newW = handle === "s" ? b.w : p.x - b.x;
-        let newH = handle === "e" ? b.h : p.y - b.y;
-        const snap = snapToGrid && !(ev.metaKey || ev.ctrlKey);
-        newW = Math.max(1, snap ? Math.round(newW) : Number(newW.toFixed(2)));
-        newH = Math.max(1, snap ? Math.round(newH) : Number(newH.toFixed(2)));
-        useEditorStore.getState().updateVector({ width: newW, height: newH });
-      };
-      const up = () => {
-        window.removeEventListener("pointermove", move);
-        window.removeEventListener("pointerup", up);
-        window.removeEventListener("pointercancel", up);
-      };
-      window.addEventListener("pointermove", move);
-      window.addEventListener("pointerup", up);
-      window.addEventListener("pointercancel", up);
+      frameResizeRef.current = new FrameResizeGesture(
+        getFrameBounds(editFrame),
+        handle,
+        {
+          beginTransaction: () => useEditorStore.getState().pushHistory(),
+          applySize: ({ width, height }) =>
+            useEditorStore.getState().updateVector({ width, height }),
+          rollback: () => useEditorStore.getState().cancelLastHistoryTransaction(),
+        },
+      );
+      try {
+        worldSvgRef.current?.setPointerCapture(e.pointerId);
+      } catch {
+        /* The SVG may already have lost native capture. */
+      }
     },
-    [editFrame, getFrameBounds, worldPointFromEvent, snapToGrid],
+    [editFrame, getFrameBounds],
   );
 
   // Pen — pointer up: persist the outgoing handle for the next segment.
@@ -1127,7 +1241,14 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         }
         marqueeLayerBaseRef.current = additive ? selectedLayerRefs : [];
         marqueeBaseRef.current = [];
-        setMarquee({ start: p, current: p, scope: "layers", frameId: hitId });
+        const nextMarquee: WorldMarquee = {
+          start: p,
+          current: p,
+          scope: "layers",
+          frameId: hitId,
+        };
+        marqueeRef.current = nextMarquee;
+        setMarquee(nextMarquee);
       } else {
         // Empty world → marquee frames
         marqueeBaseRef.current = additive ? worldSelectedIds : [];
@@ -1135,7 +1256,9 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
           setWorldSelectedIds([]);
           deselectAll();
         }
-        setMarquee({ start: p, current: p, scope: "frames" });
+        const nextMarquee: WorldMarquee = { start: p, current: p, scope: "frames" };
+        marqueeRef.current = nextMarquee;
+        setMarquee(nextMarquee);
       }
       try {
         worldSvgRef.current?.setPointerCapture(e.pointerId);
@@ -1225,6 +1348,13 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       }
       const p = worldPointFromEvent(e.clientX, e.clientY);
       if (!p) return;
+
+      if (frameResizeRef.current) {
+        frameResizeRef.current.update(p, {
+          bypassSnap: !snapToGrid || e.metaKey || e.ctrlKey,
+        });
+        return;
+      }
 
       if (toolMode === "paint" && editOrigin && editPath) {
         const rawLocal = { x: p.x - editOrigin.x, y: p.y - editOrigin.y };
@@ -1403,52 +1533,29 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         return;
       }
 
-      // Artboard dragging — title chip only
-      if (isDraggingArtboards && draggingArtboardIds.length > 0 && artboardDragStart) {
-        let totalDx = p.x - artboardDragStart.x;
-        let totalDy = p.y - artboardDragStart.y;
-
-        // Shift = axis lock (classic pro constraint)
-        if (e.shiftKey) {
-          if (Math.abs(totalDx) > Math.abs(totalDy)) {
-            totalDy = 0;
-          } else {
-            totalDx = 0;
-          }
-        }
-
-        // Snap the absolute offset to whole pixels so frames stay grid-aligned
-        // (⌘/Ctrl frees it for fine placement).
-        if (snapToGrid && !(e.metaKey || e.ctrlKey)) {
-          totalDx = snapValueToStep(totalDx, 1);
-          totalDy = snapValueToStep(totalDy, 1);
-        }
-
-        const applied = artboardAppliedRef.current;
-        const dx = totalDx - applied.x;
-        const dy = totalDy - applied.y;
-        if (Math.abs(dx) > 1e-6 || Math.abs(dy) > 1e-6) {
-          if (!artboardDragMovedRef.current) {
-            useEditorStore.getState().pushHistory();
-            artboardDragMovedRef.current = true;
-          }
-          useEditorStore.getState().moveFrames(draggingArtboardIds, dx, dy);
-          artboardAppliedRef.current = { x: totalDx, y: totalDy };
-        }
+      if (
+        updateArtboardDrag(e.clientX, e.clientY, {
+          shift: e.shiftKey,
+          bypassSnap: e.metaKey || e.ctrlKey,
+        })
+      ) {
         return;
       }
 
       // Marquee: frames on empty canvas, or *all* layers inside a frame (Figma multi-select)
-      if (marquee) {
-        const minX = Math.min(marquee.start.x, p.x);
-        const maxX = Math.max(marquee.start.x, p.x);
-        const minY = Math.min(marquee.start.y, p.y);
-        const maxY = Math.max(marquee.start.y, p.y);
+      const activeMarquee = marqueeRef.current;
+      if (activeMarquee) {
+        const minX = Math.min(activeMarquee.start.x, p.x);
+        const maxX = Math.max(activeMarquee.start.x, p.x);
+        const minY = Math.min(activeMarquee.start.y, p.y);
+        const maxY = Math.max(activeMarquee.start.y, p.y);
         // Tiny drag = click, not a selection box yet
-        const dragDist = Math.hypot(p.x - marquee.start.x, p.y - marquee.start.y);
-        setMarquee({ ...marquee, current: p });
+        const dragDist = Math.hypot(p.x - activeMarquee.start.x, p.y - activeMarquee.start.y);
+        const nextMarquee = { ...activeMarquee, current: p };
+        marqueeRef.current = nextMarquee;
+        setMarquee(nextMarquee);
 
-        if (marquee.scope === "layers" && marquee.frameId) {
+        if (activeMarquee.scope === "layers" && activeMarquee.frameId) {
           if (dragDist >= worldPerPx * 4) {
             const hits = collectOwnedLayersInRect(sceneOwners, {
               x: minX,
@@ -1473,8 +1580,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                 ),
               );
             } else {
-              selectFrame(marquee.frameId);
-              setWorldSelectedIds([marquee.frameId]);
+              selectFrame(activeMarquee.frameId);
+              setWorldSelectedIds([activeMarquee.frameId]);
             }
           }
         } else {
@@ -1528,7 +1635,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       draggingArtboardIds,
       editLayerTx,
       editLayerTy,
-      artboardDragStart,
       marquee,
       frames,
       getFrameBounds,
@@ -1551,19 +1657,26 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       syncActiveOwner,
       sceneOwners,
       selectLayerRefs,
+      updateArtboardDrag,
     ],
   );
 
   const handleWorldPointerUp = useCallback(
     (e: React.PointerEvent) => {
       const objectDrag = layerDragRef.current;
+      const artboardDrag = artboardDragRef.current;
       const layerTransform = layerResizeRef.current ?? layerRotateRef.current;
+      const frameResize = frameResizeRef.current;
       const hadLayerGesture = !!(
         objectDrag ||
+        artboardDrag ||
+        frameResize ||
         layerResizeRef.current ||
         layerRotateRef.current
       );
       layerDragRef.current = null;
+      artboardDragRef.current = null;
+      frameResizeRef.current = null;
       layerResizeRef.current = null;
       layerRotateRef.current = null;
       setSmartGuides([]);
@@ -1576,10 +1689,32 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       }
       if (objectDrag) {
         const end = worldPointFromEvent(e.clientX, e.clientY);
-        if (end) objectDrag.finish(end);
+        if (end) {
+          objectDrag.update(end, {
+            shift: e.shiftKey,
+            alt: e.altKey,
+            bypassSnap: e.metaKey || e.ctrlKey,
+          });
+          objectDrag.finish(end);
+        }
         else objectDrag.cancel();
       }
-      if (layerTransform?.moved) syncActiveOwner(true);
+      if (artboardDrag) {
+        const end = worldPointFromEvent(e.clientX, e.clientY);
+        if (end) {
+          artboardDrag.update(end, {
+            shift: e.shiftKey,
+            alt: false,
+            bypassSnap: e.metaKey || e.ctrlKey,
+          });
+          artboardDrag.finish(end);
+        } else {
+          artboardDrag.cancel();
+        }
+        clearArtboardDrag();
+      }
+      frameResize?.finish();
+      if (layerTransform?.moved) syncActiveOwner({ includeAnimation: true });
       // Pen: persist the handle pulled during this anchor's drag (history already
       // pushed on pointer-down), then keep the path open for the next anchor.
       if (penDragRef.current) {
@@ -1592,8 +1727,10 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       // End an inline anchor edit. History was already snapshotted on the first
       // move (pointDragMovedRef), so there's nothing to push here.
       if (pointDragRef.current) {
+        const pointMoved = pointDragMovedRef.current;
         pointDragRef.current = null;
         pointDragMovedRef.current = false;
+        if (pointMoved) syncActiveOwner();
         if (worldSvgRef.current?.hasPointerCapture(e.pointerId)) {
           worldSvgRef.current.releasePointerCapture(e.pointerId);
         }
@@ -1606,16 +1743,22 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       }
 
       // Commit / clear the marquee (selection applied live while dragging).
-      if (marquee) {
+      const activeMarquee = marqueeRef.current;
+      if (activeMarquee) {
         const dragDist = Math.hypot(
-          (marquee.current?.x ?? marquee.start.x) - marquee.start.x,
-          (marquee.current?.y ?? marquee.start.y) - marquee.start.y,
+          activeMarquee.current.x - activeMarquee.start.x,
+          activeMarquee.current.y - activeMarquee.start.y,
         );
         // Click (no real drag) on empty frame paper → select that frame only
-        if (dragDist < worldPerPx * 4 && marquee.scope === "layers" && marquee.frameId) {
-          selectFrame(marquee.frameId);
-          setWorldSelectedIds([marquee.frameId]);
+        if (
+          dragDist < worldPerPx * 4 &&
+          activeMarquee.scope === "layers" &&
+          activeMarquee.frameId
+        ) {
+          selectFrame(activeMarquee.frameId);
+          setWorldSelectedIds([activeMarquee.frameId]);
         }
+        marqueeRef.current = null;
         setMarquee(null);
       }
 
@@ -1667,15 +1810,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       setWorldLassoFrame(0);
       worldLassoRef.current = [];
 
-      // End artboard drag. (Frame x/y live outside the layers history, so there's
-      // no layer snapshot to push here — pushing would only add a phantom step.)
-      if (isDraggingArtboards) {
-        setIsDraggingArtboards(false);
-        setDraggingArtboardIds([]);
-        setArtboardDragStart(null);
-        artboardDragMovedRef.current = false;
-      }
-
       if (toolMode === "paint") {
         setPaintHoverValid(false);
       }
@@ -1694,6 +1828,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       worldPointFromEvent,
       hitArtboard,
       syncActiveOwner,
+      clearArtboardDrag,
     ],
   );
 
@@ -1701,9 +1836,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     (e: React.PointerEvent) => {
       cancelObjectDrag();
       cancelLayerTransform();
-      pointDragRef.current = null;
-      pointDragMovedRef.current = false;
+      cancelFrameResize();
+      cancelPointDrag();
+      cancelArtboardDrag();
       setIsWorldPanning(false);
+      marqueeRef.current = null;
       setMarquee(null);
       setSmartGuides([]);
       try {
@@ -1712,7 +1849,13 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         /* Pointer capture may already be gone on native cancellation. */
       }
     },
-    [cancelLayerTransform, cancelObjectDrag],
+    [
+      cancelArtboardDrag,
+      cancelFrameResize,
+      cancelLayerTransform,
+      cancelObjectDrag,
+      cancelPointDrag,
+    ],
   );
 
   // Double-click focus (select + camera lerp to artboard rect) - seamless world to detail transition
@@ -1789,6 +1932,21 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         cancelLayerTransform();
         return;
       }
+      if (e.key === "Escape" && frameResizeRef.current) {
+        e.preventDefault();
+        cancelFrameResize();
+        return;
+      }
+      if (e.key === "Escape" && pointDragRef.current) {
+        e.preventDefault();
+        cancelPointDrag();
+        return;
+      }
+      if (e.key === "Escape" && artboardDragRef.current) {
+        e.preventDefault();
+        cancelArtboardDrag();
+        return;
+      }
       // Figma: first Esc exits vector edit → object still selected; second Esc deselects
       if (e.key === "Escape" && toolMode === "direct") {
         e.preventDefault();
@@ -1841,6 +1999,9 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     deselectAll,
     cancelObjectDrag,
     cancelLayerTransform,
+    cancelFrameResize,
+    cancelPointDrag,
+    cancelArtboardDrag,
   ]);
 
   return (
@@ -2355,25 +2516,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       ),
                     )}
 
-                    {/* One world-space group box when selection spans owners. */}
-                    {!isPlaying &&
-                      isObjectTool &&
-                      hasCanvasSelection &&
-                      selectedLayerOwnerCount > 1 &&
-                      documentSelectionBounds && (
-                        <rect
-                          x={documentSelectionBounds.x}
-                          y={documentSelectionBounds.y}
-                          width={Math.max(0.01, documentSelectionBounds.w)}
-                          height={Math.max(0.01, documentSelectionBounds.h)}
-                          fill="none"
-                          stroke="#0d99ff"
-                          strokeWidth={1.5}
-                          vectorEffect="non-scaling-stroke"
-                          pointerEvents="none"
-                        />
-                      )}
-
                     {/* Motion paths for all selected layers with Position tracks */}
                     {!isPlaying &&
                       selectTarget === "layer" &&
@@ -2721,293 +2863,23 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                         );
                       })()}
 
-                    {/* Layer selection — union AABB for multi + rotate handle (Select only) */}
-                    {!isPlaying &&
-                      isObjectTool &&
-                      hasCanvasSelection &&
-                      selectTarget === "layer" &&
-                      selectedLayerOwnerCount <= 1 &&
-                      editOrigin &&
-                      (() => {
-                        const ids =
-                          selectedLayerIds.length > 0
-                            ? selectedLayerIds
-                            : selectedLayerId != null
-                              ? [selectedLayerId]
-                              : [];
-                        if (ids.length === 0) return null;
-                        // Frame-local union of path AABB + translate for all selected
-                        let uMinX = Infinity,
-                          uMinY = Infinity,
-                          uMaxX = -Infinity,
-                          uMaxY = -Infinity;
-                        const itemsMeta: Array<{
-                          id: string | number;
-                          bb: { x: number; y: number; w: number; h: number };
-                          tx: number;
-                          ty: number;
-                        }> = [];
-                        for (const id of ids) {
-                          const L = layers.find((l) => String(l.id) === String(id));
-                          if (!L || L.type === "group") continue;
-                          const sourcePath = (L.pathData ?? L.from) as PathData;
-                          let bb = getPathDataBounds(sourcePath);
-                          if (!bb) continue;
-                          const tx = Number(L.translateX) || 0;
-                          const ty = Number(L.translateY) || 0;
-                          itemsMeta.push({ id: L.id, bb, tx, ty });
-                          uMinX = Math.min(uMinX, bb.x + tx);
-                          uMinY = Math.min(uMinY, bb.y + ty);
-                          uMaxX = Math.max(uMaxX, bb.x + bb.w + tx);
-                          uMaxY = Math.max(uMaxY, bb.y + bb.h + ty);
-                        }
-                        if (!Number.isFinite(uMinX)) return null;
-                        // World coords for chrome
-                        const ox = editOrigin.x + uMinX;
-                        const oy = editOrigin.y + uMinY;
-                        const ow = Math.max(0.01, uMaxX - uMinX);
-                        const oh = Math.max(0.01, uMaxY - uMinY);
-                        // Control AABB in frame-local (includes translate) for resize math
-                        const controlLocal = {
-                          x: uMinX,
-                          y: uMinY,
-                          w: ow,
-                          h: oh,
-                        };
-                        const hs = worldPerPx * 3;
-                        const hit = worldPerPx * 5;
-                        const handles: Array<{
-                          h: "nw" | "ne" | "sw" | "se" | "e" | "w" | "n" | "s";
-                          x: number;
-                          y: number;
-                          cursor: string;
-                        }> = [
-                          { h: "nw", x: ox, y: oy, cursor: "nwse-resize" },
-                          { h: "ne", x: ox + ow, y: oy, cursor: "nesw-resize" },
-                          { h: "sw", x: ox, y: oy + oh, cursor: "nesw-resize" },
-                          { h: "se", x: ox + ow, y: oy + oh, cursor: "nwse-resize" },
-                          { h: "n", x: ox + ow / 2, y: oy, cursor: "ns-resize" },
-                          { h: "s", x: ox + ow / 2, y: oy + oh, cursor: "ns-resize" },
-                          { h: "w", x: ox, y: oy + oh / 2, cursor: "ew-resize" },
-                          { h: "e", x: ox + ow, y: oy + oh / 2, cursor: "ew-resize" },
-                        ];
-                        const rotHandleY = oy - worldPerPx * 18;
-                        const rotHandleX = ox + ow / 2;
-                        const beginResize = (
-                          e: React.PointerEvent,
-                          handle: (typeof handles)[number]["h"],
-                        ) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          const items = itemsMeta
-                            .map((m) => {
-                              const L = layers.find((l) => String(l.id) === String(m.id));
-                              if (!L || L.locked) return null;
-                              const of = structuredClone(
-                                (L.from ?? L.pathData) as PathData,
-                              );
-                              return {
-                                id: L.id,
-                                origFrom: of,
-                                origTo: L.to
-                                  ? structuredClone(L.to as PathData)
-                                  : null,
-                                // Store frame-local bounds (path + translate) for proportional scale
-                                origin: {
-                                  x: m.bb.x + m.tx,
-                                  y: m.bb.y + m.ty,
-                                  w: m.bb.w,
-                                  h: m.bb.h,
-                                },
-                                pathOrigin: {
-                                  x: m.bb.x,
-                                  y: m.bb.y,
-                                  w: m.bb.w,
-                                  h: m.bb.h,
-                                },
-                                translate: { x: m.tx, y: m.ty },
-                              };
-                            })
-                            .filter(Boolean) as Array<{
-                            id: string | number;
-                            origFrom: PathData;
-                            origTo: PathData | null;
-                            origin: { x: number; y: number; w: number; h: number };
-                            pathOrigin: { x: number; y: number; w: number; h: number };
-                            translate: { x: number; y: number };
-                          }>;
-                          const world = worldPointFromEvent(e.clientX, e.clientY);
-                          const cornerX = handle.includes("w")
-                            ? controlLocal.x
-                            : handle.includes("e")
-                              ? controlLocal.x + controlLocal.w
-                              : controlLocal.x + controlLocal.w / 2;
-                          const cornerY = handle.includes("n")
-                            ? controlLocal.y
-                            : handle.includes("s")
-                              ? controlLocal.y + controlLocal.h
-                              : controlLocal.y + controlLocal.h / 2;
-                          const localAtGrab = world
-                            ? {
-                                x: world.x - editOrigin.x,
-                                y: world.y - editOrigin.y,
-                              }
-                            : { x: cornerX, y: cornerY };
-                          layerResizeRef.current = {
-                            handle,
-                            origin: { ...controlLocal },
-                            translate: { x: 0, y: 0 },
-                            grabOffset: {
-                              x: localAtGrab.x - cornerX,
-                              y: localAtGrab.y - cornerY,
-                            },
-                            items: items.map((it) => ({
-                              id: it.id,
-                              origFrom: it.origFrom,
-                              origTo: it.origTo,
-                              origin: it.pathOrigin,
-                              frameOrigin: it.origin,
-                              baseTranslate: it.translate,
-                            })),
-                            moved: false,
-                          };
-                          try {
-                            worldSvgRef.current?.setPointerCapture(e.pointerId);
-                          } catch {
-                            /* ignore — drag still proceeds via this element's own listeners */
-                          }
-                        };
-                        const beginRotate = (e: React.PointerEvent) => {
-                          e.stopPropagation();
-                          e.preventDefault();
-                          const world = worldPointFromEvent(e.clientX, e.clientY);
-                          if (!world) return;
-                          const center = { x: ox + ow / 2, y: oy + oh / 2 };
-                          const startAngle =
-                            (Math.atan2(world.y - center.y, world.x - center.x) * 180) /
-                            Math.PI;
-                          layerRotateRef.current = {
-                            center,
-                            startAngle,
-                            baseRotations: ids.map((id) => {
-                              const L = layers.find((l) => String(l.id) === String(id));
-                              return {
-                                id,
-                                rotation: Number(L?.rotation) || 0,
-                              };
-                            }),
-                            moved: false,
-                          };
-                          try {
-                            worldSvgRef.current?.setPointerCapture(e.pointerId);
-                          } catch {
-                            /* ignore — drag still proceeds via this element's own listeners */
-                          }
-                        };
-                        return (
-                          <g pointerEvents="none">
-                            <rect
-                              x={ox}
-                              y={oy}
-                              width={ow}
-                              height={oh}
-                              fill="none"
-                              stroke="#0d99ff"
-                              strokeWidth={1.5}
-                              vectorEffect="non-scaling-stroke"
-                            />
-                            {/* Rotate stem + handle (Figma-style above center) */}
-                            <line
-                              x1={rotHandleX}
-                              y1={oy}
-                              x2={rotHandleX}
-                              y2={rotHandleY}
-                              stroke="#0d99ff"
-                              strokeWidth={1}
-                              vectorEffect="non-scaling-stroke"
-                            />
-                            <circle
-                              cx={rotHandleX}
-                              cy={rotHandleY}
-                              r={hs * 1.1}
-                              fill="#ffffff"
-                              stroke="#0d99ff"
-                              strokeWidth={1.25}
-                              vectorEffect="non-scaling-stroke"
-                              pointerEvents="all"
-                              style={{ cursor: "grab", pointerEvents: "auto" }}
-                              onPointerDown={beginRotate}
-                            />
-                            {(
-                              [
-                                {
-                                  h: "n" as const,
-                                  x1: ox,
-                                  y1: oy,
-                                  x2: ox + ow,
-                                  y2: oy,
-                                  c: "ns-resize",
-                                },
-                                {
-                                  h: "s" as const,
-                                  x1: ox,
-                                  y1: oy + oh,
-                                  x2: ox + ow,
-                                  y2: oy + oh,
-                                  c: "ns-resize",
-                                },
-                                {
-                                  h: "w" as const,
-                                  x1: ox,
-                                  y1: oy,
-                                  x2: ox,
-                                  y2: oy + oh,
-                                  c: "ew-resize",
-                                },
-                                {
-                                  h: "e" as const,
-                                  x1: ox + ow,
-                                  y1: oy,
-                                  x2: ox + ow,
-                                  y2: oy + oh,
-                                  c: "ew-resize",
-                                },
-                              ] as const
-                            ).map((edge) => (
-                              <line
-                                key={`hit-${edge.h}`}
-                                x1={edge.x1}
-                                y1={edge.y1}
-                                x2={edge.x2}
-                                y2={edge.y2}
-                                stroke="transparent"
-                                strokeWidth={hit * 2}
-                                pointerEvents="stroke"
-                                vectorEffect="non-scaling-stroke"
-                                style={{ cursor: edge.c, pointerEvents: "stroke" }}
-                                onPointerDown={(e) => beginResize(e, edge.h)}
-                              />
-                            ))}
-                            {handles.map((hh) => (
-                              <rect
-                                key={hh.h}
-                                x={hh.x - hs}
-                                y={hh.y - hs}
-                                width={hs * 2}
-                                height={hs * 2}
-                                rx={worldPerPx * 1}
-                                fill="#ffffff"
-                                stroke="#0d99ff"
-                                strokeWidth={1.25}
-                                vectorEffect="non-scaling-stroke"
-                                pointerEvents="all"
-                                style={{ cursor: hh.cursor, pointerEvents: "auto" }}
-                                onPointerDown={(e) => beginResize(e, hh.h)}
-                              />
-                            ))}
-                          </g>
-                        );
-                      })()}
+                    <WorldSelectionOverlay
+                      visible={
+                        !isPlaying &&
+                        isObjectTool &&
+                        hasCanvasSelection &&
+                        selectTarget === "layer"
+                      }
+                      activeOrigin={editOrigin}
+                      activeLayers={layers}
+                      activeLayerIds={activeSelectedLayerIds}
+                      selectedOwnerCount={selectedLayerOwnerCount}
+                      documentBounds={documentSelectionBounds}
+                      worldPerPx={worldPerPx}
+                      worldPointFromClient={worldPointFromEvent}
+                      onResizeStart={startLayerResize}
+                      onRotateStart={startLayerRotate}
+                    />
                   </svg>
                 ) : (
                   <PathCanvas
@@ -3100,7 +2972,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                                       ? worldSelectedIds.filter((id) => id !== frame.id)
                                       : [...worldSelectedIds, frame.id];
                                   } else {
-                                    next = [frame.id];
+                                    next =
+                                      worldSelectedIds.length > 1 &&
+                                      worldSelectedIds.includes(frame.id)
+                                        ? worldSelectedIds
+                                        : [frame.id];
                                   }
                                   setWorldSelectedIds(next);
                                   if (next.length === 0) {
@@ -3112,9 +2988,9 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                                     e.preventDefault();
                                     startWorldArtboardDrag(e.clientX, e.clientY, next);
                                     try {
-                                      worldSvgRef.current?.setPointerCapture(e.pointerId);
+                                      e.currentTarget.setPointerCapture(e.pointerId);
                                     } catch {
-                                      /* ignore — drag still proceeds via this element's own listeners */
+                                      /* Native capture may already have been released. */
                                     }
                                   }
                                 }}
@@ -3129,12 +3005,19 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                               >
                                 {frame.name}
                               </button>
-                              {isSel && (
-                                <>
+                              <span
+                                aria-hidden={!isSel}
+                                className={cn(
+                                  "flex items-center gap-0.5 transition-opacity",
+                                  isSel ? "opacity-100" : "pointer-events-none opacity-0",
+                                )}
+                              >
                                   <button
                                     type="button"
                                     data-frame-chrome-action
                                     title="Duplicate frame"
+                                    tabIndex={isSel ? 0 : -1}
+                                    disabled={!isSel}
                                     onPointerDown={(e) => e.stopPropagation()}
                                     onClick={() => {
                                       const st = useEditorStore.getState();
@@ -3149,15 +3032,15 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                                     type="button"
                                     data-frame-chrome-action
                                     title="Delete frame"
-                                    disabled={frames.length <= 1}
+                                    tabIndex={isSel ? 0 : -1}
+                                    disabled={!isSel || frames.length <= 1}
                                     onPointerDown={(e) => e.stopPropagation()}
                                     onClick={() => deleteFrame(frame.id)}
                                     className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-destructive disabled:pointer-events-none disabled:opacity-40 cursor-pointer"
                                   >
                                     <Trash2 className="size-3" />
                                   </button>
-                                </>
-                              )}
+                              </span>
                             </div>
                           )}
                         </div>

@@ -109,6 +109,24 @@ describe("editorStore", () => {
   });
 
   describe("cross-frame layer reparenting", () => {
+    it("persists the live active-owner projection through a store command", () => {
+      const frame = getStore().frames[0];
+      const layer = getStore().layers[0];
+      useEditorStore.setState({
+        layers: getStore().layers.map((candidate) =>
+          candidate.id === layer.id ? { ...candidate, translateX: 17 } : candidate,
+        ),
+      });
+
+      getStore().syncActiveOwner();
+
+      expect(
+        getStore().frames
+          .find((candidate) => candidate.id === frame.id)!
+          .layers.find((candidate) => candidate.id === layer.id)!.translateX,
+      ).toBe(17);
+    });
+
     it("moves a document-wide selection across owners as one group", () => {
       const first = getStore().frames[0];
       const second = getStore().frames[1];
