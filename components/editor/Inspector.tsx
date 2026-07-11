@@ -2,14 +2,22 @@
 
 import React from "react";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Maximize2, Minimize2, Trash2, ChevronRight } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Maximize2,
+  Minimize2,
+  Trash2,
+  ChevronRight,
+  SlidersHorizontal,
+  Plus,
+  Minus,
+  MousePointerClick,
+  Crop,
+  Folder,
+  Spline,
+  Pencil,
+} from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/lib/store/editorStore";
@@ -25,8 +33,6 @@ import type {
   GradientStop,
   GradientType,
   Layer,
-  StrokeLineCap,
-  StrokeLineJoin,
 } from "@/lib/shapeshifter/types";
 import {
   gradientFromSolid,
@@ -34,9 +40,8 @@ import {
   normalizeStops,
 } from "@/lib/shapeshifter/gradients";
 import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
-import { MaterialSymbol } from "./MaterialSymbol";
 import { PathCommandsList } from "./PathCommandsList";
-import { CompactColorInput } from "@/components/ui/color-picker";
+import { CompactColorInput } from "@/components/ui/compact-color-input";
 
 /* ------------------------------------------------------------------ */
 /* Field primitives — a small, consistent Figma-grade control system  */
@@ -94,6 +99,58 @@ function Row({ label, children }: { label?: string; children: React.ReactNode })
   );
 }
 
+/** Per-property "animate this" toggle — a small keyframe diamond next to the
+    control it animates, matching Figma's inline convention (no global menu
+    listing every property by name). Solid + blue once a track exists;
+    clicking again selects that track instead of adding a duplicate. */
+function AnimateDot({
+  layerId,
+  propertyName,
+}: {
+  layerId: string | number;
+  propertyName: string;
+}) {
+  // Select the stable `blocks` array reference and filter locally — filtering
+  // *inside* the zustand selector returns a new array every call, which zustand
+  // treats as "changed" every time and causes an infinite render loop.
+  const allBlocks = useEditorStore((s) => s.animation.blocks);
+  const selectBlocks = useEditorStore((s) => s.selectBlocks);
+  const addTimelineBlock = useEditorStore((s) => s.addTimelineBlock);
+  const blocks = allBlocks.filter(
+    (b) => String(b.layerId) === String(layerId) && b.propertyName === propertyName,
+  );
+  const active = blocks.length > 0;
+  const label = propertyLabel(propertyName);
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        active ? selectBlocks(blocks.map((b) => b.id)) : addTimelineBlock(layerId, propertyName)
+      }
+      className={cn(
+        "flex size-5 shrink-0 items-center justify-center rounded-sm transition-colors",
+        // Quiet by default — only appears on row hover, like Figma's own row
+        // affordances (visibility/lock icons, etc.). Animated properties stay
+        // visible always so an "anim" state is never hidden behind a hover.
+        active
+          ? "text-[#0C8CE9] opacity-100 hover:bg-[#0C8CE9]/10"
+          : "text-muted-foreground/30 opacity-0 hover:bg-muted hover:text-muted-foreground group-hover:opacity-100",
+      )}
+      title={active ? `${label} is animated — click to select` : `Animate ${label}`}
+      aria-label={active ? `${label} is animated` : `Animate ${label}`}
+    >
+      <span
+        className="block size-[7px] shrink-0 rotate-45 rounded-[1px] border"
+        style={{
+          borderColor: "currentColor",
+          borderWidth: 1.25,
+          backgroundColor: active ? "currentColor" : "transparent",
+        }}
+      />
+    </button>
+  );
+}
+
 function TextInput({
   value,
   onChange,
@@ -124,6 +181,7 @@ function NumberRow({
   max,
   step = 1,
   suffix,
+  animate,
 }: {
   label: string;
   value: number;
@@ -132,6 +190,8 @@ function NumberRow({
   max?: number;
   step?: number;
   suffix?: string;
+  /** Renders an inline keyframe toggle for this property (see AnimateDot). */
+  animate?: { layerId: string | number; propertyName: string };
 }) {
   const scrub = React.useRef<{ startX: number; startVal: number } | null>(null);
   // While the field is focused we keep the raw keystrokes so typing "2." or a
@@ -167,7 +227,12 @@ function NumberRow({
   };
 
   return (
-    <div className="grid grid-cols-[58px_minmax(0,1fr)] items-center gap-2">
+    <div
+      className={cn(
+        "group grid items-center gap-2",
+        animate ? "grid-cols-[58px_minmax(0,1fr)_20px]" : "grid-cols-[58px_minmax(0,1fr)]",
+      )}
+    >
       <span
         role="slider"
         aria-label={label}
@@ -203,6 +268,7 @@ function NumberRow({
           </span>
         )}
       </div>
+      {animate && <AnimateDot layerId={animate.layerId} propertyName={animate.propertyName} />}
     </div>
   );
 }
@@ -215,17 +281,31 @@ function ColorRow({
   alpha,
   onColor,
   onAlpha,
+  animate,
 }: {
   label?: string;
   color: string;
   alpha?: number;
   onColor: (v: string) => void;
   onAlpha?: (v: number) => void;
+  /** Renders an inline keyframe toggle for this property (see AnimateDot). */
+  animate?: { layerId: string | number; propertyName: string };
 }) {
   const hex = (color?.startsWith("#") ? color : color ? `#${color}` : "#000000");
   const hasLabel = Boolean(label);
   return (
-    <div className={cn("grid items-center gap-2", hasLabel ? "grid-cols-[58px_minmax(0,1fr)]" : "grid-cols-1")}>
+    <div
+      className={cn(
+        "group grid items-center gap-2",
+        hasLabel
+          ? animate
+            ? "grid-cols-[58px_minmax(0,1fr)_20px]"
+            : "grid-cols-[58px_minmax(0,1fr)]"
+          : animate
+            ? "grid-cols-[minmax(0,1fr)_20px]"
+            : "grid-cols-1",
+      )}
+    >
       {hasLabel && <span className="truncate text-[11px] text-muted-foreground">{label}</span>}
       <div className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-background pl-1 pr-2 transition-colors hover:border-foreground/20 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
         <CompactColorInput
@@ -254,6 +334,7 @@ function ColorRow({
           </>
         )}
       </div>
+      {animate && <AnimateDot layerId={animate.layerId} propertyName={animate.propertyName} />}
     </div>
   );
 }
@@ -381,7 +462,7 @@ function GradientEditor({
           onClick={addStop}
           className="h-7 gap-1 text-[11px]"
         >
-          <MaterialSymbol name="add" size={14} className="text-muted-foreground" /> Stop
+          <Plus size={14} className="text-muted-foreground" /> Stop
         </Button>
         <Button
           type="button"
@@ -391,7 +472,7 @@ function GradientEditor({
           disabled={stops.length <= 2}
           className="h-7 gap-1 text-[11px] disabled:opacity-40"
         >
-          <MaterialSymbol name="remove" size={14} className="text-muted-foreground" /> Remove
+          <Minus size={14} className="text-muted-foreground" /> Remove
         </Button>
       </div>
     </div>
@@ -417,7 +498,7 @@ function Segmented<T extends string>({
           variant="ghost"
           onClick={() => onChange(o.value)}
           className={cn(
-            "h-7 flex-1 rounded-[5px] px-1 text-[11px] capitalize",
+            "h-7 flex-1 rounded-sm px-1 text-[11px] capitalize",
             value === o.value
               ? "bg-card font-medium text-foreground shadow-sm hover:bg-card"
               : "text-muted-foreground hover:text-foreground",
@@ -446,7 +527,6 @@ export function Inspector() {
     layers,
     updateSelectedLayer,
     startActionMode,
-    addTimelineBlock,
     animation,
     selectedPoints,
     selectPoint,
@@ -480,7 +560,7 @@ export function Inspector() {
         </div>
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
           <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <MaterialSymbol name="touch_app" size={24} />
+            <MousePointerClick size={24} />
           </div>
           <p className="max-w-[12rem] text-xs leading-relaxed text-muted-foreground">
             Select a layer or point to edit its properties
@@ -489,26 +569,6 @@ export function Inspector() {
       </div>
     );
   }
-
-  const animatableProperties =
-    currentLayer.type === "group"
-      ? ["rotation", "scaleX", "scaleY", "pivotX", "pivotY", "translateX", "translateY"]
-      : [
-          "pathData",
-          "translateX",
-          "translateY",
-          "rotation",
-          "scaleX",
-          "scaleY",
-          "fillColor",
-          "fillAlpha",
-          "strokeColor",
-          "strokeAlpha",
-          "strokeWidth",
-          "trimPathStart",
-          "trimPathEnd",
-          "trimPathOffset",
-        ];
 
   const commandsList = (extraClass?: string) => (
     <PathCommandsList
@@ -570,16 +630,13 @@ export function Inspector() {
       {/* Header */}
       <div className="flex h-14 items-center gap-2.5 border-b border-border px-3">
         <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-          <MaterialSymbol
-            name={
-              currentLayer.type === "clipPath"
-                ? "crop"
-                : isGroup
-                  ? "folder"
-                  : "polyline"
-            }
-            size={18}
-          />
+          {currentLayer.type === "clipPath" ? (
+            <Crop size={18} />
+          ) : isGroup ? (
+            <Folder size={18} />
+          ) : (
+            <Spline size={18} />
+          )}
         </div>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-semibold leading-tight">
@@ -599,31 +656,6 @@ export function Inspector() {
             )}
           </div>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                className="text-muted-foreground hover:text-foreground"
-                aria-label="Animate a property"
-                title="Animate a property"
-              />
-            }
-          >
-            <MaterialSymbol name="animation" size={17} />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            {animatableProperties.map((propertyName) => (
-              <DropdownMenuItem
-                key={propertyName}
-                onClick={() => addTimelineBlock(currentLayer.id, propertyName)}
-              >
-                {propertyLabel(propertyName)}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
         {!isGroup && (
           <Tooltip>
             <TooltipTrigger
@@ -637,7 +669,7 @@ export function Inspector() {
                 />
               }
             >
-              <MaterialSymbol name="edit" size={17} />
+              <Pencil size={17} />
             </TooltipTrigger>
             <TooltipContent>Edit path morph (start → end)</TooltipContent>
           </Tooltip>
@@ -729,6 +761,7 @@ export function Inspector() {
                         alpha={currentLayer.fillAlpha ?? 1}
                         onColor={(v) => updateLayer({ fillColor: v })}
                         onAlpha={(v) => updateLayer({ fillAlpha: v })}
+                        animate={{ layerId: currentLayer.id, propertyName: "fillColor" }}
                       />
                     )}
                   </>
@@ -753,75 +786,90 @@ export function Inspector() {
                 alpha={currentLayer.strokeAlpha ?? 1}
                 onColor={(v) => updateLayer({ strokeColor: v })}
                 onAlpha={(v) => updateLayer({ strokeAlpha: v })}
+                animate={{ layerId: currentLayer.id, propertyName: "strokeColor" }}
               />
-              <NumberRow
-                label="Width"
-                value={currentLayer.strokeWidth ?? 1}
-                min={0}
-                step={0.1}
-                onChange={(v) => updateLayer({ strokeWidth: v })}
-              />
-
-              {/* Figma-style compact icon controls for cap + join (no verbose text) */}
-              <div className="grid grid-cols-2 gap-1.5">
-                <div>
-                  <div className="mb-0.5 text-[9px] font-medium uppercase tracking-wider text-muted-foreground/70">Cap</div>
-                  <div className="flex items-center gap-px rounded-md bg-muted p-0.5">
-                    {([
-                      { v: "butt", label: "Butt", icon: <svg width="14" height="10" viewBox="0 0 14 10" className="mx-auto"><line x1="1" y1="5" x2="13" y2="5" stroke="currentColor" strokeWidth="2" strokeLinecap="butt" /></svg> },
-                      { v: "round", label: "Round", icon: <svg width="14" height="10" viewBox="0 0 14 10" className="mx-auto"><line x1="1" y1="5" x2="11" y2="5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /><circle cx="11" cy="5" r="1.5" fill="none" stroke="currentColor" strokeWidth="1" /></svg> },
-                      { v: "square", label: "Square", icon: <svg width="14" height="10" viewBox="0 0 14 10" className="mx-auto"><line x1="1" y1="5" x2="11" y2="5" stroke="currentColor" strokeWidth="2" strokeLinecap="square" /><rect x="10" y="3.5" width="3" height="3" fill="none" stroke="currentColor" strokeWidth="1" /></svg> },
-                    ] as const).map(({ v, label, icon }) => (
-                      <button
-                        key={v}
-                        type="button"
-                        onClick={() => updateLayer({ strokeLinecap: v })}
-                        className={cn(
-                          "flex h-6 flex-1 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/70",
-                          (currentLayer.strokeLinecap ?? "butt") === v && "bg-card text-foreground shadow-sm"
-                        )}
-                        title={label}
-                        aria-label={label}
-                      >
-                        {icon}
-                      </button>
-                    ))}
-                  </div>
+              <div className="flex items-center gap-1.5">
+                <div className="min-w-0 flex-1">
+                  <NumberRow
+                    label="Width"
+                    value={currentLayer.strokeWidth ?? 1}
+                    min={0}
+                    step={0.1}
+                    onChange={(v) => updateLayer({ strokeWidth: v })}
+                    animate={{ layerId: currentLayer.id, propertyName: "strokeWidth" }}
+                  />
                 </div>
+                {/* Figma tucks cap/join/dash behind a settings popover instead of
+                    always showing them — keeps the panel compact when they're rarely touched. */}
+                <Popover>
+                  <PopoverTrigger
+                    className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-foreground/20 hover:bg-muted/70 hover:text-foreground"
+                    aria-label="Stroke settings"
+                    title="Stroke settings"
+                  >
+                    <SlidersHorizontal className="size-3.5" />
+                  </PopoverTrigger>
+                  <PopoverContent align="end" side="bottom" sideOffset={6} className="w-56">
+                    <div>
+                      <div className="mb-1 text-[10px] font-medium text-muted-foreground">Cap</div>
+                      <div className="flex items-center gap-px rounded-md bg-muted p-0.5">
+                        {([
+                          { v: "butt", label: "Butt", icon: <svg width="14" height="10" viewBox="0 0 14 10" className="mx-auto"><line x1="1" y1="5" x2="13" y2="5" stroke="currentColor" strokeWidth="2" strokeLinecap="butt" /></svg> },
+                          { v: "round", label: "Round", icon: <svg width="14" height="10" viewBox="0 0 14 10" className="mx-auto"><line x1="1" y1="5" x2="11" y2="5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /><circle cx="11" cy="5" r="1.5" fill="none" stroke="currentColor" strokeWidth="1" /></svg> },
+                          { v: "square", label: "Square", icon: <svg width="14" height="10" viewBox="0 0 14 10" className="mx-auto"><line x1="1" y1="5" x2="11" y2="5" stroke="currentColor" strokeWidth="2" strokeLinecap="square" /><rect x="10" y="3.5" width="3" height="3" fill="none" stroke="currentColor" strokeWidth="1" /></svg> },
+                        ] as const).map(({ v, label, icon }) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => updateLayer({ strokeLinecap: v })}
+                            className={cn(
+                              "flex h-7 flex-1 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/70",
+                              (currentLayer.strokeLinecap ?? "butt") === v && "bg-card text-foreground shadow-sm"
+                            )}
+                            title={label}
+                            aria-label={label}
+                          >
+                            {icon}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
-                <div>
-                  <div className="mb-0.5 text-[9px] font-medium uppercase tracking-wider text-muted-foreground/70">Join</div>
-                  <div className="flex items-center gap-px rounded-md bg-muted p-0.5">
-                    {([
-                      { v: "miter", label: "Miter", icon: <svg width="14" height="10" viewBox="0 0 14 10" className="mx-auto"><polyline points="1,8 7,2 13,8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="miter" /></svg> },
-                      { v: "round", label: "Round", icon: <svg width="14" height="10" viewBox="0 0 14 10" className="mx-auto"><polyline points="1,8 7,2 13,8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" /></svg> },
-                      { v: "bevel", label: "Bevel", icon: <svg width="14" height="10" viewBox="0 0 14 10" className="mx-auto"><polyline points="1,8 7,3 13,8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="bevel" /></svg> },
-                    ] as const).map(({ v, label, icon }) => (
-                      <button
-                        key={v}
-                        type="button"
-                        onClick={() => updateLayer({ strokeLinejoin: v })}
-                        className={cn(
-                          "flex h-6 flex-1 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/70",
-                          (currentLayer.strokeLinejoin ?? "miter") === v && "bg-card text-foreground shadow-sm"
-                        )}
-                        title={label}
-                        aria-label={label}
-                      >
-                        {icon}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
+                    <div className="mt-2.5">
+                      <div className="mb-1 text-[10px] font-medium text-muted-foreground">Join</div>
+                      <div className="flex items-center gap-px rounded-md bg-muted p-0.5">
+                        {([
+                          { v: "miter", label: "Miter", icon: <svg width="14" height="10" viewBox="0 0 14 10" className="mx-auto"><polyline points="1,8 7,2 13,8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="miter" /></svg> },
+                          { v: "round", label: "Round", icon: <svg width="14" height="10" viewBox="0 0 14 10" className="mx-auto"><polyline points="1,8 7,2 13,8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" /></svg> },
+                          { v: "bevel", label: "Bevel", icon: <svg width="14" height="10" viewBox="0 0 14 10" className="mx-auto"><polyline points="1,8 7,3 13,8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="bevel" /></svg> },
+                        ] as const).map(({ v, label, icon }) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => updateLayer({ strokeLinejoin: v })}
+                            className={cn(
+                              "flex h-7 flex-1 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/70",
+                              (currentLayer.strokeLinejoin ?? "miter") === v && "bg-card text-foreground shadow-sm"
+                            )}
+                            title={label}
+                            aria-label={label}
+                          >
+                            {icon}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
-              <div className="flex items-center gap-2">
-                <span className="w-[58px] shrink-0 text-[11px] text-muted-foreground">Dash</span>
-                <TextInput
-                  value={currentLayer.strokeDasharray ?? ""}
-                  placeholder="e.g. 4 2"
-                  onChange={(v) => updateLayer({ strokeDasharray: v || undefined })}
-                />
+                    <div className="mt-2.5 flex items-center gap-2">
+                      <span className="w-10 shrink-0 text-[11px] text-muted-foreground">Dash</span>
+                      <TextInput
+                        value={currentLayer.strokeDasharray ?? ""}
+                        placeholder="e.g. 4 2"
+                        onChange={(v) => updateLayer({ strokeDasharray: v || undefined })}
+                      />
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
               {/* Clarify scope: stroke is per-layer (affects every subpath). Users can split for independent styling. */}
               {currentLayer.from?.subPaths && currentLayer.from.subPaths.length > 1 && (
@@ -832,8 +880,16 @@ export function Inspector() {
               )}
             </Section>
 
-            {/* Trim path */}
-            <Section title="Trim path">
+            {/* Trim path — collapsed unless already in use (Figma keeps rarely-touched
+                sections like this closed by default to keep the panel scannable). */}
+            <Section
+              title="Trim path"
+              defaultOpen={
+                (currentLayer.trimPathStart ?? 0) !== 0 ||
+                (currentLayer.trimPathEnd ?? 1) !== 1 ||
+                (currentLayer.trimPathOffset ?? 0) !== 0
+              }
+            >
               <NumberRow
                 label="Start"
                 value={Math.round((currentLayer.trimPathStart ?? 0) * 100)}
@@ -842,6 +898,7 @@ export function Inspector() {
                 step={1}
                 suffix="%"
                 onChange={(v) => updateLayer({ trimPathStart: Math.max(0, Math.min(1, v / 100)) })}
+                animate={{ layerId: currentLayer.id, propertyName: "trimPathStart" }}
               />
               <NumberRow
                 label="End"
@@ -851,6 +908,7 @@ export function Inspector() {
                 step={1}
                 suffix="%"
                 onChange={(v) => updateLayer({ trimPathEnd: Math.max(0, Math.min(1, v / 100)) })}
+                animate={{ layerId: currentLayer.id, propertyName: "trimPathEnd" }}
               />
               <NumberRow
                 label="Offset"
@@ -858,12 +916,15 @@ export function Inspector() {
                 step={1}
                 suffix="%"
                 onChange={(v) => updateLayer({ trimPathOffset: v / 100 })}
+                animate={{ layerId: currentLayer.id, propertyName: "trimPathOffset" }}
               />
             </Section>
 
-            {/* Path */}
+            {/* Path — raw command list is the densest, most technical part of the
+                panel (Figma never shows this by default); collapsed until asked for. */}
             <Section
               title="Path"
+              defaultOpen={false}
               action={
                 <Button
                   size="icon-xs"
@@ -910,11 +971,63 @@ export function Inspector() {
               const idx = layers.findIndex((l) => l.id === currentLayer.id);
               const hasNext = idx >= 0 && idx < layers.length - 1;
               if (!hasNext) return null;
+              // Two overlapping circles per op, matching each boolean result region
+              // (mirrors the original Material Symbols join_* icons this replaced).
               const ops = [
-                { op: "union", label: "Union", icon: "join_full" },
-                { op: "subtract", label: "Subtract", icon: "join_left" },
-                { op: "intersect", label: "Intersect", icon: "join_inner" },
-                { op: "exclude", label: "Exclude", icon: "join_right" },
+                {
+                  op: "union",
+                  label: "Union",
+                  icon: (
+                    <svg width="15" height="15" viewBox="0 0 16 16">
+                      <circle cx="6" cy="8" r="5" fill="currentColor" opacity="0.55" />
+                      <circle cx="10" cy="8" r="5" fill="currentColor" opacity="0.55" />
+                    </svg>
+                  ),
+                },
+                {
+                  op: "subtract",
+                  label: "Subtract",
+                  icon: (
+                    <svg width="15" height="15" viewBox="0 0 16 16">
+                      <mask id="bool-subtract-mask">
+                        <rect width="16" height="16" fill="black" />
+                        <circle cx="6" cy="8" r="5" fill="white" />
+                        <circle cx="10" cy="8" r="5" fill="black" />
+                      </mask>
+                      <circle cx="10" cy="8" r="5" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.35" />
+                      <rect width="16" height="16" fill="currentColor" mask="url(#bool-subtract-mask)" />
+                    </svg>
+                  ),
+                },
+                {
+                  op: "intersect",
+                  label: "Intersect",
+                  icon: (
+                    <svg width="15" height="15" viewBox="0 0 16 16">
+                      <mask id="bool-intersect-mask">
+                        <rect width="16" height="16" fill="black" />
+                        <circle cx="6" cy="8" r="5" fill="white" />
+                      </mask>
+                      <circle cx="6" cy="8" r="5" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.35" />
+                      <circle cx="10" cy="8" r="5" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.35" />
+                      <circle cx="10" cy="8" r="5" fill="currentColor" mask="url(#bool-intersect-mask)" />
+                    </svg>
+                  ),
+                },
+                {
+                  op: "exclude",
+                  label: "Exclude",
+                  icon: (
+                    <svg width="15" height="15" viewBox="0 0 16 16">
+                      <mask id="bool-exclude-mask">
+                        <circle cx="6" cy="8" r="5" fill="white" />
+                        <circle cx="10" cy="8" r="5" fill="white" />
+                        <circle cx="8" cy="8" r="3.2" fill="black" />
+                      </mask>
+                      <rect width="16" height="16" fill="currentColor" mask="url(#bool-exclude-mask)" />
+                    </svg>
+                  ),
+                },
               ] as const;
               return (
                 <Section title="Combine" defaultOpen={false}>
@@ -932,7 +1045,7 @@ export function Inspector() {
                         }}
                         className="flex h-8 items-center justify-center gap-1.5 rounded-md border border-border bg-background text-[11px] text-foreground transition-colors hover:border-foreground/20 hover:bg-muted"
                       >
-                        <MaterialSymbol name={icon} size={15} className="text-muted-foreground" />
+                        <span className="text-muted-foreground">{icon}</span>
                         {label}
                       </button>
                     ))}
@@ -954,29 +1067,34 @@ export function Inspector() {
             label="X"
             value={currentLayer.translateX ?? 0}
             onChange={(v) => updateLayer({ translateX: v })}
+            animate={multiCount <= 1 ? { layerId: currentLayer.id, propertyName: "translateX" } : undefined}
           />
           <NumberRow
             label="Y"
             value={currentLayer.translateY ?? 0}
             onChange={(v) => updateLayer({ translateY: v })}
+            animate={multiCount <= 1 ? { layerId: currentLayer.id, propertyName: "translateY" } : undefined}
           />
           <NumberRow
             label="Rotation"
             value={currentLayer.rotation ?? 0}
             suffix="°"
             onChange={(v) => updateLayer({ rotation: v })}
+            animate={multiCount <= 1 ? { layerId: currentLayer.id, propertyName: "rotation" } : undefined}
           />
           <NumberRow
             label="Scale X"
             value={currentLayer.scaleX ?? 1}
             step={0.1}
             onChange={(v) => updateLayer({ scaleX: v })}
+            animate={multiCount <= 1 ? { layerId: currentLayer.id, propertyName: "scaleX" } : undefined}
           />
           <NumberRow
             label="Scale Y"
             value={currentLayer.scaleY ?? 1}
             step={0.1}
             onChange={(v) => updateLayer({ scaleY: v })}
+            animate={multiCount <= 1 ? { layerId: currentLayer.id, propertyName: "scaleY" } : undefined}
           />
           {(isGroup || multiCount === 1) && (
             <>

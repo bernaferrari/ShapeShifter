@@ -1,25 +1,29 @@
 /**
- * ShapeShifter 2026 - Select / Drag / Clone Items Gesture
- * The primary selection + move gesture (original SelectDragCloneItemsGesture).
+ * ShapeShifter 2026 - Marquee (box-select) Gesture
  *
- * Handles:
- * - Click to select
- * - Drag to move (with shift constraint, alt clone)
- * - Integration with snap (Phase 7)
+ * Scope, as currently wired by GestureDispatcher: this class only ever runs for
+ * *marquee* intent — a drag that starts on empty canvas (or an explicit "marquee"
+ * HitTestResult) while toolMode is "select"/"default". GestureDispatcher gates on
+ * `isMarqueeIntent = !hit || hit.type === "empty" || hit.type === "marquee"` before
+ * instantiating this class, so a pointer-down that actually lands on a layer/point/
+ * handle never reaches here in the first place.
  *
- * PR-01.1 / 2cq (ShapeShifter-2cq under mvd/7fz): Now the first *live* concrete gesture
- * instantiated by GestureDispatcher for marquee intent (when toolMode select/default and
- * empty canvas or explicit "marquee" HitTestResult). The three (now four) marquee callbacks
- * are the bridge that lets the gesture own decision + lifecycle while PathCanvas owns only
- * transient rect rendering + capture.
+ * Click-to-select a single item, drag-to-move, resize handles, and the rotate handle
+ * are intentionally NOT implemented in this gesture — they're handled directly by the
+ * pointer-event handlers in PathCanvas.tsx/CanvasArea.tsx (hit-testing + store mutation
+ * inline), which is where that logic already lives and works today. Do not add
+ * hit-test/select/move code here expecting it to run for those interactions; it won't
+ * be reached. If the gesture framework is ever made the single source of truth for
+ * selection, that inline logic needs to move here *and* be deleted from
+ * PathCanvas/CanvasArea in the same change, not duplicated.
  *
- * PR-02 start (this work): onMouseUp now calls commitMarqueeSelection(start, point) when
- * we have a startPoint. This triggers the AABB multi-point commit + hit test logic
- * (provided by PathCanvas via the callback at dispatcher creation time, using its helpers).
- * The gesture now owns the end-of-marquee commit trigger. Real hit tests + further
- * migration of the AABB collection itself will evolve here in subsequent PR-02 steps.
- *
- * References: DESIGN_ID 67dd105e Key Decision #2, beads 2cq/7fz/mvd/ish/c9f/dwm/v6j.
+ * The only real work this class does: onMouseUp calls back into PathCanvas's
+ * `commitMarqueeSelection`, which does the actual AABB collection + store selection
+ * (honoring shift = additive union). Note GestureDispatcher.handlePointerMove always
+ * passes a hardcoded `{x: 0, y: 0}` delta to onMouseDrag, so this class structurally
+ * cannot apply a live per-frame drag delta — it only knows start/end points at commit
+ * time. That's fine for marquee (only start/end matter); it's not a substitute for a
+ * real drag-to-move gesture.
  */
 
 import type { Point } from "../../types";
@@ -27,7 +31,6 @@ import { Gesture, type GestureContext, type GestureCallbacks } from "../Gesture"
 
 export class SelectDragItemsGesture extends Gesture {
   private startPoint: Point | null = null;
-  private didMove = false;
 
   constructor(context: GestureContext, callbacks: GestureCallbacks) {
     super(context, callbacks);
@@ -35,10 +38,6 @@ export class SelectDragItemsGesture extends Gesture {
 
   onMouseDown(point: Point, _modifiers: { shift: boolean; alt: boolean; ctrl: boolean }): void {
     this.startPoint = point;
-    this.didMove = false;
-
-    // TODO: Hit test + update selection in store
-    // For now the skeleton just records the intent
     this.setCursor("move");
   }
 
@@ -47,31 +46,22 @@ export class SelectDragItemsGesture extends Gesture {
     _delta: Point,
     _modifiers: { shift: boolean; alt: boolean; ctrl: boolean },
   ): void {
-    if (!this.startPoint) return;
-    this.didMove = true;
-
-    // 1td advanced (14l): alt-clone intent integrated (SelectDragCloneItemsGesture parity per v6j list/parity-checklist).
-    // Smallest: flag for future store clone on up (dispatcher now routes rotate/transform/scale too). No new logic.
-    if (_modifiers.alt) {
-      // clone intent (existing name + comment)
-    }
-    // TODO: Apply delta to selected layers (respect shift 45deg, alt clone, snap)
+    // Marquee only needs the rect visual, driven by PathCanvas via the
+    // `updateMarquee` callback (see GestureDispatcher.handlePointerMove). Nothing to
+    // do here — see class doc for why this can't become a real move-delta gesture
+    // without GestureDispatcher passing a real delta.
   }
 
   onMouseUp(point: Point, modifiers: { shift: boolean; alt: boolean; ctrl: boolean }): void {
     if (this.startPoint) {
       // The gesture owns the marquee commit trigger; the callback (wired by PathCanvas) applies
       // the real AABB collection + store selection, honoring shift = additive union (SEL-1).
+      // A zero-movement click (start === point) is a valid marquee of zero size — PathCanvas's
+      // commitMarqueeSelection already treats that as "clicked empty canvas" and clears selection.
       this.callbacks.commitMarqueeSelection?.(this.startPoint, point, modifiers.shift);
     }
 
-    if (!this.didMove) {
-      // Pure click selection (no drag)
-      // TODO: select the hit item
-    }
-
     this.startPoint = null;
-    this.didMove = false;
     this.setCursor("default");
   }
 }

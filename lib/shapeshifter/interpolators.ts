@@ -131,6 +131,13 @@ export function evaluateInterpolator(t: number, interpolator?: string): number {
       if (nums && nums.length >= 4) {
         fn = cubicBezier(nums[0], nums[1], nums[2], nums[3]);
       } else {
+        if (process.env.NODE_ENV !== "production") {
+          // Cached below, so this fires once per distinct unresolvable name, not per frame.
+          console.warn(
+            `[interpolators] Unknown interpolator "${interpolator}" — falling back to linear. ` +
+              `Expected one of ${Object.keys(INTERPOLATOR_CURVES).join(", ")} or a "cubic-bezier(x1, y1, x2, y2)" string.`,
+          );
+        }
         fn = (v: number) => v;
       }
     }

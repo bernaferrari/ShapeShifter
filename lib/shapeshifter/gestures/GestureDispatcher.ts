@@ -121,12 +121,14 @@ export class GestureDispatcher {
       // pushHistory, select, toast. Works detail+world preview. Undoable, no regressions.
       // (historical) [GestureDispatcher] paint bucket intent (rsn completeness for professional palette)
     } else if (tool === "rotate" || tool === "transform") {
-      // 1td advanced (14l): integrate remaining v6j professional gestures (Rotate, TransformPaths, Scale via transform tool) with dispatcher sole + freeform.
-      // Route to existing SelectDragItemsGesture (supports drag + selection bounds handles for rotate/scale in overlays; alt-clone intent in gesture).
-      // Smallest change, zero new gesture classes or callbacks. Completes enum presence + parity list items at 100%.
-      // Refs: 14l 1td, v6j DESIGN 67dd105e, y5q.
-      this.activeGesture = new SelectDragItemsGesture(this.context, this.callbacks);
-      this.activeGesture.onMouseDown?.(point, modifiers);
+      // "rotate"/"transform" are ToolMode enum members that no UI currently sets
+      // (BottomToolPalette only exposes select/direct/pen/pencil/paint/knife) — this
+      // branch is unreachable today. Routing it to SelectDragItemsGesture would be a
+      // no-op anyway: that class only implements the marquee commit on mouseUp, not
+      // hit-test/rotate/scale math. The real rotate handle + resize handles are
+      // implemented directly in PathCanvas.tsx's/CanvasArea.tsx's pointer handlers
+      // while toolMode is "select". If a dedicated rotate/transform tool mode is ever
+      // shipped, it needs its own Gesture subclass wired here, not this one.
     }
   }
 

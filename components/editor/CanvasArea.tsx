@@ -23,7 +23,6 @@ import {
   zoomAtWorldPoint,
 } from "@/lib/shapeshifter/camera";
 import {
-  getInterpolatedPath,
   getPathDataBounds,
   isPointInFillRegion,
   parsePath,
@@ -31,7 +30,6 @@ import {
   scalePathToBounds,
   updateCommandPoint,
 } from "@/lib/shapeshifter/pathUtils";
-import { evaluateBlock } from "@/lib/shapeshifter/interpolators";
 import {
   numberAtTime,
   pathDAtTime,
@@ -43,7 +41,6 @@ import { collectPointsInLasso, pointInPolygon } from "@/lib/shapeshifter/gesture
 import { generateId } from "@/lib/shapeshifter/ids";
 import { gradientDomId, gradientToSvg } from "@/lib/shapeshifter/gradients";
 import type { Command, PathData, Selection } from "@/lib/shapeshifter/types";
-import { toast } from "sonner";
 
 interface CanvasAreaProps {
   resetFrom: number;
@@ -96,7 +93,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const isPointTool = toolMode === "direct";
 
   const compatibility = getCompatibilityStatus();
-  const selectedLayer = layers.find((layer) => layer.id === selectedLayerId);
 
   // r5o: Freeform world host in CanvasArea (!isActionMode). Smallest extension of existing
   // projection + frames x/y model. World camera + culling + gestures follow PathCanvas
@@ -417,36 +413,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     translateY: number;
     rotation?: number;
   };
-
-  /** Numeric property at playhead — prefers timeline block, else layer field. */
-  const numberPropAt = useCallback(
-    (
-      frame: (typeof frames)[number],
-      layer: { id: string | number; [k: string]: any },
-      propertyName: string,
-      morph: boolean,
-    ): number => {
-      const base = Number(layer[propertyName]) || 0;
-      const block = frame.animation?.blocks?.find(
-        (b: any) =>
-          b.propertyName === propertyName && String(b.layerId) === String(layer.id),
-      );
-      if (!block || !morph) return base;
-      const dur = Math.max(1, frame.animation?.duration || 1000);
-      const curMs = progress * dur;
-      let t = progress;
-      if (curMs <= block.startTime) t = 0;
-      else if (curMs >= block.endTime) t = 1;
-      else
-        t =
-          evaluateBlock(progress, dur, block) ??
-          (curMs - block.startTime) / Math.max(1, block.endTime - block.startTime);
-      const a = Number(block.fromValue) || 0;
-      const b = Number(block.toValue) || 0;
-      return a + (b - a) * Math.max(0, Math.min(1, t));
-    },
-    [progress],
-  );
 
   const frameLayerDraws = useCallback(
     (frame: (typeof frames)[number], morph: boolean): WorldLayerDraw[] => {
@@ -856,9 +822,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       const up = () => {
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", up);
       };
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
     },
     [editFrame, getFrameBounds, worldPointFromEvent, snapToGrid],
   );
@@ -899,7 +867,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         }
         setIsWorldPanning(true);
         setLastWorldPan({ x: e.clientX, y: e.clientY });
-        worldSvgRef.current?.setPointerCapture(e.pointerId);
+        try {
+          worldSvgRef.current?.setPointerCapture(e.pointerId);
+        } catch {
+          /* ignore — drag still proceeds via this element's own listeners */
+        }
         return;
       }
       if (!p) return;
@@ -914,7 +886,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       if (toolMode === "pen") {
         if (!editPath || !editOrigin) return; // silent: need a focused frame
         penPointerDown(snappedLocal);
-        worldSvgRef.current?.setPointerCapture(e.pointerId);
+        try {
+          worldSvgRef.current?.setPointerCapture(e.pointerId);
+        } catch {
+          /* ignore — drag still proceeds via this element's own listeners */
+        }
         return;
       }
       if (toolMode === "paint") {
@@ -949,7 +925,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
           pointDragRef.current = anchor;
           pointDragMovedRef.current = false;
           layerDragRef.current = null;
-          worldSvgRef.current?.setPointerCapture(e.pointerId);
+          try {
+            worldSvgRef.current?.setPointerCapture(e.pointerId);
+          } catch {
+            /* ignore — drag still proceeds via this element's own listeners */
+          }
           return;
         }
         const layerHit = hitLayerAtWorld(p);
@@ -959,7 +939,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
           selectLayer(layerHit.layerId);
           setWorldSelectedIds([layerHit.frameId]);
           useEditorStore.getState().clearSelection?.();
-          worldSvgRef.current?.setPointerCapture(e.pointerId);
+          try {
+            worldSvgRef.current?.setPointerCapture(e.pointerId);
+          } catch {
+            /* ignore — drag still proceeds via this element's own listeners */
+          }
           return;
         }
         // Empty space in vector mode: start marquee (same as Move) — do NOT block drag-select
@@ -971,7 +955,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         worldLassoRef.current = [p];
         if (worldLassoRafRef.current) cancelAnimationFrame(worldLassoRafRef.current);
         worldLassoRafRef.current = null;
-        worldSvgRef.current?.setPointerCapture(e.pointerId);
+        try {
+          worldSvgRef.current?.setPointerCapture(e.pointerId);
+        } catch {
+          /* ignore — drag still proceeds via this element's own listeners */
+        }
         return;
       }
 
@@ -999,7 +987,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
             layerDragRef.current = { start: p, applied: { x: 0, y: 0 }, moved: false };
           }
           setWorldSelectedIds([layerHit.frameId]);
-          worldSvgRef.current?.setPointerCapture(e.pointerId);
+          try {
+            worldSvgRef.current?.setPointerCapture(e.pointerId);
+          } catch {
+            /* ignore — drag still proceeds via this element's own listeners */
+          }
           return;
         }
       }
@@ -1013,12 +1005,20 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
             setWorldSelectedIds(next);
             if (next.length === 0) deselectAll();
             else if (!next.includes(selectedFrameId)) selectFrame(next[next.length - 1]!);
-            worldSvgRef.current?.setPointerCapture(e.pointerId);
+            try {
+              worldSvgRef.current?.setPointerCapture(e.pointerId);
+            } catch {
+              /* ignore — drag still proceeds via this element's own listeners */
+            }
             return;
           }
           setWorldSelectedIds([...new Set([...worldSelectedIds, hitId])]);
           selectFrame(hitId);
-          worldSvgRef.current?.setPointerCapture(e.pointerId);
+          try {
+            worldSvgRef.current?.setPointerCapture(e.pointerId);
+          } catch {
+            /* ignore — drag still proceeds via this element's own listeners */
+          }
           return;
         }
         // Start layer marquee (selection updates live while dragging)
@@ -1036,7 +1036,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         }
         setMarquee({ start: p, current: p, scope: "frames" });
       }
-      worldSvgRef.current?.setPointerCapture(e.pointerId);
+      try {
+        worldSvgRef.current?.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore — drag still proceeds via this element's own listeners */
+      }
     },
     [
       worldPointFromEvent,
@@ -2773,7 +2777,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                             })),
                             moved: false,
                           };
-                          worldSvgRef.current?.setPointerCapture(e.pointerId);
+                          try {
+                            worldSvgRef.current?.setPointerCapture(e.pointerId);
+                          } catch {
+                            /* ignore — drag still proceeds via this element's own listeners */
+                          }
                         };
                         const beginRotate = (e: React.PointerEvent) => {
                           e.stopPropagation();
@@ -2796,7 +2804,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                             }),
                             moved: false,
                           };
-                          worldSvgRef.current?.setPointerCapture(e.pointerId);
+                          try {
+                            worldSvgRef.current?.setPointerCapture(e.pointerId);
+                          } catch {
+                            /* ignore — drag still proceeds via this element's own listeners */
+                          }
                         };
                         return (
                           <g pointerEvents="none">
@@ -3005,7 +3017,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                                   if (!additive) {
                                     e.preventDefault();
                                     startWorldArtboardDrag(e.clientX, e.clientY, next);
-                                    worldSvgRef.current?.setPointerCapture(e.pointerId);
+                                    try {
+                                      worldSvgRef.current?.setPointerCapture(e.pointerId);
+                                    } catch {
+                                      /* ignore — drag still proceeds via this element's own listeners */
+                                    }
                                   }
                                 }}
                                 onDoubleClick={(e) => {

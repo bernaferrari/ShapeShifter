@@ -59,7 +59,6 @@ export function snapRectToGuides(
   const ny = moving.y + dy;
 
   if (dx !== 0) {
-    const snapX = nx; // left edge after snap — recompute which line
     // Find a target x that aligns with any of the moved rect's x lines
     const movedXs = [nx, nx + moving.w / 2, nx + moving.w];
     for (const t of targets) {

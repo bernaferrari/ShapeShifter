@@ -16,6 +16,9 @@ import {
   PanelRightOpen,
   ChevronDown,
   ChevronUp,
+  Waypoints,
+  CloudUpload,
+  Heart,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -48,7 +51,6 @@ import type { Layer } from "@/lib/shapeshifter/types";
 import { Toolbar } from "@/components/editor/Toolbar";
 import { CanvasArea } from "@/components/editor/CanvasArea";
 import { Inspector } from "@/components/editor/Inspector";
-import { MaterialSymbol } from "@/components/editor/MaterialSymbol";
 import { LayerTimeline } from "@/components/editor/LayerTimeline";
 import { BottomToolPalette } from "@/components/editor/BottomToolPalette";
 import { Onboarding } from "@/components/editor/Onboarding";
@@ -784,7 +786,7 @@ export default function ShapeShifter2026() {
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-background/80 backdrop-blur-md transition-all duration-200 animate-in fade-in zoom-in-95">
           <div className="flex flex-col items-center gap-6 rounded-2xl border-2 border-dashed border-primary/40 bg-card/95 p-12 shadow-2xl ring-1 ring-primary/10 max-w-md text-center">
             <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-              <MaterialSymbol name="cloud_upload" size={48} className="animate-bounce" />
+              <CloudUpload size={48} className="animate-bounce" />
             </div>
             <div className="flex flex-col gap-2">
               <h3 className="text-2xl font-bold tracking-tight">Drop to Import</h3>
@@ -1078,7 +1080,7 @@ export default function ShapeShifter2026() {
                 })
               }
             >
-              <span className="mr-2 material-symbols text-[16px]">conversion_path</span> Direct /
+              <Waypoints className="mr-2 size-4" /> Direct /
               Bend (Ctrl+drag) <CommandShortcut>D</CommandShortcut>
             </CommandItem>
             <CommandItem
@@ -1224,7 +1226,7 @@ export default function ShapeShifter2026() {
           <CommandGroup heading="Recent">
             {DEMO_INFOS.slice(0, 4).map((demo, index) => (
               <CommandItem key={demo.id} onSelect={() => runCommand(() => loadSample(index))}>
-                <MaterialSymbol name="favorite" size={16} className="mr-2" /> {demo.title}
+                <Heart size={16} className="mr-2" /> {demo.title}
               </CommandItem>
             ))}
           </CommandGroup>

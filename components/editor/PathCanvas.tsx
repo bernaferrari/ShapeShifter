@@ -449,7 +449,11 @@ export const PathCanvas = React.memo(function PathCanvas({
         }
         setIsPanning(true);
         setLastPan({ x: e.clientX, y: e.clientY });
-        svgRef.current?.setPointerCapture(e.pointerId);
+        try {
+          svgRef.current?.setPointerCapture(e.pointerId);
+        } catch {
+          /* ignore — drag still proceeds via this element's own listeners */
+        }
         return;
       }
 
@@ -471,7 +475,11 @@ export const PathCanvas = React.memo(function PathCanvas({
             { type: "marquee" },
             { shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey },
           );
-          svgRef.current?.setPointerCapture(e.pointerId);
+          try {
+            svgRef.current?.setPointerCapture(e.pointerId);
+          } catch {
+            /* ignore — drag still proceeds via this element's own listeners */
+          }
         }
         return;
       }
@@ -491,7 +499,11 @@ export const PathCanvas = React.memo(function PathCanvas({
             { type: "marquee" },
             { shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey },
           );
-          svgRef.current?.setPointerCapture(e.pointerId);
+          try {
+            svgRef.current?.setPointerCapture(e.pointerId);
+          } catch {
+            /* ignore — drag still proceeds via this element's own listeners */
+          }
         }
       }
 
@@ -508,7 +520,11 @@ export const PathCanvas = React.memo(function PathCanvas({
           } else {
             toast.info("No fill region under cursor");
           }
-          svgRef.current?.setPointerCapture(e.pointerId);
+          try {
+            svgRef.current?.setPointerCapture(e.pointerId);
+          } catch {
+            /* ignore — drag still proceeds via this element's own listeners */
+          }
           return;
         }
       }
@@ -823,7 +839,11 @@ export const PathCanvas = React.memo(function PathCanvas({
       if (!canEditPoints) return;
 
       e.stopPropagation();
-      (e.target as SVGElement).setPointerCapture(e.pointerId);
+      try {
+        (e.target as SVGElement).setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore — drag still proceeds via this element's own listeners */
+      }
       pushHistory();
       if (side === "preview") {
         setEditingSide("from");
@@ -898,10 +918,12 @@ export const PathCanvas = React.memo(function PathCanvas({
       const handleUp = () => {
         window.removeEventListener("pointermove", handleMove);
         window.removeEventListener("pointerup", handleUp);
+        window.removeEventListener("pointercancel", handleUp);
       };
 
       window.addEventListener("pointermove", handleMove);
       window.addEventListener("pointerup", handleUp);
+      window.addEventListener("pointercancel", handleUp);
     },
     [
       editingSide,
@@ -948,7 +970,11 @@ export const PathCanvas = React.memo(function PathCanvas({
       if (side !== "preview" || isActionMode || e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
-      (e.currentTarget as SVGPathElement).setPointerCapture(e.pointerId);
+      try {
+        (e.currentTarget as SVGPathElement).setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore — drag still proceeds via this element's own listeners */
+      }
       selectLayer(layerId);
       setEditingSide("from");
       pushHistory();
@@ -969,10 +995,12 @@ export const PathCanvas = React.memo(function PathCanvas({
       const handleUp = () => {
         window.removeEventListener("pointermove", handleMove);
         window.removeEventListener("pointerup", handleUp);
+        window.removeEventListener("pointercancel", handleUp);
       };
 
       window.addEventListener("pointermove", handleMove);
       window.addEventListener("pointerup", handleUp);
+      window.addEventListener("pointercancel", handleUp);
     },
     [
       isActionMode,
@@ -991,7 +1019,11 @@ export const PathCanvas = React.memo(function PathCanvas({
       if (side !== "preview" || isActionMode || e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
-      e.currentTarget.setPointerCapture(e.pointerId);
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore — drag still proceeds via this element's own listeners */
+      }
 
       const subPathSelection: SubPathSelection = {
         layerId: selectedLayerId,
@@ -1033,10 +1065,12 @@ export const PathCanvas = React.memo(function PathCanvas({
       const handleUp = () => {
         window.removeEventListener("pointermove", handleMove);
         window.removeEventListener("pointerup", handleUp);
+        window.removeEventListener("pointercancel", handleUp);
       };
 
       window.addEventListener("pointermove", handleMove);
       window.addEventListener("pointerup", handleUp);
+      window.addEventListener("pointercancel", handleUp);
     },
     [
       isActionMode,
@@ -1063,7 +1097,11 @@ export const PathCanvas = React.memo(function PathCanvas({
       }
       e.preventDefault();
       e.stopPropagation();
-      e.currentTarget.setPointerCapture(e.pointerId);
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore — drag still proceeds via this element's own listeners */
+      }
 
       const segmentSelection: SegmentSelection = {
         layerId: selectedLayerId,
@@ -1124,10 +1162,12 @@ export const PathCanvas = React.memo(function PathCanvas({
       const handleUp = () => {
         window.removeEventListener("pointermove", handleMove);
         window.removeEventListener("pointerup", handleUp);
+        window.removeEventListener("pointercancel", handleUp);
       };
 
       window.addEventListener("pointermove", handleMove);
       window.addEventListener("pointerup", handleUp);
+      window.addEventListener("pointercancel", handleUp);
     },
     [
       editingSide,
@@ -1193,7 +1233,11 @@ export const PathCanvas = React.memo(function PathCanvas({
       if (side !== "preview" || isActionMode || !selectedLayerBounds || e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
-      e.currentTarget.setPointerCapture(e.pointerId);
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore — drag still proceeds via this element's own listeners */
+      }
       pushHistory();
 
       // Frozen-source resize: capture the ORIGINAL geometry + bounds once at pointer-down and
@@ -1223,10 +1267,12 @@ export const PathCanvas = React.memo(function PathCanvas({
       const handleUp = () => {
         window.removeEventListener("pointermove", handleMove);
         window.removeEventListener("pointerup", handleUp);
+        window.removeEventListener("pointercancel", handleUp);
       };
 
       window.addEventListener("pointermove", handleMove);
       window.addEventListener("pointerup", handleUp);
+      window.addEventListener("pointercancel", handleUp);
     },
     [isActionMode, pointFromEvent, pushHistory, selectedLayerBounds, selectedLayerId, selectedPreviewTransform, side],
   );
@@ -1236,7 +1282,11 @@ export const PathCanvas = React.memo(function PathCanvas({
       if (side !== "preview" || isActionMode || !selectedLayerBounds || e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
-      e.currentTarget.setPointerCapture(e.pointerId);
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore — drag still proceeds via this element's own listeners */
+      }
       pushHistory();
 
       const center = getBoundsCenter(selectedLayerBounds);
@@ -1275,10 +1325,12 @@ export const PathCanvas = React.memo(function PathCanvas({
       const handleUp = () => {
         window.removeEventListener("pointermove", handleMove);
         window.removeEventListener("pointerup", handleUp);
+        window.removeEventListener("pointercancel", handleUp);
       };
 
       window.addEventListener("pointermove", handleMove);
       window.addEventListener("pointerup", handleUp);
+      window.addEventListener("pointercancel", handleUp);
     },
     [
       currentLayer.rotation,

@@ -3,7 +3,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { MousePointer2, Lasso, PaintBucket, PenTool, Scissors } from "lucide-react";
+import { MousePointer2, Lasso, PaintBucket, PenTool, Scissors, Waypoints } from "lucide-react";
 import { useEditorStore } from "@/lib/store/editorStore";
 import type { ToolMode } from "@/lib/shapeshifter/toolModes";
 
@@ -35,7 +35,7 @@ const TOOLS: ToolDef[] = [
     // Figma A = vector/direct — must match page.tsx (not Auto Fix)
     mode: "direct",
     label: "Vector",
-    icon: <span className="material-symbols text-[18px] leading-none">conversion_path</span>,
+    icon: <Waypoints className="size-[18px]" />,
     shortcut: "A",
   },
   {

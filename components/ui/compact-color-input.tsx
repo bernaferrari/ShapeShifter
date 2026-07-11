@@ -110,10 +110,6 @@ export function CompactColorInput({
           "touches" in moveEvent
             ? moveEvent.touches[0].clientX
             : moveEvent.clientX
-        const moveY =
-          "touches" in moveEvent
-            ? moveEvent.touches[0].clientY
-            : moveEvent.clientY
         handleHueDrag(moveX)
       },
     })

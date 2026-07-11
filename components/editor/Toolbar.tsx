@@ -17,6 +17,14 @@ import {
   ArrowLeftRight,
   HelpCircle,
   ChevronDown,
+  ArrowLeft,
+  Sparkles,
+  Scissors,
+  ChevronFirst,
+  Trash2,
+  X,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -33,7 +41,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { DEMO_INFOS } from "@/lib/shapeshifter/demoProjects";
-import { MaterialSymbol } from "./MaterialSymbol";
 import { ExportDialog } from "./ExportDialog";
 import { ThemeToggle } from "../ThemeToggle";
 
@@ -125,13 +132,13 @@ export function Toolbar({
                 />
               }
             >
-              <MaterialSymbol name="arrow_back" size={18} />
+              <ArrowLeft size={18} />
             </TooltipTrigger>
             <TooltipContent>Back to canvas (⌘W)</TooltipContent>
           </Tooltip>
         )}
         <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-primary">
-          <MaterialSymbol name="auto_awesome" size={16} filled weight={600} />
+          <Sparkles size={16} />
         </div>
         <div className="hidden leading-none sm:block">
           <div className="text-[13px] font-semibold tracking-tight">
@@ -224,18 +231,18 @@ export function Toolbar({
                   Selected command
                 </DropdownMenuLabel>
               <DropdownMenuItem onClick={() => splitSelectedCommand()}>
-                <MaterialSymbol name="call_split" size={16} className="mr-2" /> Split in half
+                <Scissors size={16} className="mr-2" /> Split in half
                 <span className="ml-auto text-xs text-muted-foreground">X</span>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setSelectedCommandAsFirst()}>
-                <MaterialSymbol name="first_page" size={16} className="mr-2" /> Set as first point
+                <ChevronFirst size={16} className="mr-2" /> Set as first point
                 <span className="ml-auto text-xs text-muted-foreground">F</span>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => deleteSelectedPoint()}>
-                <MaterialSymbol name="delete" size={16} className="mr-2" /> Delete point(s)
+                <Trash2 size={16} className="mr-2" /> Delete point(s)
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => deleteSelectedSubPath()}>
-                <MaterialSymbol name="close" size={16} className="mr-2" /> Delete subpath(s)
+                <X size={16} className="mr-2" /> Delete subpath(s)
               </DropdownMenuItem>
               </DropdownMenuGroup>
             </>
@@ -245,7 +252,7 @@ export function Toolbar({
             onClick={() => extractSelectedSubPathToNewLayer?.()}
             disabled={!extractSelectedSubPathToNewLayer}
           >
-            <MaterialSymbol name="call_split" size={16} className="mr-2" /> Extract subpath to new layer
+            <Scissors size={16} className="mr-2" /> Extract subpath to new layer
           </DropdownMenuItem>
 
           <DropdownMenuSeparator />
@@ -291,17 +298,17 @@ export function Toolbar({
                 size="xs"
                 variant="ghost"
                 onClick={() => setEditingSide(side)}
-                className={`h-6 gap-1 rounded-[5px] px-2.5 text-xs capitalize ${
+                className={`h-6 gap-1 rounded-sm px-2.5 text-xs capitalize ${
                   editingSide === side
                     ? "bg-card text-foreground shadow-sm hover:bg-card"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 {side === "from" ? (
-                  <MaterialSymbol name="arrow_left" size={14} />
+                  <ChevronLeft size={14} />
                 ) : null}
                 {side}
-                {side === "to" ? <MaterialSymbol name="arrow_right" size={14} /> : null}
+                {side === "to" ? <ChevronRight size={14} /> : null}
               </Button>
             ))}
           </div>

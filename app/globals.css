@@ -124,36 +124,6 @@
   --sidebar-ring: oklch(0.647 0.183 251.5);
 }
 
-.material-symbols,
-.material-symbols-outlined,
-.material-symbols-rounded {
-  font-family: "Material Symbols Outlined", "Material Symbols Rounded", sans-serif;
-  font-weight: normal;
-  font-style: normal;
-  font-size: 1.25rem;
-  line-height: 1;
-  letter-spacing: normal;
-  text-transform: none;
-  display: inline-block;
-  white-space: nowrap;
-  direction: ltr;
-  -webkit-font-smoothing: antialiased;
-  font-feature-settings: "liga";
-  vertical-align: middle;
-}
-
-.material-symbols {
-  font-variation-settings:
-    "FILL" var(--fill, 0),
-    "wght" var(--wght, 400),
-    "GRAD" var(--grad, 0),
-    "opsz" var(--opsz, 24);
-}
-
-.material-symbols-filled {
-  --fill: 1;
-}
-
 :focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;

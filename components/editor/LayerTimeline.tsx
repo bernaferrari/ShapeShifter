@@ -8,7 +8,6 @@ import {
   ArrowDown,
   ArrowUp,
   Lock,
-  MoreHorizontal,
   Pause,
   Play,
   Plus,
@@ -16,7 +15,6 @@ import {
   Unlock,
   X,
 } from "lucide-react";
-import { MaterialSymbol } from "./MaterialSymbol";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -58,9 +56,6 @@ function curvePointsFor(interp: string | undefined): [number, number, number, nu
 const PLAYHEAD = "#F24822";
 /** Selected / active clip accent */
 const FIGMA_BLUE = "#0C8CE9";
-/** Figma inactive clip fill (muted graphite) */
-const CLIP_IDLE = "#555555";
-const CLIP_IDLE_BORDER = "rgba(255,255,255,0.12)";
 /** Selected property row band */
 const ROW_SEL = "bg-[#2A3544]";
 const SURFACE = "bg-[#2C2C2C]";
@@ -87,7 +82,7 @@ function formatCompactValue(
   if (value == null || value === "") return "—";
   // Never dump raw path data into the timeline (Figma shows tidy property values)
   if (propertyName === "pathData" || (typeof value === "string" && /^[MmLlHhVvCcSsQqTtAaZz]/.test(value.trim()))) {
-    return "Morph";
+    return "Path";
   }
   if (typeof value === "number") {
     if (!Number.isFinite(value)) return "—";
@@ -152,9 +147,6 @@ export function LayerTimeline(_props: LayerTimelineProps) {
     toggleLayerVisibility,
     toggleLayerLock,
     nudgeLayerZOrder,
-    toggleLayerExpanded,
-    convertLayerType,
-    addTimelineBlock,
     addLayer,
     selectedBlockIds,
     updateTimelineBlock,
@@ -162,7 +154,6 @@ export function LayerTimeline(_props: LayerTimelineProps) {
     animation,
     selectBlocks,
     timelineCollapsed,
-    toggleTimelineCollapsed,
     setAnimationDuration,
     isPlaying,
     togglePlayback,
@@ -214,6 +205,10 @@ export function LayerTimeline(_props: LayerTimelineProps) {
     bumpDrag((n) => n + 1);
   };
   const [hoveredRowKey, setHoveredRowKey] = React.useState<string | null>(null);
+  /** Draft text while the current-time readout is being typed into (click-to-edit, like the duration field). */
+  const [timeDraft, setTimeDraft] = React.useState<string | null>(null);
+  /** Row key of the layer currently being renamed inline (double-click on its name, like Figma). */
+  const [renamingLayerKey, setRenamingLayerKey] = React.useState<string | null>(null);
 
   const leftScrollRef = React.useRef<HTMLDivElement>(null);
   const rightScrollRef = React.useRef<HTMLDivElement>(null);
@@ -328,25 +323,6 @@ export function LayerTimeline(_props: LayerTimelineProps) {
     );
   };
 
-  const animatableProperties = (layerType: string) =>
-    layerType === "vector"
-      ? ["alpha"]
-      : layerType === "group"
-        ? ["rotation", "scaleX", "scaleY", "pivotX", "pivotY", "translateX", "translateY"]
-        : [
-            "pathData",
-            "translateX",
-            "translateY",
-            "fillColor",
-            "fillAlpha",
-            "strokeColor",
-            "strokeAlpha",
-            "strokeWidth",
-            "trimPathStart",
-            "trimPathEnd",
-            "trimPathOffset",
-          ];
-
   /**
    * Figma motion timeline model:
    *   Frame (container, collapsible)
@@ -445,13 +421,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
     pushLayerTree(timelineRows, frame.id, roots.length ? roots : frameLayers, 1);
   }
 
-  // Active-frame helpers used by track rendering (selected frame only for editing blocks)
-  const blocksForLayer = (layerId: string | number) =>
-    blocksForLayerInFrame(selectedFrameId, layerId);
-  const blocksForProperty = (layerId: string | number, propertyName: string) =>
-    blocksForPropertyInFrame(selectedFrameId, layerId, propertyName);
-
-    const setProgressFromClientX = (clientX: number, el: HTMLElement) => {
+  const setProgressFromClientX = (clientX: number, el: HTMLElement) => {
     const rect = el.getBoundingClientRect();
     const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
     useEditorStore.getState().setProgress(x / Math.max(1, rect.width));
@@ -465,7 +435,11 @@ export function LayerTimeline(_props: LayerTimelineProps) {
     }
     const element = e.currentTarget;
     setProgressFromClientX(e.clientX, element);
-    element.setPointerCapture(e.pointerId);
+    try {
+      element.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore — scrubbing still works via the window listeners below */
+    }
     const onMove = (moveEvent: PointerEvent) => setProgressFromClientX(moveEvent.clientX, element);
     const onUp = (upEvent: PointerEvent) => {
       try {
@@ -499,7 +473,11 @@ export function LayerTimeline(_props: LayerTimelineProps) {
 
     const handleDragStart = (e: React.PointerEvent) => {
       e.stopPropagation();
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore — the drag session below still drives the move via this element's own listeners */
+      }
       setDraggingBlocks({
         startX: e.clientX,
         items: [{ id: block.id, originalStart: block.startTime, originalEnd: block.endTime }],
@@ -548,7 +526,11 @@ export function LayerTimeline(_props: LayerTimelineProps) {
 
     const handleResizeStart = (edge: "start" | "end") => (e: React.PointerEvent) => {
       e.stopPropagation();
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore — the resize session below still drives the move via this element's own listeners */
+      }
       setResizingBlock({
         id: block.id,
         edge,
@@ -610,7 +592,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
             className={cn(
               "pointer-events-auto absolute h-px cursor-grab active:cursor-grabbing",
               midY,
-              isSelected ? "bg-[#0C8CE9]/55" : "bg-white/20 hover:bg-white/30",
+              isSelected ? "bg-[#0C8CE9]/55" : "bg-[#0C8CE9]/35 hover:bg-[#0C8CE9]/50",
             )}
             style={{
               left: `${startPct}%`,
@@ -668,13 +650,12 @@ export function LayerTimeline(_props: LayerTimelineProps) {
           >
             <KeyframeDiamond active={isSelected} size={diamondSize} />
           </button>
-          {/* Interpolator control when selected (mid-rail) */}
+          {/* Interpolator control when selected — floats just above the rail
+              instead of sitting on the mid-point, which used to intercept the
+              exact spot users grab to drag the rail (BUG-timeline-drag-1). */}
           {isSelected && (
             <div
-              className={cn(
-                "pointer-events-auto absolute z-[3] -translate-x-1/2",
-                midY,
-              )}
+              className="pointer-events-auto absolute -top-4 z-[3] -translate-x-1/2"
               style={{ left: `${(startPct + endPct) / 2}%` }}
             >
               <DropdownMenu>
@@ -762,7 +743,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
       >
         <div
           className={cn(
-            "relative flex h-full max-h-[18px] w-full min-w-[28px] cursor-grab items-center justify-center overflow-hidden rounded-[5px] border active:cursor-grabbing",
+            "relative flex h-full max-h-[18px] w-full min-w-[28px] cursor-grab items-center justify-center overflow-hidden rounded-sm border active:cursor-grabbing",
             isSelected
               ? "border-[#0C8CE9]/50 bg-[#3D4F63] ring-1 ring-[#0C8CE9]/25"
               : "border-white/[0.08] bg-[#444444] hover:bg-[#4C4C4C]",
@@ -789,7 +770,9 @@ export function LayerTimeline(_props: LayerTimelineProps) {
             {label}
           </span>
           {isSelected && (
-            <div className="absolute left-1/2 top-1/2 z-[3] -translate-x-1/2 -translate-y-1/2">
+            // Floats just above the clip instead of dead-center, which used to sit
+            // exactly where users grab to drag the block (BUG-timeline-drag-1).
+            <div className="absolute left-1/2 -top-4 z-[3] -translate-x-1/2">
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
@@ -913,11 +896,8 @@ export function LayerTimeline(_props: LayerTimelineProps) {
           }}
           aria-hidden
         >
-          {/* Head sits in the header/ruler band */}
-          <div
-            className="absolute left-1/2 -translate-x-1/2"
-            style={{ top: HEADER_H - 9 }}
-          >
+          {/* Head sits at the very top of the ruler, like Figma's playhead flag */}
+          <div className="absolute left-1/2 top-0 -translate-x-1/2">
             <svg width="10" height="9" viewBox="0 0 10 9" fill="none">
               <path d="M0 0H10V5.5L5 9L0 5.5V0Z" fill={PLAYHEAD} />
             </svg>
@@ -925,7 +905,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
           {/* Hairline needle — full track height under the head */}
           <div
             className="absolute bottom-0 left-1/2 w-px -translate-x-1/2"
-            style={{ top: HEADER_H - 1, backgroundColor: PLAYHEAD }}
+            style={{ top: 9, backgroundColor: PLAYHEAD }}
           />
         </div>
       )}
@@ -952,9 +932,27 @@ export function LayerTimeline(_props: LayerTimelineProps) {
             )}
           </button>
           <div className="flex min-w-0 items-baseline gap-[3px] font-mono text-[11px] tabular-nums leading-none tracking-tight">
-            <span className="font-medium" style={{ color: PLAYHEAD }}>
-              {currentTimeSec.toFixed(2)}
-            </span>
+            <input
+              type="number"
+              min={0}
+              step={0.05}
+              value={timeDraft ?? currentTimeSec.toFixed(2)}
+              onFocus={() => setTimeDraft(currentTimeSec.toFixed(2))}
+              onChange={(e) => setTimeDraft(e.target.value)}
+              onBlur={() => {
+                const n = Number(timeDraft);
+                if (Number.isFinite(n)) jumpToMs(Math.round(n * 1000));
+                setTimeDraft(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === "Escape") {
+                  (e.target as HTMLInputElement).blur();
+                }
+              }}
+              aria-label="Current time in seconds"
+              className="w-[34px] border-0 bg-transparent p-0 font-medium tabular-nums outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+              style={{ color: PLAYHEAD }}
+            />
             <span className="text-white/20">/</span>
             <input
               type="number"
@@ -1087,7 +1085,11 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                 const startWidth = Math.max(1, ruler.getBoundingClientRect().width);
                 const startDur = animation.duration;
                 const startX = e.clientX;
-                e.currentTarget.setPointerCapture(e.pointerId);
+                try {
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                } catch {
+                  /* ignore — the window listeners below still drive the resize */
+                }
                 const move = (ev: PointerEvent) => {
                   const dx = ev.clientX - startX;
                   const factor = Math.max(0.1, (startWidth + dx) / startWidth);
@@ -1155,7 +1157,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                       )}
                     />
                   </button>
-                  <span className="min-w-0 flex-1 truncate text-[11px] font-normal tracking-[-0.01em]">
+                  <span className="min-w-0 flex-1 select-none truncate text-[11px] font-normal tracking-[-0.01em]">
                     {row.name}
                   </span>
                 </div>
@@ -1246,9 +1248,43 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                       strokeWidth={1.75}
                     />
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-[11px] font-normal tracking-[-0.01em]">
-                    {row.name}
-                  </span>
+                  {renamingLayerKey === row.key ? (
+                    <input
+                      autoFocus
+                      defaultValue={row.name}
+                      onFocus={(e) => e.currentTarget.select()}
+                      onBlur={(e) => {
+                        useEditorStore.getState().updateSelectedLayer({ name: e.target.value });
+                        setRenamingLayerKey(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          useEditorStore
+                            .getState()
+                            .updateSelectedLayer({ name: (e.target as HTMLInputElement).value });
+                          setRenamingLayerKey(null);
+                        } else if (e.key === "Escape") {
+                          setRenamingLayerKey(null);
+                        }
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      className="h-4 min-w-0 flex-1 rounded-sm border border-primary bg-black/40 px-1 text-[11px] text-white outline-none"
+                    />
+                  ) : (
+                    <span
+                      className="min-w-0 flex-1 select-none truncate text-[11px] font-normal tracking-[-0.01em]"
+                      onDoubleClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (row.frameId !== selectedFrameId) selectFrame(row.frameId);
+                        selectLayer(row.layer.id);
+                        setRenamingLayerKey(row.key);
+                      }}
+                    >
+                      {row.name}
+                    </span>
+                  )}
                   <div
                     className={cn(
                       "flex shrink-0 items-center transition-opacity duration-100",
@@ -1625,7 +1661,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                         return (
                           <div
                             key={block.id}
-                            className="pointer-events-none absolute top-1/2 flex h-[18px] -translate-y-1/2 items-center justify-center overflow-hidden rounded-[5px] border border-white/[0.06] bg-[#3A3A3A]"
+                            className="pointer-events-none absolute top-1/2 flex h-[18px] -translate-y-1/2 items-center justify-center overflow-hidden rounded-sm border border-white/[0.06] bg-[#3A3A3A]"
                             style={{ left: `${startPct}%`, width: `${widthPct}%` }}
                           >
                             <span className="truncate px-2 text-[9px] text-white/35">
@@ -1653,7 +1689,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                         <div
                           className={cn(
                             // Figma object clip: muted graphite bar, blue only when selected
-                            "absolute top-1/2 z-[1] flex -translate-y-1/2 items-center justify-center overflow-hidden rounded-[5px] border",
+                            "absolute top-1/2 z-[1] flex -translate-y-1/2 items-center justify-center overflow-hidden rounded-sm border",
                             interactive
                               ? "cursor-grab active:cursor-grabbing"
                               : "pointer-events-none",
@@ -1666,12 +1702,16 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                             width: `${widthPct}%`,
                             height: CLIP_H_OBJ,
                           }}
-                          title={`Morph · ${span.start}–${span.end}ms`}
+                          title={`Path · ${span.start}–${span.end}ms`}
                           onPointerDown={
                             interactive
                               ? (e) => {
                                   e.stopPropagation();
-                                  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                                  try {
+                                    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                                  } catch {
+                                    /* ignore — the drag session below still drives the move via this element's own listeners */
+                                  }
                                   setDraggingBlocks({
                                     startX: e.clientX,
                                     items: span.blocks.map((b) => ({
@@ -1749,7 +1789,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                                 anySelected ? "text-white/95" : "text-white/50",
                               )}
                             >
-                              Morph
+                              Path
                             </span>
                           )}
                         </div>

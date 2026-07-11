@@ -4,8 +4,10 @@
  * in the data model; the UI shows these labels instead of leaking internals.
  */
 export const PROPERTY_LABELS: Record<string, string> = {
-  // pathData is not shown as its own timeline row — morph lives on the layer clip bar
-  pathData: "Morph",
+  // pathData is not shown as its own timeline row — its clip lives on the layer's own bar.
+  // Named "Path" (not "Shape") to match the Layer > Type field, which already uses
+  // Path/Clip/Group — one vocabulary for the same concept everywhere in the panel.
+  pathData: "Path",
   fillColor: "Fill",
   fillAlpha: "Opacity",
   strokeColor: "Stroke",
