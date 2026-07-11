@@ -110,6 +110,7 @@ export function LayerTransformSection({
 
 export function FrameDesignPanel({
   frame,
+  selectedFrames,
   onRename,
   onMove,
   onResize,
@@ -118,6 +119,7 @@ export function FrameDesignPanel({
   canDelete,
 }: {
   frame: CanvasFrame;
+  selectedFrames: CanvasFrame[];
   onRename: (name: string) => void;
   onMove: (dx: number, dy: number) => void;
   onResize: (width: number, height: number) => void;
@@ -125,30 +127,58 @@ export function FrameDesignPanel({
   onDelete: () => void;
   canDelete: boolean;
 }) {
+  const count = selectedFrames.length;
+  const selectionX = Math.min(...selectedFrames.map((item) => item.x));
+  const selectionY = Math.min(...selectedFrames.map((item) => item.y));
+  const widthValues = selectedFrames.map((item) => item.vector.width);
+  const heightValues = selectedFrames.map((item) => item.vector.height);
+  const widths = {
+    value: widthValues[0] ?? frame.vector.width,
+    mixed: widthValues.some((value) => value !== widthValues[0]),
+  };
+  const heights = {
+    value: heightValues[0] ?? frame.vector.height,
+    mixed: heightValues.some((value) => value !== heightValues[0]),
+  };
   const [nameDraft, setNameDraft] = React.useState(frame.name);
   React.useEffect(() => setNameDraft(frame.name), [frame.id, frame.name]);
 
   return (
     <>
-      <Section title="Frame">
-        <Row label="Name">
-          <TextInput
-            value={nameDraft}
-            onChange={setNameDraft}
-            onBlur={() => onRename(nameDraft)}
-            ariaLabel="Frame name"
-          />
-        </Row>
+      <Section title={count > 1 ? `Frames · ${count}` : "Frame"}>
+        {count === 1 ? (
+          <Row label="Name">
+            <TextInput
+              value={nameDraft}
+              onChange={setNameDraft}
+              onBlur={() => onRename(nameDraft)}
+              ariaLabel="Frame name"
+            />
+          </Row>
+        ) : (
+          <p className="text-[10px] leading-relaxed text-muted-foreground">
+            Position changes move every selected frame together.
+          </p>
+        )}
       </Section>
       <Section title="Position & size">
         <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
-          <NumberRow label="X" value={frame.x} onChange={(value) => onMove(value - frame.x, 0)} />
-          <NumberRow label="Y" value={frame.y} onChange={(value) => onMove(0, value - frame.y)} />
-          <NumberRow label="W" value={frame.vector.width} min={1} onChange={(value) => onResize(value, frame.vector.height)} />
-          <NumberRow label="H" value={frame.vector.height} min={1} onChange={(value) => onResize(frame.vector.width, value)} />
+          <NumberRow label="X" value={selectionX} onChange={(value) => onMove(value - selectionX, 0)} />
+          <NumberRow label="Y" value={selectionY} onChange={(value) => onMove(0, value - selectionY)} />
+          {count === 1 ? (
+            <>
+              <NumberRow label="W" value={frame.vector.width} min={1} onChange={(value) => onResize(value, frame.vector.height)} />
+              <NumberRow label="H" value={frame.vector.height} min={1} onChange={(value) => onResize(frame.vector.width, value)} />
+            </>
+          ) : (
+            <>
+              <Row label="W"><span className="text-[11px] text-muted-foreground">{widths.mixed ? "Mixed" : widths.value}</span></Row>
+              <Row label="H"><span className="text-[11px] text-muted-foreground">{heights.mixed ? "Mixed" : heights.value}</span></Row>
+            </>
+          )}
         </div>
       </Section>
-      <Section title="Actions" defaultOpen={false}>
+      {count === 1 && <Section title="Actions" defaultOpen={false}>
         <div className="grid grid-cols-2 gap-1.5">
           <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5 text-[11px]" onClick={onDuplicate}>
             <Copy className="size-3.5" /> Duplicate
@@ -157,7 +187,7 @@ export function FrameDesignPanel({
             <Trash2 className="size-3.5" /> Delete
           </Button>
         </div>
-      </Section>
+      </Section>}
     </>
   );
 }

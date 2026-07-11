@@ -99,10 +99,13 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     rootLayers,
     rootAnimation,
     selectedFrameId,
+    selectedFrameIds,
     addFrame,
     renameFrame,
     deleteFrame,
     selectFrame,
+    selectFrames,
+    setSelectedFrameIds,
     selectRootLayer,
     worldViewport,
     setWorldViewport,
@@ -279,8 +282,13 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   // lassoRafRef / paintPreviewRafRef in PathCanvas + worldLassoRafRef here.
   const worldCameraRafRef = useRef<number | null>(null);
   const [, setWorldLassoFrame] = useState(0);
-  const [worldSelectedIds, setWorldSelectedIds] = useState<string[]>(() =>
-    selectedFrameId ? [selectedFrameId] : [],
+  const worldSelectedIds = selectedFrameIds;
+  const setWorldSelectedIds = useCallback(
+    (next: string[] | ((previous: string[]) => string[])) => {
+      const previous = useEditorStore.getState().selectedFrameIds;
+      setSelectedFrameIds(typeof next === "function" ? next(previous) : next);
+    },
+    [setSelectedFrameIds],
   );
 
   /**
@@ -305,21 +313,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     [hasCanvasSelection, selectTarget, selectedFrameId],
   );
 
-  // Keep multi-select ids aligned when the store selects a frame from outside the canvas
-  // (timeline, panels) while something is selected.
-  useEffect(() => {
-    if (!hasCanvasSelection || !selectedFrameId) return;
-    if (selectedFrameId === PAGE_ROOT_ID) {
-      setWorldSelectedIds([]);
-      return;
-    }
-    setWorldSelectedIds((prev) => {
-      if (prev.length === 0) return [selectedFrameId];
-      if (prev.includes(selectedFrameId)) return prev;
-      // External selectFrame replaces multi-select with the new active frame.
-      return [selectedFrameId];
-    });
-  }, [selectedFrameId, hasCanvasSelection]);
   // Hover feedback (Figma-style): frame / layer under the cursor when idle in select/direct.
   const [hoveredFrameId, setHoveredFrameId] = useState<string | null>(null);
   const [hoveredLayerKey, setHoveredLayerKey] = useState<string | null>(null);
@@ -764,18 +757,16 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
           }
           const dropFrameId = hitArtboard(result.end);
           if (dropFrameId && dropFrameId !== useEditorStore.getState().selectedFrameId) {
-            const moved = useEditorStore
+            useEditorStore
               .getState()
               .moveSelectedLayersToFrame(dropFrameId, { recordHistory: false });
-            if (moved) setWorldSelectedIds([dropFrameId]);
           } else if (
             !dropFrameId &&
             useEditorStore.getState().selectedFrameId !== PAGE_ROOT_ID
           ) {
-            const moved = useEditorStore
+            useEditorStore
               .getState()
               .moveSelectedLayersToRoot({ recordHistory: false });
-            if (moved) setWorldSelectedIds([]);
           }
           setSmartGuides([]);
         },
@@ -1149,7 +1140,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         if (layerHit) {
           // Click a shape → that layer's vector network
           selectOwnedLayer(layerHit);
-          setWorldSelectedIds(layerHit.frameId === PAGE_ROOT_ID ? [] : [layerHit.frameId]);
           useEditorStore.getState().clearSelection?.();
           try {
             worldSvgRef.current?.setPointerCapture(e.pointerId);
@@ -1201,7 +1191,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
             if (!selectedLayerRefKeys.has(hitKey)) selectOwnedLayer(layerHit);
             layerDragRef.current = beginObjectDrag(p);
           }
-          setWorldSelectedIds(layerHit.frameId === PAGE_ROOT_ID ? [] : [layerHit.frameId]);
           try {
             worldSvgRef.current?.setPointerCapture(e.pointerId);
           } catch {
@@ -1217,9 +1206,10 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         if (additive && selectionKind === "frame") {
           if (worldSelectedIds.includes(hitId) && hasCanvasSelection) {
             const next = worldSelectedIds.filter((id) => id !== hitId);
-            setWorldSelectedIds(next);
-            if (next.length === 0) deselectAll();
-            else if (!next.includes(selectedFrameId)) selectFrame(next[next.length - 1]!);
+            selectFrames(
+              next,
+              next.includes(selectedFrameId) ? selectedFrameId : next[next.length - 1],
+            );
             try {
               worldSvgRef.current?.setPointerCapture(e.pointerId);
             } catch {
@@ -1227,8 +1217,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
             }
             return;
           }
-          setWorldSelectedIds([...new Set([...worldSelectedIds, hitId])]);
-          selectFrame(hitId);
+          selectFrames([...new Set([...worldSelectedIds, hitId])], hitId);
           try {
             worldSvgRef.current?.setPointerCapture(e.pointerId);
           } catch {
@@ -1278,6 +1267,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       isObjectTool,
       isPointTool,
       selectFrame,
+      selectFrames,
       selectLayer,
       selectLayers,
       selectedFrameId,
@@ -1571,15 +1561,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
             const next = [...byKey.values()];
             if (next.length > 0) {
               selectLayerRefs(next);
-              setWorldSelectedIds(
-                Array.from(
-                  new Set(
-                    next
-                      .map((ref) => ref.ownerId)
-                      .filter((ownerId) => ownerId !== PAGE_ROOT_ID),
-                  ),
-                ),
-              );
             } else {
               selectFrame(activeMarquee.frameId);
               setWorldSelectedIds([activeMarquee.frameId]);
@@ -1597,9 +1578,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
           if (hits.length > 0) {
             // Multi-frame: select each (last is primary active doc)
             const primary = hits.includes(selectedFrameId) ? selectedFrameId : hits[hits.length - 1]!;
-            selectFrame(primary);
-            // Keep multi ids after selectFrame (which doesn't know about multi)
-            setWorldSelectedIds(next);
+            selectFrames(next, primary);
           }
         }
         return;
@@ -1652,6 +1631,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       hoveredLayerKey,
       penPointerDrag,
       selectFrame,
+      selectFrames,
       selectLayer,
       selectedFrameId,
       editSnap,
@@ -1796,11 +1776,12 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
             })
             .map((f) => f.id);
           if (hitIds.length > 0) {
-            setWorldSelectedIds((prev) =>
-              additive ? Array.from(new Set([...prev, ...hitIds])) : hitIds,
-            );
+            const next = additive
+              ? Array.from(new Set([...worldSelectedIds, ...hitIds]))
+              : hitIds;
+            selectFrames(next, next[next.length - 1]);
           } else if (!additive) {
-            setWorldSelectedIds([]);
+            deselectAll();
           }
         }
       }
@@ -1830,6 +1811,12 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       hitArtboard,
       syncActiveOwner,
       clearArtboardDrag,
+      selectFrame,
+      selectFrames,
+      setWorldSelectedIds,
+      worldSelectedIds,
+      deselectAll,
+      worldPerPx,
     ],
   );
 
@@ -1877,7 +1864,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       const layerHit = hitLayerAtWorld(p);
       if (layerHit) {
         selectOwnedLayer(layerHit);
-        setWorldSelectedIds(layerHit.frameId === PAGE_ROOT_ID ? [] : [layerHit.frameId]);
         useEditorStore.getState().clearSelection?.();
         setToolMode("direct");
         // Zoom the artboard into view so 24×24 anchors are actually grabbable
@@ -2970,12 +2956,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                                         ? worldSelectedIds
                                         : [frame.id];
                                   }
-                                  setWorldSelectedIds(next);
                                   if (next.length === 0) {
                                     deselectAll();
                                     return;
                                   }
-                                  selectFrame(frame.id);
+                                  selectFrames(next, frame.id);
                                   if (!additive) {
                                     e.preventDefault();
                                     startWorldArtboardDrag(e.clientX, e.clientY, next);

@@ -94,8 +94,10 @@ export function Inspector() {
   const frames = useEditorStore((state) => state.frames);
   const rootLayers = useEditorStore((state) => state.rootLayers);
   const selectedFrameId = useEditorStore((state) => state.selectedFrameId);
+  const selectedFrameIds = useEditorStore((state) => state.selectedFrameIds);
   const renameFrame = useEditorStore((state) => state.renameFrame);
   const moveFrame = useEditorStore((state) => state.moveFrame);
+  const moveFrames = useEditorStore((state) => state.moveFrames);
   const duplicateFrame = useEditorStore((state) => state.duplicateFrame);
   const deleteFrame = useEditorStore((state) => state.deleteFrame);
   const updateVector = useEditorStore((state) => state.updateVector);
@@ -104,6 +106,10 @@ export function Inspector() {
   const point = getCurrentSelectedPoint ? getCurrentSelectedPoint() : null;
   const currentLayer = layers.find((l) => l.id === selectedLayerId);
   const currentFrame = frames.find((frame) => frame.id === selectedFrameId);
+  const selectedFrames = React.useMemo(
+    () => frames.filter((frame) => selectedFrameIds.includes(frame.id)),
+    [frames, selectedFrameIds],
+  );
   const sceneOwners = React.useMemo(
     () => [
       ...frames.map((frame) => ({
@@ -173,16 +179,27 @@ export function Inspector() {
             <RectangleHorizontal className="size-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[12px] font-semibold">{currentFrame.name}</div>
-            <div className="text-[10px] text-muted-foreground">Frame · {currentFrame.vector.width} × {currentFrame.vector.height}</div>
+            <div className="truncate text-[12px] font-semibold">
+              {selectedFrames.length > 1 ? `${selectedFrames.length} frames` : currentFrame.name}
+            </div>
+            <div className="text-[10px] text-muted-foreground">
+              {selectedFrames.length > 1
+                ? "Multiple artboards selected"
+                : `Frame · ${currentFrame.vector.width} × ${currentFrame.vector.height}`}
+            </div>
           </div>
         </div>
         {activeTab === "design" ? (
           <div className="min-h-0 flex-1 overflow-y-auto">
             <FrameDesignPanel
               frame={currentFrame}
+              selectedFrames={selectedFrames.length ? selectedFrames : [currentFrame]}
               onRename={(name) => renameFrame(currentFrame.id, name)}
-              onMove={(dx, dy) => moveFrame(currentFrame.id, dx, dy)}
+              onMove={(dx, dy) =>
+                selectedFrames.length > 1
+                  ? moveFrames(selectedFrames.map((frame) => frame.id), dx, dy)
+                  : moveFrame(currentFrame.id, dx, dy)
+              }
               onResize={(width, height) => updateVector({ width, height })}
               onDuplicate={duplicateFrame}
               onDelete={() => deleteFrame(currentFrame.id)}

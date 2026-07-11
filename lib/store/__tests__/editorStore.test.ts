@@ -108,6 +108,56 @@ describe("editorStore", () => {
     });
   });
 
+  describe("multi-frame selection", () => {
+    it("keeps the full frame selection in shared editor state", () => {
+      const firstFrameId = getStore().selectedFrameId;
+      getStore().addFrame();
+      const secondFrameId = getStore().selectedFrameId;
+
+      getStore().selectFrames([firstFrameId, secondFrameId], secondFrameId);
+
+      expect(getStore().selectedFrameIds).toEqual([firstFrameId, secondFrameId]);
+      expect(getStore().selectedFrameId).toBe(secondFrameId);
+      expect(getStore().selectionKind).toBe("frame");
+      expect(getStore().selectedLayerRefs).toEqual([]);
+    });
+
+    it("moves selected frames together and clears frame selection for a layer", () => {
+      const firstFrameId = getStore().selectedFrameId;
+      getStore().addFrame();
+      const secondFrameId = getStore().selectedFrameId;
+      const before = new Map(getStore().frames.map((frame) => [frame.id, { x: frame.x, y: frame.y }]));
+      getStore().selectFrames([firstFrameId, secondFrameId]);
+
+      getStore().moveFrames(getStore().selectedFrameIds, 12, -7);
+
+      for (const frameId of [firstFrameId, secondFrameId]) {
+        const frame = getStore().frames.find((candidate) => candidate.id === frameId)!;
+        expect(frame.x).toBe(before.get(frameId)!.x + 12);
+        expect(frame.y).toBe(before.get(frameId)!.y - 7);
+      }
+
+      getStore().selectLayer(getStore().layers[0]!.id);
+      expect(getStore().selectedFrameIds).toEqual([]);
+      expect(getStore().selectionKind).toBe("layer");
+    });
+
+    it("restores frame selection through undo", () => {
+      const firstFrameId = getStore().selectedFrameId;
+      getStore().addFrame();
+      const secondFrameId = getStore().selectedFrameId;
+      getStore().selectFrames([firstFrameId, secondFrameId], firstFrameId);
+      getStore().pushHistory();
+      getStore().deselectAll();
+
+      getStore().undo();
+
+      expect(getStore().selectedFrameIds).toEqual([firstFrameId, secondFrameId]);
+      expect(getStore().selectedFrameId).toBe(firstFrameId);
+      expect(getStore().selectionKind).toBe("frame");
+    });
+  });
+
   describe("cross-frame layer reparenting", () => {
     it("persists the live active-owner projection through a store command", () => {
       const frame = getStore().frames[0];

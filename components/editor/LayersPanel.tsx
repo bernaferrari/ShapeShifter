@@ -36,9 +36,11 @@ export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
   const rootLayers = useEditorStore((state) => state.rootLayers);
   const activeLayers = useEditorStore((state) => state.layers);
   const selectedFrameId = useEditorStore((state) => state.selectedFrameId);
+  const selectedFrameIds = useEditorStore((state) => state.selectedFrameIds);
   const selectionKind = useEditorStore((state) => state.selectionKind);
   const selectedLayerRefs = useEditorStore((state) => state.selectedLayerRefs);
   const selectFrame = useEditorStore((state) => state.selectFrame);
+  const selectFrames = useEditorStore((state) => state.selectFrames);
   const selectLayerRefs = useEditorStore((state) => state.selectLayerRefs);
   const addLayer = useEditorStore((state) => state.addLayer);
   const toggleOwnedLayerVisibility = useEditorStore(
@@ -104,6 +106,16 @@ export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
   ) => {
     if (action === "visibility") toggleOwnedLayerVisibility(ownerId, layerId);
     else toggleOwnedLayerLock(ownerId, layerId);
+  };
+  const selectFrameRow = (frameId: string, additive: boolean) => {
+    if (!additive) {
+      selectFrame(frameId);
+      return;
+    }
+    const next = selectedFrameIds.includes(frameId)
+      ? selectedFrameIds.filter((id) => id !== frameId)
+      : [...selectedFrameIds, frameId];
+    selectFrames(next, next.includes(frameId) ? frameId : undefined);
   };
 
   const renderLayers = (ownerId: string, layers: Layer[], depth: number): React.ReactNode => {
@@ -198,7 +210,7 @@ export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
       <div className="min-h-0 flex-1 overflow-y-auto py-1">
         {owners.map((owner) => {
           const expanded = !collapsedOwners.has(owner.id);
-          const frameSelected = selectionKind === "frame" && owner.id === selectedFrameId;
+          const frameSelected = selectionKind === "frame" && selectedFrameIds.includes(owner.id);
           return (
             <div key={owner.id}>
               <div className={cn("flex h-8 items-center px-1.5", frameSelected && "bg-primary/15")}>
@@ -213,7 +225,10 @@ export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
                 <button
                   type="button"
                   className="flex min-w-0 flex-1 items-center gap-2 px-1 text-left text-[11px] font-medium"
-                  onClick={() => owner.id !== PAGE_ROOT_ID && selectFrame(owner.id)}
+                  onClick={(event) =>
+                    owner.id !== PAGE_ROOT_ID && selectFrameRow(owner.id, event.shiftKey)
+                  }
+                  aria-pressed={frameSelected}
                 >
                   <Frame className="size-3.5 shrink-0 text-muted-foreground" />
                   <span className="truncate">{owner.name}</span>

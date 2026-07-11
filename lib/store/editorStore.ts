@@ -147,6 +147,7 @@ function createPathLayer(layer: Omit<Layer, "type"> & Partial<Pick<Layer, "type"
 interface HistoryEntry {
   frames: CanvasFrame[];
   selectedFrameId: string;
+  selectedFrameIds: string[];
   rootLayers: Layer[];
   rootAnimation: AnimationState;
   rootHiddenLayerIds: string[];
@@ -168,6 +169,8 @@ interface EditorState {
   // Workspace frames
   frames: CanvasFrame[];
   selectedFrameId: string;
+  /** Selected artboards; selectedFrameId is the primary/active document projection. */
+  selectedFrameIds: string[];
   /** Vectors owned by the page rather than clipped inside a frame. */
   rootLayers: Layer[];
   rootAnimation: AnimationState;
@@ -261,6 +264,8 @@ interface EditorState {
   renameFrame: (id: string, name: string) => void;
   deleteFrame: (id: string) => void;
   selectFrame: (id: string) => void;
+  selectFrames: (ids: string[], primaryId?: string) => void;
+  setSelectedFrameIds: (ids: string[]) => void;
   moveFrame: (id: string, dx: number, dy: number) => void;
   moveFrames: (ids: string[], dx: number, dy: number) => void;
   /** Reparent selected objects to another frame without changing world position. */
@@ -659,6 +664,7 @@ const snapshotHistoryEntry = (s: EditorState): HistoryEntry => {
   return {
     frames: saveActiveFrame(s),
     selectedFrameId: s.selectedFrameId,
+    selectedFrameIds: [...s.selectedFrameIds],
     rootLayers: root.layers,
     rootAnimation: root.animation,
     rootHiddenLayerIds: root.hiddenLayerIds,
@@ -684,6 +690,7 @@ const restoreHistoryEntry = (s: EditorState, entry: HistoryEntry) => {
   return {
     frames: entry.frames.map(cloneFrame),
     selectedFrameId: entry.selectedFrameId,
+    selectedFrameIds: [...entry.selectedFrameIds],
     rootLayers: cloneLayers(entry.rootLayers),
     rootAnimation: structuredClone(entry.rootAnimation),
     rootHiddenLayerIds: [...entry.rootHiddenLayerIds],
@@ -827,6 +834,7 @@ function zoomViewportAtCenter(viewport: Viewport, scale: number): Viewport {
 export const useEditorStore = create<EditorState>((set, get) => ({
   frames: initialFrames.map(cloneFrame),
   selectedFrameId: initialFrame.id,
+  selectedFrameIds: [],
   rootLayers: [],
   rootAnimation: structuredClone(initialRootAnimation),
   rootHiddenLayerIds: [],
@@ -978,6 +986,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       frames: [...savedFrames, frame],
       selectedFrameId: frame.id,
+      selectedFrameIds: [frame.id],
       detailViewport: computeVectorViewport(frame.vector),
       zoom: 1,
       layers: cloneLayers(frame.layers),
@@ -1021,6 +1030,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       frames: [...savedFrames, frame],
       selectedFrameId: frame.id,
+      selectedFrameIds: [frame.id],
       detailViewport: computeVectorViewport(frame.vector),
       zoom: 1,
       layers: cloneLayers(frame.layers),
@@ -1077,6 +1087,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       frames: nextFrames,
       selectedFrameId: fallbackFrame.id,
+      selectedFrameIds: [fallbackFrame.id],
       detailViewport: computeVectorViewport(fallbackFrame.vector),
       zoom: 1,
       layers: cloneLayers(fallbackFrame.layers),
@@ -1111,6 +1122,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedLayerRefs: [] as LayerSelectionRef[],
       hasCanvasSelection: true as const,
       selectionKind: "frame" as const,
+      selectedFrameIds: [id],
       // Selecting the frame (not a path) leaves vector edit for Move
       toolMode: "select" as const,
     };
@@ -1143,6 +1155,25 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
   },
 
+  setSelectedFrameIds: (ids) => {
+    const validIds = new Set(saveActiveFrame(get()).map((frame) => frame.id));
+    set({ selectedFrameIds: Array.from(new Set(ids.filter((id) => validIds.has(id)))) });
+  },
+
+  selectFrames: (ids, primaryId) => {
+    const validIds = new Set(saveActiveFrame(get()).map((frame) => frame.id));
+    const normalized = Array.from(new Set(ids.filter((id) => validIds.has(id))));
+    if (normalized.length === 0) {
+      get().deselectAll();
+      return;
+    }
+    const primary = primaryId && normalized.includes(primaryId)
+      ? primaryId
+      : normalized[normalized.length - 1]!;
+    get().selectFrame(primary);
+    set({ selectedFrameIds: normalized });
+  },
+
   selectRootLayer: (id) => {
     const state = get();
     const savedFrames = saveActiveFrame(state);
@@ -1154,6 +1185,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       rootAnimation: structuredClone(savedRoot.animation),
       rootHiddenLayerIds: [...savedRoot.hiddenLayerIds],
       selectedFrameId: PAGE_ROOT_ID,
+      selectedFrameIds: [],
       layers: cloneLayers(savedRoot.layers),
       vector: { id: PAGE_ROOT_ID, name: "Page", width: 1, height: 1, alpha: 1 },
       animation: structuredClone(savedRoot.animation),
@@ -1364,6 +1396,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedBlockIds: [],
       hasCanvasSelection: true,
       selectionKind: "layer",
+      selectedFrameIds: [],
       toolMode: "select",
       detailViewport: computeVectorViewport(target.vector),
     });
@@ -1502,6 +1535,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedBlockIds: [],
       hasCanvasSelection: true,
       selectionKind: "layer",
+      selectedFrameIds: [],
       toolMode: "select",
     });
     return true;
@@ -1844,6 +1878,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       hasCanvasSelection: true,
       // Figma: selecting a child replaces frame selection — the layer is the selection.
       selectionKind: "layer",
+      selectedFrameIds: [],
     })),
 
   selectLayers: (ids) => {
@@ -1872,6 +1907,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedBlockIds: [],
       hasCanvasSelection: true,
       selectionKind: "layer",
+      selectedFrameIds: [],
       // Multi-object selection uses Move tool (Figma leaves vector edit)
       toolMode: unique.length > 1 ? "select" : get().toolMode,
     });
@@ -1900,6 +1936,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         selectedBlockIds: [],
         hasCanvasSelection: true,
         selectionKind: "layer",
+        selectedFrameIds: [],
         toolMode: "select",
       });
       return;
@@ -1941,6 +1978,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedBlockIds: [],
       hasCanvasSelection: true,
       selectionKind: "layer",
+      selectedFrameIds: [],
       toolMode: "select",
     });
   },
@@ -2476,6 +2514,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedSubPaths: [],
       hasCanvasSelection: false,
       selectionKind: "none",
+      selectedFrameIds: [],
     });
   },
 
@@ -2549,6 +2588,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedLayerRefs: [{ ownerId: get().selectedFrameId, layerId: groupId }],
       hasCanvasSelection: true,
       selectionKind: "layer",
+      selectedFrameIds: [],
     });
   },
 
@@ -2576,6 +2616,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       ),
       hasCanvasSelection: true,
       selectionKind: "layer",
+      selectedFrameIds: [],
     });
   },
 
@@ -2641,6 +2682,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedLayerRefs: cloneRefs,
       hasCanvasSelection: true,
       selectionKind: "layer",
+      selectedFrameIds: [],
     });
   },
 
@@ -3151,6 +3193,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       })),
       hasCanvasSelection: true,
       selectionKind: "layer",
+      selectedFrameIds: [],
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -3268,6 +3311,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedLayerRefs: [{ ownerId: get().selectedFrameId, layerId: resultLayer.id }],
       hasCanvasSelection: true,
       selectionKind: "layer",
+      selectedFrameIds: [],
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -3366,6 +3410,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       hasCanvasSelection: false,
       selectionKind: "none",
+      selectedFrameIds: [],
       selectedLayerIds: [],
       selectedLayerRefs: [],
       selection: null,
@@ -3409,6 +3454,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedLayerRefs: [{ ownerId: get().selectedFrameId, layerId: newLayer.id }],
       hasCanvasSelection: true,
       selectionKind: "layer",
+      selectedFrameIds: [],
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -3593,6 +3639,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       timelineCollapsed: true,
       hasCanvasSelection: true,
       selectionKind: "layer",
+      selectedFrameIds: [],
       toolMode: "select",
       cursorType: "default",
       hoveredItem: null,
