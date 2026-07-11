@@ -27,8 +27,11 @@ export function numberAtTime(
   propertyName: string,
   ms: number,
   duration: number,
+  fallback = 0,
 ): number {
-  const base = Number((layer as unknown as Record<string, unknown>)[propertyName]) || 0;
+  const raw = (layer as unknown as Record<string, unknown>)[propertyName];
+  const numeric = Number(raw);
+  const base = raw == null || !Number.isFinite(numeric) ? fallback : numeric;
   const segs = blocksFor(blocks, layer.id, propertyName);
   if (segs.length === 0) return base;
 

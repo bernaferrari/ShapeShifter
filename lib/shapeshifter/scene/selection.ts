@@ -1,5 +1,6 @@
 import type { Layer } from "../types";
 import { getPathDataBounds } from "../pathUtils";
+import { transformLayerRect } from "./layerTransform";
 
 export interface SceneRect {
   x: number;
@@ -31,14 +32,18 @@ export function getOwnedLayerBounds(owner: SceneOwner): OwnedLayerBounds[] {
     if (!path) continue;
     const bounds = getPathDataBounds(path);
     if (!bounds) continue;
+    const transformed = transformLayerRect(
+      { x: bounds.x, y: bounds.y, w: bounds.w, h: bounds.h },
+      layer,
+    );
     result.push({
       ownerId: owner.ownerId,
       layerId: layer.id,
       bounds: {
-        x: owner.origin.x + bounds.x + (Number(layer.translateX) || 0),
-        y: owner.origin.y + bounds.y + (Number(layer.translateY) || 0),
-        w: bounds.w,
-        h: bounds.h,
+        x: owner.origin.x + transformed.x,
+        y: owner.origin.y + transformed.y,
+        w: transformed.w,
+        h: transformed.h,
       },
     });
   }

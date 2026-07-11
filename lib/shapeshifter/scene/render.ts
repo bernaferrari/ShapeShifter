@@ -15,6 +15,10 @@ export interface WorldLayerDraw {
   translateX: number;
   translateY: number;
   rotation: number;
+  scaleX: number;
+  scaleY: number;
+  pivotX: number;
+  pivotY: number;
 }
 
 /** Resolve one owner document into render-ready values at the current playhead. */
@@ -62,6 +66,7 @@ export function resolveWorldLayerDraws(
               "fillAlpha",
               currentMs,
               duration,
+              1,
             )
           : (layer.fillAlpha ?? 1),
         strokeOpacity: usePlayhead
@@ -71,6 +76,7 @@ export function resolveWorldLayerDraws(
               "strokeAlpha",
               currentMs,
               duration,
+              1,
             )
           : (layer.strokeAlpha ?? 1),
         strokeWidth: Number(layer.strokeWidth) || 0,
@@ -103,6 +109,22 @@ export function resolveWorldLayerDraws(
               duration,
             )
           : Number(layer.rotation) || 0,
+        scaleX: usePlayhead
+          ? numberAtTime(layer, animation.blocks, "scaleX", currentMs, duration, 1)
+          : Number.isFinite(layer.scaleX)
+            ? Number(layer.scaleX)
+            : 1,
+        scaleY: usePlayhead
+          ? numberAtTime(layer, animation.blocks, "scaleY", currentMs, duration, 1)
+          : Number.isFinite(layer.scaleY)
+            ? Number(layer.scaleY)
+            : 1,
+        pivotX: usePlayhead
+          ? numberAtTime(layer, animation.blocks, "pivotX", currentMs, duration)
+          : Number(layer.pivotX) || 0,
+        pivotY: usePlayhead
+          ? numberAtTime(layer, animation.blocks, "pivotY", currentMs, duration)
+          : Number(layer.pivotY) || 0,
       };
     });
 }

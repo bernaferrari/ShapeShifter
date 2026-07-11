@@ -4,6 +4,7 @@ import React, { memo, useMemo } from "react";
 import { getPathDataBounds } from "@/lib/shapeshifter/pathUtils";
 import type { Layer, PathData, Point } from "@/lib/shapeshifter/types";
 import type { SceneRect } from "@/lib/shapeshifter/scene/selection";
+import { transformLayerRect } from "@/lib/shapeshifter/scene/layerTransform";
 
 export type LayerResizeHandle = "nw" | "ne" | "sw" | "se" | "e" | "w" | "n" | "s";
 
@@ -74,6 +75,7 @@ function WorldSelectionOverlayComponent({
     const items: Array<{
       layer: Layer;
       bounds: SceneRect;
+      displayBounds: SceneRect;
       translate: Point;
     }> = [];
     const selected = new Set(activeLayerIds.map(String));
@@ -85,11 +87,15 @@ function WorldSelectionOverlayComponent({
         x: Number(layer.translateX) || 0,
         y: Number(layer.translateY) || 0,
       };
-      items.push({ layer, bounds, translate });
-      minX = Math.min(minX, bounds.x + translate.x);
-      minY = Math.min(minY, bounds.y + translate.y);
-      maxX = Math.max(maxX, bounds.x + bounds.w + translate.x);
-      maxY = Math.max(maxY, bounds.y + bounds.h + translate.y);
+      const displayBounds = transformLayerRect(
+        { x: bounds.x, y: bounds.y, w: bounds.w, h: bounds.h },
+        layer,
+      );
+      items.push({ layer, bounds, displayBounds, translate });
+      minX = Math.min(minX, displayBounds.x);
+      minY = Math.min(minY, displayBounds.y);
+      maxX = Math.max(maxX, displayBounds.x + displayBounds.w);
+      maxY = Math.max(maxY, displayBounds.y + displayBounds.h);
     }
     if (!Number.isFinite(minX)) return null;
     return {
@@ -130,6 +136,12 @@ function WorldSelectionOverlayComponent({
   };
   const handleSize = worldPerPx * 3;
   const edgeHitSize = worldPerPx * 5;
+  const canResize = selection.items.every(
+    ({ layer }) =>
+      Math.abs((layer.scaleX ?? 1) - 1) < 1e-9 &&
+      Math.abs((layer.scaleY ?? 1) - 1) < 1e-9 &&
+      Math.abs(layer.rotation ?? 0) < 1e-9,
+  );
   const handles: Array<{
     handle: LayerResizeHandle;
     x: number;
@@ -251,7 +263,7 @@ function WorldSelectionOverlayComponent({
         style={{ cursor: "grab", pointerEvents: "auto" }}
         onPointerDown={beginRotate}
       />
-      {handles
+      {canResize && handles
         .filter(({ handle }) => handle.length === 1)
         .map(({ handle }) => {
           const edge =
@@ -285,7 +297,7 @@ function WorldSelectionOverlayComponent({
             />
           );
         })}
-      {handles.map(({ handle, x, y }) => (
+      {canResize && handles.map(({ handle, x, y }) => (
         <rect
           key={handle}
           x={x - handleSize}

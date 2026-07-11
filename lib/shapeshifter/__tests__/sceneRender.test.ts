@@ -41,6 +41,8 @@ describe("world scene rendering", () => {
       fillOpacity: 0.8,
       translateX: 2,
       translateY: 3,
+      scaleX: 1,
+      scaleY: 1,
     });
   });
 
@@ -53,5 +55,6 @@ describe("world scene rendering", () => {
     );
     expect(draws).toHaveLength(1);
     expect(draws[0].translateX).toBeCloseTo(7);
+    expect(draws[0]).toMatchObject({ scaleX: 1, scaleY: 1, pivotX: 0, pivotY: 0 });
   });
 });

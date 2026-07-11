@@ -38,6 +38,26 @@ describe("owner scene hit testing", () => {
     expect(hitTestOwnedLayers(owners, { x: 102, y: 25 }, 1)).toBeNull();
   });
 
+  it("inverts layer scale, rotation, and pivot before path hit testing", () => {
+    const transformed = {
+      ...filled("shape"),
+      translateX: 20,
+      pivotX: 5,
+      pivotY: 5,
+      rotation: 90,
+      scaleX: 2,
+      scaleY: 1,
+    };
+    const owners: SceneOwner[] = [
+      { ownerId: "frame", origin: { x: 100, y: 20 }, layers: [transformed] },
+    ];
+    expect(hitTestOwnedLayers(owners, { x: 125, y: 25 }, 1)).toEqual({
+      ownerId: "frame",
+      layerId: "shape",
+    });
+    expect(hitTestOwnedLayers(owners, { x: 110, y: 25 }, 1)).toBeNull();
+  });
+
   it("does not hit locked or hidden layers", () => {
     const owners: SceneOwner[] = [
       {

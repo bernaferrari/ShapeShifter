@@ -1,6 +1,7 @@
 import { isPointInFillRegion } from "../pathUtils";
 import type { PathData } from "../types";
 import type { OwnedLayerRef, SceneOwner } from "./selection";
+import { inverseTransformLayerPoint } from "./layerTransform";
 
 function distanceToSegment(
   px: number,
@@ -49,10 +50,13 @@ export function hitTestOwnedLayers(
       }
       const path: PathData = layer.pathData ?? layer.from;
       if (!path?.subPaths?.length) continue;
-      const local = {
-        x: ownerPoint.x - (Number(layer.translateX) || 0),
-        y: ownerPoint.y - (Number(layer.translateY) || 0),
-      };
+      const local = inverseTransformLayerPoint(ownerPoint, layer);
+      if (!local) continue;
+      const minScale = Math.max(
+        1e-6,
+        Math.min(Math.abs(layer.scaleX ?? 1), Math.abs(layer.scaleY ?? 1)),
+      );
+      const localStrokeTolerance = strokeTolerance / minScale;
       const hasFill = Boolean(
         layer.fillColor && layer.fillColor !== "none" && layer.fillColor !== "",
       );
@@ -68,7 +72,9 @@ export function hitTestOwnedLayers(
           if (points.length === 0) continue;
           const end = points[points.length - 1];
           for (const candidate of points) {
-            if (Math.hypot(local.x - candidate.x, local.y - candidate.y) <= strokeTolerance) {
+            if (
+              Math.hypot(local.x - candidate.x, local.y - candidate.y) <= localStrokeTolerance
+            ) {
               nearStroke = true;
               break;
             }
@@ -83,7 +89,7 @@ export function hitTestOwnedLayers(
               previous.y,
               end.x,
               end.y,
-            ) <= strokeTolerance
+            ) <= localStrokeTolerance
           ) {
             nearStroke = true;
             break;
@@ -98,7 +104,7 @@ export function hitTestOwnedLayers(
                   points[index].y,
                   points[index + 1].x,
                   points[index + 1].y,
-                ) <= strokeTolerance
+                ) <= localStrokeTolerance
               ) {
                 nearStroke = true;
                 break;

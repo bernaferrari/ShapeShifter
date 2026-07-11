@@ -10,22 +10,17 @@ import {
   Trash2,
   ChevronRight,
   SlidersHorizontal,
-  Plus,
-  Minus,
   MousePointerClick,
   Crop,
   Folder,
   Spline,
   Pencil,
-  Copy,
-  Lock,
-  Unlock,
   RectangleHorizontal,
   Activity,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { useEditorStore } from "@/lib/store/editorStore";
+import { PAGE_ROOT_ID, useEditorStore } from "@/lib/store/editorStore";
 import {
   changeCommandType,
   parsePath,
@@ -34,682 +29,41 @@ import {
 } from "@/lib/shapeshifter/pathUtils";
 import type {
   FillType,
-  Gradient,
-  GradientStop,
   GradientType,
   Layer,
 } from "@/lib/shapeshifter/types";
-import type { CanvasFrame } from "@/lib/store/editorStore";
 import {
   gradientFromSolid,
-  gradientToCssBar,
-  normalizeStops,
 } from "@/lib/shapeshifter/gradients";
-import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
 import { PathCommandsList } from "./PathCommandsList";
-import { CompactColorInput } from "@/components/ui/compact-color-input";
+import {
+  getInspectorSelectionBounds,
+  resolveOwnedLayers,
+  sharedValue,
+} from "@/lib/shapeshifter/scene/inspectorSelection";
+import {
+  NumberRow,
+  Row,
+  Section,
+  Segmented,
+  TextInput,
+} from "./inspector/InspectorControls";
+import {
+  ColorRow,
+  GradientEditor,
+} from "./inspector/InspectorColorControls";
+import {
+  FrameDesignPanel,
+  InspectorTabs,
+  LayerTransformSection,
+  MotionPanel,
+  type InspectorTab,
+} from "./inspector/InspectorPanels";
 
 /* ------------------------------------------------------------------ */
 /* Field primitives — a small, consistent Figma-grade control system  */
 /* ------------------------------------------------------------------ */
 
-const fieldBase =
-  "h-8 w-full rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground/50 hover:border-foreground/20 focus:border-primary focus:ring-2 focus:ring-primary/20";
-
-function Section({
-  title,
-  action,
-  children,
-  defaultOpen = true,
-}: {
-  title: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-  defaultOpen?: boolean;
-}) {
-  const [open, setOpen] = React.useState(defaultOpen);
-  return (
-    <section className="border-b border-border/60 last:border-b-0">
-      <div className="flex h-9 items-center justify-between pl-1.5 pr-3">
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          className="flex min-w-0 items-center gap-1 rounded py-1 pr-1 text-foreground hover:text-foreground"
-          aria-expanded={open}
-        >
-          <ChevronRight
-            className={cn(
-              "size-3.5 shrink-0 text-muted-foreground transition-transform",
-              open && "rotate-90",
-            )}
-          />
-          <span className="truncate text-[11px] font-semibold tracking-tight">{title}</span>
-        </button>
-        {open && action}
-      </div>
-      {open && <div className="space-y-1.5 px-3 pb-3">{children}</div>}
-    </section>
-  );
-}
-function Row({ label, children }: { label?: string; children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-[58px_minmax(0,1fr)] items-center gap-2">
-      {label ? (
-        <span className="truncate text-[11px] text-muted-foreground">{label}</span>
-      ) : (
-        <span />
-      )}
-      <div className="min-w-0">{children}</div>
-    </div>
-  );
-}
-
-/** Per-property "animate this" toggle — a small keyframe diamond next to the
-    control it animates, matching Figma's inline convention (no global menu
-    listing every property by name). Solid + blue once a track exists;
-    clicking again selects that track instead of adding a duplicate. */
-function AnimateDot({
-  layerId,
-  propertyName,
-}: {
-  layerId: string | number;
-  propertyName: string;
-}) {
-  // Select the stable `blocks` array reference and filter locally — filtering
-  // *inside* the zustand selector returns a new array every call, which zustand
-  // treats as "changed" every time and causes an infinite render loop.
-  const allBlocks = useEditorStore((s) => s.animation.blocks);
-  const selectBlocks = useEditorStore((s) => s.selectBlocks);
-  const addTimelineBlock = useEditorStore((s) => s.addTimelineBlock);
-  const blocks = allBlocks.filter(
-    (b) => String(b.layerId) === String(layerId) && b.propertyName === propertyName,
-  );
-  const active = blocks.length > 0;
-  const label = propertyLabel(propertyName);
-  return (
-    <button
-      type="button"
-      onClick={() =>
-        active ? selectBlocks(blocks.map((b) => b.id)) : addTimelineBlock(layerId, propertyName)
-      }
-      className={cn(
-        "flex size-5 shrink-0 items-center justify-center rounded-sm transition-colors",
-        // Quiet by default — only appears on row hover, like Figma's own row
-        // affordances (visibility/lock icons, etc.). Animated properties stay
-        // visible always so an "anim" state is never hidden behind a hover.
-        active
-          ? "text-[#0C8CE9] opacity-100 hover:bg-[#0C8CE9]/10"
-          : "text-muted-foreground/30 opacity-0 hover:bg-muted hover:text-muted-foreground group-hover:opacity-100",
-      )}
-      title={active ? `${label} is animated — click to select` : `Animate ${label}`}
-      aria-label={active ? `${label} is animated` : `Animate ${label}`}
-    >
-      <span
-        className="block size-[7px] shrink-0 rotate-45 rounded-[1px] border"
-        style={{
-          borderColor: "currentColor",
-          borderWidth: 1.25,
-          backgroundColor: active ? "currentColor" : "transparent",
-        }}
-      />
-    </button>
-  );
-}
-
-function TextInput({
-  value,
-  onChange,
-  placeholder,
-  mono,
-  ariaLabel,
-  onBlur,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  mono?: boolean;
-  ariaLabel?: string;
-  onBlur?: () => void;
-}) {
-  return (
-    <input
-      value={value}
-      placeholder={placeholder}
-      onChange={(e) => onChange(e.target.value)}
-      onBlur={onBlur}
-      aria-label={ariaLabel}
-      className={cn(fieldBase, mono && "font-mono")}
-    />
-  );
-}
-
-/** Number field with Figma-style label-drag scrubbing + optional unit suffix. */
-function NumberRow({
-  label,
-  value,
-  onChange,
-  min,
-  max,
-  step = 1,
-  suffix,
-  animate,
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-  min?: number;
-  max?: number;
-  step?: number;
-  suffix?: string;
-  /** Renders an inline keyframe toggle for this property (see AnimateDot). */
-  animate?: { layerId: string | number; propertyName: string };
-}) {
-  const scrub = React.useRef<{ startX: number; startVal: number } | null>(null);
-  // While the field is focused we keep the raw keystrokes so typing "2." or a
-  // trailing zero isn't reformatted mid-edit. Display always uses a "." decimal
-  // separator (an <input type=number> would otherwise render the OS locale's
-  // comma, e.g. "2,4" on pt-BR), and we parse both "." and "," on input.
-  const [draft, setDraft] = React.useState<string | null>(null);
-  const display = draft ?? (Number.isFinite(value) ? String(value) : "0");
-
-  const clamp = (n: number) => {
-    let next = n;
-    if (min !== undefined) next = Math.max(min, next);
-    if (max !== undefined) next = Math.min(max, next);
-    if (step) next = Math.round(next / step) * step;
-    return Number(next.toFixed(4));
-  };
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    scrub.current = { startX: e.clientX, startVal: value };
-  };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!scrub.current) return;
-    const dx = e.clientX - scrub.current.startX;
-    onChange(clamp(scrub.current.startVal + dx * (step || 1) * 0.5));
-  };
-  const onPointerUp = (e: React.PointerEvent) => {
-    try {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {}
-    scrub.current = null;
-  };
-
-  return (
-    <div
-      className={cn(
-        "group grid items-center gap-2",
-        animate ? "grid-cols-[58px_minmax(0,1fr)_20px]" : "grid-cols-[58px_minmax(0,1fr)]",
-      )}
-    >
-      <span
-        role="slider"
-        aria-label={label}
-        aria-valuenow={value}
-        tabIndex={0}
-        className="w-fit cursor-ew-resize select-none truncate border-b border-dotted border-muted-foreground/40 text-[11px] text-muted-foreground hover:border-foreground/50 hover:text-foreground"
-        title="Drag to adjust"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        onKeyDown={(event) => {
-          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-          event.preventDefault();
-          const direction = event.key === "ArrowLeft" || event.key === "ArrowDown" ? -1 : 1;
-          onChange(clamp(value + direction * (step || 1) * (event.shiftKey ? 10 : 1)));
-        }}
-      >
-        {label}
-      </span>
-      <div className="relative">
-        <input
-          type="text"
-          inputMode="decimal"
-          aria-label={label}
-          value={display}
-          onFocus={() => setDraft(Number.isFinite(value) ? String(value) : "0")}
-          onChange={(e) => {
-            const raw = e.target.value;
-            setDraft(raw);
-            const n = Number(raw.replace(",", "."));
-            if (Number.isFinite(n)) onChange(clamp(n));
-          }}
-          onBlur={() => setDraft(null)}
-          className={cn(fieldBase, "pr-7 font-mono tabular-nums")}
-        />
-        {suffix && (
-          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground/60">
-            {suffix}
-          </span>
-        )}
-      </div>
-      {animate && <AnimateDot layerId={animate.layerId} propertyName={animate.propertyName} />}
-    </div>
-  );
-}
-
-/** Compact color pill: swatch + hex + opacity in one control (Figma-style).
-    Uses the rich 3d-editor grade color picker popover. */
-function ColorRow({
-  label,
-  color,
-  alpha,
-  onColor,
-  onAlpha,
-  animate,
-}: {
-  label?: string;
-  color: string;
-  alpha?: number;
-  onColor: (v: string) => void;
-  onAlpha?: (v: number) => void;
-  /** Renders an inline keyframe toggle for this property (see AnimateDot). */
-  animate?: { layerId: string | number; propertyName: string };
-}) {
-  const hex = (color?.startsWith("#") ? color : color ? `#${color}` : "#000000");
-  const hasLabel = Boolean(label);
-  return (
-    <div
-      className={cn(
-        "group grid items-center gap-2",
-        hasLabel
-          ? animate
-            ? "grid-cols-[58px_minmax(0,1fr)_20px]"
-            : "grid-cols-[58px_minmax(0,1fr)]"
-          : animate
-            ? "grid-cols-[minmax(0,1fr)_20px]"
-            : "grid-cols-1",
-      )}
-    >
-      {hasLabel && <span className="truncate text-[11px] text-muted-foreground">{label}</span>}
-      <div className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-background pl-1 pr-2 transition-colors hover:border-foreground/20 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-        <CompactColorInput
-          value={hex}
-          onChange={onColor}
-          ariaLabel={label || "Color"}
-          side="bottom"
-          align="start"
-        />
-        {alpha != null && onAlpha && (
-          <>
-            <span className="h-4 w-px bg-border" />
-            <input
-              type="number"
-              min={0}
-              max={100}
-              value={Math.round((alpha ?? 1) * 100)}
-              onChange={(e) => {
-                const pct = Number(e.target.value);
-                if (Number.isFinite(pct)) onAlpha(Math.max(0, Math.min(100, pct)) / 100);
-              }}
-              className="w-9 bg-transparent text-right font-mono text-xs tabular-nums text-muted-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
-              aria-label={(label || "Color") + " opacity"}
-            />
-            <span className="text-[10px] text-muted-foreground/60">%</span>
-          </>
-        )}
-      </div>
-      {animate && <AnimateDot layerId={animate.layerId} propertyName={animate.propertyName} />}
-    </div>
-  );
-}
-
-/** Compact Figma-style gradient editor: preview bar + per-stop color/offset/opacity. */
-function GradientEditor({
-  gradient,
-  onChange,
-}: {
-  gradient: Gradient;
-  onChange: (g: Gradient) => void;
-}) {
-  const stops = gradient.stops;
-  const [active, setActive] = React.useState(0);
-  const activeIdx = Math.min(active, stops.length - 1);
-  const activeStop = stops[activeIdx];
-
-  const commit = (next: Partial<Gradient>) => onChange({ ...gradient, ...next });
-
-  const updateStop = (idx: number, patch: Partial<GradientStop>) => {
-    const next = stops.map((s, i) => (i === idx ? { ...s, ...patch } : s));
-    commit({ stops: next });
-  };
-
-  const addStop = () => {
-    // Insert a stop in the widest gap, colored by interpolating neighbours' offsets.
-    const sorted = normalizeStops(stops);
-    let gapStart = 0;
-    let gap = -1;
-    for (let i = 0; i < sorted.length - 1; i++) {
-      const d = sorted[i + 1].offset - sorted[i].offset;
-      if (d > gap) {
-        gap = d;
-        gapStart = i;
-      }
-    }
-    const offset = (sorted[gapStart].offset + sorted[gapStart + 1].offset) / 2;
-    const next = [...stops, { offset, color: sorted[gapStart].color, opacity: 1 }];
-    commit({ stops: next });
-    setActive(next.length - 1);
-  };
-
-  const removeStop = (idx: number) => {
-    if (stops.length <= 2) return;
-    commit({ stops: stops.filter((_, i) => i !== idx) });
-    setActive(0);
-  };
-
-  const hex = activeStop?.color?.startsWith("#") ? activeStop.color : "#000000";
-
-  return (
-    <div className="space-y-2">
-      {/* Preview bar with stop handles */}
-      <div
-        className="relative h-6 rounded-md ring-1 ring-inset ring-border"
-        style={{
-          backgroundImage: `${gradientToCssBar(gradient)}, repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%)`,
-          backgroundSize: "100% 100%, 8px 8px",
-        }}
-      >
-        {stops.map((s, i) => (
-          <button
-            key={i}
-            type="button"
-            onClick={() => setActive(i)}
-            aria-label={`Stop ${i + 1}`}
-            className={cn(
-              "absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 shadow-sm transition-transform",
-              i === activeIdx
-                ? "border-primary scale-110"
-                : "border-white ring-1 ring-black/20",
-            )}
-            style={{ left: `${s.offset * 100}%`, background: s.color }}
-          />
-        ))}
-      </div>
-
-      {/* Active stop editor */}
-      {activeStop && (
-        <div className="flex h-8 items-center gap-1.5 rounded-md border border-border bg-background pl-1 pr-2 transition-colors focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
-          <CompactColorInput
-            value={hex}
-            onChange={(c) => updateStop(activeIdx, { color: c })}
-            ariaLabel="Stop color"
-            side="bottom"
-            align="start"
-          />
-          <span className="h-4 w-px bg-border" />
-          <input
-            type="number"
-            min={0}
-            max={100}
-            value={Math.round((activeStop.opacity ?? 1) * 100)}
-            onChange={(e) => {
-              const pct = Number(e.target.value);
-              if (Number.isFinite(pct))
-                updateStop(activeIdx, { opacity: Math.max(0, Math.min(100, pct)) / 100 });
-            }}
-            className="w-9 bg-transparent text-right font-mono text-xs tabular-nums text-muted-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
-            aria-label="Stop opacity"
-          />
-          <span className="text-[10px] text-muted-foreground/60">%</span>
-        </div>
-      )}
-
-      {activeStop && (
-        <div className="flex items-center gap-2">
-          <NumberRow
-            label="Position"
-            value={Math.round((activeStop.offset ?? 0) * 100)}
-            min={0}
-            max={100}
-            suffix="%"
-            onChange={(v) => updateStop(activeIdx, { offset: v / 100 })}
-          />
-        </div>
-      )}
-
-      {/* Add / remove stop */}
-      <div className="grid grid-cols-2 gap-1">
-        <Button
-          type="button"
-          variant="outline"
-          size="xs"
-          onClick={addStop}
-          className="h-7 gap-1 text-[11px]"
-        >
-          <Plus size={14} className="text-muted-foreground" /> Stop
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="xs"
-          onClick={() => removeStop(activeIdx)}
-          disabled={stops.length <= 2}
-          className="h-7 gap-1 text-[11px] disabled:opacity-40"
-        >
-          <Minus size={14} className="text-muted-foreground" /> Remove
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function Segmented<T extends string>({
-  value,
-  options,
-  onChange,
-}: {
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div className="flex h-8 items-center rounded-md bg-muted p-0.5">
-      {options.map((o) => (
-        <Button
-          key={o.value}
-          type="button"
-          size="xs"
-          variant="ghost"
-          onClick={() => onChange(o.value)}
-          className={cn(
-            "h-7 flex-1 rounded-sm px-1 text-[11px] capitalize",
-            value === o.value
-              ? "bg-card font-medium text-foreground shadow-sm hover:bg-card"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {o.label}
-        </Button>
-      ))}
-    </div>
-  );
-}
-
-type InspectorTab = "design" | "motion";
-
-function InspectorTabs({ value, onChange }: { value: InspectorTab; onChange: (tab: InspectorTab) => void }) {
-  return (
-    <div className="grid h-10 grid-cols-2 border-b border-border px-3" role="tablist" aria-label="Inspector mode">
-      {(["design", "motion"] as const).map((tab) => (
-        <button
-          key={tab}
-          type="button"
-          role="tab"
-          aria-selected={value === tab}
-          onClick={() => onChange(tab)}
-          className={cn(
-            "relative text-[11px] font-medium capitalize text-muted-foreground transition-colors hover:text-foreground",
-            value === tab && "text-foreground",
-          )}
-        >
-          {tab}
-          {value === tab && <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-primary" />}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function LayerTransformSection({
-  layer,
-  count,
-  onPatch,
-  onTranslate,
-  onToggleLock,
-}: {
-  layer: Layer;
-  count: number;
-  onPatch: (patch: Partial<Layer>) => void;
-  onTranslate: (dx: number, dy: number) => void;
-  onToggleLock: () => void;
-}) {
-  return (
-    <Section
-      title={count > 1 ? `Transform · ${count} layers` : "Transform"}
-      action={
-        <button
-          type="button"
-          onClick={onToggleLock}
-          className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label={layer.locked ? "Unlock layer" : "Lock layer"}
-          title={layer.locked ? "Unlock layer" : "Lock layer"}
-        >
-          {layer.locked ? <Lock className="size-3.5" /> : <Unlock className="size-3.5" />}
-        </button>
-      }
-    >
-      {count > 1 && <p className="text-[10px] text-muted-foreground">Values apply to the full selection.</p>}
-      <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
-        <NumberRow
-          label="X"
-          value={layer.translateX ?? 0}
-          onChange={(value) =>
-            count > 1 ? onTranslate(value - (layer.translateX ?? 0), 0) : onPatch({ translateX: value })
-          }
-        />
-        <NumberRow
-          label="Y"
-          value={layer.translateY ?? 0}
-          onChange={(value) =>
-            count > 1 ? onTranslate(0, value - (layer.translateY ?? 0)) : onPatch({ translateY: value })
-          }
-        />
-        <NumberRow label="Scale X" value={layer.scaleX ?? 1} step={0.1} onChange={(value) => onPatch({ scaleX: value })} />
-        <NumberRow label="Scale Y" value={layer.scaleY ?? 1} step={0.1} onChange={(value) => onPatch({ scaleY: value })} />
-      </div>
-      <NumberRow label="Rotation" value={layer.rotation ?? 0} suffix="°" onChange={(value) => onPatch({ rotation: value })} />
-      {count === 1 && (
-        <details className="group/details pt-0.5">
-          <summary className="cursor-pointer select-none text-[10px] text-muted-foreground hover:text-foreground">Transform origin</summary>
-          <div className="mt-1.5 grid grid-cols-2 gap-2">
-            <NumberRow label="X" value={layer.pivotX ?? 0} onChange={(value) => onPatch({ pivotX: value })} />
-            <NumberRow label="Y" value={layer.pivotY ?? 0} onChange={(value) => onPatch({ pivotY: value })} />
-          </div>
-        </details>
-      )}
-    </Section>
-  );
-}
-
-function FrameDesignPanel({
-  frame,
-  onRename,
-  onMove,
-  onResize,
-  onDuplicate,
-  onDelete,
-  canDelete,
-}: {
-  frame: CanvasFrame;
-  onRename: (name: string) => void;
-  onMove: (dx: number, dy: number) => void;
-  onResize: (width: number, height: number) => void;
-  onDuplicate: () => void;
-  onDelete: () => void;
-  canDelete: boolean;
-}) {
-  const [nameDraft, setNameDraft] = React.useState(frame.name);
-  React.useEffect(() => setNameDraft(frame.name), [frame.id, frame.name]);
-
-  return (
-    <>
-      <Section title="Frame">
-        <Row label="Name">
-          <TextInput
-            value={nameDraft}
-            onChange={setNameDraft}
-            onBlur={() => onRename(nameDraft)}
-            ariaLabel="Frame name"
-          />
-        </Row>
-      </Section>
-      <Section title="Position & size">
-        <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
-          <NumberRow label="X" value={frame.x} onChange={(value) => onMove(value - frame.x, 0)} />
-          <NumberRow label="Y" value={frame.y} onChange={(value) => onMove(0, value - frame.y)} />
-          <NumberRow label="W" value={frame.vector.width} min={1} onChange={(value) => onResize(value, frame.vector.height)} />
-          <NumberRow label="H" value={frame.vector.height} min={1} onChange={(value) => onResize(frame.vector.width, value)} />
-        </div>
-      </Section>
-      <Section title="Actions" defaultOpen={false}>
-        <div className="grid grid-cols-2 gap-1.5">
-          <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5 text-[11px]" onClick={onDuplicate}>
-            <Copy className="size-3.5" /> Duplicate
-          </Button>
-          <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5 text-[11px] text-destructive hover:text-destructive" onClick={onDelete} disabled={!canDelete}>
-            <Trash2 className="size-3.5" /> Delete
-          </Button>
-        </div>
-      </Section>
-    </>
-  );
-}
-
-function MotionPanel({ layer, onEditMorph }: { layer: Layer; onEditMorph: () => void }) {
-  const blocks = useEditorStore((state) => state.animation.blocks);
-  const addTimelineBlock = useEditorStore((state) => state.addTimelineBlock);
-  const selectBlocks = useEditorStore((state) => state.selectBlocks);
-  const layerBlocks = blocks.filter((block) => String(block.layerId) === String(layer.id));
-  const propertyNames = Array.from(new Set([
-    ...layerBlocks.map((block) => block.propertyName),
-    "translateX", "translateY", "rotation", "scaleX", "scaleY", "fillColor", "strokeColor", "strokeWidth",
-  ]));
-
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <Section title="Path motion">
-        <button type="button" onClick={onEditMorph} className="flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary text-[11px] font-medium text-primary-foreground hover:bg-primary/90">
-          <Pencil className="size-3.5" /> Edit start and end paths
-        </button>
-        <p className="text-[10px] leading-relaxed text-muted-foreground">ShapeShifter morphs compatible vector paths while preserving editable geometry.</p>
-      </Section>
-      <Section title={`Animated properties${layerBlocks.length ? ` · ${layerBlocks.length}` : ""}`}>
-        <div className="space-y-1">
-          {propertyNames.map((propertyName) => {
-            const matches = layerBlocks.filter((block) => block.propertyName === propertyName);
-            const active = matches.length > 0;
-            return (
-              <button
-                key={propertyName}
-                type="button"
-                onClick={() => active ? selectBlocks(matches.map((block) => block.id)) : addTimelineBlock(layer.id, propertyName)}
-                className={cn("group flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] hover:bg-muted", active ? "text-foreground" : "text-muted-foreground")}
-              >
-                <span className={cn("size-2 rotate-45 rounded-[1px] border", active ? "border-primary bg-primary" : "border-muted-foreground/40")} />
-                <span className="flex-1">{propertyLabel(propertyName)}</span>
-                <span className="text-[10px] opacity-0 group-hover:opacity-70">{active ? "Select" : "Add"}</span>
-              </button>
-            );
-          })}
-        </div>
-      </Section>
-    </div>
-  );
-}
 
 /* ------------------------------------------------------------------ */
 /* Inspector                                                          */
@@ -738,6 +92,7 @@ export function Inspector() {
   const toggleLayerLock = useEditorStore((state) => state.toggleLayerLock);
   const selectionKind = useEditorStore((state) => state.selectionKind);
   const frames = useEditorStore((state) => state.frames);
+  const rootLayers = useEditorStore((state) => state.rootLayers);
   const selectedFrameId = useEditorStore((state) => state.selectedFrameId);
   const renameFrame = useEditorStore((state) => state.renameFrame);
   const moveFrame = useEditorStore((state) => state.moveFrame);
@@ -748,6 +103,29 @@ export function Inspector() {
   const point = getCurrentSelectedPoint ? getCurrentSelectedPoint() : null;
   const currentLayer = layers.find((l) => l.id === selectedLayerId);
   const currentFrame = frames.find((frame) => frame.id === selectedFrameId);
+  const sceneOwners = React.useMemo(
+    () => [
+      ...frames.map((frame) => ({
+        ownerId: frame.id,
+        origin: { x: frame.x, y: frame.y },
+        layers: frame.id === selectedFrameId ? layers : frame.layers,
+      })),
+      {
+        ownerId: PAGE_ROOT_ID,
+        origin: { x: 0, y: 0 },
+        layers: selectedFrameId === PAGE_ROOT_ID ? layers : rootLayers,
+      },
+    ],
+    [frames, layers, rootLayers, selectedFrameId],
+  );
+  const selectedLayers = React.useMemo(
+    () => resolveOwnedLayers(sceneOwners, selectedLayerRefs),
+    [sceneOwners, selectedLayerRefs],
+  );
+  const selectionBounds = React.useMemo(
+    () => getInspectorSelectionBounds(sceneOwners, selectedLayerRefs),
+    [sceneOwners, selectedLayerRefs],
+  );
   const multiCount = selectedLayerRefs.length || selectedLayerIds?.length || 0;
   const updateLayer = (patch: Partial<Layer>) => updateSelectedLayer(patch);
   const setPath = (parsed: ReturnType<typeof parsePath>) =>
@@ -872,6 +250,56 @@ export function Inspector() {
   }
 
   const isGroup = currentLayer.type === "group";
+  const inspectorLayers = selectedLayers.length ? selectedLayers : [currentLayer];
+  const allPaths = inspectorLayers.every((layer) => layer.type !== "group");
+  const fillKindValue = (layer: Layer): "solid" | GradientType =>
+    layer.fillGradient?.type ?? "solid";
+  const fillKind = sharedValue(inspectorLayers, fillKindValue, fillKindValue(currentLayer));
+  const fillColor = sharedValue(
+    inspectorLayers,
+    (layer) => layer.fillColor || "#000000",
+    currentLayer.fillColor || "#000000",
+  );
+  const fillAlpha = sharedValue(
+    inspectorLayers,
+    (layer) => layer.fillAlpha ?? 1,
+    currentLayer.fillAlpha ?? 1,
+  );
+  const fillRule = sharedValue(
+    inspectorLayers,
+    (layer) => layer.fillType ?? "nonZero",
+    currentLayer.fillType ?? "nonZero",
+  );
+  const strokeColor = sharedValue(
+    inspectorLayers,
+    (layer) => layer.strokeColor || "#000000",
+    currentLayer.strokeColor || "#000000",
+  );
+  const strokeAlpha = sharedValue(
+    inspectorLayers,
+    (layer) => layer.strokeAlpha ?? 1,
+    currentLayer.strokeAlpha ?? 1,
+  );
+  const strokeWidth = sharedValue(
+    inspectorLayers,
+    (layer) => layer.strokeWidth ?? 0,
+    currentLayer.strokeWidth ?? 0,
+  );
+  const trimStart = sharedValue(
+    inspectorLayers,
+    (layer) => layer.trimPathStart ?? 0,
+    currentLayer.trimPathStart ?? 0,
+  );
+  const trimEnd = sharedValue(
+    inspectorLayers,
+    (layer) => layer.trimPathEnd ?? 1,
+    currentLayer.trimPathEnd ?? 1,
+  );
+  const trimOffset = sharedValue(
+    inspectorLayers,
+    (layer) => layer.trimPathOffset ?? 0,
+    currentLayer.trimPathOffset ?? 0,
+  );
 
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
@@ -926,18 +354,20 @@ export function Inspector() {
       </div>
 
       {activeTab === "motion" ? (
-        <MotionPanel layer={currentLayer} onEditMorph={startActionMode} />
+        <MotionPanel layer={currentLayer} selectionCount={multiCount} onEditMorph={startActionMode} />
       ) : (
       <div className="min-h-0 flex-1 overflow-y-auto">
         <LayerTransformSection
           layer={currentLayer}
+          selectedLayers={selectedLayers.length ? selectedLayers : [currentLayer]}
+          bounds={selectionBounds}
           count={multiCount}
           onPatch={updateLayer}
           onTranslate={translateSelectedLayer}
           onToggleLock={() => toggleLayerLock(currentLayer.id)}
         />
         {/* Layer */}
-        <Section title="Layer" defaultOpen={false}>
+        {multiCount <= 1 && <Section title="Layer" defaultOpen={false}>
           <Row label="Name">
             <TextInput ariaLabel="Layer name" value={currentLayer.name} onChange={(v) => updateLayer({ name: v })} />
           </Row>
@@ -952,15 +382,13 @@ export function Inspector() {
               ]}
             />
           </Row>
-        </Section>
+        </Section>}
 
-        {!isGroup && (
+        {allPaths && (
           <>
             {/* Fill */}
             <Section title="Fill">
               {(() => {
-                const fillKind: "solid" | GradientType =
-                  currentLayer.fillGradient?.type ?? "solid";
                 const setKind = (kind: "solid" | GradientType) => {
                   if (kind === "solid") {
                     updateLayer({ fillGradient: undefined });
@@ -977,7 +405,8 @@ export function Inspector() {
                   <>
                     <Row label="Type">
                       <Segmented<"solid" | GradientType>
-                        value={fillKind}
+                        value={fillKind.value}
+                        mixed={fillKind.mixed}
                         onChange={setKind}
                         options={[
                           { value: "solid", label: "Solid" },
@@ -986,7 +415,11 @@ export function Inspector() {
                         ]}
                       />
                     </Row>
-                    {currentLayer.fillGradient ? (
+                    {fillKind.mixed ? (
+                      <p className="rounded-md bg-muted/55 px-2 py-1.5 text-[10px] leading-relaxed text-muted-foreground">
+                        Multiple fill types. Choose one above to apply it to the selection.
+                      </p>
+                    ) : currentLayer.fillGradient ? (
                       <>
                         <GradientEditor
                           gradient={currentLayer.fillGradient}
@@ -1006,7 +439,8 @@ export function Inspector() {
                         )}
                         <NumberRow
                           label="Opacity"
-                          value={Math.round((currentLayer.fillAlpha ?? 1) * 100)}
+                          value={Math.round(fillAlpha.value * 100)}
+                          mixed={fillAlpha.mixed}
                           min={0}
                           max={100}
                           suffix="%"
@@ -1016,8 +450,10 @@ export function Inspector() {
                     ) : (
                       <ColorRow
                         label="Color"
-                        color={currentLayer.fillColor || ""}
-                        alpha={currentLayer.fillAlpha ?? 1}
+                        color={fillColor.value}
+                        alpha={fillAlpha.value}
+                        mixed={fillColor.mixed}
+                        alphaMixed={fillAlpha.mixed}
                         onColor={(v) => updateLayer({ fillColor: v })}
                         onAlpha={(v) => updateLayer({ fillAlpha: v })}
                       />
@@ -1027,7 +463,8 @@ export function Inspector() {
               })()}
               <Row label="Rule">
                 <Segmented
-                  value={currentLayer.fillType ?? "nonZero"}
+                  value={fillRule.value}
+                  mixed={fillRule.mixed}
                   onChange={(v) => updateLayer({ fillType: v as FillType })}
                   options={[
                     { value: "nonZero", label: "Non-zero" },
@@ -1040,8 +477,10 @@ export function Inspector() {
             {/* Stroke */}
             <Section title="Stroke">
               <ColorRow
-                color={currentLayer.strokeColor || ""}
-                alpha={currentLayer.strokeAlpha ?? 1}
+                color={strokeColor.value}
+                alpha={strokeAlpha.value}
+                mixed={strokeColor.mixed}
+                alphaMixed={strokeAlpha.mixed}
                 onColor={(v) => updateLayer({ strokeColor: v })}
                 onAlpha={(v) => updateLayer({ strokeAlpha: v })}
               />
@@ -1049,7 +488,8 @@ export function Inspector() {
                 <div className="min-w-0 flex-1">
                   <NumberRow
                     label="Width"
-                    value={currentLayer.strokeWidth ?? 1}
+                    value={strokeWidth.value}
+                    mixed={strokeWidth.mixed}
                     min={0}
                     step={0.1}
                     onChange={(v) => updateLayer({ strokeWidth: v })}
@@ -1149,7 +589,8 @@ export function Inspector() {
             >
               <NumberRow
                 label="Start"
-                value={Math.round((currentLayer.trimPathStart ?? 0) * 100)}
+                value={Math.round(trimStart.value * 100)}
+                mixed={trimStart.mixed}
                 min={0}
                 max={100}
                 step={1}
@@ -1158,7 +599,8 @@ export function Inspector() {
               />
               <NumberRow
                 label="End"
-                value={Math.round((currentLayer.trimPathEnd ?? 1) * 100)}
+                value={Math.round(trimEnd.value * 100)}
+                mixed={trimEnd.mixed}
                 min={0}
                 max={100}
                 step={1}
@@ -1167,7 +609,8 @@ export function Inspector() {
               />
               <NumberRow
                 label="Offset"
-                value={Math.round((currentLayer.trimPathOffset ?? 0) * 100)}
+                value={Math.round(trimOffset.value * 100)}
+                mixed={trimOffset.mixed}
                 step={1}
                 suffix="%"
                 onChange={(v) => updateLayer({ trimPathOffset: v / 100 })}
@@ -1176,7 +619,7 @@ export function Inspector() {
 
             {/* Path — raw command list is the densest, most technical part of the
                 panel (Figma never shows this by default); collapsed until asked for. */}
-            <Section
+            {multiCount <= 1 && <Section
               title="Path"
               defaultOpen={false}
               action={
@@ -1218,10 +661,10 @@ export function Inspector() {
                   className="min-h-20 w-full resize-y rounded-md border border-border bg-background p-2 font-mono text-[10px] leading-relaxed text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
               )}
-            </Section>
+            </Section>}
 
             {/* Boolean combine with the layer below (mirrors the toolbar Edit menu). */}
-            {(() => {
+            {multiCount <= 1 && (() => {
               const idx = layers.findIndex((l) => l.id === currentLayer.id);
               const hasNext = idx >= 0 && idx < layers.length - 1;
               if (!hasNext) return null;

@@ -66,6 +66,7 @@ import {
   type WorldLayerDraw,
 } from "@/lib/shapeshifter/scene/render";
 import { hitTestOwnedLayers } from "@/lib/shapeshifter/scene/hitTest";
+import { layerTransformToSvg } from "@/lib/shapeshifter/scene/layerTransform";
 import type { Command, PathData, Selection } from "@/lib/shapeshifter/types";
 
 interface CanvasAreaProps {
@@ -2354,16 +2355,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                               draw.d
                                 ? boundsFromPathD(draw.d)
                                 : null;
-                            const tformParts: string[] = [];
-                            if (draw.translateX || draw.translateY) {
-                              tformParts.push(
-                                `translate(${draw.translateX || 0} ${draw.translateY || 0})`,
-                              );
-                            }
-                            if (draw.rotation) {
-                              tformParts.push(`rotate(${draw.rotation})`);
-                            }
-                            const tform = tformParts.length ? tformParts.join(" ") : undefined;
+                            const tform = layerTransformToSvg(draw);
                             return (
                               <g key={String(draw.id)} transform={tform}>
                                 {draw.fillGradient && gradId && (

@@ -39,6 +39,19 @@ describe("document-wide scene selection", () => {
     ).toEqual({ x: 0, y: 0, w: 115, h: 10 });
   });
 
+  it("includes scale and rotation in selection bounds", () => {
+    const transformedOwners: SceneOwner[] = [
+      {
+        ownerId: "frame",
+        origin: { x: 20, y: 10 },
+        layers: [{ ...layer("shape"), scaleX: 2, scaleY: 0.5 }],
+      },
+    ];
+    expect(
+      unionOwnedLayerBounds(transformedOwners, [{ ownerId: "frame", layerId: "shape" }]),
+    ).toEqual({ x: 20, y: 10, w: 20, h: 5 });
+  });
+
   it("ignores locked and hidden objects", () => {
     const hiddenOwners: SceneOwner[] = [
       {

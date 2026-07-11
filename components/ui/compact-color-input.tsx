@@ -23,6 +23,7 @@ export interface CompactColorInputProps {
   ariaLabel?: string
   side?: "top" | "right" | "bottom" | "left"
   align?: "start" | "center" | "end"
+  mixed?: boolean
 }
 
 export function CompactColorInput({
@@ -32,6 +33,7 @@ export function CompactColorInput({
   ariaLabel = "Color",
   side = "top",
   align = "end",
+  mixed = false,
 }: CompactColorInputProps) {
   const hex = value.startsWith("#") ? value : `#${value}`
   const [format, setFormat] = React.useState<ColorFormat>("HEX")
@@ -50,8 +52,8 @@ export function CompactColorInput({
   }, [hex])
 
   React.useEffect(() => {
-    setInputText(hex)
-  }, [hex])
+    setInputText(mixed ? "" : hex)
+  }, [hex, mixed])
 
   const handleCanvasDrag = React.useCallback(
     (clientX: number, clientY: number) => {
@@ -161,7 +163,14 @@ export function CompactColorInput({
         <PopoverTrigger
           aria-label={ariaLabel}
           className="size-4.5 shrink-0 rounded-[4px] border border-border focus:ring-2 focus:ring-ring/35 focus:outline-none"
-          style={{ backgroundColor: hex }}
+          style={
+            mixed
+              ? {
+                  backgroundImage:
+                    "linear-gradient(135deg, transparent 42%, currentColor 43%, currentColor 57%, transparent 58%)",
+                }
+              : { backgroundColor: hex }
+          }
           onClick={(event) => event.stopPropagation()}
         />
         <PopoverContent
@@ -202,6 +211,7 @@ export function CompactColorInput({
         spellCheck={false}
         aria-label={`${ariaLabel} hex value`}
         value={inputText.replace(/^#/, "")}
+        placeholder={mixed ? "Mixed" : undefined}
         onChange={(event) => handleTextChange(event.target.value)}
         onKeyDown={handleKeyDown}
         onBlur={commitInput}
