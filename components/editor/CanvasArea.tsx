@@ -307,6 +307,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const [isDraggingArtboards, setIsDraggingArtboards] = useState(false);
   const [draggingArtboardIds, setDraggingArtboardIds] = useState<string[]>([]);
   const [artboardDragStart, setArtboardDragStart] = useState<{ x: number; y: number } | null>(null);
+  const artboardDragMovedRef = useRef(false);
   // Total delta already committed this drag — lets us snap the *absolute* offset
   // each frame instead of accumulating sub-pixel deltas into 0.0123px drift.
   const artboardAppliedRef = useRef({ x: 0, y: 0 });
@@ -321,6 +322,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     setDraggingArtboardIds(ids);
     setArtboardDragStart(p);
     artboardAppliedRef.current = { x: 0, y: 0 };
+    artboardDragMovedRef.current = false;
   };
 
   const worldPointFromEvent = useCallback(
@@ -1404,6 +1406,10 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         const dx = totalDx - applied.x;
         const dy = totalDy - applied.y;
         if (Math.abs(dx) > 1e-6 || Math.abs(dy) > 1e-6) {
+          if (!artboardDragMovedRef.current) {
+            useEditorStore.getState().pushHistory();
+            artboardDragMovedRef.current = true;
+          }
           useEditorStore.getState().moveFrames(draggingArtboardIds, dx, dy);
           artboardAppliedRef.current = { x: totalDx, y: totalDy };
         }
@@ -1547,6 +1553,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     (e: React.PointerEvent) => {
       const layerDragSession = layerDragRef.current;
       const hadLayerMove = !!(layerDragSession && layerDragSession.moved);
+      const dropPoint = hadLayerMove ? worldPointFromEvent(e.clientX, e.clientY) : null;
+      const dropFrameId = dropPoint ? hitArtboard(dropPoint) : null;
       const hadLayerGesture = !!(
         layerDragSession ||
         layerResizeRef.current ||
@@ -1579,6 +1587,15 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
               : fr,
           ),
         }));
+        // Figma-style cross-frame ownership: the object keeps its exact world
+        // position, but its local transform and animation tracks are rebased to
+        // the destination frame. The drag already owns the single undo snapshot.
+        if (dropFrameId && dropFrameId !== useEditorStore.getState().selectedFrameId) {
+          const moved = useEditorStore
+            .getState()
+            .moveSelectedLayersToFrame(dropFrameId, { recordHistory: false });
+          if (moved) setWorldSelectedIds([dropFrameId]);
+        }
       }
       // Pen: persist the handle pulled during this anchor's drag (history already
       // pushed on pointer-down), then keep the path open for the next anchor.
@@ -1673,6 +1690,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         setIsDraggingArtboards(false);
         setDraggingArtboardIds([]);
         setArtboardDragStart(null);
+        artboardDragMovedRef.current = false;
       }
 
       if (toolMode === "paint") {
@@ -1690,6 +1708,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       selectedLayerId,
       editingSide,
       penPointerUp,
+      worldPointFromEvent,
+      hitArtboard,
     ],
   );
 
@@ -2108,7 +2128,13 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                           <clipPath id={`frame-clip-${frame.id}`}>
                             <rect x={0} y={0} width={b.w} height={b.h} rx={rx} />
                           </clipPath>
-                          <g clipPath={`url(#frame-clip-${frame.id})`}>
+                          <g
+                            clipPath={
+                              frame.id === selectedFrameId && layerDragRef.current
+                                ? undefined
+                                : `url(#frame-clip-${frame.id})`
+                            }
+                          >
                           {/* End-state morph ghost (Figma-like spatial feedback for from→to) */}
                           {onionD && !isPlaying && progress < 0.001 && (
                             <path
@@ -2959,8 +2985,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                                 title="Click to select frame · double-click to rename frame"
                                 onPointerDown={(e) => {
                                   if (e.button !== 0) return;
-                                  // Drag the frame from the name only after it's already frame-selected
-                                  // (Figma: title drag moves artboard; first click selects).
+                                  // Figma: a title drag both selects and moves the frame in one gesture.
                                   e.stopPropagation();
                                   const additive = e.shiftKey;
                                   let next: string[];
@@ -2977,8 +3002,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                                     return;
                                   }
                                   selectFrame(frame.id);
-                                  // Only start a drag if the frame was already the frame-selection target
-                                  if (isSel && !additive) {
+                                  if (!additive) {
                                     e.preventDefault();
                                     startWorldArtboardDrag(e.clientX, e.clientY, next);
                                     worldSvgRef.current?.setPointerCapture(e.pointerId);

@@ -74,6 +74,19 @@ describe("editorStore", () => {
       expect(getStore().worldViewport).toEqual(before);
     });
 
+    it("restores artboard positions through undo", () => {
+      const frameId = getStore().selectedFrameId;
+      const before = getStore().frames.find((frame) => frame.id === frameId)!;
+      getStore().pushHistory();
+      getStore().moveFrame(frameId, 25, -10);
+
+      getStore().undo();
+
+      const restored = getStore().frames.find((frame) => frame.id === frameId)!;
+      expect(restored.x).toBe(before.x);
+      expect(restored.y).toBe(before.y);
+    });
+
     it("keeps detail canvas zoom and viewport in one shared store camera", () => {
       const before = getStore().detailViewport;
 
@@ -92,6 +105,89 @@ describe("editorStore", () => {
 
       expect(getStore().detailViewport.x).toBeCloseTo(zoomed.x + 5);
       expect(getStore().detailViewport.y).toBeCloseTo(zoomed.y + 7);
+    });
+  });
+
+  describe("cross-frame layer reparenting", () => {
+    it("moves selected layers to the destination frame without changing world position", () => {
+      const source = getStore().frames[0];
+      const target = getStore().frames[1];
+      const layer = getStore().layers[0];
+      getStore().selectLayer(layer.id);
+      getStore().translateSelectedLayer(43, -7, { recordHistory: false });
+
+      const beforeWorld = {
+        x: source.x + (getStore().layers[0].translateX ?? 0),
+        y: source.y + (getStore().layers[0].translateY ?? 0),
+      };
+      expect(getStore().moveSelectedLayersToFrame(target.id)).toBe(true);
+
+      const state = getStore();
+      const sourceAfter = state.frames.find((frame) => frame.id === source.id)!;
+      const targetAfter = state.frames.find((frame) => frame.id === target.id)!;
+      const moved = targetAfter.layers.find((candidate) => candidate.id === layer.id)!;
+      expect(sourceAfter.layers.some((candidate) => candidate.id === layer.id)).toBe(false);
+      expect(targetAfter.x + (moved.translateX ?? 0)).toBeCloseTo(beforeWorld.x);
+      expect(targetAfter.y + (moved.translateY ?? 0)).toBeCloseTo(beforeWorld.y);
+      expect(state.selectedFrameId).toBe(target.id);
+      expect(state.selectedLayerId).toBe(layer.id);
+      expect(state.selectionKind).toBe("layer");
+    });
+
+    it("moves the layer animation tracks and rebases position values", () => {
+      const source = getStore().frames[0];
+      const target = getStore().frames[1];
+      const layer = getStore().layers[0];
+      const xOffset = source.x - target.x;
+      useEditorStore.setState((state) => ({
+        animation: {
+          ...state.animation,
+          blocks: [
+            ...state.animation.blocks,
+            {
+              id: "move-x",
+              layerId: layer.id,
+              propertyName: "translateX",
+              fromValue: 2,
+              toValue: 12,
+              startTime: 0,
+              endTime: 1200,
+              type: "number" as const,
+            },
+          ],
+        },
+      }));
+      getStore().selectLayer(layer.id);
+
+      expect(getStore().moveSelectedLayersToFrame(target.id)).toBe(true);
+
+      const sourceAfter = getStore().frames.find((frame) => frame.id === source.id)!;
+      const targetAfter = getStore().frames.find((frame) => frame.id === target.id)!;
+      expect(sourceAfter.animation.blocks.some((block) => block.id === "move-x")).toBe(false);
+      const movedBlock = targetAfter.animation.blocks.find((block) => block.id === "move-x")!;
+      expect(movedBlock.fromValue).toBe(2 + xOffset);
+      expect(movedBlock.toValue).toBe(12 + xOffset);
+      expect(targetAfter.animation.duration).toBeGreaterThanOrEqual(1200);
+    });
+
+    it("undo restores frame ownership and the active document projection", () => {
+      const source = getStore().frames[0];
+      const target = getStore().frames[1];
+      const layer = getStore().layers[0];
+      getStore().selectLayer(layer.id);
+
+      getStore().moveSelectedLayersToFrame(target.id);
+      getStore().undo();
+
+      const state = getStore();
+      expect(state.selectedFrameId).toBe(source.id);
+      expect(state.frames.find((frame) => frame.id === source.id)?.layers).toContainEqual(
+        expect.objectContaining({ id: layer.id }),
+      );
+      expect(state.frames.find((frame) => frame.id === target.id)?.layers).not.toContainEqual(
+        expect.objectContaining({ id: layer.id }),
+      );
+      expect(state.layers).toContainEqual(expect.objectContaining({ id: layer.id }));
     });
   });
 

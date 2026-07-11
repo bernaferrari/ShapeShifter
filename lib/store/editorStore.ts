@@ -123,14 +123,20 @@ function createPathLayer(layer: Omit<Layer, "type"> & Partial<Pick<Layer, "type"
 
 /** Full editable-state snapshot for trustworthy undo/redo (C7). */
 interface HistoryEntry {
+  frames: CanvasFrame[];
+  selectedFrameId: string;
   layers: Layer[];
+  vector: VectorMetadata;
   animation: AnimationState;
+  hiddenLayerIds: string[];
   selectedLayerId: string | number;
   selectedLayerIds: Array<string | number>;
   selection: Selection | null;
   selectedPoints: Selection[];
   selectedSubPaths: SubPathSelection[];
   editingSide: "from" | "to";
+  hasCanvasSelection: boolean;
+  selectionKind: "none" | "frame" | "layer";
 }
 interface EditorState {
   // Workspace frames
@@ -221,6 +227,11 @@ interface EditorState {
   selectFrame: (id: string) => void;
   moveFrame: (id: string, dx: number, dy: number) => void;
   moveFrames: (ids: string[], dx: number, dy: number) => void;
+  /** Reparent selected objects to another frame without changing world position. */
+  moveSelectedLayersToFrame: (
+    targetFrameId: string,
+    options?: { recordHistory?: boolean },
+  ) => boolean;
 
   // World camera (1el / k4mv Phase 2) — first-class store citizen
   worldViewport: Viewport;
@@ -577,28 +588,40 @@ const mapToEnd = (layer: Layer, fn: (p: PathData) => PathData): PathData | undef
 const endOf = (layer: Layer): PathData => layer.to ?? layer.from;
 /** Capture the full editable state for undo/redo (C7: selection + animation included). */
 const snapshotHistoryEntry = (s: EditorState): HistoryEntry => ({
+  frames: saveActiveFrame(s),
+  selectedFrameId: s.selectedFrameId,
   layers: cloneLayers(s.layers),
+  vector: structuredClone(s.vector),
   animation: structuredClone(s.animation),
+  hiddenLayerIds: [...s.hiddenLayerIds],
   selectedLayerId: s.selectedLayerId,
   selectedLayerIds: [...s.selectedLayerIds],
   selection: s.selection ? structuredClone(s.selection) : null,
   selectedPoints: s.selectedPoints.map((p) => structuredClone(p)),
   selectedSubPaths: s.selectedSubPaths.map((p) => structuredClone(p)),
   editingSide: s.editingSide,
+  hasCanvasSelection: s.hasCanvasSelection,
+  selectionKind: s.selectionKind,
 });
 
 /** Restore a history entry, re-anchoring selection onto restored layers defensively. */
 const restoreHistoryEntry = (s: EditorState, entry: HistoryEntry) => {
   const layerExists = entry.layers.some((l) => l.id === entry.selectedLayerId);
   return {
+    frames: entry.frames.map(cloneFrame),
+    selectedFrameId: entry.selectedFrameId,
     layers: entry.layers,
+    vector: entry.vector,
     animation: entry.animation,
+    hiddenLayerIds: entry.hiddenLayerIds,
     selectedLayerId: layerExists ? entry.selectedLayerId : (entry.layers[0]?.id ?? 0),
     selectedLayerIds: entry.selectedLayerIds,
     selection: entry.selection,
     selectedPoints: entry.selectedPoints,
     selectedSubPaths: entry.selectedSubPaths,
     editingSide: entry.editingSide,
+    hasCanvasSelection: entry.hasCanvasSelection,
+    selectionKind: entry.selectionKind,
   };
 };
 
@@ -980,6 +1003,159 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => ({
       frames: state.frames.map((f) => (idSet.has(f.id) ? { ...f, x: f.x + dx, y: f.y + dy } : f)),
     }));
+  },
+
+  moveSelectedLayersToFrame: (targetFrameId, options) => {
+    const state = get();
+    const sourceFrameId = state.selectedFrameId;
+    if (!targetFrameId || targetFrameId === sourceFrameId) return false;
+
+    const selectedIds =
+      state.selectedLayerIds.length > 0
+        ? state.selectedLayerIds
+        : state.selectedLayerId != null
+          ? [state.selectedLayerId]
+          : [];
+    if (selectedIds.length === 0) return false;
+
+    const savedFrames = saveActiveFrame(state);
+    const source = savedFrames.find((frame) => frame.id === sourceFrameId);
+    const target = savedFrames.find((frame) => frame.id === targetFrameId);
+    if (!source || !target) return false;
+
+    // A selected group carries its descendants. A selected child whose parent stays
+    // behind is detached to the destination root, matching Figma reparent semantics.
+    const movedIdSet = new Set(selectedIds.map(String));
+    let addedDescendant = true;
+    while (addedDescendant) {
+      addedDescendant = false;
+      for (const layer of source.layers) {
+        if (
+          layer.parentId != null &&
+          movedIdSet.has(String(layer.parentId)) &&
+          !movedIdSet.has(String(layer.id))
+        ) {
+          movedIdSet.add(String(layer.id));
+          addedDescendant = true;
+        }
+      }
+    }
+
+    const moving = source.layers.filter(
+      (layer) => movedIdSet.has(String(layer.id)) && !layer.locked,
+    );
+    if (moving.length === 0) return false;
+    const actualMovedIds = new Set(moving.map((layer) => String(layer.id)));
+    // Layer IDs are document-global. Refuse a corrupt/imported collision instead
+    // of silently replacing an unrelated destination object.
+    if (target.layers.some((layer) => actualMovedIds.has(String(layer.id)))) return false;
+
+    // Preserve the exact world transform while changing frame-local ownership.
+    const offsetX = source.x - target.x;
+    const offsetY = source.y - target.y;
+    const movedLayers = moving.map((layer) => ({
+      ...cloneLayers([layer])[0],
+      translateX: (Number(layer.translateX) || 0) + offsetX,
+      translateY: (Number(layer.translateY) || 0) + offsetY,
+      parentId:
+        layer.parentId != null && actualMovedIds.has(String(layer.parentId))
+          ? layer.parentId
+          : null,
+    }));
+
+    const movedBlocks = source.animation.blocks
+      .filter((block) => actualMovedIds.has(String(block.layerId)))
+      .map((block) => {
+        const axisOffset =
+          block.propertyName === "translateX"
+            ? offsetX
+            : block.propertyName === "translateY"
+              ? offsetY
+              : 0;
+        if (!axisOffset) return structuredClone(block);
+        return {
+          ...structuredClone(block),
+          fromValue:
+            typeof block.fromValue === "number" ? block.fromValue + axisOffset : block.fromValue,
+          toValue: typeof block.toValue === "number" ? block.toValue + axisOffset : block.toValue,
+        };
+      });
+    const movedBlockIds = new Set(movedBlocks.map((block) => block.id));
+    if (target.animation.blocks.some((block) => movedBlockIds.has(block.id))) return false;
+    const targetLayers = [
+      ...target.layers,
+      ...movedLayers,
+    ];
+    const targetAnimation: AnimationState = {
+      ...structuredClone(target.animation),
+      duration: Math.max(
+        target.animation.duration,
+        ...movedBlocks.map((block) => block.endTime),
+        1,
+      ),
+      blocks: [
+        ...target.animation.blocks,
+        ...movedBlocks,
+      ],
+    };
+    const sourceHidden = new Set(source.hiddenLayerIds.map(String));
+    const movedHiddenIds = moving
+      .filter((layer) => sourceHidden.has(String(layer.id)))
+      .map((layer) => String(layer.id));
+    const targetHiddenIds = Array.from(
+      new Set([...target.hiddenLayerIds.map(String), ...movedHiddenIds]),
+    );
+
+    if (options?.recordHistory !== false) get().pushHistory();
+
+    const nextFrames = savedFrames.map((frame) => {
+      if (frame.id === source.id) {
+        return {
+          ...frame,
+          layers: frame.layers.filter((layer) => !actualMovedIds.has(String(layer.id))),
+          animation: {
+            ...frame.animation,
+            blocks: frame.animation.blocks.filter(
+              (block) => !actualMovedIds.has(String(block.layerId)),
+            ),
+          },
+          hiddenLayerIds: frame.hiddenLayerIds.filter(
+            (id) => !actualMovedIds.has(String(id)),
+          ),
+        };
+      }
+      if (frame.id === target.id) {
+        return {
+          ...frame,
+          layers: cloneLayers(targetLayers),
+          animation: structuredClone(targetAnimation),
+          hiddenLayerIds: [...targetHiddenIds],
+        };
+      }
+      return frame;
+    });
+
+    const retainedSelectionIds = selectedIds.filter((id) => actualMovedIds.has(String(id)));
+    const primaryId = retainedSelectionIds.at(-1) ?? movedLayers.at(-1)!.id;
+    set({
+      frames: nextFrames,
+      selectedFrameId: target.id,
+      layers: cloneLayers(targetLayers),
+      vector: structuredClone(target.vector),
+      animation: structuredClone(targetAnimation),
+      hiddenLayerIds: [...targetHiddenIds],
+      selectedLayerId: primaryId,
+      selectedLayerIds: retainedSelectionIds.length ? retainedSelectionIds : [primaryId],
+      selection: null,
+      selectedPoints: [],
+      selectedSubPaths: [],
+      selectedBlockIds: [],
+      hasCanvasSelection: true,
+      selectionKind: "layer",
+      toolMode: "select",
+      detailViewport: computeVectorViewport(target.vector),
+    });
+    return true;
   },
 
   // World camera actions (1el / k4mv Phase 2)
