@@ -17,6 +17,11 @@ import {
   Folder,
   Spline,
   Pencil,
+  Copy,
+  Lock,
+  Unlock,
+  RectangleHorizontal,
+  Activity,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -34,6 +39,7 @@ import type {
   GradientType,
   Layer,
 } from "@/lib/shapeshifter/types";
+import type { CanvasFrame } from "@/lib/store/editorStore";
 import {
   gradientFromSolid,
   gradientToCssBar,
@@ -85,7 +91,6 @@ function Section({
     </section>
   );
 }
-
 function Row({ label, children }: { label?: string; children: React.ReactNode }) {
   return (
     <div className="grid grid-cols-[58px_minmax(0,1fr)] items-center gap-2">
@@ -156,17 +161,23 @@ function TextInput({
   onChange,
   placeholder,
   mono,
+  ariaLabel,
+  onBlur,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   mono?: boolean;
+  ariaLabel?: string;
+  onBlur?: () => void;
 }) {
   return (
     <input
       value={value}
       placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
+      onBlur={onBlur}
+      aria-label={ariaLabel}
       className={cn(fieldBase, mono && "font-mono")}
     />
   );
@@ -237,13 +248,19 @@ function NumberRow({
         role="slider"
         aria-label={label}
         aria-valuenow={value}
-        tabIndex={-1}
+        tabIndex={0}
         className="w-fit cursor-ew-resize select-none truncate border-b border-dotted border-muted-foreground/40 text-[11px] text-muted-foreground hover:border-foreground/50 hover:text-foreground"
         title="Drag to adjust"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+          event.preventDefault();
+          const direction = event.key === "ArrowLeft" || event.key === "ArrowDown" ? -1 : 1;
+          onChange(clamp(value + direction * (step || 1) * (event.shiftKey ? 10 : 1)));
+        }}
       >
         {label}
       </span>
@@ -251,6 +268,7 @@ function NumberRow({
         <input
           type="text"
           inputMode="decimal"
+          aria-label={label}
           value={display}
           onFocus={() => setDraft(Number.isFinite(value) ? String(value) : "0")}
           onChange={(e) => {
@@ -511,33 +529,225 @@ function Segmented<T extends string>({
   );
 }
 
+type InspectorTab = "design" | "motion";
+
+function InspectorTabs({ value, onChange }: { value: InspectorTab; onChange: (tab: InspectorTab) => void }) {
+  return (
+    <div className="grid h-10 grid-cols-2 border-b border-border px-3" role="tablist" aria-label="Inspector mode">
+      {(["design", "motion"] as const).map((tab) => (
+        <button
+          key={tab}
+          type="button"
+          role="tab"
+          aria-selected={value === tab}
+          onClick={() => onChange(tab)}
+          className={cn(
+            "relative text-[11px] font-medium capitalize text-muted-foreground transition-colors hover:text-foreground",
+            value === tab && "text-foreground",
+          )}
+        >
+          {tab}
+          {value === tab && <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-primary" />}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function LayerTransformSection({
+  layer,
+  count,
+  onPatch,
+  onTranslate,
+  onToggleLock,
+}: {
+  layer: Layer;
+  count: number;
+  onPatch: (patch: Partial<Layer>) => void;
+  onTranslate: (dx: number, dy: number) => void;
+  onToggleLock: () => void;
+}) {
+  return (
+    <Section
+      title={count > 1 ? `Transform · ${count} layers` : "Transform"}
+      action={
+        <button
+          type="button"
+          onClick={onToggleLock}
+          className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+          aria-label={layer.locked ? "Unlock layer" : "Lock layer"}
+          title={layer.locked ? "Unlock layer" : "Lock layer"}
+        >
+          {layer.locked ? <Lock className="size-3.5" /> : <Unlock className="size-3.5" />}
+        </button>
+      }
+    >
+      {count > 1 && <p className="text-[10px] text-muted-foreground">Values apply to the full selection.</p>}
+      <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+        <NumberRow
+          label="X"
+          value={layer.translateX ?? 0}
+          onChange={(value) =>
+            count > 1 ? onTranslate(value - (layer.translateX ?? 0), 0) : onPatch({ translateX: value })
+          }
+        />
+        <NumberRow
+          label="Y"
+          value={layer.translateY ?? 0}
+          onChange={(value) =>
+            count > 1 ? onTranslate(0, value - (layer.translateY ?? 0)) : onPatch({ translateY: value })
+          }
+        />
+        <NumberRow label="Scale X" value={layer.scaleX ?? 1} step={0.1} onChange={(value) => onPatch({ scaleX: value })} />
+        <NumberRow label="Scale Y" value={layer.scaleY ?? 1} step={0.1} onChange={(value) => onPatch({ scaleY: value })} />
+      </div>
+      <NumberRow label="Rotation" value={layer.rotation ?? 0} suffix="°" onChange={(value) => onPatch({ rotation: value })} />
+      {count === 1 && (
+        <details className="group/details pt-0.5">
+          <summary className="cursor-pointer select-none text-[10px] text-muted-foreground hover:text-foreground">Transform origin</summary>
+          <div className="mt-1.5 grid grid-cols-2 gap-2">
+            <NumberRow label="X" value={layer.pivotX ?? 0} onChange={(value) => onPatch({ pivotX: value })} />
+            <NumberRow label="Y" value={layer.pivotY ?? 0} onChange={(value) => onPatch({ pivotY: value })} />
+          </div>
+        </details>
+      )}
+    </Section>
+  );
+}
+
+function FrameDesignPanel({
+  frame,
+  onRename,
+  onMove,
+  onResize,
+  onDuplicate,
+  onDelete,
+  canDelete,
+}: {
+  frame: CanvasFrame;
+  onRename: (name: string) => void;
+  onMove: (dx: number, dy: number) => void;
+  onResize: (width: number, height: number) => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+  canDelete: boolean;
+}) {
+  const [nameDraft, setNameDraft] = React.useState(frame.name);
+  React.useEffect(() => setNameDraft(frame.name), [frame.id, frame.name]);
+
+  return (
+    <>
+      <Section title="Frame">
+        <Row label="Name">
+          <TextInput
+            value={nameDraft}
+            onChange={setNameDraft}
+            onBlur={() => onRename(nameDraft)}
+            ariaLabel="Frame name"
+          />
+        </Row>
+      </Section>
+      <Section title="Position & size">
+        <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+          <NumberRow label="X" value={frame.x} onChange={(value) => onMove(value - frame.x, 0)} />
+          <NumberRow label="Y" value={frame.y} onChange={(value) => onMove(0, value - frame.y)} />
+          <NumberRow label="W" value={frame.vector.width} min={1} onChange={(value) => onResize(value, frame.vector.height)} />
+          <NumberRow label="H" value={frame.vector.height} min={1} onChange={(value) => onResize(frame.vector.width, value)} />
+        </div>
+      </Section>
+      <Section title="Actions" defaultOpen={false}>
+        <div className="grid grid-cols-2 gap-1.5">
+          <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5 text-[11px]" onClick={onDuplicate}>
+            <Copy className="size-3.5" /> Duplicate
+          </Button>
+          <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5 text-[11px] text-destructive hover:text-destructive" onClick={onDelete} disabled={!canDelete}>
+            <Trash2 className="size-3.5" /> Delete
+          </Button>
+        </div>
+      </Section>
+    </>
+  );
+}
+
+function MotionPanel({ layer, onEditMorph }: { layer: Layer; onEditMorph: () => void }) {
+  const blocks = useEditorStore((state) => state.animation.blocks);
+  const addTimelineBlock = useEditorStore((state) => state.addTimelineBlock);
+  const selectBlocks = useEditorStore((state) => state.selectBlocks);
+  const layerBlocks = blocks.filter((block) => String(block.layerId) === String(layer.id));
+  const propertyNames = Array.from(new Set([
+    ...layerBlocks.map((block) => block.propertyName),
+    "translateX", "translateY", "rotation", "scaleX", "scaleY", "fillColor", "strokeColor", "strokeWidth",
+  ]));
+
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      <Section title="Path motion">
+        <button type="button" onClick={onEditMorph} className="flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary text-[11px] font-medium text-primary-foreground hover:bg-primary/90">
+          <Pencil className="size-3.5" /> Edit start and end paths
+        </button>
+        <p className="text-[10px] leading-relaxed text-muted-foreground">ShapeShifter morphs compatible vector paths while preserving editable geometry.</p>
+      </Section>
+      <Section title={`Animated properties${layerBlocks.length ? ` · ${layerBlocks.length}` : ""}`}>
+        <div className="space-y-1">
+          {propertyNames.map((propertyName) => {
+            const matches = layerBlocks.filter((block) => block.propertyName === propertyName);
+            const active = matches.length > 0;
+            return (
+              <button
+                key={propertyName}
+                type="button"
+                onClick={() => active ? selectBlocks(matches.map((block) => block.id)) : addTimelineBlock(layer.id, propertyName)}
+                className={cn("group flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] hover:bg-muted", active ? "text-foreground" : "text-muted-foreground")}
+              >
+                <span className={cn("size-2 rotate-45 rounded-[1px] border", active ? "border-primary bg-primary" : "border-muted-foreground/40")} />
+                <span className="flex-1">{propertyLabel(propertyName)}</span>
+                <span className="text-[10px] opacity-0 group-hover:opacity-70">{active ? "Select" : "Add"}</span>
+              </button>
+            );
+          })}
+        </div>
+      </Section>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Inspector                                                          */
 /* ------------------------------------------------------------------ */
 
 export function Inspector() {
-  const {
-    selection,
-    getCurrentSelectedPoint,
-    updateSelectedPoint,
-    deleteSelectedPoint,
-    selectedLayerId,
-    selectedLayerIds,
-    selectedLayerRefs,
-    editingSide,
-    layers,
-    updateSelectedLayer,
-    translateSelectedLayer,
-    startActionMode,
-    animation,
-    selectedPoints,
-    selectPoint,
-    booleanCombine,
-    toggleLayerLock,
-  } = useEditorStore();
+  // Keep the inspector off the 60 fps playback path. A broad `useEditorStore()`
+  // subscription re-rendered this entire control tree for unrelated progress,
+  // viewport, hover, and pointer updates.
+  const selection = useEditorStore((state) => state.selection);
+  const getCurrentSelectedPoint = useEditorStore((state) => state.getCurrentSelectedPoint);
+  const updateSelectedPoint = useEditorStore((state) => state.updateSelectedPoint);
+  const deleteSelectedPoint = useEditorStore((state) => state.deleteSelectedPoint);
+  const selectedLayerId = useEditorStore((state) => state.selectedLayerId);
+  const selectedLayerIds = useEditorStore((state) => state.selectedLayerIds);
+  const selectedLayerRefs = useEditorStore((state) => state.selectedLayerRefs);
+  const editingSide = useEditorStore((state) => state.editingSide);
+  const layers = useEditorStore((state) => state.layers);
+  const updateSelectedLayer = useEditorStore((state) => state.updateSelectedLayer);
+  const translateSelectedLayer = useEditorStore((state) => state.translateSelectedLayer);
+  const startActionMode = useEditorStore((state) => state.startActionMode);
+  const animation = useEditorStore((state) => state.animation);
+  const selectedPoints = useEditorStore((state) => state.selectedPoints);
+  const selectPoint = useEditorStore((state) => state.selectPoint);
+  const booleanCombine = useEditorStore((state) => state.booleanCombine);
+  const toggleLayerLock = useEditorStore((state) => state.toggleLayerLock);
+  const selectionKind = useEditorStore((state) => state.selectionKind);
+  const frames = useEditorStore((state) => state.frames);
+  const selectedFrameId = useEditorStore((state) => state.selectedFrameId);
+  const renameFrame = useEditorStore((state) => state.renameFrame);
+  const moveFrame = useEditorStore((state) => state.moveFrame);
+  const duplicateFrame = useEditorStore((state) => state.duplicateFrame);
+  const deleteFrame = useEditorStore((state) => state.deleteFrame);
+  const updateVector = useEditorStore((state) => state.updateVector);
 
   const point = getCurrentSelectedPoint ? getCurrentSelectedPoint() : null;
   const currentLayer = layers.find((l) => l.id === selectedLayerId);
+  const currentFrame = frames.find((frame) => frame.id === selectedFrameId);
   const multiCount = selectedLayerRefs.length || selectedLayerIds?.length || 0;
   const updateLayer = (patch: Partial<Layer>) => updateSelectedLayer(patch);
   const setPath = (parsed: ReturnType<typeof parsePath>) =>
@@ -545,6 +755,7 @@ export function Inspector() {
 
   const [isCommandsFocused, setIsCommandsFocused] = React.useState(false);
   const [showPathData, setShowPathData] = React.useState(false);
+  const [activeTab, setActiveTab] = React.useState<InspectorTab>("design");
 
   React.useEffect(() => {
     if (!isCommandsFocused) return;
@@ -554,12 +765,10 @@ export function Inspector() {
   }, [isCommandsFocused]);
 
   /* ---- empty state ---- */
-  if (!currentLayer) {
+  if (selectionKind === "none" || (selectionKind === "layer" && !currentLayer)) {
     return (
       <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-        <div className="flex h-14 items-center border-b border-border px-3">
-          <span className="text-[13px] font-semibold">Properties</span>
-        </div>
+        <InspectorTabs value={activeTab} onChange={setActiveTab} />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
           <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
             <MousePointerClick size={24} />
@@ -571,6 +780,43 @@ export function Inspector() {
       </div>
     );
   }
+
+  if (selectionKind === "frame" && currentFrame) {
+    return (
+      <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
+        <InspectorTabs value={activeTab} onChange={setActiveTab} />
+        <div className="flex h-13 items-center gap-2.5 border-b border-border px-3">
+          <div className="grid size-7 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
+            <RectangleHorizontal className="size-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[12px] font-semibold">{currentFrame.name}</div>
+            <div className="text-[10px] text-muted-foreground">Frame · {currentFrame.vector.width} × {currentFrame.vector.height}</div>
+          </div>
+        </div>
+        {activeTab === "design" ? (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <FrameDesignPanel
+              frame={currentFrame}
+              onRename={(name) => renameFrame(currentFrame.id, name)}
+              onMove={(dx, dy) => moveFrame(currentFrame.id, dx, dy)}
+              onResize={(width, height) => updateVector({ width, height })}
+              onDuplicate={duplicateFrame}
+              onDelete={() => deleteFrame(currentFrame.id)}
+              canDelete={frames.length > 1}
+            />
+          </div>
+        ) : (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground">
+            <Activity className="size-5" />
+            <p className="text-[11px] leading-relaxed">Select a vector inside this frame to edit its motion.</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (!currentLayer) return null;
 
   const commandsList = (extraClass?: string) => (
     <PathCommandsList
@@ -629,19 +875,20 @@ export function Inspector() {
 
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
+      <InspectorTabs value={activeTab} onChange={setActiveTab} />
       {/* Header */}
-      <div className="flex h-14 items-center gap-2.5 border-b border-border px-3">
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+      <div className="flex h-13 items-center gap-2.5 border-b border-border px-3">
+        <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
           {currentLayer.type === "clipPath" ? (
-            <Crop size={18} />
+            <Crop size={16} />
           ) : isGroup ? (
-            <Folder size={18} />
+            <Folder size={16} />
           ) : (
-            <Spline size={18} />
+            <Spline size={16} />
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-semibold leading-tight">
+          <div className="truncate text-[12px] font-semibold leading-tight">
             {currentLayer.name}
           </div>
           <div className="mt-0.5 flex items-center gap-1.5 text-[11px] leading-none text-muted-foreground">
@@ -678,11 +925,21 @@ export function Inspector() {
         )}
       </div>
 
+      {activeTab === "motion" ? (
+        <MotionPanel layer={currentLayer} onEditMorph={startActionMode} />
+      ) : (
       <div className="min-h-0 flex-1 overflow-y-auto">
+        <LayerTransformSection
+          layer={currentLayer}
+          count={multiCount}
+          onPatch={updateLayer}
+          onTranslate={translateSelectedLayer}
+          onToggleLock={() => toggleLayerLock(currentLayer.id)}
+        />
         {/* Layer */}
-        <Section title="Layer">
+        <Section title="Layer" defaultOpen={false}>
           <Row label="Name">
-            <TextInput value={currentLayer.name} onChange={(v) => updateLayer({ name: v })} />
+            <TextInput ariaLabel="Layer name" value={currentLayer.name} onChange={(v) => updateLayer({ name: v })} />
           </Row>
           <Row label="Type">
             <Segmented
@@ -763,7 +1020,6 @@ export function Inspector() {
                         alpha={currentLayer.fillAlpha ?? 1}
                         onColor={(v) => updateLayer({ fillColor: v })}
                         onAlpha={(v) => updateLayer({ fillAlpha: v })}
-                        animate={{ layerId: currentLayer.id, propertyName: "fillColor" }}
                       />
                     )}
                   </>
@@ -788,7 +1044,6 @@ export function Inspector() {
                 alpha={currentLayer.strokeAlpha ?? 1}
                 onColor={(v) => updateLayer({ strokeColor: v })}
                 onAlpha={(v) => updateLayer({ strokeAlpha: v })}
-                animate={{ layerId: currentLayer.id, propertyName: "strokeColor" }}
               />
               <div className="flex items-center gap-1.5">
                 <div className="min-w-0 flex-1">
@@ -798,7 +1053,6 @@ export function Inspector() {
                     min={0}
                     step={0.1}
                     onChange={(v) => updateLayer({ strokeWidth: v })}
-                    animate={{ layerId: currentLayer.id, propertyName: "strokeWidth" }}
                   />
                 </div>
                 {/* Figma tucks cap/join/dash behind a settings popover instead of
@@ -865,6 +1119,7 @@ export function Inspector() {
                     <div className="mt-2.5 flex items-center gap-2">
                       <span className="w-10 shrink-0 text-[11px] text-muted-foreground">Dash</span>
                       <TextInput
+                        ariaLabel="Stroke dash pattern"
                         value={currentLayer.strokeDasharray ?? ""}
                         placeholder="e.g. 4 2"
                         onChange={(v) => updateLayer({ strokeDasharray: v || undefined })}
@@ -900,7 +1155,6 @@ export function Inspector() {
                 step={1}
                 suffix="%"
                 onChange={(v) => updateLayer({ trimPathStart: Math.max(0, Math.min(1, v / 100)) })}
-                animate={{ layerId: currentLayer.id, propertyName: "trimPathStart" }}
               />
               <NumberRow
                 label="End"
@@ -910,7 +1164,6 @@ export function Inspector() {
                 step={1}
                 suffix="%"
                 onChange={(v) => updateLayer({ trimPathEnd: Math.max(0, Math.min(1, v / 100)) })}
-                animate={{ layerId: currentLayer.id, propertyName: "trimPathEnd" }}
               />
               <NumberRow
                 label="Offset"
@@ -918,7 +1171,6 @@ export function Inspector() {
                 step={1}
                 suffix="%"
                 onChange={(v) => updateLayer({ trimPathOffset: v / 100 })}
-                animate={{ layerId: currentLayer.id, propertyName: "trimPathOffset" }}
               />
             </Section>
 
@@ -1058,77 +1310,6 @@ export function Inspector() {
           </>
         )}
 
-        {/* Position / transform for every selection (Figma Design top block) */}
-        <Section title={multiCount > 1 ? `Transform · ${multiCount} layers` : "Transform"}>
-          {multiCount > 1 && (
-            <p className="mb-1 text-[10px] leading-relaxed text-muted-foreground">
-              Edits apply to all selected layers.
-            </p>
-          )}
-          <NumberRow
-            label="X"
-            value={currentLayer.translateX ?? 0}
-            onChange={(v) =>
-              multiCount > 1
-                ? translateSelectedLayer(v - (currentLayer.translateX ?? 0), 0)
-                : updateLayer({ translateX: v })
-            }
-            animate={multiCount <= 1 ? { layerId: currentLayer.id, propertyName: "translateX" } : undefined}
-          />
-          <NumberRow
-            label="Y"
-            value={currentLayer.translateY ?? 0}
-            onChange={(v) =>
-              multiCount > 1
-                ? translateSelectedLayer(0, v - (currentLayer.translateY ?? 0))
-                : updateLayer({ translateY: v })
-            }
-            animate={multiCount <= 1 ? { layerId: currentLayer.id, propertyName: "translateY" } : undefined}
-          />
-          <NumberRow
-            label="Rotation"
-            value={currentLayer.rotation ?? 0}
-            suffix="°"
-            onChange={(v) => updateLayer({ rotation: v })}
-            animate={multiCount <= 1 ? { layerId: currentLayer.id, propertyName: "rotation" } : undefined}
-          />
-          <NumberRow
-            label="Scale X"
-            value={currentLayer.scaleX ?? 1}
-            step={0.1}
-            onChange={(v) => updateLayer({ scaleX: v })}
-            animate={multiCount <= 1 ? { layerId: currentLayer.id, propertyName: "scaleX" } : undefined}
-          />
-          <NumberRow
-            label="Scale Y"
-            value={currentLayer.scaleY ?? 1}
-            step={0.1}
-            onChange={(v) => updateLayer({ scaleY: v })}
-            animate={multiCount <= 1 ? { layerId: currentLayer.id, propertyName: "scaleY" } : undefined}
-          />
-          {(isGroup || multiCount === 1) && (
-            <>
-              <NumberRow
-                label="Pivot X"
-                value={currentLayer.pivotX ?? 0}
-                onChange={(v) => updateLayer({ pivotX: v })}
-              />
-              <NumberRow
-                label="Pivot Y"
-                value={currentLayer.pivotY ?? 0}
-                onChange={(v) => updateLayer({ pivotY: v })}
-              />
-            </>
-          )}
-          <button
-            type="button"
-            className="mt-1 flex h-7 w-full items-center justify-center rounded-md border border-border text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-            onClick={() => toggleLayerLock(currentLayer.id)}
-          >
-            {currentLayer.locked ? "Unlock layer" : "Lock layer"}
-          </button>
-        </Section>
-
         {/* Selected point(s) - supports lasso multi-select */}
         {(selection || (selectedPoints && selectedPoints.length > 0)) && (
           <Section title={selectedPoints && selectedPoints.length > 1 ? `Selected points (${selectedPoints.length})` : "Selected point"}>
@@ -1161,6 +1342,7 @@ export function Inspector() {
           </Section>
         )}
       </div>
+      )}
     </div>
   );
 }
