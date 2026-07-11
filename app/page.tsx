@@ -14,6 +14,7 @@ import {
   PaintBucket,
   PanelRightClose,
   PanelRightOpen,
+  PanelLeftOpen,
   ChevronDown,
   ChevronUp,
   Waypoints,
@@ -52,6 +53,7 @@ import { Toolbar } from "@/components/editor/Toolbar";
 import { CanvasArea } from "@/components/editor/CanvasArea";
 import { Inspector } from "@/components/editor/Inspector";
 import { LayerTimeline } from "@/components/editor/LayerTimeline";
+import { LayersPanel } from "@/components/editor/LayersPanel";
 import { BottomToolPalette } from "@/components/editor/BottomToolPalette";
 import { Onboarding } from "@/components/editor/Onboarding";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
@@ -447,8 +449,16 @@ export default function ShapeShifter2026() {
   }, []);
 
   // Everything comes from the store (single source of truth)
-  const { editingSide, isPlaying, isActionMode, setEditingSide, undo, redo, canUndo, canRedo } =
-    useEditorStore();
+  const editingSide = useEditorStore((state) => state.editingSide);
+  const isPlaying = playbackActive;
+  const isActionMode = useEditorStore((state) => state.isActionMode);
+  const setEditingSide = useEditorStore((state) => state.setEditingSide);
+  const undo = useEditorStore((state) => state.undo);
+  const redo = useEditorStore((state) => state.redo);
+  const canUndo = useEditorStore((state) => state.canUndo);
+  const canRedo = useEditorStore((state) => state.canRedo);
+  const timelineCollapsed = useEditorStore((state) => state.timelineCollapsed);
+  const setTimelineCollapsed = useEditorStore((state) => state.setTimelineCollapsed);
 
   // Hidden file input for original SVG/XML/project import
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -609,13 +619,15 @@ export default function ShapeShifter2026() {
   // User intent (persisted). The actual inspector visibility also folds in the
   // narrow-viewport auto-collapse below, but we never overwrite the user's choice.
   const [inspectorCollapsed, setInspectorCollapsed] = React.useState(false);
-  const [timelineCollapsed, setTimelineCollapsed] = React.useState(false);
+  const [layersCollapsed, setLayersCollapsed] = React.useState(false);
   const [isNarrow, setIsNarrow] = React.useState(false);
 
   React.useEffect(() => {
     try {
       setInspectorCollapsed(localStorage.getItem("shapeshifter:panel:inspector") === "1");
-      setTimelineCollapsed(localStorage.getItem("shapeshifter:panel:timeline") === "1");
+      setLayersCollapsed(localStorage.getItem("shapeshifter:panel:layers") === "1");
+      const storedTimeline = localStorage.getItem("shapeshifter:panel:timeline");
+      setTimelineCollapsed(storedTimeline == null || storedTimeline === "1");
     } catch {
       // ignore — localStorage may be unavailable
     }
@@ -633,11 +645,11 @@ export default function ShapeShifter2026() {
     });
   }, []);
 
-  const toggleTimeline = React.useCallback(() => {
-    setTimelineCollapsed((prev) => {
-      const next = !prev;
+  const toggleLayers = React.useCallback(() => {
+    setLayersCollapsed((previous) => {
+      const next = !previous;
       try {
-        localStorage.setItem("shapeshifter:panel:timeline", next ? "1" : "0");
+        localStorage.setItem("shapeshifter:panel:layers", next ? "1" : "0");
       } catch {
         // ignore
       }
@@ -645,11 +657,15 @@ export default function ShapeShifter2026() {
     });
   }, []);
 
-  // Sync panel open/closed → store *after* render (never inside a setState updater —
-  // that can run while React is rendering and break other store subscribers like ExportDialog).
-  React.useEffect(() => {
-    useEditorStore.getState().setTimelineCollapsed(timelineCollapsed);
-  }, [timelineCollapsed]);
+  const toggleTimeline = React.useCallback(() => {
+    const next = !useEditorStore.getState().timelineCollapsed;
+    setTimelineCollapsed(next);
+    try {
+      localStorage.setItem("shapeshifter:panel:timeline", next ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }, [setTimelineCollapsed]);
 
   // Auto-collapse the inspector on narrow viewports so nothing clips.
   React.useEffect(() => {
@@ -661,6 +677,7 @@ export default function ShapeShifter2026() {
 
   // Effective visibility: collapsed by explicit toggle OR forced by narrow width.
   const inspectorHidden = inspectorCollapsed || isNarrow;
+  const layersHidden = layersCollapsed || isNarrow;
 
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -894,6 +911,7 @@ export default function ShapeShifter2026() {
 
       {/* Main Workspace Layout */}
       <div className="relative flex min-h-0 flex-1 overflow-hidden bg-muted">
+        {!layersHidden && <LayersPanel onCollapse={toggleLayers} />}
         <div className="relative min-w-0 flex-1 overflow-hidden">
           <ResizablePanelGroup orientation="vertical" className="min-h-0">
             <ResizablePanel id="canvas" minSize={58} defaultSize={timelineCollapsed ? 100 : 76}>
@@ -916,11 +934,7 @@ export default function ShapeShifter2026() {
               <>
                 <ResizableHandle className="bg-border/80" />
                 <ResizablePanel id="timeline" minSize={16} defaultSize={24}>
-                  <LayerTimeline
-                    onOpenSVGImport={openSVGImport}
-                    onExport={handleExport}
-                    onLoadSample={loadSample}
-                  />
+                  <LayerTimeline />
                 </ResizablePanel>
               </>
             )}
@@ -942,6 +956,17 @@ export default function ShapeShifter2026() {
             Timeline
           </button>
         </div>
+
+        {layersHidden && !isNarrow && (
+          <button
+            type="button"
+            onClick={toggleLayers}
+            aria-label="Show layers"
+            className="absolute left-2 top-2.5 z-30 grid size-7 place-items-center rounded-md border border-border bg-card/90 text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:text-foreground"
+          >
+            <PanelLeftOpen className="size-4" />
+          </button>
+        )}
 
         {!isActionMode && (
           <aside

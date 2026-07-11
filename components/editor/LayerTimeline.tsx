@@ -23,11 +23,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useEditorStore } from "@/lib/store/editorStore";
-import type { Layer, TimelineBlock, InterpolatorName } from "@/lib/shapeshifter/types";
+import type { TimelineBlock, InterpolatorName } from "@/lib/shapeshifter/types";
 import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
 import { cn } from "@/lib/utils";
-import { EasingCurve } from "./EasingCurve";
 import { INTERPOLATOR_CURVES } from "@/lib/shapeshifter/interpolators";
+import {
+  LiveEasingCurve,
+  TimelineCurrentTimeInput,
+  TimelinePlayhead,
+  TimelinePropertyValue,
+} from "./timeline/TimelineLiveState";
+import { buildTimelineProjection } from "./timeline/timelineProjection";
 
 /**
  * Android AVD-supported named interpolators (ObjectAnimator / PathInterpolator presets).
@@ -69,37 +75,6 @@ const LAYERS_W = 200;
 const CLIP_H_OBJ = 10;
 const CLIP_H_PROP = 18;
 
-interface LayerTimelineProps {
-  onOpenSVGImport: () => void;
-  onExport: (type: string) => void;
-  onLoadSample: (index: number) => void;
-}
-
-function formatCompactValue(
-  value: string | number | undefined,
-  propertyName?: string,
-): string {
-  if (value == null || value === "") return "—";
-  // Never dump raw path data into the timeline (Figma shows tidy property values)
-  if (propertyName === "pathData" || (typeof value === "string" && /^[MmLlHhVvCcSsQqTtAaZz]/.test(value.trim()))) {
-    return "Path";
-  }
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) return "—";
-    const abs = Math.abs(value);
-    if (propertyName === "rotation") return `${Number(value.toFixed(1))}°`;
-    if (propertyName === "scaleX" || propertyName === "scaleY")
-      return `${Math.round(value * 100)}%`;
-    if (abs >= 100) return String(Math.round(value));
-    if (abs >= 10) return value.toFixed(1).replace(/\.0$/, "");
-    return value.toFixed(2).replace(/\.?0+$/, "");
-  }
-  const s = String(value);
-  if (s.startsWith("#") && (s.length === 7 || s.length === 9)) return s.toUpperCase();
-  if (s.length > 10) return `${s.slice(0, 8)}…`;
-  return s;
-}
-
 /** Hollow diamond keyframes — Figma motion timeline (losange). */
 function KeyframeDiamond({
   active,
@@ -133,35 +108,29 @@ function KeyframeDiamond({
   );
 }
 
-export function LayerTimeline(_props: LayerTimelineProps) {
-  const {
-    frames,
-    selectedFrameId,
-    selectFrame,
-    layers,
-    selectedLayerId,
-    selectLayer,
-    selectedLayerRefs,
-    selectLayerRefs,
-    selectionKind,
-    hasCanvasSelection,
-    toggleLayerVisibility,
-    toggleLayerLock,
-    nudgeLayerZOrder,
-    addLayer,
-    selectedBlockIds,
-    updateTimelineBlock,
-    progress,
-    animation,
-    selectBlocks,
-    timelineCollapsed,
-    setAnimationDuration,
-    isPlaying,
-    togglePlayback,
-  } = useEditorStore();
+export function LayerTimeline() {
+  const frames = useEditorStore((state) => state.frames);
+  const selectedFrameId = useEditorStore((state) => state.selectedFrameId);
+  const selectFrame = useEditorStore((state) => state.selectFrame);
+  const layers = useEditorStore((state) => state.layers);
+  const selectedLayerId = useEditorStore((state) => state.selectedLayerId);
+  const selectLayer = useEditorStore((state) => state.selectLayer);
+  const selectedLayerRefs = useEditorStore((state) => state.selectedLayerRefs);
+  const selectLayerRefs = useEditorStore((state) => state.selectLayerRefs);
+  const selectionKind = useEditorStore((state) => state.selectionKind);
+  const hasCanvasSelection = useEditorStore((state) => state.hasCanvasSelection);
+  const toggleLayerVisibility = useEditorStore((state) => state.toggleLayerVisibility);
+  const toggleLayerLock = useEditorStore((state) => state.toggleLayerLock);
+  const nudgeLayerZOrder = useEditorStore((state) => state.nudgeLayerZOrder);
+  const addLayer = useEditorStore((state) => state.addLayer);
+  const selectedBlockIds = useEditorStore((state) => state.selectedBlockIds);
+  const updateTimelineBlock = useEditorStore((state) => state.updateTimelineBlock);
+  const animation = useEditorStore((state) => state.animation);
+  const selectBlocks = useEditorStore((state) => state.selectBlocks);
+  const setAnimationDuration = useEditorStore((state) => state.setAnimationDuration);
+  const isPlaying = useEditorStore((state) => state.isPlaying);
+  const togglePlayback = useEditorStore((state) => state.togglePlayback);
 
-  const currentTimeMs = Math.round(progress * animation.duration);
-  const currentTimeSec = currentTimeMs / 1000;
   const durationSec = animation.duration / 1000;
   /**
    * Figma motion ruler labels: short clips in whole ms (0 · 200 · 400),
@@ -206,8 +175,6 @@ export function LayerTimeline(_props: LayerTimelineProps) {
     bumpDrag((n) => n + 1);
   };
   const [hoveredRowKey, setHoveredRowKey] = React.useState<string | null>(null);
-  /** Draft text while the current-time readout is being typed into (click-to-edit, like the duration field). */
-  const [timeDraft, setTimeDraft] = React.useState<string | null>(null);
   /** Row key of the layer currently being renamed inline (double-click on its name, like Figma). */
   const [renamingLayerKey, setRenamingLayerKey] = React.useState<string | null>(null);
 
@@ -226,202 +193,48 @@ export function LayerTimeline(_props: LayerTimelineProps) {
     });
   };
 
-  type TimelineRow =
-    | {
-        kind: "frame";
-        frameId: string;
-        name: string;
-        depth: number;
-        key: string;
-        expanded: boolean;
-      }
-    | {
-        kind: "object";
-        /** Figma object row: one layer = one blue clip bar */
-        frameId: string;
-        layer: Layer;
-        name: string;
-        depth: number;
-        key: string;
-        /** Group rows can expand/collapse nested children */
-        expandable?: boolean;
-        expanded?: boolean;
-      }
-    | {
-        kind: "property";
-        frameId: string;
-        layer: Layer;
-        propertyName: string;
-        depth: number;
-        key: string;
-      };
-
-  // Document-wide tree (Figma): every frame, then its layers, then animated properties.
-  // Active frame uses live `layers`/`animation`; others use the snapshot on `frames[]`.
   const [collapsedFrameIds, setCollapsedFrameIds] = React.useState<Set<string>>(() => new Set());
+  const [collapsedGroupKeys, setCollapsedGroupKeys] = React.useState<Set<string>>(
+    () => new Set(),
+  );
   const toggleFrameExpanded = (frameId: string) => {
-    setCollapsedFrameIds((prev) => {
-      const next = new Set(prev);
+    setCollapsedFrameIds((previous) => {
+      const next = new Set(previous);
       if (next.has(frameId)) next.delete(frameId);
       else next.add(frameId);
       return next;
     });
   };
-
-  const contentForFrame = (frameId: string) => {
-    if (frameId === selectedFrameId) {
-      return { layers, animation };
-    }
-    const fr = frames.find((f) => f.id === frameId);
-    return {
-      layers: fr?.layers ?? [],
-      animation: fr?.animation ?? { id: "", name: "", duration: 1000, blocks: [] as typeof animation.blocks },
-    };
-  };
-
-  /**
-   * Timeline property tracks under a layer — excludes `pathData`.
-   * Path morph *is* the shape (the layer/object clip bar), not a nested "Path" row.
-   * Only secondary attrs (fill, stroke, trim, transforms…) get property tracks.
-   */
-  const propertiesFor = (frameId: string, layerId: string | number) => {
-    const { animation: anim } = contentForFrame(frameId);
-    const names = Array.from(
-      new Set(
-        anim.blocks
-          .filter((block) => String(block.layerId) === String(layerId))
-          .map((block) => block.propertyName)
-          .filter((name) => name !== "pathData"),
-      ),
-    );
-    // Prefer a single Position track (X) when both axes exist — Figma shows one "Position" row.
-    // Y still animates via its block; we only de-clutter the tree. Full dual-axis editor later.
-    const hasX = names.includes("translateX");
-    const ordered = names.filter((n) => !(n === "translateY" && hasX));
-    const rank = (n: string) =>
-      n === "translateX" || n === "translateY"
-        ? 0
-        : n === "rotation"
-          ? 1
-          : n.startsWith("scale")
-            ? 2
-            : 3;
-    return ordered.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
-  };
-  const blocksForLayerInFrame = (frameId: string, layerId: string | number) => {
-    const { animation: anim } = contentForFrame(frameId);
-    return anim.blocks.filter((block) => String(block.layerId) === String(layerId));
-  };
-  const blocksForPropertyInFrame = (
-    frameId: string,
-    layerId: string | number,
-    propertyName: string,
-  ) => {
-    const { animation: anim } = contentForFrame(frameId);
-    return anim.blocks.filter(
-      (block) =>
-        String(block.layerId) === String(layerId) && block.propertyName === propertyName,
-    );
-  };
-
-  /**
-   * Figma motion timeline model:
-   *   Frame (container, collapsible)
-   *     └─ Layer (object row + blue clip bar)  ← every layer, never flattened
-   *          └─ Property tracks (fill, stroke, … — not pathData)
-   * Nested group children are listed under their group when expanded.
-   */
-  const [collapsedGroupKeys, setCollapsedGroupKeys] = React.useState<Set<string>>(
-    () => new Set(),
-  );
   const toggleGroupExpanded = (key: string) => {
-    setCollapsedGroupKeys((prev) => {
-      const next = new Set(prev);
+    setCollapsedGroupKeys((previous) => {
+      const next = new Set(previous);
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
     });
   };
-
-  const pushLayerTree = (
-    rows: TimelineRow[],
-    frameId: string,
-    layerList: Layer[],
-    depth: number,
-  ) => {
-    for (const layer of layerList) {
-      // Skip pure vector metadata nodes; path / clip / group are timeline objects
-      if (layer.type === "vector") continue;
-
-      const objectKey = `object-${frameId}-${layer.id}`;
-      const childLayers = layer.children?.filter(Boolean) ?? [];
-      const hasChildren = childLayers.length > 0;
-      const groupExpanded = !collapsedGroupKeys.has(objectKey);
-
-      rows.push({
-        kind: "object",
-        frameId,
-        layer,
-        name: layer.name || "Layer",
-        depth,
-        key: objectKey,
-        expandable: hasChildren || layer.type === "group",
-        expanded: hasChildren ? groupExpanded : undefined,
-      });
-
-      // Non-path property tracks sit under this object (Figma: Position, Rotation, …)
-      for (const propertyName of propertiesFor(frameId, layer.id)) {
-        rows.push({
-          kind: "property",
-          frameId,
-          layer,
-          propertyName,
-          depth: depth + 1,
-          key: `prop-${frameId}-${layer.id}-${propertyName}`,
-        });
-      }
-
-      if (hasChildren && groupExpanded) {
-        pushLayerTree(rows, frameId, childLayers, depth + 1);
-      }
-    }
-  };
-
-  // Figma-like: show ONLY the selected frame's tracks (the frame itself, or the frame that
-  // contains the selected layer). Listing every frame at once is the clutter the user wants gone.
-  const timelineRows: TimelineRow[] = [];
-  const framesToShow =
-    frames.some((f) => f.id === selectedFrameId)
-      ? frames.filter((f) => f.id === selectedFrameId)
-      : frames;
-  for (const frame of framesToShow) {
-    const { layers: frameLayers } = contentForFrame(frame.id);
-    // Top-level layers only (children nest under groups). Also surface root layers
-    // that use parentId so flat lists still work.
-    const roots = frameLayers.filter((l) => {
-      if (l.parentId != null && l.parentId !== "") {
-        // Has a parent — only show at root if parent isn't in this list (orphan safety)
-        return !frameLayers.some((p) => String(p.id) === String(l.parentId));
-      }
-      return true;
-    });
-
-    const frameExpanded = !collapsedFrameIds.has(frame.id);
-    timelineRows.push({
-      kind: "frame",
-      frameId: frame.id,
-      name: frame.name,
-      depth: 0,
-      key: `frame-${frame.id}`,
-      expanded: frameExpanded,
-    });
-
-    if (!frameExpanded) continue;
-
-    // Every layer gets its own row under the frame — Figma never flattens this away
-    pushLayerTree(timelineRows, frame.id, roots.length ? roots : frameLayers, 1);
-  }
-
+  const timelineProjection = React.useMemo(
+    () =>
+      buildTimelineProjection({
+        frames,
+        selectedFrameId,
+        activeLayers: layers,
+        activeAnimation: animation,
+        collapsedFrameIds,
+        collapsedGroupKeys,
+      }),
+    [
+      animation,
+      collapsedFrameIds,
+      collapsedGroupKeys,
+      frames,
+      layers,
+      selectedFrameId,
+    ],
+  );
+  const timelineRows = timelineProjection.rows;
+  const blocksForLayerInFrame = timelineProjection.blocksForLayer;
+  const blocksForPropertyInFrame = timelineProjection.blocksForProperty;
   const setProgressFromClientX = (clientX: number, el: HTMLElement) => {
     const rect = el.getBoundingClientRect();
     const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
@@ -618,6 +431,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
             )}
             style={{ left: `${startPct}%` }}
             title={`Keyframe @ ${block.startTime}ms`}
+            aria-label={`${label} start keyframe at ${block.startTime} milliseconds`}
             onPointerDown={handleResizeStart("start")}
             onPointerMove={handleResizeMove}
             onPointerUp={handleResizeEnd}
@@ -639,6 +453,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
             )}
             style={{ left: `${endPct}%` }}
             title={`Keyframe @ ${block.endTime}ms`}
+            aria-label={`${label} end keyframe at ${block.endTime} milliseconds`}
             onPointerDown={handleResizeStart("end")}
             onPointerMove={handleResizeMove}
             onPointerUp={handleResizeEnd}
@@ -666,6 +481,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                       type="button"
                       className="flex size-4 items-center justify-center rounded-[3px] border border-white/12 bg-[#2C2C2C] text-[#0C8CE9] shadow-sm outline-none hover:border-[#0C8CE9]/45 hover:bg-[#333] active:scale-[0.96]"
                       title={`Interpolator: ${INTERPOLATOR_OPTIONS.find((o) => o.value === interp)?.label ?? interp}`}
+                      aria-label={`Edit ${label} easing`}
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => e.stopPropagation()}
                     />
@@ -699,10 +515,9 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                     className="flex justify-center border-b border-border/60 px-2 py-2"
                     onPointerDown={(e) => e.stopPropagation()}
                   >
-                    <EasingCurve
+                    <LiveEasingCurve
                       size={88}
                       points={curvePointsFor(interp)}
-                      progress={progress}
                       onChange={([x1, y1, x2, y2]) => {
                         updateTimelineBlock(block.id, {
                           interpolator: `cubic-bezier(${x1}, ${y1}, ${x2}, ${y2})`,
@@ -781,6 +596,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                       type="button"
                       className="flex size-4 items-center justify-center rounded-[3px] border border-white/12 bg-[#2C2C2C] text-[#0C8CE9] shadow-sm outline-none hover:border-[#0C8CE9]/45 hover:bg-[#333] active:scale-[0.96]"
                       title={`Interpolator: ${INTERPOLATOR_OPTIONS.find((o) => o.value === interp)?.label ?? interp}`}
+                      aria-label={`Edit ${label} easing`}
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => e.stopPropagation()}
                     />
@@ -889,27 +705,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
       )}
     >
       {/* ── Unified playhead (head in ruler, needle through tracks) ── */}
-      {!isTimelineEmpty && (
-        <div
-          className="pointer-events-none absolute bottom-0 top-0 z-[60] w-0"
-          style={{
-            left: `calc(${LAYERS_W}px + (100% - ${LAYERS_W}px) * ${progress})`,
-          }}
-          aria-hidden
-        >
-          {/* Head sits at the very top of the ruler, like Figma's playhead flag */}
-          <div className="absolute left-1/2 top-0 -translate-x-1/2">
-            <svg width="10" height="9" viewBox="0 0 10 9" fill="none">
-              <path d="M0 0H10V5.5L5 9L0 5.5V0Z" fill={PLAYHEAD} />
-            </svg>
-          </div>
-          {/* Hairline needle — full track height under the head */}
-          <div
-            className="absolute bottom-0 left-1/2 w-px -translate-x-1/2"
-            style={{ top: 9, backgroundColor: PLAYHEAD }}
-          />
-        </div>
-      )}
+      <TimelinePlayhead visible={!isTimelineEmpty} layersWidth={LAYERS_W} color={PLAYHEAD} />
 
       {/* ══ Top bar: transport | ruler (one continuous Figma row) ══ */}
       <div
@@ -933,27 +729,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
             )}
           </button>
           <div className="flex min-w-0 items-baseline gap-[3px] font-mono text-[11px] tabular-nums leading-none tracking-tight">
-            <input
-              type="number"
-              min={0}
-              step={0.05}
-              value={timeDraft ?? currentTimeSec.toFixed(2)}
-              onFocus={() => setTimeDraft(currentTimeSec.toFixed(2))}
-              onChange={(e) => setTimeDraft(e.target.value)}
-              onBlur={() => {
-                const n = Number(timeDraft);
-                if (Number.isFinite(n)) jumpToMs(Math.round(n * 1000));
-                setTimeDraft(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === "Escape") {
-                  (e.target as HTMLInputElement).blur();
-                }
-              }}
-              aria-label="Current time in seconds"
-              className="w-[34px] border-0 bg-transparent p-0 font-medium tabular-nums outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
-              style={{ color: PLAYHEAD }}
-            />
+            <TimelineCurrentTimeInput color={PLAYHEAD} />
             <span className="text-white/20">/</span>
             <input
               type="number"
@@ -1394,17 +1170,6 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                 blockIds.length > 0 &&
                 blockIds.every((id) => selectedBlockIds.includes(id));
               const first = blocks[0];
-              const displayValue = first
-                ? formatCompactValue(
-                    currentTimeMs < (first.startTime + first.endTime) / 2
-                      ? first.fromValue
-                      : first.toValue,
-                    row.propertyName,
-                  )
-                : "";
-              const valueTitle = first
-                ? `${formatCompactValue(first.fromValue, row.propertyName)} → ${formatCompactValue(first.toValue, row.propertyName)}`
-                : "";
               const earliest = blocks.reduce(
                 (min, b) => Math.min(min, b.startTime),
                 Number.POSITIVE_INFINITY,
@@ -1444,6 +1209,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                   >
                     <button
                       type="button"
+                      aria-label={`Jump to first ${propertyLabel(row.propertyName)} keyframe`}
                       className="grid size-4 place-items-center rounded text-white/35 hover:bg-white/[0.08] disabled:opacity-20"
                       disabled={!Number.isFinite(earliest)}
                       onClick={(e) => {
@@ -1455,6 +1221,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                     </button>
                     <button
                       type="button"
+                      aria-label={`Select ${propertyLabel(row.propertyName)} keyframes`}
                       className="grid size-4 place-items-center rounded hover:bg-white/[0.08]"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1465,6 +1232,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                     </button>
                     <button
                       type="button"
+                      aria-label={`Jump to last ${propertyLabel(row.propertyName)} keyframe`}
                       className="grid size-4 place-items-center rounded text-white/35 hover:bg-white/[0.08] disabled:opacity-20"
                       disabled={!latest}
                       onClick={(e) => {
@@ -1475,15 +1243,11 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                       <ChevronRight className="h-2.5 w-2.5" strokeWidth={2} />
                     </button>
                   </div>
-                  <span
-                    className={cn(
-                      "w-[48px] shrink-0 truncate text-right font-mono text-[10px] tabular-nums",
-                      isSelected ? "text-white/70" : "text-white/35",
-                    )}
-                    title={valueTitle}
-                  >
-                    {displayValue}
-                  </span>
+                  <TimelinePropertyValue
+                    block={first}
+                    propertyName={row.propertyName}
+                    selected={isSelected}
+                  />
                 </div>
               );
             }
@@ -1518,7 +1282,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
                   }
             }
           >
-            {!timelineCollapsed && isTimelineEmpty && !emptyHintDismissed && (
+            {isTimelineEmpty && !emptyHintDismissed && (
               <div className="absolute inset-0 z-[5] flex items-center justify-center p-6">
                 <div className="relative w-full max-w-[300px] rounded-xl border border-white/10 bg-[#2C2C2C]/95 px-5 py-4 text-center shadow-lg">
                   <button
@@ -1537,8 +1301,7 @@ export function LayerTimeline(_props: LayerTimelineProps) {
               </div>
             )}
 
-            {!timelineCollapsed &&
-              timelineRows.map((row) => {
+            {timelineRows.map((row) => {
                 if (row.kind === "frame") {
                   const isActive = row.frameId === selectedFrameId;
                   return (

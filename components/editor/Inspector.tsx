@@ -99,6 +99,7 @@ export function Inspector() {
   const duplicateFrame = useEditorStore((state) => state.duplicateFrame);
   const deleteFrame = useEditorStore((state) => state.deleteFrame);
   const updateVector = useEditorStore((state) => state.updateVector);
+  const setTimelineCollapsed = useEditorStore((state) => state.setTimelineCollapsed);
 
   const point = getCurrentSelectedPoint ? getCurrentSelectedPoint() : null;
   const currentLayer = layers.find((l) => l.id === selectedLayerId);
@@ -134,6 +135,10 @@ export function Inspector() {
   const [isCommandsFocused, setIsCommandsFocused] = React.useState(false);
   const [showPathData, setShowPathData] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<InspectorTab>("design");
+  const changeInspectorTab = (tab: InspectorTab) => {
+    setActiveTab(tab);
+    if (tab === "motion") setTimelineCollapsed(false);
+  };
 
   React.useEffect(() => {
     if (!isCommandsFocused) return;
@@ -146,7 +151,7 @@ export function Inspector() {
   if (selectionKind === "none" || (selectionKind === "layer" && !currentLayer)) {
     return (
       <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-        <InspectorTabs value={activeTab} onChange={setActiveTab} />
+        <InspectorTabs value={activeTab} onChange={changeInspectorTab} />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
           <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
             <MousePointerClick size={24} />
@@ -162,7 +167,7 @@ export function Inspector() {
   if (selectionKind === "frame" && currentFrame) {
     return (
       <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-        <InspectorTabs value={activeTab} onChange={setActiveTab} />
+        <InspectorTabs value={activeTab} onChange={changeInspectorTab} />
         <div className="flex h-13 items-center gap-2.5 border-b border-border px-3">
           <div className="grid size-7 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
             <RectangleHorizontal className="size-4" />
@@ -303,7 +308,7 @@ export function Inspector() {
 
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-      <InspectorTabs value={activeTab} onChange={setActiveTab} />
+      <InspectorTabs value={activeTab} onChange={changeInspectorTab} />
       {/* Header */}
       <div className="flex h-13 items-center gap-2.5 border-b border-border px-3">
         <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">

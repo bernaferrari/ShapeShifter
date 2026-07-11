@@ -705,8 +705,8 @@ describe("editorStore", () => {
 
   // ─── ToolMode ────────────────────────────────────────────────────────
   describe("toolMode", () => {
-    it("defaults to 'direct' (vector editor first)", () => {
-      expect(getStore().toolMode).toBe("direct");
+    it("defaults to Select so objects, not vector points, are the initial target", () => {
+      expect(getStore().toolMode).toBe("select");
     });
 
     it("setToolMode changes the mode", () => {
@@ -1230,7 +1230,8 @@ describe("editorStore", () => {
       expect(getStore().speed).toBe(1);
       expect(getStore().isSlowMotion).toBe(false);
       expect(getStore().isRepeating).toBe(true);
-      expect(getStore().toolMode).toBe("direct");
+      expect(getStore().toolMode).toBe("select");
+      expect(getStore().timelineCollapsed).toBe(true);
       expect(getStore().editingSide).toBe("from");
       expect(getStore().isActionMode).toBe(false);
       expect(getStore().selection).toBeNull();
@@ -1620,6 +1621,26 @@ describe("editorStore", () => {
       expect(status.compatible).toBe(true);
       expect(status.fromPoints).toBe(0);
       expect(status.toPoints).toBe(0);
+    });
+  });
+
+  describe("owner-aware layer chrome actions", () => {
+    it("toggles an inactive frame layer without changing the active selection", () => {
+      const sourceFrameId = getStore().selectedFrameId;
+      const sourceLayer = getStore().layers[0]!;
+      getStore().addFrame();
+      const activeFrameId = getStore().selectedFrameId;
+      const selectionBefore = getStore().selectionKind;
+
+      getStore().toggleOwnedLayerVisibility(sourceFrameId, sourceLayer.id);
+      getStore().toggleOwnedLayerLock(sourceFrameId, sourceLayer.id);
+
+      const source = getStore().frames.find((frame) => frame.id === sourceFrameId)!;
+      const updated = source.layers.find((layer) => String(layer.id) === String(sourceLayer.id))!;
+      expect(updated.visible).toBe(false);
+      expect(updated.locked).toBe(true);
+      expect(getStore().selectedFrameId).toBe(activeFrameId);
+      expect(getStore().selectionKind).toBe(selectionBefore);
     });
   });
 

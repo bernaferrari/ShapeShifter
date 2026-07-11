@@ -65,7 +65,8 @@ const TOOLS: ToolDef[] = [
 ];
 
 export function BottomToolPalette() {
-  const { toolMode, setToolMode } = useEditorStore();
+  const toolMode = useEditorStore((state) => state.toolMode);
+  const setToolMode = useEditorStore((state) => state.setToolMode);
 
   return (
     <div className="flex flex-col items-center gap-1 rounded-xl border border-border bg-card/95 p-1 shadow-lg shadow-black/10 backdrop-blur-md dark:shadow-black/40">

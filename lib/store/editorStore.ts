@@ -305,6 +305,7 @@ interface EditorState {
   selectLayerRefs: (refs: LayerSelectionRef[]) => void;
   deleteSelectedLayers: () => void;
   toggleLayerLock: (id: string | number) => void;
+  toggleOwnedLayerLock: (ownerId: string, id: string | number) => void;
   reorderLayer: (id: string | number, toIndex: number) => void;
   /** Z-order: +1 bring forward, -1 send backward (Figma ] / [ style). */
   nudgeLayerZOrder: (id: string | number, delta: number) => void;
@@ -425,6 +426,7 @@ interface EditorState {
   addLayer: (type?: LayerType) => void;
   deleteLayer: (id: string | number) => void;
   toggleLayerVisibility: (id: string | number) => void;
+  toggleOwnedLayerVisibility: (ownerId: string, id: string | number) => void;
   toggleLayerExpanded: (id: string | number) => void;
   convertLayerType: (id: string | number, type: Extract<LayerType, "path" | "clipPath">) => void;
   addTimelineBlock: (layerId: string | number, propertyName: string) => void;
@@ -752,6 +754,24 @@ function saveActiveFrame(state: EditorState) {
   );
 }
 
+function updateOwnedLayers(
+  state: EditorState,
+  ownerId: string,
+  update: (layers: Layer[]) => Layer[],
+) {
+  const savedFrames = saveActiveFrame(state);
+  const savedRoot = saveActiveRoot(state);
+  const frames = savedFrames.map((frame) =>
+    frame.id === ownerId ? { ...frame, layers: update(frame.layers) } : frame,
+  );
+  const rootLayers = ownerId === PAGE_ROOT_ID ? update(savedRoot.layers) : savedRoot.layers;
+  const layers =
+    state.selectedFrameId === PAGE_ROOT_ID
+      ? rootLayers
+      : (frames.find((frame) => frame.id === state.selectedFrameId)?.layers ?? state.layers);
+  return { frames, rootLayers, layers };
+}
+
 function cubicPointAt(
   start: Point,
   control1: Point,
@@ -843,7 +863,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   timelineZoom: 1,
   timelineScrollX: 0,
   timelineScrollY: 0,
-  timelineCollapsed: false,
+  timelineCollapsed: true,
 
   // World camera (1el Phase 2 foundation)
   worldViewport: computeFramesViewport(initialFrames),
@@ -1937,7 +1957,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedPoints: [],
       selectedSubPaths: [],
       // Enter morph edit ready to manipulate points directly (best default for "edit")
-      toolMode: "direct",
+      toolMode: "select",
     }),
   closeActionMode: () =>
     set({ isActionMode: false, selection: null, selectedPoints: [], selectedSubPaths: [] }),
@@ -2460,13 +2480,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   toggleLayerLock: (id) => {
-    const { layers } = get();
+    get().toggleOwnedLayerLock(get().selectedFrameId, id);
+  },
+  toggleOwnedLayerLock: (ownerId, id) => {
+    const state = get();
     get().pushHistory();
-    set({
-      layers: layers.map((l) =>
-        String(l.id) === String(id) ? { ...l, locked: !l.locked } : l,
+    set(
+      updateOwnedLayers(state, ownerId, (layers) =>
+        layers.map((layer) =>
+          String(layer.id) === String(id) ? { ...layer, locked: !layer.locked } : layer,
+        ),
       ),
-    });
+    );
   },
 
   reorderLayer: (id, toIndex) => {
@@ -3414,10 +3439,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   toggleLayerVisibility: (id: string | number) => {
-    const { layers } = get();
-    const newLayers = layers.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l));
+    get().toggleOwnedLayerVisibility(get().selectedFrameId, id);
+  },
+  toggleOwnedLayerVisibility: (ownerId, id) => {
+    const state = get();
     get().pushHistory();
-    set({ layers: newLayers });
+    set(
+      updateOwnedLayers(state, ownerId, (layers) =>
+        layers.map((layer) =>
+          String(layer.id) === String(id)
+            ? { ...layer, visible: layer.visible === false }
+            : layer,
+        ),
+      ),
+    );
   },
 
   toggleLayerExpanded: (id: string | number) => {
@@ -3555,10 +3590,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       timelineZoom: 1,
       timelineScrollX: 0,
       timelineScrollY: 0,
-      timelineCollapsed: false,
+      timelineCollapsed: true,
       hasCanvasSelection: true,
       selectionKind: "layer",
-      toolMode: "direct",
+      toolMode: "select",
       cursorType: "default",
       hoveredItem: null,
       dragState: null,

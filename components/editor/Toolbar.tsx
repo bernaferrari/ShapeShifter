@@ -81,25 +81,27 @@ export function Toolbar({
   canUndo,
   canRedo,
 }: ToolbarProps) {
-  const {
-    addLayer,
-    reverseSelectedLayer,
-    shiftSelectedLayer,
-    autoFixSelectedLayer,
-    closeActionMode,
-    splitSelectedCommand,
-    setSelectedCommandAsFirst,
-    deleteSelectedPoint,
-    deleteSelectedSubPath,
-    extractSelectedSubPathToNewLayer,
-    booleanCombine,
-    resetProject,
-    vector,
-    isRepeating,
-    isSlowMotion,
-    toggleRepeating,
-    toggleSlowMotion,
-  } = useEditorStore();
+  const addLayer = useEditorStore((state) => state.addLayer);
+  const reverseSelectedLayer = useEditorStore((state) => state.reverseSelectedLayer);
+  const shiftSelectedLayer = useEditorStore((state) => state.shiftSelectedLayer);
+  const autoFixSelectedLayer = useEditorStore((state) => state.autoFixSelectedLayer);
+  const closeActionMode = useEditorStore((state) => state.closeActionMode);
+  const splitSelectedCommand = useEditorStore((state) => state.splitSelectedCommand);
+  const setSelectedCommandAsFirst = useEditorStore(
+    (state) => state.setSelectedCommandAsFirst,
+  );
+  const deleteSelectedPoint = useEditorStore((state) => state.deleteSelectedPoint);
+  const deleteSelectedSubPath = useEditorStore((state) => state.deleteSelectedSubPath);
+  const extractSelectedSubPathToNewLayer = useEditorStore(
+    (state) => state.extractSelectedSubPathToNewLayer,
+  );
+  const booleanCombine = useEditorStore((state) => state.booleanCombine);
+  const resetProject = useEditorStore((state) => state.resetProject);
+  const vector = useEditorStore((state) => state.vector);
+  const isRepeating = useEditorStore((state) => state.isRepeating);
+  const isSlowMotion = useEditorStore((state) => state.isSlowMotion);
+  const toggleRepeating = useEditorStore((state) => state.toggleRepeating);
+  const toggleSlowMotion = useEditorStore((state) => state.toggleSlowMotion);
 
   const handleAutoFix = () => {
     if (autoFixSelectedLayer()) {

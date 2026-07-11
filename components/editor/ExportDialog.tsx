@@ -34,7 +34,12 @@ interface ExportDialogProps {
 }
 
 export function ExportDialog({ children }: ExportDialogProps) {
-  const { layers, selectedLayerId, vector, animation, hiddenLayerIds, frames } = useEditorStore();
+  const layers = useEditorStore((state) => state.layers);
+  const selectedLayerId = useEditorStore((state) => state.selectedLayerId);
+  const vector = useEditorStore((state) => state.vector);
+  const animation = useEditorStore((state) => state.animation);
+  const hiddenLayerIds = useEditorStore((state) => state.hiddenLayerIds);
+  const frames = useEditorStore((state) => state.frames);
   const currentLayer = layers.find((l) => l.id === selectedLayerId) || layers[0];
 
   const [open, setOpen] = useState(false);
