@@ -38,6 +38,10 @@ import {
 } from "@/lib/shapeshifter/playheadResolve";
 import { snapRectToGuides, type GuideLine } from "@/lib/shapeshifter/smartGuides";
 import { collectPointsInLasso, pointInPolygon } from "@/lib/shapeshifter/gestures/HitTests";
+import {
+  ObjectDragGesture,
+  type ObjectDragModifiers,
+} from "@/lib/shapeshifter/gestures/select/ObjectDragGesture";
 import { generateId } from "@/lib/shapeshifter/ids";
 import { gradientDomId, gradientToSvg } from "@/lib/shapeshifter/gradients";
 import type { Command, PathData, Selection } from "@/lib/shapeshifter/types";
@@ -176,7 +180,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const [lastWorldPan, setLastWorldPan] = useState({ x: 0, y: 0 });
   const [renamingFrameId, setRenamingFrameId] = useState<string | null>(null);
   const [smartGuides, setSmartGuides] = useState<GuideLine[]>([]);
-  const altCloneDoneRef = useRef(false);
   /** World-canvas rotation session (degrees). */
   const layerRotateRef = useRef<{
     center: { x: number; y: number };
@@ -705,11 +708,165 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   );
 
   // Layer object drag (Figma: grab selected shape and move it inside the frame)
-  const layerDragRef = useRef<{
-    start: { x: number; y: number };
-    applied: { x: number; y: number };
-    moved: boolean;
-  } | null>(null);
+  const layerDragRef = useRef<ObjectDragGesture | null>(null);
+
+  const syncActiveOwner = useCallback((includeAnimation = false) => {
+    useEditorStore.setState((state) =>
+      state.selectedFrameId === PAGE_ROOT_ID
+        ? {
+            rootLayers: structuredClone(state.layers),
+            ...(includeAnimation
+              ? { rootAnimation: structuredClone(state.animation) }
+              : {}),
+          }
+        : {
+            frames: state.frames.map((frame) =>
+              frame.id === state.selectedFrameId
+                ? {
+                    ...frame,
+                    layers: structuredClone(state.layers),
+                    ...(includeAnimation
+                      ? { animation: structuredClone(state.animation) }
+                      : {}),
+                  }
+                : frame,
+            ),
+          },
+    );
+  }, []);
+
+  const resolveObjectDragTotal = useCallback(
+    (total: { x: number; y: number }, modifiers: ObjectDragModifiers) => {
+      let next = { ...total };
+      if (snapToGrid && !modifiers.bypassSnap) {
+        next = {
+          x: snapValueToStep(next.x, editSnap),
+          y: snapValueToStep(next.y, editSnap),
+        };
+      }
+
+      if (!modifiers.bypassSnap && editOrigin && editFrame) {
+        const state = useEditorStore.getState();
+        const ids = state.selectedLayerIds;
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        for (const id of ids) {
+          const layer = state.layers.find((candidate) => String(candidate.id) === String(id));
+          if (!layer?.from) continue;
+          const bounds = getPathDataBounds(layer.from as PathData);
+          if (!bounds) continue;
+          const tx = (layer.translateX ?? 0) + next.x;
+          const ty = (layer.translateY ?? 0) + next.y;
+          minX = Math.min(minX, editOrigin.x + bounds.x + tx);
+          minY = Math.min(minY, editOrigin.y + bounds.y + ty);
+          maxX = Math.max(maxX, editOrigin.x + bounds.x + bounds.w + tx);
+          maxY = Math.max(maxY, editOrigin.y + bounds.y + bounds.h + ty);
+        }
+        if (Number.isFinite(minX)) {
+          const moving = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+          const frameBounds = getFrameBounds(editFrame);
+          const targets = [
+            { x: frameBounds.x, y: frameBounds.y, w: frameBounds.w, h: frameBounds.h },
+            {
+              x: frameBounds.x + frameBounds.w / 2,
+              y: frameBounds.y,
+              w: 0,
+              h: frameBounds.h,
+            },
+          ];
+          for (const layer of state.layers) {
+            if (ids.some((id) => String(id) === String(layer.id))) continue;
+            if (!layer.from || layer.visible === false) continue;
+            const bounds = getPathDataBounds(layer.from as PathData);
+            if (!bounds) continue;
+            targets.push({
+              x: editOrigin.x + bounds.x + (layer.translateX ?? 0),
+              y: editOrigin.y + bounds.y + (layer.translateY ?? 0),
+              w: bounds.w,
+              h: bounds.h,
+            });
+          }
+          const snapped = snapRectToGuides(moving, targets, worldPerPx * 6);
+          next.x += snapped.x - moving.x;
+          next.y += snapped.y - moving.y;
+          setSmartGuides(snapped.guides);
+        }
+      } else {
+        setSmartGuides([]);
+      }
+      return next;
+    },
+    [editFrame, editOrigin, editSnap, getFrameBounds, snapToGrid, worldPerPx],
+  );
+
+  const beginObjectDrag = useCallback(
+    (start: { x: number; y: number }) =>
+      new ObjectDragGesture(start, {
+        beginTransaction: () => useEditorStore.getState().pushHistory(),
+        cloneSelection: () =>
+          useEditorStore.getState().duplicateSelectedLayersOffset(0, 0, {
+            recordHistory: false,
+          }),
+        resolveTotalDelta: resolveObjectDragTotal,
+        applyDelta: (delta) => {
+          useEditorStore
+            .getState()
+            .translateSelectedLayer(delta.x, delta.y, { recordHistory: false });
+          syncActiveOwner();
+        },
+        commit: (result) => {
+          const store = useEditorStore.getState();
+          store.recordLayerTranslationAtPlayhead();
+          syncActiveOwner(true);
+          const dropFrameId = hitArtboard(result.end);
+          if (dropFrameId && dropFrameId !== useEditorStore.getState().selectedFrameId) {
+            const moved = useEditorStore
+              .getState()
+              .moveSelectedLayersToFrame(dropFrameId, { recordHistory: false });
+            if (moved) setWorldSelectedIds([dropFrameId]);
+          } else if (
+            !dropFrameId &&
+            useEditorStore.getState().selectedFrameId !== PAGE_ROOT_ID
+          ) {
+            const moved = useEditorStore
+              .getState()
+              .moveSelectedLayersToRoot({ recordHistory: false });
+            if (moved) setWorldSelectedIds([]);
+          }
+          setSmartGuides([]);
+        },
+        rollback: () => useEditorStore.getState().cancelLastHistoryTransaction(),
+        cancelled: () => setSmartGuides([]),
+      }),
+    [hitArtboard, resolveObjectDragTotal, syncActiveOwner],
+  );
+
+  const cancelObjectDrag = useCallback(() => {
+    const drag = layerDragRef.current;
+    layerDragRef.current = null;
+    drag?.cancel();
+    setSmartGuides([]);
+  }, []);
+
+  const cancelLayerTransform = useCallback(() => {
+    const transform = layerResizeRef.current ?? layerRotateRef.current;
+    layerResizeRef.current = null;
+    layerRotateRef.current = null;
+    if (transform?.moved) {
+      useEditorStore.getState().cancelLastHistoryTransaction();
+    }
+    setSmartGuides([]);
+  }, []);
+
+  useEffect(
+    () => () => {
+      cancelObjectDrag();
+      cancelLayerTransform();
+    },
+    [cancelLayerTransform, cancelObjectDrag, toolMode],
+  );
 
   // Hit-test the selected layer's anchor points in world space (path + Position).
   const hitAnchor = useCallback(
@@ -932,8 +1089,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const handleWorldPointerDown = useCallback(
     (e: React.PointerEvent) => {
       const p = worldPointFromEvent(e.clientX, e.clientY);
-      // Middle, Alt, or Space/H pan (Figma hand)
-      if (e.button === 1 || e.altKey || spacePanActive) {
+      // Middle or Space/H pans. Alt is reserved for Figma-style drag duplication.
+      if (e.button === 1 || spacePanActive) {
         if (spacePanActive) {
           (window as unknown as { __ssSpacePanUsed?: boolean }).__ssSpacePanUsed = true;
         }
@@ -947,7 +1104,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         return;
       }
       if (!p) return;
-      altCloneDoneRef.current = false;
 
       // Pen / Paint operate in the focused frame's local space.
       const rawLocal = { x: p.x - (editOrigin?.x ?? 0), y: p.y - (editOrigin?.y ?? 0) };
@@ -1058,7 +1214,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
             selectLayers(next);
           } else {
             selectOwnedLayer(layerHit);
-            layerDragRef.current = { start: p, applied: { x: 0, y: 0 }, moved: false };
+            layerDragRef.current = beginObjectDrag(p);
           }
           setWorldSelectedIds(layerHit.frameId === PAGE_ROOT_ID ? [] : [layerHit.frameId]);
           try {
@@ -1121,6 +1277,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       hitArtboard,
       hitLayerAtWorld,
       selectOwnedLayer,
+      beginObjectDrag,
       toolMode,
       isObjectTool,
       isPointTool,
@@ -1239,106 +1396,14 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         return;
       }
 
-      const syncActiveOwner = () => {
-        useEditorStore.setState((state) =>
-          state.selectedFrameId === PAGE_ROOT_ID
-            ? { rootLayers: structuredClone(state.layers) }
-            : {
-                frames: state.frames.map((fr) =>
-                  fr.id === state.selectedFrameId
-                    ? { ...fr, layers: structuredClone(state.layers) }
-                    : fr,
-                ),
-              },
-        );
-      };
-
-      // Layer object drag (multi-select + smart guides + Alt-clone)
+      // ObjectDragGesture owns transaction, clone, constraints, snapping, delta,
+      // cancel, and owner-aware commit. React only forwards world coordinates.
       if (layerDragRef.current) {
-        const drag = layerDragRef.current;
-        let totalDx = p.x - drag.start.x;
-        let totalDy = p.y - drag.start.y;
-        if (e.shiftKey) {
-          if (Math.abs(totalDx) > Math.abs(totalDy)) totalDy = 0;
-          else totalDx = 0;
-        }
-        // Alt-drag: duplicate once at drag start (Figma clone)
-        if (e.altKey && !altCloneDoneRef.current && (Math.abs(totalDx) > 2 || Math.abs(totalDy) > 2)) {
-          useEditorStore.getState().duplicateSelectedLayersOffset(0, 0);
-          altCloneDoneRef.current = true;
-        }
-        if (snapToGrid && !(e.metaKey || e.ctrlKey)) {
-          totalDx = snapValueToStep(totalDx, editSnap);
-          totalDy = snapValueToStep(totalDy, editSnap);
-        }
-        // Smart guides: snap multi-select AABB to siblings + frame
-        if (!(e.metaKey || e.ctrlKey) && editOrigin && editFrame) {
-          const st = useEditorStore.getState();
-          const ids = st.selectedLayerIds;
-          let minX = Infinity,
-            minY = Infinity,
-            maxX = -Infinity,
-            maxY = -Infinity;
-          for (const id of ids) {
-            const layer = st.layers.find((l) => String(l.id) === String(id));
-            if (!layer?.from) continue;
-            const bb = getPathDataBounds(layer.from as PathData);
-            if (!bb) continue;
-            const tx = (layer.translateX ?? 0) + totalDx;
-            const ty = (layer.translateY ?? 0) + totalDy;
-            minX = Math.min(minX, editOrigin.x + bb.x + tx);
-            minY = Math.min(minY, editOrigin.y + bb.y + ty);
-            maxX = Math.max(maxX, editOrigin.x + bb.x + bb.w + tx);
-            maxY = Math.max(maxY, editOrigin.y + bb.y + bb.h + ty);
-          }
-          if (Number.isFinite(minX)) {
-            const moving = {
-              x: minX,
-              y: minY,
-              w: maxX - minX,
-              h: maxY - minY,
-            };
-            const targets: Array<{ x: number; y: number; w: number; h: number }> = [];
-            const fb = getFrameBounds(editFrame);
-            targets.push({ x: fb.x, y: fb.y, w: fb.w, h: fb.h });
-            targets.push({
-              x: fb.x + fb.w / 2,
-              y: fb.y,
-              w: 0,
-              h: fb.h,
-            });
-            for (const layer of st.layers) {
-              if (ids.some((id) => String(id) === String(layer.id))) continue;
-              if (!layer.from || layer.visible === false) continue;
-              const bb = getPathDataBounds(layer.from as PathData);
-              if (!bb) continue;
-              targets.push({
-                x: editOrigin.x + bb.x + (layer.translateX ?? 0),
-                y: editOrigin.y + bb.y + (layer.translateY ?? 0),
-                w: bb.w,
-                h: bb.h,
-              });
-            }
-            const thr = worldPerPx * 6;
-            const snapped = snapRectToGuides(moving, targets, thr);
-            totalDx += snapped.x - moving.x;
-            totalDy += snapped.y - moving.y;
-            setSmartGuides(snapped.guides);
-          }
-        } else {
-          setSmartGuides([]);
-        }
-        const dx = totalDx - drag.applied.x;
-        const dy = totalDy - drag.applied.y;
-        if (Math.abs(dx) > 1e-6 || Math.abs(dy) > 1e-6) {
-          if (!drag.moved) {
-            useEditorStore.getState().pushHistory?.();
-            drag.moved = true;
-          }
-          useEditorStore.getState().translateSelectedLayer(dx, dy, { recordHistory: false });
-          syncActiveOwner();
-          drag.applied = { x: totalDx, y: totalDy };
-        }
+        layerDragRef.current.update(p, {
+          shift: e.shiftKey,
+          alt: e.altKey,
+          bypassSnap: e.metaKey || e.ctrlKey,
+        });
         return;
       }
 
@@ -1630,17 +1695,16 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       selectLayer,
       selectedFrameId,
       editSnap,
+      syncActiveOwner,
     ],
   );
 
   const handleWorldPointerUp = useCallback(
     (e: React.PointerEvent) => {
-      const layerDragSession = layerDragRef.current;
-      const hadLayerMove = !!(layerDragSession && layerDragSession.moved);
-      const dropPoint = hadLayerMove ? worldPointFromEvent(e.clientX, e.clientY) : null;
-      const dropFrameId = dropPoint ? hitArtboard(dropPoint) : null;
+      const objectDrag = layerDragRef.current;
+      const layerTransform = layerResizeRef.current ?? layerRotateRef.current;
       const hadLayerGesture = !!(
-        layerDragSession ||
+        objectDrag ||
         layerResizeRef.current ||
         layerRotateRef.current
       );
@@ -1648,7 +1712,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       layerResizeRef.current = null;
       layerRotateRef.current = null;
       setSmartGuides([]);
-      altCloneDoneRef.current = false;
       if (hadLayerGesture) {
         try {
           worldSvgRef.current?.releasePointerCapture(e.pointerId);
@@ -1656,43 +1719,12 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
           /* ignore */
         }
       }
-      // Figma motion: a real layer drag writes Position tracks on the timeline
-      if (hadLayerMove) {
-        useEditorStore.getState().recordLayerTranslationAtPlayhead();
-        // Keep the active owner snapshot in sync with the live editor projection.
-        useEditorStore.setState((state) =>
-          state.selectedFrameId === PAGE_ROOT_ID
-            ? {
-                rootLayers: structuredClone(state.layers),
-                rootAnimation: structuredClone(state.animation),
-              }
-            : {
-                frames: state.frames.map((fr) =>
-                  fr.id === state.selectedFrameId
-                    ? {
-                        ...fr,
-                        layers: structuredClone(state.layers),
-                        animation: structuredClone(state.animation),
-                      }
-                    : fr,
-                ),
-              },
-        );
-        // Figma-style cross-frame ownership: the object keeps its exact world
-        // position, but its local transform and animation tracks are rebased to
-        // the destination frame. The drag already owns the single undo snapshot.
-        if (dropFrameId && dropFrameId !== useEditorStore.getState().selectedFrameId) {
-          const moved = useEditorStore
-            .getState()
-            .moveSelectedLayersToFrame(dropFrameId, { recordHistory: false });
-          if (moved) setWorldSelectedIds([dropFrameId]);
-        } else if (!dropFrameId && useEditorStore.getState().selectedFrameId !== PAGE_ROOT_ID) {
-          const moved = useEditorStore
-            .getState()
-            .moveSelectedLayersToRoot({ recordHistory: false });
-          if (moved) setWorldSelectedIds([]);
-        }
+      if (objectDrag) {
+        const end = worldPointFromEvent(e.clientX, e.clientY);
+        if (end) objectDrag.finish(end);
+        else objectDrag.cancel();
       }
+      if (layerTransform?.moved) syncActiveOwner(true);
       // Pen: persist the handle pulled during this anchor's drag (history already
       // pushed on pointer-down), then keep the path open for the next anchor.
       if (penDragRef.current) {
@@ -1806,7 +1838,26 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       penPointerUp,
       worldPointFromEvent,
       hitArtboard,
+      syncActiveOwner,
     ],
+  );
+
+  const handleWorldPointerCancel = useCallback(
+    (e: React.PointerEvent) => {
+      cancelObjectDrag();
+      cancelLayerTransform();
+      pointDragRef.current = null;
+      pointDragMovedRef.current = false;
+      setIsWorldPanning(false);
+      setMarquee(null);
+      setSmartGuides([]);
+      try {
+        worldSvgRef.current?.releasePointerCapture(e.pointerId);
+      } catch {
+        /* Pointer capture may already be gone on native cancellation. */
+      }
+    },
+    [cancelLayerTransform, cancelObjectDrag],
   );
 
   // Double-click focus (select + camera lerp to artboard rect) - seamless world to detail transition
@@ -1868,6 +1919,21 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         finishPen();
         return;
       }
+      // Escape cancels an in-flight object transaction before changing selection.
+      // The rollback restores the pre-drag document and removes its undo entry.
+      if (e.key === "Escape" && layerDragRef.current) {
+        e.preventDefault();
+        cancelObjectDrag();
+        return;
+      }
+      if (
+        e.key === "Escape" &&
+        (layerResizeRef.current || layerRotateRef.current)
+      ) {
+        e.preventDefault();
+        cancelLayerTransform();
+        return;
+      }
       // Figma: first Esc exits vector edit → object still selected; second Esc deselects
       if (e.key === "Escape" && toolMode === "direct") {
         e.preventDefault();
@@ -1918,6 +1984,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     toolMode,
     setToolMode,
     deselectAll,
+    cancelObjectDrag,
+    cancelLayerTransform,
   ]);
 
   return (
@@ -2072,6 +2140,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                     onPointerDown={handleWorldPointerDown}
                     onPointerMove={handleWorldPointerMove}
                     onPointerUp={handleWorldPointerUp}
+                    onPointerCancel={handleWorldPointerCancel}
                     onPointerLeave={() => {
                       setHoveredFrameId(null);
                       if (toolMode === "paint") {

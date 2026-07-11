@@ -547,6 +547,33 @@ describe("editorStore", () => {
       expect(getStore().canRedo).toBe(false);
     });
 
+    it("cancels an in-flight transaction without leaving an undo entry", () => {
+      const layer = getStore().layers[0];
+      getStore().selectLayer(layer.id);
+      const beforeHistory = getStore().history.length;
+      const beforeX = layer.translateX ?? 0;
+
+      getStore().pushHistory();
+      getStore().translateSelectedLayer(12, 0, { recordHistory: false });
+      getStore().cancelLastHistoryTransaction();
+
+      expect(getStore().layers[0].translateX ?? 0).toBe(beforeX);
+      expect(getStore().history).toHaveLength(beforeHistory);
+      expect(getStore().canRedo).toBe(false);
+    });
+
+    it("can duplicate inside an existing gesture transaction", () => {
+      const layer = getStore().layers[0];
+      getStore().selectLayer(layer.id);
+      const beforeHistory = getStore().history.length;
+      const beforeLayers = getStore().layers.length;
+
+      getStore().duplicateSelectedLayersOffset(0, 0, { recordHistory: false });
+
+      expect(getStore().layers).toHaveLength(beforeLayers + 1);
+      expect(getStore().history).toHaveLength(beforeHistory);
+    });
+
     it("undo is no-op when history is empty", () => {
       freshStore();
       const count = getStore().layers.length;

@@ -228,6 +228,8 @@ interface EditorState {
   undo: () => void;
   redo: () => void;
   pushHistory: () => void; // internal
+  /** Restore and discard the latest snapshot for a cancelled in-flight gesture. */
+  cancelLastHistoryTransaction: () => void;
 
   // Workspace frame actions
   addFrame: () => void;
@@ -286,7 +288,11 @@ interface EditorState {
   spacePanActive: boolean;
   setSpacePanActive: (active: boolean) => void;
   /** Alt-drag duplicate: clone selected layers offset by dx/dy and select clones. */
-  duplicateSelectedLayersOffset: (dx: number, dy: number) => void;
+  duplicateSelectedLayersOffset: (
+    dx: number,
+    dy: number,
+    options?: { recordHistory?: boolean },
+  ) => void;
   setEditingSide: (side: "from" | "to") => void;
   startActionMode: () => void;
   closeActionMode: () => void;
@@ -824,6 +830,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       history: [...get().history, snapshotHistoryEntry(get())].slice(-100),
       future: [],
       canUndo: true,
+      canRedo: false,
+    });
+  },
+
+  cancelLastHistoryTransaction: () => {
+    const state = get();
+    const entry = state.history.at(-1);
+    if (!entry) return;
+    const history = state.history.slice(0, -1);
+    set({
+      ...restoreHistoryEntry(state, entry),
+      history,
+      future: [],
+      canUndo: history.length > 0,
       canRedo: false,
     });
   },
@@ -2217,7 +2237,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     });
   },
 
-  duplicateSelectedLayersOffset: (dx, dy) => {
+  duplicateSelectedLayersOffset: (dx, dy, options) => {
     const { layers, selectedLayerIds, selectedLayerId } = get();
     const ids =
       selectedLayerIds.length > 0
@@ -2236,7 +2256,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         translateX: (l.translateX ?? 0) + dx,
         translateY: (l.translateY ?? 0) + dy,
       }));
-    get().pushHistory();
+    if (options?.recordHistory !== false) get().pushHistory();
     set({
       layers: [...layers, ...clones],
       selectedLayerId: clones[clones.length - 1]?.id ?? selectedLayerId,
