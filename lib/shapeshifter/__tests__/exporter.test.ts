@@ -989,6 +989,39 @@ describe("kus 24t export fidelity", () => {
     expect((project as any).frames[0].y).toBe(20);
   });
 
+  it("exportProjectJSON preserves page-root vectors and motion tracks", () => {
+    const rootLayer = makeLayer({ id: "root-vector", translateX: 120, translateY: -40 });
+    const rootAnimation = {
+      id: "root-motion",
+      name: "Page motion",
+      duration: 800,
+      blocks: [
+        {
+          id: "root-x",
+          layerId: rootLayer.id,
+          propertyName: "translateX",
+          fromValue: 120,
+          toValue: 200,
+          startTime: 0,
+          endTime: 800,
+          type: "number" as const,
+        },
+      ],
+    };
+    const project = exportProjectJSON(
+      [makeLayer()],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { layers: [rootLayer], animation: rootAnimation, hiddenLayerIds: [] },
+    );
+
+    expect((project as any).pageRoot.layers[0].id).toBe("root-vector");
+    expect((project as any).pageRoot.layers[0].translateX).toBe(120);
+    expect((project as any).pageRoot.animation.blocks[0].id).toBe("root-x");
+  });
+
   it("exportPDF produces valid minimal PDF structure (no crash on real paths)", () => {
     const layer = makeLayer({ strokeColor: "#ff0000", fillColor: "#00ff00" });
     const pdf = exportPDF([layer]);

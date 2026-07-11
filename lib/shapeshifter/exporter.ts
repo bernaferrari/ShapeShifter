@@ -940,6 +940,11 @@ export function exportProjectJSON(
     animation?: AnimationState;
     hiddenLayerIds?: string[];
   }>,
+  pageRoot?: {
+    layers: Layer[];
+    animation: AnimationState;
+    hiddenLayerIds?: string[];
+  },
 ) {
   const byParent = new Map<string, Layer[]>();
   for (const layer of layers) {
@@ -1042,6 +1047,19 @@ export function exportProjectJSON(
           })
         : undefined,
     }));
+  }
+
+  if (pageRoot) {
+    result.pageRoot = {
+      animation: pageRoot.animation,
+      hiddenLayerIds: pageRoot.hiddenLayerIds ?? [],
+      layers: pageRoot.layers.map((layer) => ({
+        ...layer,
+        from: pathToString(layer.from),
+        to: layer.to ? pathToString(layer.to) : undefined,
+        pathData: pathToString(layer.pathData ?? layer.from),
+      })),
+    };
   }
 
   return result as any; // preserve loose contract for existing tests + importers roundtrips (pre-existing unknown accesses)

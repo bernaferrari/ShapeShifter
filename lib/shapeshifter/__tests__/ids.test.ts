@@ -4,7 +4,7 @@
  * Zero tolerance for collisions, non-monotonic behavior, or lossy migration.
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   generateId,
   decodeTime,
@@ -181,13 +181,9 @@ describe("Stable ID System (k7zp)", () => {
   describe("monotonic guarantees", () => {
     it("produces strictly increasing IDs even when called in a tight loop within the same ms", () => {
       __resetMonotonicStateForTests();
-      const ids: string[] = [];
-      const start = Date.now();
-      while (Date.now() - start < 3) {
-        ids.push(generateId());
-      }
-      // At least a few dozen in 3ms on modern hardware
-      expect(ids.length).toBeGreaterThan(5);
+      const now = vi.spyOn(Date, "now").mockReturnValue(1_750_000_000_000);
+      const ids = Array.from({ length: 100 }, () => generateId());
+      now.mockRestore();
       for (let i = 1; i < ids.length; i++) {
         expect(ids[i] > ids[i - 1]).toBe(true); // string compare works because time prefix + monotonic rand
       }

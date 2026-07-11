@@ -31,7 +31,7 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { toast } from "sonner";
-import { useEditorStore } from "@/lib/store/editorStore";
+import { PAGE_ROOT_ID, useEditorStore } from "@/lib/store/editorStore";
 import { parsePath } from "@/lib/shapeshifter/pathUtils";
 import {
   downloadAnimatedSVG,
@@ -47,7 +47,7 @@ import {
 import { flattenOriginalProject, isOriginalShapeShifterProject } from "@/lib/shapeshifter/project";
 import { DEMO_INFOS } from "@/lib/shapeshifter/demoProjects";
 import { importLayersFromSvg, importLayersFromVectorDrawable } from "@/lib/shapeshifter/importers";
-import type { Layer } from "@/lib/shapeshifter/types";
+import type { AnimationState, Layer } from "@/lib/shapeshifter/types";
 import { Toolbar } from "@/components/editor/Toolbar";
 import { CanvasArea } from "@/components/editor/CanvasArea";
 import { Inspector } from "@/components/editor/Inspector";
@@ -64,6 +64,48 @@ const NARROW_BREAKPOINT = 1100;
 function isEditableTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
   return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+}
+
+function readPageRoot(project: unknown): {
+  layers: Layer[];
+  animation: AnimationState;
+  hiddenLayerIds: string[];
+} | null {
+  if (!project || typeof project !== "object") return null;
+  const candidate = (project as { pageRoot?: unknown }).pageRoot;
+  if (!candidate || typeof candidate !== "object") return null;
+  const raw = candidate as {
+    layers?: Array<Partial<Layer> & { from?: Layer["from"] | string; to?: Layer["to"] | string }>;
+    animation?: AnimationState;
+    hiddenLayerIds?: string[];
+  };
+  if (!Array.isArray(raw.layers)) return null;
+  const layers = raw.layers.map((layer, index): Layer => {
+    const fromSource = layer.from ?? layer.pathData ?? "";
+    const from = typeof fromSource === "string" ? parsePath(fromSource) : fromSource;
+    const to = typeof layer.to === "string" ? parsePath(layer.to) : layer.to;
+    return {
+      ...layer,
+      id: layer.id ?? `root-layer-${Date.now()}-${index}`,
+      name: layer.name ?? `Page vector ${index + 1}`,
+      type: layer.type ?? "path",
+      from,
+      to,
+      pathData: from,
+      visible: layer.visible ?? true,
+      locked: layer.locked ?? false,
+    };
+  });
+  return {
+    layers,
+    animation: raw.animation ?? {
+      id: "page-root-animation",
+      name: "Page motion",
+      duration: 1000,
+      blocks: [],
+    },
+    hiddenLayerIds: Array.isArray(raw.hiddenLayerIds) ? raw.hiddenLayerIds.map(String) : [],
+  };
 }
 
 export default function ShapeShifter2026() {
@@ -359,6 +401,14 @@ export default function ShapeShifter2026() {
                     selectedFrameId: restoredFrames[0]?.id || st.selectedFrameId,
                   });
                 }
+                const pageRoot = readPageRoot(project);
+                if (pageRoot) {
+                  useEditorStore.setState({
+                    rootLayers: pageRoot.layers,
+                    rootAnimation: pageRoot.animation,
+                    rootHiddenLayerIds: pageRoot.hiddenLayerIds,
+                  });
+                }
                 return `Loaded project: ${flattened.vector.name}`;
               } else {
                 const importedLayers: Layer[] = Array.isArray(project.layers)
@@ -436,6 +486,14 @@ export default function ShapeShifter2026() {
               useEditorStore.setState({
                 frames: restoredFrames as any,
                 selectedFrameId: restoredFrames[0]?.id || st.selectedFrameId,
+              });
+            }
+            const pageRoot = readPageRoot(project);
+            if (pageRoot) {
+              useEditorStore.setState({
+                rootLayers: pageRoot.layers,
+                rootAnimation: pageRoot.animation,
+                rootHiddenLayerIds: pageRoot.hiddenLayerIds,
               });
             }
             toast.success(`Opened ${flattened.vector.name}`, {
@@ -702,6 +760,18 @@ export default function ShapeShifter2026() {
             state.animation,
             state.hiddenLayerIds,
             state.frames,
+            {
+              layers:
+                state.selectedFrameId === PAGE_ROOT_ID ? state.layers : state.rootLayers,
+              animation:
+                state.selectedFrameId === PAGE_ROOT_ID
+                  ? state.animation
+                  : state.rootAnimation,
+              hiddenLayerIds:
+                state.selectedFrameId === PAGE_ROOT_ID
+                  ? state.hiddenLayerIds
+                  : state.rootHiddenLayerIds,
+            },
           ),
           null,
           2,

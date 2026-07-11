@@ -13,7 +13,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { PathCanvas } from "./PathCanvas";
-import { useEditorStore } from "@/lib/store/editorStore";
+import { PAGE_ROOT_ID, useEditorStore } from "@/lib/store/editorStore";
 import type { Viewport } from "@/lib/shapeshifter/camera";
 import {
   clientToWorld,
@@ -62,11 +62,14 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     layers,
     selectedLayerId,
     frames,
+    rootLayers,
+    rootAnimation,
     selectedFrameId,
     addFrame,
     renameFrame,
     deleteFrame,
     selectFrame,
+    selectRootLayer,
     worldViewport,
     setWorldViewport,
     fitWorldToFrames,
@@ -125,7 +128,12 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const editLayer = layers.find((l) => l.id === selectedLayerId);
   const editPath: PathData | null =
     editLayer && editLayer.type !== "group" ? (editLayer[editingSide] as PathData) : null;
-  const editOrigin = editFrame ? { x: editFrame.x || 0, y: editFrame.y || 0 } : null;
+  const editOrigin =
+    selectedFrameId === PAGE_ROOT_ID
+      ? { x: 0, y: 0 }
+      : editFrame
+        ? { x: editFrame.x || 0, y: editFrame.y || 0 }
+        : null;
   /** Layer Position transform — anchors live in path space, then this offset. */
   const editLayerTx = Number(editLayer?.translateX) || 0;
   const editLayerTy = Number(editLayer?.translateY) || 0;
@@ -249,6 +257,10 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   // (timeline, panels) while something is selected.
   useEffect(() => {
     if (!hasCanvasSelection || !selectedFrameId) return;
+    if (selectedFrameId === PAGE_ROOT_ID) {
+      setWorldSelectedIds([]);
+      return;
+    }
     setWorldSelectedIds((prev) => {
       if (prev.length === 0) return [selectedFrameId];
       if (prev.includes(selectedFrameId)) return prev;
@@ -407,6 +419,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     stroke: string | null;
     fillOpacity: number;
     strokeOpacity: number;
+    strokeWidth: number;
     fillGradient: any;
     fillType?: string;
     translateX: number;
@@ -475,6 +488,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
             layer.strokeColor && layer.strokeColor !== "" ? layer.strokeColor : null,
           fillOpacity: fillAlpha,
           strokeOpacity: strokeAlpha,
+          strokeWidth: Number(layer.strokeWidth) || 0,
           fillGradient: layer.fillGradient,
           fillType: layer.fillType,
           translateX: tx,
@@ -484,6 +498,24 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       });
     },
     [progress, layers, selectedFrameId, animation, isPlaying],
+  );
+
+  const pageRootFrame = useMemo(
+    () => ({
+      id: PAGE_ROOT_ID,
+      name: "Page",
+      x: 0,
+      y: 0,
+      layers: rootLayers,
+      vector: { id: PAGE_ROOT_ID, name: "Page", width: 1, height: 1, alpha: 1 },
+      animation: rootAnimation,
+      hiddenLayerIds: [] as string[],
+    }),
+    [rootAnimation, rootLayers],
+  );
+  const pageRootDraws = useMemo(
+    () => frameLayerDraws(pageRootFrame, isPlaying || progress > 0),
+    [frameLayerDraws, isPlaying, pageRootFrame, progress],
   );
 
   const handleWorldWheel = useCallback(
@@ -556,11 +588,13 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     (pt: { x: number; y: number } | null): { frameId: string; layerId: string | number } | null => {
       if (!pt) return null;
       const strokeTol = Math.max(worldPerPx * 10, 2);
-      for (const f of [...frames].reverse()) {
-        const b = getFrameBounds(f);
-        if (pt.x < b.x || pt.x > b.x + b.w || pt.y < b.y || pt.y > b.y + b.h) continue;
-        const local = { x: pt.x - b.x, y: pt.y - b.y };
-        const candidates = [...(f.layers ?? [])]
+      const hitOwner = (
+        ownerId: string,
+        ownerLayers: typeof layers,
+        origin: { x: number; y: number },
+      ) => {
+        const local = { x: pt.x - origin.x, y: pt.y - origin.y };
+        const candidates = [...ownerLayers]
           .filter(
             (l: any) =>
               l &&
@@ -580,7 +614,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
             layer.fillColor && layer.fillColor !== "none" && layer.fillColor !== "",
           );
           if (hasFill && isPointInFillRegion(localPath, path)) {
-            return { frameId: f.id, layerId: layer.id };
+            return { frameId: ownerId, layerId: layer.id };
           }
           // Stroke / open paths: near anchors or polyline segments of each command
           let nearStroke = false;
@@ -608,7 +642,14 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
               if (pts.length >= 3 && prev) {
                 for (let i = 0; i < pts.length - 1; i++) {
                   if (
-                    distToSeg(local.x, local.y, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y) <=
+                    distToSeg(
+                      localPath.x,
+                      localPath.y,
+                      pts[i].x,
+                      pts[i].y,
+                      pts[i + 1].x,
+                      pts[i + 1].y,
+                    ) <=
                     strokeTol
                   ) {
                     nearStroke = true;
@@ -621,15 +662,46 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
             }
             if (nearStroke) break;
           }
-          if (nearStroke) return { frameId: f.id, layerId: layer.id };
-          if (!hasFill && isPointInFillRegion(local, path)) {
-            return { frameId: f.id, layerId: layer.id };
+          if (nearStroke) return { frameId: ownerId, layerId: layer.id };
+          if (!hasFill && isPointInFillRegion(localPath, path)) {
+            return { frameId: ownerId, layerId: layer.id };
           }
         }
+        return null;
+      };
+
+      // Root vectors render above frames and therefore win hit testing first.
+      const rootHit = hitOwner(
+        PAGE_ROOT_ID,
+        selectedFrameId === PAGE_ROOT_ID ? layers : rootLayers,
+        { x: 0, y: 0 },
+      );
+      if (rootHit) return rootHit;
+
+      for (const f of [...frames].reverse()) {
+        const b = getFrameBounds(f);
+        if (pt.x < b.x || pt.x > b.x + b.w || pt.y < b.y || pt.y > b.y + b.h) continue;
+        const ownerLayers = f.id === selectedFrameId ? layers : (f.layers ?? []);
+        const hit = hitOwner(f.id, ownerLayers, { x: b.x, y: b.y });
+        if (hit) return hit;
       }
       return null;
     },
-    [frames, getFrameBounds, worldPerPx],
+    [frames, getFrameBounds, layers, rootLayers, selectedFrameId, worldPerPx],
+  );
+
+  const selectOwnedLayer = useCallback(
+    (hit: { frameId: string; layerId: string | number }) => {
+      if (hit.frameId === PAGE_ROOT_ID) {
+        selectRootLayer(hit.layerId);
+      } else {
+        if (hit.frameId !== useEditorStore.getState().selectedFrameId) {
+          selectFrame(hit.frameId);
+        }
+        selectLayer(hit.layerId);
+      }
+    },
+    [selectFrame, selectLayer, selectRootLayer],
   );
 
   // Layer object drag (Figma: grab selected shape and move it inside the frame)
@@ -935,9 +1007,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         const layerHit = hitLayerAtWorld(p);
         if (layerHit) {
           // Click a shape → that layer's vector network
-          if (layerHit.frameId !== selectedFrameId) selectFrame(layerHit.frameId);
-          selectLayer(layerHit.layerId);
-          setWorldSelectedIds([layerHit.frameId]);
+          selectOwnedLayer(layerHit);
+          setWorldSelectedIds(layerHit.frameId === PAGE_ROOT_ID ? [] : [layerHit.frameId]);
           useEditorStore.getState().clearSelection?.();
           try {
             worldSvgRef.current?.setPointerCapture(e.pointerId);
@@ -973,8 +1044,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       if (isObjectTool) {
         const layerHit = hitLayerAtWorld(p);
         if (layerHit) {
-          if (layerHit.frameId !== selectedFrameId) selectFrame(layerHit.frameId);
-          if (additive && selectionKind === "layer") {
+          if (
+            additive &&
+            selectionKind === "layer" &&
+            layerHit.frameId === selectedFrameId
+          ) {
             // Shift+click toggle layer into multi-select
             const cur = selectedLayerIds.map(String);
             const id = String(layerHit.layerId);
@@ -983,10 +1057,10 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
               : [...selectedLayerIds, layerHit.layerId];
             selectLayers(next);
           } else {
-            selectLayer(layerHit.layerId);
+            selectOwnedLayer(layerHit);
             layerDragRef.current = { start: p, applied: { x: 0, y: 0 }, moved: false };
           }
-          setWorldSelectedIds([layerHit.frameId]);
+          setWorldSelectedIds(layerHit.frameId === PAGE_ROOT_ID ? [] : [layerHit.frameId]);
           try {
             worldSvgRef.current?.setPointerCapture(e.pointerId);
           } catch {
@@ -1046,6 +1120,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       worldPointFromEvent,
       hitArtboard,
       hitLayerAtWorld,
+      selectOwnedLayer,
       toolMode,
       isObjectTool,
       isPointTool,
@@ -1164,14 +1239,18 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         return;
       }
 
-      const syncActiveFrameLayers = () => {
-        useEditorStore.setState((state) => ({
-          frames: state.frames.map((fr) =>
-            fr.id === state.selectedFrameId
-              ? { ...fr, layers: structuredClone(state.layers) }
-              : fr,
-          ),
-        }));
+      const syncActiveOwner = () => {
+        useEditorStore.setState((state) =>
+          state.selectedFrameId === PAGE_ROOT_ID
+            ? { rootLayers: structuredClone(state.layers) }
+            : {
+                frames: state.frames.map((fr) =>
+                  fr.id === state.selectedFrameId
+                    ? { ...fr, layers: structuredClone(state.layers) }
+                    : fr,
+                ),
+              },
+        );
       };
 
       // Layer object drag (multi-select + smart guides + Alt-clone)
@@ -1257,7 +1336,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
             drag.moved = true;
           }
           useEditorStore.getState().translateSelectedLayer(dx, dy, { recordHistory: false });
-          syncActiveFrameLayers();
+          syncActiveOwner();
           drag.applied = { x: totalDx, y: totalDy };
         }
         return;
@@ -1282,7 +1361,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
             return { ...layer, rotation: base + delta };
           }),
         });
-        syncActiveFrameLayers();
+        syncActiveOwner();
         return;
       }
 
@@ -1381,7 +1460,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
           };
         });
         useEditorStore.setState({ layers: nextLayers });
-        syncActiveFrameLayers();
+        syncActiveOwner();
         return;
       }
 
@@ -1543,6 +1622,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       editSnap,
       hitArtboard,
       hitLayerAtWorld,
+      selectOwnedLayer,
       hoveredFrameId,
       hoveredLayerKey,
       penPointerDrag,
@@ -1579,18 +1659,25 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       // Figma motion: a real layer drag writes Position tracks on the timeline
       if (hadLayerMove) {
         useEditorStore.getState().recordLayerTranslationAtPlayhead();
-        // Keep the active frame snapshot in sync with live layers
-        useEditorStore.setState((state) => ({
-          frames: state.frames.map((fr) =>
-            fr.id === state.selectedFrameId
-              ? {
-                  ...fr,
-                  layers: structuredClone(state.layers),
-                  animation: structuredClone(state.animation),
-                }
-              : fr,
-          ),
-        }));
+        // Keep the active owner snapshot in sync with the live editor projection.
+        useEditorStore.setState((state) =>
+          state.selectedFrameId === PAGE_ROOT_ID
+            ? {
+                rootLayers: structuredClone(state.layers),
+                rootAnimation: structuredClone(state.animation),
+              }
+            : {
+                frames: state.frames.map((fr) =>
+                  fr.id === state.selectedFrameId
+                    ? {
+                        ...fr,
+                        layers: structuredClone(state.layers),
+                        animation: structuredClone(state.animation),
+                      }
+                    : fr,
+                ),
+              },
+        );
         // Figma-style cross-frame ownership: the object keeps its exact world
         // position, but its local transform and animation tracks are rebased to
         // the destination frame. The drag already owns the single undo snapshot.
@@ -1599,6 +1686,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
             .getState()
             .moveSelectedLayersToFrame(dropFrameId, { recordHistory: false });
           if (moved) setWorldSelectedIds([dropFrameId]);
+        } else if (!dropFrameId && useEditorStore.getState().selectedFrameId !== PAGE_ROOT_ID) {
+          const moved = useEditorStore
+            .getState()
+            .moveSelectedLayersToRoot({ recordHistory: false });
+          if (moved) setWorldSelectedIds([]);
         }
       }
       // Pen: persist the handle pulled during this anchor's drag (history already
@@ -1734,9 +1826,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       // This is NOT object resize — corners become editable anchors.
       const layerHit = hitLayerAtWorld(p);
       if (layerHit) {
-        if (layerHit.frameId !== selectedFrameId) selectFrame(layerHit.frameId);
-        selectLayer(layerHit.layerId);
-        setWorldSelectedIds([layerHit.frameId]);
+        selectOwnedLayer(layerHit);
+        setWorldSelectedIds(layerHit.frameId === PAGE_ROOT_ID ? [] : [layerHit.frameId]);
         useEditorStore.getState().clearSelection?.();
         setToolMode("direct");
         // Zoom the artboard into view so 24×24 anchors are actually grabbable
@@ -1754,6 +1845,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       worldPointFromEvent,
       hitArtboard,
       hitLayerAtWorld,
+      selectOwnedLayer,
       selectFrame,
       selectLayer,
       selectedFrameId,
@@ -2210,7 +2302,9 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                                     }
                                     stroke={pathStroke}
                                     strokeOpacity={draw.strokeOpacity}
-                                    strokeWidth={Math.max(0.8, Math.min(2.2, b.w / 24))}
+                                    strokeWidth={
+                                      draw.strokeWidth || Math.max(0.8, Math.min(2.2, b.w / 24))
+                                    }
                                     opacity={1}
                                     vectorEffect="non-scaling-stroke"
                                     pointerEvents="none"
@@ -2248,6 +2342,64 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                             vectorEffect="non-scaling-stroke"
                             pointerEvents="none"
                           />
+                        </g>
+                      );
+                    })}
+                    {/* Page-root vectors live directly in world coordinates and are never clipped. */}
+                    {pageRootDraws.map((draw) => {
+                      const gradId = draw.fillGradient
+                        ? `${gradientDomId(PAGE_ROOT_ID)}-${draw.id}`
+                        : null;
+                      const selected =
+                        selectedFrameId === PAGE_ROOT_ID &&
+                        hasCanvasSelection &&
+                        selectedLayerIds.some((id) => String(id) === String(draw.id));
+                      const hovered = hoveredLayerKey === `${PAGE_ROOT_ID}:${draw.id}` && !selected;
+                      const bounds = hovered && draw.d ? boundsFromPathD(draw.d) : null;
+                      const transform = [
+                        draw.translateX || draw.translateY
+                          ? `translate(${draw.translateX || 0} ${draw.translateY || 0})`
+                          : "",
+                        draw.rotation ? `rotate(${draw.rotation})` : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ");
+                      return (
+                        <g key={`root-${draw.id}`} transform={transform || undefined}>
+                          {draw.fillGradient && gradId && (
+                            <defs
+                              dangerouslySetInnerHTML={{
+                                __html: gradientToSvg(draw.fillGradient, gradId, draw.fillOpacity),
+                              }}
+                            />
+                          )}
+                          <path
+                            d={draw.d}
+                            fill={gradId ? `url(#${gradId})` : (draw.fill ?? "none")}
+                            fillOpacity={gradId ? 1 : draw.fillOpacity}
+                            fillRule={draw.fillType === "evenOdd" ? "evenodd" : "nonzero"}
+                            stroke={
+                              draw.stroke ?? (draw.fill || draw.fillGradient ? "none" : "#111111")
+                            }
+                            strokeOpacity={draw.strokeOpacity}
+                            strokeWidth={draw.strokeWidth || worldPerPx}
+                            vectorEffect="non-scaling-stroke"
+                            pointerEvents="none"
+                          />
+                          {bounds && (
+                            <rect
+                              x={bounds.x}
+                              y={bounds.y}
+                              width={bounds.w}
+                              height={bounds.h}
+                              fill="none"
+                              stroke="#0d99ff"
+                              strokeOpacity={0.55}
+                              strokeWidth={worldPerPx}
+                              vectorEffect="non-scaling-stroke"
+                              pointerEvents="none"
+                            />
+                          )}
                         </g>
                       );
                     })}
@@ -2632,7 +2784,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       isObjectTool &&
                       hasCanvasSelection &&
                       selectTarget === "layer" &&
-                      editFrame &&
                       editOrigin &&
                       (() => {
                         const ids =

@@ -75,6 +75,9 @@ export interface CanvasFrame {
   hiddenLayerIds: string[];
 }
 
+/** Stable owner id for vectors placed directly on the infinite page. */
+export const PAGE_ROOT_ID = "__page_root__";
+
 export interface SubPathSelection {
   layerId: string | number;
   side: "from" | "to";
@@ -125,6 +128,9 @@ function createPathLayer(layer: Omit<Layer, "type"> & Partial<Pick<Layer, "type"
 interface HistoryEntry {
   frames: CanvasFrame[];
   selectedFrameId: string;
+  rootLayers: Layer[];
+  rootAnimation: AnimationState;
+  rootHiddenLayerIds: string[];
   layers: Layer[];
   vector: VectorMetadata;
   animation: AnimationState;
@@ -142,6 +148,10 @@ interface EditorState {
   // Workspace frames
   frames: CanvasFrame[];
   selectedFrameId: string;
+  /** Vectors owned by the page rather than clipped inside a frame. */
+  rootLayers: Layer[];
+  rootAnimation: AnimationState;
+  rootHiddenLayerIds: string[];
 
   // Layers
   layers: Layer[];
@@ -232,6 +242,8 @@ interface EditorState {
     targetFrameId: string,
     options?: { recordHistory?: boolean },
   ) => boolean;
+  moveSelectedLayersToRoot: (options?: { recordHistory?: boolean }) => boolean;
+  selectRootLayer: (id: string | number) => void;
 
   // World camera (1el / k4mv Phase 2) — first-class store citizen
   worldViewport: Viewport;
@@ -575,6 +587,12 @@ const initialFrame = initialFrames[0];
 const initialLayers = cloneLayersForInit(initialFrame.layers);
 const initialVector = structuredClone(initialFrame.vector);
 const initialAnimation = structuredClone(initialFrame.animation);
+const initialRootAnimation: AnimationState = {
+  id: "page-root-animation",
+  name: "Page motion",
+  duration: initialAnimation.duration,
+  blocks: [],
+};
 
 function cloneLayersForInit(layers: Layer[]) {
   return structuredClone(layers);
@@ -586,23 +604,44 @@ const mapToEnd = (layer: Layer, fn: (p: PathData) => PathData): PathData | undef
   layer.to ? fn(layer.to) : undefined;
 /** Resolve end geometry, falling back to start for static layers. */
 const endOf = (layer: Layer): PathData => layer.to ?? layer.from;
+
+function saveActiveRoot(state: EditorState) {
+  return state.selectedFrameId === PAGE_ROOT_ID
+    ? {
+        layers: cloneLayers(state.layers),
+        animation: structuredClone(state.animation),
+        hiddenLayerIds: [...state.hiddenLayerIds],
+      }
+    : {
+        layers: cloneLayers(state.rootLayers),
+        animation: structuredClone(state.rootAnimation),
+        hiddenLayerIds: [...state.rootHiddenLayerIds],
+      };
+}
+
 /** Capture the full editable state for undo/redo (C7: selection + animation included). */
-const snapshotHistoryEntry = (s: EditorState): HistoryEntry => ({
-  frames: saveActiveFrame(s),
-  selectedFrameId: s.selectedFrameId,
-  layers: cloneLayers(s.layers),
-  vector: structuredClone(s.vector),
-  animation: structuredClone(s.animation),
-  hiddenLayerIds: [...s.hiddenLayerIds],
-  selectedLayerId: s.selectedLayerId,
-  selectedLayerIds: [...s.selectedLayerIds],
-  selection: s.selection ? structuredClone(s.selection) : null,
-  selectedPoints: s.selectedPoints.map((p) => structuredClone(p)),
-  selectedSubPaths: s.selectedSubPaths.map((p) => structuredClone(p)),
-  editingSide: s.editingSide,
-  hasCanvasSelection: s.hasCanvasSelection,
-  selectionKind: s.selectionKind,
-});
+const snapshotHistoryEntry = (s: EditorState): HistoryEntry => {
+  const root = saveActiveRoot(s);
+  return {
+    frames: saveActiveFrame(s),
+    selectedFrameId: s.selectedFrameId,
+    rootLayers: root.layers,
+    rootAnimation: root.animation,
+    rootHiddenLayerIds: root.hiddenLayerIds,
+    layers: cloneLayers(s.layers),
+    vector: structuredClone(s.vector),
+    animation: structuredClone(s.animation),
+    hiddenLayerIds: [...s.hiddenLayerIds],
+    selectedLayerId: s.selectedLayerId,
+    selectedLayerIds: [...s.selectedLayerIds],
+    selection: s.selection ? structuredClone(s.selection) : null,
+    selectedPoints: s.selectedPoints.map((p) => structuredClone(p)),
+    selectedSubPaths: s.selectedSubPaths.map((p) => structuredClone(p)),
+    editingSide: s.editingSide,
+    hasCanvasSelection: s.hasCanvasSelection,
+    selectionKind: s.selectionKind,
+  };
+};
 
 /** Restore a history entry, re-anchoring selection onto restored layers defensively. */
 const restoreHistoryEntry = (s: EditorState, entry: HistoryEntry) => {
@@ -610,6 +649,9 @@ const restoreHistoryEntry = (s: EditorState, entry: HistoryEntry) => {
   return {
     frames: entry.frames.map(cloneFrame),
     selectedFrameId: entry.selectedFrameId,
+    rootLayers: cloneLayers(entry.rootLayers),
+    rootAnimation: structuredClone(entry.rootAnimation),
+    rootHiddenLayerIds: [...entry.rootHiddenLayerIds],
     layers: entry.layers,
     vector: entry.vector,
     animation: entry.animation,
@@ -731,6 +773,9 @@ function zoomViewportAtCenter(viewport: Viewport, scale: number): Viewport {
 export const useEditorStore = create<EditorState>((set, get) => ({
   frames: initialFrames.map(cloneFrame),
   selectedFrameId: initialFrame.id,
+  rootLayers: [],
+  rootAnimation: structuredClone(initialRootAnimation),
+  rootHiddenLayerIds: [],
   layers: cloneLayers(initialLayers),
   vector: structuredClone(initialVector),
   animation: structuredClone(initialAnimation),
@@ -973,11 +1018,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return;
     }
     const savedFrames = saveActiveFrame(state);
+    const savedRoot = saveActiveRoot(state);
     const frame = savedFrames.find((candidate) => candidate.id === id);
     if (!frame) return;
     // Switching frames does NOT reset the playhead or stop playback.
     set({
       frames: savedFrames,
+      rootLayers: savedRoot.layers,
+      rootAnimation: savedRoot.animation,
+      rootHiddenLayerIds: savedRoot.hiddenLayerIds,
       selectedFrameId: frame.id,
       detailViewport: computeVectorViewport(frame.vector),
       zoom: 1,
@@ -988,6 +1037,32 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       // Keep a default “active layer for tools” but it is NOT selected (selectionKind: frame).
       selectedLayerId: getFirstEditableLayerId(frame.layers),
       ...clearChildSelection,
+    });
+  },
+
+  selectRootLayer: (id) => {
+    const state = get();
+    const savedFrames = saveActiveFrame(state);
+    const savedRoot = saveActiveRoot(state);
+    if (!savedRoot.layers.some((layer) => String(layer.id) === String(id))) return;
+    set({
+      frames: savedFrames,
+      rootLayers: cloneLayers(savedRoot.layers),
+      rootAnimation: structuredClone(savedRoot.animation),
+      rootHiddenLayerIds: [...savedRoot.hiddenLayerIds],
+      selectedFrameId: PAGE_ROOT_ID,
+      layers: cloneLayers(savedRoot.layers),
+      vector: { id: PAGE_ROOT_ID, name: "Page", width: 1, height: 1, alpha: 1 },
+      animation: structuredClone(savedRoot.animation),
+      hiddenLayerIds: [...savedRoot.hiddenLayerIds],
+      selectedLayerId: id,
+      selectedLayerIds: [id],
+      selection: null,
+      selectedPoints: [],
+      selectedSubPaths: [],
+      selectedBlockIds: [],
+      hasCanvasSelection: true,
+      selectionKind: "layer",
     });
   },
 
@@ -1019,7 +1094,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (selectedIds.length === 0) return false;
 
     const savedFrames = saveActiveFrame(state);
-    const source = savedFrames.find((frame) => frame.id === sourceFrameId);
+    const savedRoot = saveActiveRoot(state);
+    const sourceIsRoot = sourceFrameId === PAGE_ROOT_ID;
+    const source: CanvasFrame | undefined = sourceIsRoot
+      ? {
+          id: PAGE_ROOT_ID,
+          name: "Page",
+          x: 0,
+          y: 0,
+          layers: savedRoot.layers,
+          vector: { id: PAGE_ROOT_ID, name: "Page", width: 1, height: 1, alpha: 1 },
+          animation: savedRoot.animation,
+          hiddenLayerIds: savedRoot.hiddenLayerIds,
+        }
+      : savedFrames.find((frame) => frame.id === sourceFrameId);
     const target = savedFrames.find((frame) => frame.id === targetFrameId);
     if (!source || !target) return false;
 
@@ -1109,7 +1197,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (options?.recordHistory !== false) get().pushHistory();
 
     const nextFrames = savedFrames.map((frame) => {
-      if (frame.id === source.id) {
+      if (!sourceIsRoot && frame.id === source.id) {
         return {
           ...frame,
           layers: frame.layers.filter((layer) => !actualMovedIds.has(String(layer.id))),
@@ -1134,11 +1222,28 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }
       return frame;
     });
+    const nextRootLayers = sourceIsRoot
+      ? savedRoot.layers.filter((layer) => !actualMovedIds.has(String(layer.id)))
+      : savedRoot.layers;
+    const nextRootAnimation = sourceIsRoot
+      ? {
+          ...savedRoot.animation,
+          blocks: savedRoot.animation.blocks.filter(
+            (block) => !actualMovedIds.has(String(block.layerId)),
+          ),
+        }
+      : savedRoot.animation;
+    const nextRootHiddenLayerIds = sourceIsRoot
+      ? savedRoot.hiddenLayerIds.filter((id) => !actualMovedIds.has(String(id)))
+      : savedRoot.hiddenLayerIds;
 
     const retainedSelectionIds = selectedIds.filter((id) => actualMovedIds.has(String(id)));
     const primaryId = retainedSelectionIds.at(-1) ?? movedLayers.at(-1)!.id;
     set({
       frames: nextFrames,
+      rootLayers: cloneLayers(nextRootLayers),
+      rootAnimation: structuredClone(nextRootAnimation),
+      rootHiddenLayerIds: [...nextRootHiddenLayerIds],
       selectedFrameId: target.id,
       layers: cloneLayers(targetLayers),
       vector: structuredClone(target.vector),
@@ -1154,6 +1259,140 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectionKind: "layer",
       toolMode: "select",
       detailViewport: computeVectorViewport(target.vector),
+    });
+    return true;
+  },
+
+  moveSelectedLayersToRoot: (options) => {
+    const state = get();
+    if (state.selectedFrameId === PAGE_ROOT_ID) return false;
+    const selectedIds =
+      state.selectedLayerIds.length > 0
+        ? state.selectedLayerIds
+        : state.selectedLayerId != null
+          ? [state.selectedLayerId]
+          : [];
+    if (selectedIds.length === 0) return false;
+
+    const savedFrames = saveActiveFrame(state);
+    const savedRoot = saveActiveRoot(state);
+    const source = savedFrames.find((frame) => frame.id === state.selectedFrameId);
+    if (!source) return false;
+
+    const movedIdSet = new Set(selectedIds.map(String));
+    let addedDescendant = true;
+    while (addedDescendant) {
+      addedDescendant = false;
+      for (const layer of source.layers) {
+        if (
+          layer.parentId != null &&
+          movedIdSet.has(String(layer.parentId)) &&
+          !movedIdSet.has(String(layer.id))
+        ) {
+          movedIdSet.add(String(layer.id));
+          addedDescendant = true;
+        }
+      }
+    }
+    const moving = source.layers.filter(
+      (layer) => movedIdSet.has(String(layer.id)) && !layer.locked,
+    );
+    if (moving.length === 0) return false;
+    const actualMovedIds = new Set(moving.map((layer) => String(layer.id)));
+    if (savedRoot.layers.some((layer) => actualMovedIds.has(String(layer.id)))) return false;
+
+    const movedLayers = moving.map((layer) => ({
+      ...cloneLayers([layer])[0],
+      translateX: (Number(layer.translateX) || 0) + source.x,
+      translateY: (Number(layer.translateY) || 0) + source.y,
+      parentId:
+        layer.parentId != null && actualMovedIds.has(String(layer.parentId))
+          ? layer.parentId
+          : null,
+    }));
+    const movedBlocks = source.animation.blocks
+      .filter((block) => actualMovedIds.has(String(block.layerId)))
+      .map((block) => {
+        const axisOffset =
+          block.propertyName === "translateX"
+            ? source.x
+            : block.propertyName === "translateY"
+              ? source.y
+              : 0;
+        return {
+          ...structuredClone(block),
+          fromValue:
+            axisOffset && typeof block.fromValue === "number"
+              ? block.fromValue + axisOffset
+              : block.fromValue,
+          toValue:
+            axisOffset && typeof block.toValue === "number"
+              ? block.toValue + axisOffset
+              : block.toValue,
+        };
+      });
+    const movedBlockIds = new Set(movedBlocks.map((block) => block.id));
+    if (savedRoot.animation.blocks.some((block) => movedBlockIds.has(block.id))) return false;
+
+    const nextRootLayers = [...savedRoot.layers, ...movedLayers];
+    const nextRootAnimation: AnimationState = {
+      ...savedRoot.animation,
+      duration: Math.max(
+        savedRoot.animation.duration,
+        ...movedBlocks.map((block) => block.endTime),
+        1,
+      ),
+      blocks: [...savedRoot.animation.blocks, ...movedBlocks],
+    };
+    const sourceHidden = new Set(source.hiddenLayerIds.map(String));
+    const nextRootHiddenLayerIds = Array.from(
+      new Set([
+        ...savedRoot.hiddenLayerIds.map(String),
+        ...moving
+          .filter((layer) => sourceHidden.has(String(layer.id)))
+          .map((layer) => String(layer.id)),
+      ]),
+    );
+    if (options?.recordHistory !== false) get().pushHistory();
+
+    const nextFrames = savedFrames.map((frame) =>
+      frame.id === source.id
+        ? {
+            ...frame,
+            layers: frame.layers.filter((layer) => !actualMovedIds.has(String(layer.id))),
+            animation: {
+              ...frame.animation,
+              blocks: frame.animation.blocks.filter(
+                (block) => !actualMovedIds.has(String(block.layerId)),
+              ),
+            },
+            hiddenLayerIds: frame.hiddenLayerIds.filter(
+              (id) => !actualMovedIds.has(String(id)),
+            ),
+          }
+        : frame,
+    );
+    const retainedSelectionIds = selectedIds.filter((id) => actualMovedIds.has(String(id)));
+    const primaryId = retainedSelectionIds.at(-1) ?? movedLayers.at(-1)!.id;
+    set({
+      frames: nextFrames,
+      rootLayers: cloneLayers(nextRootLayers),
+      rootAnimation: structuredClone(nextRootAnimation),
+      rootHiddenLayerIds: [...nextRootHiddenLayerIds],
+      selectedFrameId: PAGE_ROOT_ID,
+      layers: cloneLayers(nextRootLayers),
+      vector: { id: PAGE_ROOT_ID, name: "Page", width: 1, height: 1, alpha: 1 },
+      animation: structuredClone(nextRootAnimation),
+      hiddenLayerIds: [...nextRootHiddenLayerIds],
+      selectedLayerId: primaryId,
+      selectedLayerIds: retainedSelectionIds.length ? retainedSelectionIds : [primaryId],
+      selection: null,
+      selectedPoints: [],
+      selectedSubPaths: [],
+      selectedBlockIds: [],
+      hasCanvasSelection: true,
+      selectionKind: "layer",
+      toolMode: "select",
     });
     return true;
   },
@@ -1274,6 +1513,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       frames: [frame],
       selectedFrameId: frame.id,
+      rootLayers: [],
+      rootAnimation: structuredClone(initialRootAnimation),
+      rootHiddenLayerIds: [],
       worldViewport: computeFramesViewport([frame]),
       detailViewport: computeVectorViewport(frame.vector),
       layers: cloneLayers(normalized),
@@ -1348,6 +1590,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       frames: [frame],
       selectedFrameId: frame.id,
+      rootLayers: [],
+      rootAnimation: structuredClone(initialRootAnimation),
+      rootHiddenLayerIds: [],
       worldViewport: computeFramesViewport([frame]),
       detailViewport: computeVectorViewport(frame.vector),
       layers: cloneLayers(normalized),
@@ -2890,6 +3135,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({
       frames,
       selectedFrameId: active.id,
+      rootLayers: [],
+      rootAnimation: structuredClone(initialRootAnimation),
+      rootHiddenLayerIds: [],
       worldViewport: computeFramesViewport(frames),
       detailViewport: computeVectorViewport(active.vector),
       layers: cloneLayers(active.layers),

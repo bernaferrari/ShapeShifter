@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useEditorStore } from "../editorStore";
+import { PAGE_ROOT_ID, useEditorStore } from "../editorStore";
 import { parsePath, pathToString } from "../../shapeshifter/pathUtils";
 import { DEMO_INFOS } from "../../shapeshifter/demoProjects";
 import type { Selection, Layer } from "../../shapeshifter/types";
@@ -188,6 +188,61 @@ describe("editorStore", () => {
         expect.objectContaining({ id: layer.id }),
       );
       expect(state.layers).toContainEqual(expect.objectContaining({ id: layer.id }));
+    });
+
+    it("moves a frame child onto the page root without changing world position", () => {
+      const source = getStore().frames[0];
+      const layer = getStore().layers[0];
+      getStore().selectLayer(layer.id);
+      getStore().translateSelectedLayer(7, 9, { recordHistory: false });
+      const expectedWorld = {
+        x: source.x + 7,
+        y: source.y + 9,
+      };
+
+      expect(getStore().moveSelectedLayersToRoot()).toBe(true);
+
+      const state = getStore();
+      const rootLayer = state.rootLayers.find((candidate) => candidate.id === layer.id)!;
+      expect(state.selectedFrameId).toBe(PAGE_ROOT_ID);
+      expect(rootLayer.translateX).toBeCloseTo(expectedWorld.x);
+      expect(rootLayer.translateY).toBeCloseTo(expectedWorld.y);
+      expect(state.frames[0].layers.some((candidate) => candidate.id === layer.id)).toBe(false);
+      expect(state.layers).toContainEqual(expect.objectContaining({ id: layer.id }));
+    });
+
+    it("moves a page-root vector into a frame and preserves world position", () => {
+      const source = getStore().frames[0];
+      const target = getStore().frames[1];
+      const layer = getStore().layers[0];
+      getStore().selectLayer(layer.id);
+      getStore().translateSelectedLayer(31, -4, { recordHistory: false });
+      const worldBefore = { x: source.x + 31, y: source.y - 4 };
+      getStore().moveSelectedLayersToRoot({ recordHistory: false });
+
+      expect(getStore().moveSelectedLayersToFrame(target.id)).toBe(true);
+
+      const moved = getStore().frames
+        .find((frame) => frame.id === target.id)!
+        .layers.find((candidate) => candidate.id === layer.id)!;
+      expect(target.x + (moved.translateX ?? 0)).toBeCloseTo(worldBefore.x);
+      expect(target.y + (moved.translateY ?? 0)).toBeCloseTo(worldBefore.y);
+      expect(getStore().rootLayers.some((candidate) => candidate.id === layer.id)).toBe(false);
+    });
+
+    it("undo restores a vector extracted to the page root", () => {
+      const source = getStore().frames[0];
+      const layer = getStore().layers[0];
+      getStore().selectLayer(layer.id);
+
+      getStore().moveSelectedLayersToRoot();
+      getStore().undo();
+
+      expect(getStore().selectedFrameId).toBe(source.id);
+      expect(getStore().rootLayers).toHaveLength(0);
+      expect(getStore().frames[0].layers).toContainEqual(
+        expect.objectContaining({ id: layer.id }),
+      );
     });
   });
 
