@@ -43,20 +43,3 @@ Open [http://localhost:3000](http://localhost:3000).
 | `components/ui/` | Reusable UI primitives. |
 | `lib/shapeshifter/` | Animation model, geometry, import/export, SVG rendering, and gesture logic. |
 | `lib/store/` | Zustand editor state and history. |
-
-## CI
-
-GitHub Actions runs the following checks for pull requests and pushes to `master`:
-
-```bash
-pnpm typecheck
-pnpm lint
-pnpm test
-pnpm build
-```
-
-Run the same commands locally before opening a pull request.
-
-## Technology
-
-Next.js 16, React 19, TypeScript, Tailwind CSS 4, Zustand, shadcn/ui, Vitest, and pnpm.
