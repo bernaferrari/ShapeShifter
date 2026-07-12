@@ -218,8 +218,7 @@ function WorldSelectionOverlayComponent({
     onRotateStart(
       {
         center,
-        startAngle:
-          (Math.atan2(pointer.y - center.y, pointer.x - center.x) * 180) / Math.PI,
+        startAngle: (Math.atan2(pointer.y - center.y, pointer.x - center.x) * 180) / Math.PI,
         baseRotations: selection.items.map(({ layer }) => ({
           id: layer.id,
           rotation: Number(layer.rotation) || 0,
@@ -263,57 +262,59 @@ function WorldSelectionOverlayComponent({
         style={{ cursor: "grab", pointerEvents: "auto" }}
         onPointerDown={beginRotate}
       />
-      {canResize && handles
-        .filter(({ handle }) => handle.length === 1)
-        .map(({ handle }) => {
-          const edge =
-            handle === "n"
-              ? { x1: world.x, y1: world.y, x2: world.x + world.w, y2: world.y }
-              : handle === "s"
-                ? {
-                    x1: world.x,
-                    y1: world.y + world.h,
-                    x2: world.x + world.w,
-                    y2: world.y + world.h,
-                  }
-                : handle === "w"
-                  ? { x1: world.x, y1: world.y, x2: world.x, y2: world.y + world.h }
-                  : {
-                      x1: world.x + world.w,
-                      y1: world.y,
+      {canResize &&
+        handles
+          .filter(({ handle }) => handle.length === 1)
+          .map(({ handle }) => {
+            const edge =
+              handle === "n"
+                ? { x1: world.x, y1: world.y, x2: world.x + world.w, y2: world.y }
+                : handle === "s"
+                  ? {
+                      x1: world.x,
+                      y1: world.y + world.h,
                       x2: world.x + world.w,
                       y2: world.y + world.h,
-                    };
-          return (
-            <line
-              key={`hit-${handle}`}
-              {...edge}
-              stroke="transparent"
-              strokeWidth={edgeHitSize * 2}
-              pointerEvents="stroke"
-              vectorEffect="non-scaling-stroke"
-              style={{ cursor: HANDLE_CURSORS[handle], pointerEvents: "stroke" }}
-              onPointerDown={(event) => beginResize(event, handle)}
-            />
-          );
-        })}
-      {canResize && handles.map(({ handle, x, y }) => (
-        <rect
-          key={handle}
-          x={x - handleSize}
-          y={y - handleSize}
-          width={handleSize * 2}
-          height={handleSize * 2}
-          rx={worldPerPx}
-          fill="#ffffff"
-          stroke="#0d99ff"
-          strokeWidth={1.25}
-          vectorEffect="non-scaling-stroke"
-          pointerEvents="all"
-          style={{ cursor: HANDLE_CURSORS[handle], pointerEvents: "auto" }}
-          onPointerDown={(event) => beginResize(event, handle)}
-        />
-      ))}
+                    }
+                  : handle === "w"
+                    ? { x1: world.x, y1: world.y, x2: world.x, y2: world.y + world.h }
+                    : {
+                        x1: world.x + world.w,
+                        y1: world.y,
+                        x2: world.x + world.w,
+                        y2: world.y + world.h,
+                      };
+            return (
+              <line
+                key={`hit-${handle}`}
+                {...edge}
+                stroke="transparent"
+                strokeWidth={edgeHitSize * 2}
+                pointerEvents="stroke"
+                vectorEffect="non-scaling-stroke"
+                style={{ cursor: HANDLE_CURSORS[handle], pointerEvents: "stroke" }}
+                onPointerDown={(event) => beginResize(event, handle)}
+              />
+            );
+          })}
+      {canResize &&
+        handles.map(({ handle, x, y }) => (
+          <rect
+            key={handle}
+            x={x - handleSize}
+            y={y - handleSize}
+            width={handleSize * 2}
+            height={handleSize * 2}
+            rx={worldPerPx}
+            fill="#ffffff"
+            stroke="#0d99ff"
+            strokeWidth={1.25}
+            vectorEffect="non-scaling-stroke"
+            pointerEvents="all"
+            style={{ cursor: HANDLE_CURSORS[handle], pointerEvents: "auto" }}
+            onPointerDown={(event) => beginResize(event, handle)}
+          />
+        ))}
     </g>
   );
 }

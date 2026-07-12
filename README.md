@@ -24,22 +24,22 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ## Commands
 
-| Command | Purpose |
-| --- | --- |
-| `pnpm dev` | Start the development server with Turbopack. |
-| `pnpm build` | Create a production build. |
-| `pnpm start` | Serve the production build. |
-| `pnpm typecheck` | Run TypeScript type checking. |
-| `pnpm lint` | Run Oxlint. |
-| `pnpm test` | Run the Vitest suite. |
-| `pnpm format` | Format the repository with Oxfmt. |
+| Command          | Purpose                                      |
+| ---------------- | -------------------------------------------- |
+| `pnpm dev`       | Start the development server with Turbopack. |
+| `pnpm build`     | Create a production build.                   |
+| `pnpm start`     | Serve the production build.                  |
+| `pnpm typecheck` | Run TypeScript type checking.                |
+| `pnpm lint`      | Run Oxlint.                                  |
+| `pnpm test`      | Run the Vitest suite.                        |
+| `pnpm format`    | Format the repository with Oxfmt.            |
 
 ## Project structure
 
-| Path | Contents |
-| --- | --- |
-| `app/` | Next.js application shell and editor page. |
-| `components/editor/` | Canvas, toolbar, inspector, layers, and timeline UI. |
-| `components/ui/` | Reusable UI primitives. |
-| `lib/shapeshifter/` | Animation model, geometry, import/export, SVG rendering, and gesture logic. |
-| `lib/store/` | Zustand editor state and history. |
+| Path                 | Contents                                                                    |
+| -------------------- | --------------------------------------------------------------------------- |
+| `app/`               | Next.js application shell and editor page.                                  |
+| `components/editor/` | Canvas, toolbar, inspector, layers, and timeline UI.                        |
+| `components/ui/`     | Reusable UI primitives.                                                     |
+| `lib/shapeshifter/`  | Animation model, geometry, import/export, SVG rendering, and gesture logic. |
+| `lib/store/`         | Zustand editor state and history.                                           |

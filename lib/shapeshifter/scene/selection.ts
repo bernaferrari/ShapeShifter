@@ -50,10 +50,7 @@ export function getOwnedLayerBounds(owner: SceneOwner): OwnedLayerBounds[] {
   return result;
 }
 
-export function collectOwnedLayersInRect(
-  owners: SceneOwner[],
-  rect: SceneRect,
-): OwnedLayerRef[] {
+export function collectOwnedLayersInRect(owners: SceneOwner[], rect: SceneRect): OwnedLayerRef[] {
   const right = rect.x + rect.w;
   const bottom = rect.y + rect.h;
   const hits: OwnedLayerRef[] = [];
@@ -92,7 +89,5 @@ export function unionOwnedLayerBounds(
       maxY = Math.max(maxY, item.bounds.y + item.bounds.h);
     }
   }
-  return Number.isFinite(minX)
-    ? { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
-    : null;
+  return Number.isFinite(minX) ? { x: minX, y: minY, w: maxX - minX, h: maxY - minY } : null;
 }

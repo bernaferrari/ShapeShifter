@@ -1,43 +1,40 @@
-"use client"
+"use client";
 
-import * as React from "react"
+import * as React from "react";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import { cn } from "@/lib/utils"
-import { hexToRgb, type ColorFormat } from "./color-picker-utils"
-import {
-  formatSolidColorValueEdit,
-  getSolidColorFormatValues,
-} from "./color-solid-editor-model"
+} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
+import { hexToRgb, type ColorFormat } from "./color-picker-utils";
+import { formatSolidColorValueEdit, getSolidColorFormatValues } from "./color-solid-editor-model";
 
-const ENABLE_ALPHA = false
+const ENABLE_ALPHA = false;
 
 export interface SolidColorEditorProps {
-  h: number
-  s: number
-  v: number
-  hex: string
-  alpha: number
-  inputText: string
-  format: ColorFormat
-  setFormat: (format: ColorFormat) => void
-  canvasRef: React.RefObject<HTMLDivElement | null>
-  hueRef: React.RefObject<HTMLDivElement | null>
-  alphaRef: React.RefObject<HTMLDivElement | null>
-  handleCanvasStart: (e: React.MouseEvent | React.TouchEvent) => void
-  handleHueStart: (e: React.MouseEvent | React.TouchEvent) => void
-  handleAlphaStart: (e: React.MouseEvent | React.TouchEvent) => void
-  handleAlphaChange: (value: string) => void
-  handleTextChange: (value: string) => void
-  handleKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void
-  handleBlur: () => void
-  framed?: boolean
-  compact?: boolean
+  h: number;
+  s: number;
+  v: number;
+  hex: string;
+  alpha: number;
+  inputText: string;
+  format: ColorFormat;
+  setFormat: (format: ColorFormat) => void;
+  canvasRef: React.RefObject<HTMLDivElement | null>;
+  hueRef: React.RefObject<HTMLDivElement | null>;
+  alphaRef: React.RefObject<HTMLDivElement | null>;
+  handleCanvasStart: (e: React.MouseEvent | React.TouchEvent) => void;
+  handleHueStart: (e: React.MouseEvent | React.TouchEvent) => void;
+  handleAlphaStart: (e: React.MouseEvent | React.TouchEvent) => void;
+  handleAlphaChange: (value: string) => void;
+  handleTextChange: (value: string) => void;
+  handleKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  handleBlur: () => void;
+  framed?: boolean;
+  compact?: boolean;
 }
 
 export function SolidColorEditor({
@@ -62,8 +59,8 @@ export function SolidColorEditor({
   framed = true,
   compact = false,
 }: SolidColorEditorProps) {
-  const rgb = hexToRgb(hex)
-  const formatValues = getSolidColorFormatValues({ format, hex, h, s, v })
+  const rgb = hexToRgb(hex);
+  const formatValues = getSolidColorFormatValues({ format, hex, h, s, v });
 
   const updateFormatValue = (index: number, rawValue: string) => {
     const nextHex = formatSolidColorValueEdit({
@@ -74,15 +71,12 @@ export function SolidColorEditor({
       v,
       index,
       rawValue,
-    })
-    if (nextHex) handleTextChange(nextHex)
-  }
+    });
+    if (nextHex) handleTextChange(nextHex);
+  };
 
   const formatSelect = (
-    <Select
-      value={format}
-      onValueChange={(next) => setFormat(next as ColorFormat)}
-    >
+    <Select value={format} onValueChange={(next) => setFormat(next as ColorFormat)}>
       <SelectTrigger
         size="sm"
         className="h-8 w-[72px] shrink-0 rounded-lg border-border bg-muted/60 px-3 text-[11px] text-foreground hover:bg-muted/75"
@@ -96,14 +90,14 @@ export function SolidColorEditor({
         <SelectItem value="HSB">HSB</SelectItem>
       </SelectContent>
     </Select>
-  )
+  );
 
   return (
     <div
       className={cn(
         "space-y-3",
         framed &&
-          "rounded-xl border border-border bg-popover p-3 pb-2 text-popover-foreground shadow-xl"
+          "rounded-xl border border-border bg-popover p-3 pb-2 text-popover-foreground shadow-xl",
       )}
     >
       <div
@@ -112,7 +106,7 @@ export function SolidColorEditor({
         onTouchStart={handleCanvasStart}
         className={cn(
           "relative w-full cursor-crosshair overflow-hidden rounded-lg border border-border bg-muted shadow-[inset_0_0_0_1px_hsl(var(--border)/0.45)] select-none",
-          compact ? "h-40" : "h-56"
+          compact ? "h-40" : "h-56",
         )}
       >
         <div
@@ -156,8 +150,7 @@ export function SolidColorEditor({
             backgroundColor: "#fff",
             backgroundImage: `linear-gradient(to right, rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0), rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 1)), linear-gradient(45deg, #8b8b8b 25%, transparent 25%), linear-gradient(-45deg, #8b8b8b 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #8b8b8b 75%), linear-gradient(-45deg, transparent 75%, #8b8b8b 75%)`,
             backgroundPosition: "0 0, 0 0, 0 5px, 5px -5px, -5px 0",
-            backgroundSize:
-              "100% 100%, 10px 10px, 10px 10px, 10px 10px, 10px 10px",
+            backgroundSize: "100% 100%, 10px 10px, 10px 10px, 10px 10px, 10px 10px",
           }}
         >
           <div
@@ -173,7 +166,7 @@ export function SolidColorEditor({
           <div
             className={cn(
               "grid min-w-0 flex-1 gap-px rounded-lg bg-border",
-              ENABLE_ALPHA ? "grid-cols-4" : "grid-cols-3"
+              ENABLE_ALPHA ? "grid-cols-4" : "grid-cols-3",
             )}
           >
             {formatValues.map((value, index) => (
@@ -181,15 +174,11 @@ export function SolidColorEditor({
                 key={`${format}-${index}`}
                 type="text"
                 value={Math.round(value)}
-                onChange={(event) =>
-                  updateFormatValue(index, event.target.value)
-                }
+                onChange={(event) => updateFormatValue(index, event.target.value)}
                 className={cn(
                   "h-8 min-w-0 border border-border bg-muted/45 text-center font-mono text-foreground outline-none",
                   index === 0 && "rounded-l-lg",
-                  index === formatValues.length - 1 &&
-                    !ENABLE_ALPHA &&
-                    "rounded-r-lg"
+                  index === formatValues.length - 1 && !ENABLE_ALPHA && "rounded-r-lg",
                 )}
               />
             ))}
@@ -212,9 +201,7 @@ export function SolidColorEditor({
         <div className="flex items-center gap-2">
           {formatSelect}
           <div className="flex h-8 min-w-0 flex-1 items-center gap-1 rounded-lg border border-border bg-muted/45 px-2.5">
-            <span className="font-mono text-[10px] font-bold text-muted-foreground">
-              #
-            </span>
+            <span className="font-mono text-[10px] font-bold text-muted-foreground">#</span>
             <input
               type="text"
               value={inputText.replace(/^#/, "")}
@@ -228,5 +215,5 @@ export function SolidColorEditor({
         </div>
       )}
     </div>
-  )
+  );
 }

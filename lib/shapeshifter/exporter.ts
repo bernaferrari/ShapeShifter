@@ -674,22 +674,22 @@ export function exportLottie(
                     },
                   ]
                 : layer?.fillColor
-                ? [
-                    {
-                      ty: "fl",
-                      nm: "Fill",
-                      c: { a: 0, k: hexToLottieRgba(layer.fillColor, 1) },
-                      o: { a: 0, k: (layer.fillAlpha ?? 1) * 100 },
-                    },
-                  ]
-                : [
-                    {
-                      ty: "fl",
-                      nm: "Fill",
-                      c: { a: 0, k: [0.2, 0.35, 0.85, 0.15] },
-                      o: { a: 0, k: 100 },
-                    },
-                  ]),
+                  ? [
+                      {
+                        ty: "fl",
+                        nm: "Fill",
+                        c: { a: 0, k: hexToLottieRgba(layer.fillColor, 1) },
+                        o: { a: 0, k: (layer.fillAlpha ?? 1) * 100 },
+                      },
+                    ]
+                  : [
+                      {
+                        ty: "fl",
+                        nm: "Fill",
+                        c: { a: 0, k: [0.2, 0.35, 0.85, 0.15] },
+                        o: { a: 0, k: 100 },
+                      },
+                    ]),
               {
                 ty: "tr",
                 p: { a: 0, k: [0, 0] },
@@ -747,7 +747,8 @@ export function exportLottieDocument(layers: Layer[], name: string, duration = 1
     ...base,
     nm: name,
     layers: exportableLayers.map((layer, index) => {
-      const single = exportLottie(layer.from, layer.to ?? layer.from, layer.name, duration, layer).layers[0];
+      const single = exportLottie(layer.from, layer.to ?? layer.from, layer.name, duration, layer)
+        .layers[0];
       return {
         ...single,
         ind: index + 1,

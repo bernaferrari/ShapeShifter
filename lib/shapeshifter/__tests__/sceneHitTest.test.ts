@@ -4,16 +4,17 @@ import { hitTestOwnedLayers } from "../scene/hitTest";
 import type { SceneOwner } from "../scene/selection";
 import type { Layer } from "../types";
 
-const filled = (id: string, translateX = 0): Layer => ({
-  id,
-  name: id,
-  type: "path",
-  from: parsePath("M0 0 L10 0 L10 10 L0 10 Z"),
-  to: parsePath("M0 0 L10 0 L10 10 L0 10 Z"),
-  fillColor: "#000000",
-  translateX,
-  translateY: 0,
-} as Layer);
+const filled = (id: string, translateX = 0): Layer =>
+  ({
+    id,
+    name: id,
+    type: "path",
+    from: parsePath("M0 0 L10 0 L10 10 L0 10 Z"),
+    to: parsePath("M0 0 L10 0 L10 10 L0 10 Z"),
+    fillColor: "#000000",
+    translateX,
+    translateY: 0,
+  }) as Layer;
 
 describe("owner scene hit testing", () => {
   it("respects owner and layer paint order", () => {

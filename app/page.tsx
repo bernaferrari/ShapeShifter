@@ -128,7 +128,6 @@ export default function ShapeShifter2026() {
         return;
       }
 
-
       // Tools — Figma-aligned single keys (A = vector, not auto-fix)
       if (e.key.toLowerCase() === "v" && !e.metaKey) {
         e.preventDefault();
@@ -240,9 +239,7 @@ export default function ShapeShifter2026() {
       }
       // Clipboard — full multi-select set
       const multiIds =
-        store.selectedLayerIds?.length > 0
-          ? store.selectedLayerIds
-          : [store.selectedLayerId];
+        store.selectedLayerIds?.length > 0 ? store.selectedLayerIds : [store.selectedLayerId];
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c") {
         e.preventDefault();
         store.copyLayers?.(multiIds);
@@ -778,12 +775,9 @@ export default function ShapeShifter2026() {
             state.hiddenLayerIds,
             state.frames,
             {
-              layers:
-                state.selectedFrameId === PAGE_ROOT_ID ? state.layers : state.rootLayers,
+              layers: state.selectedFrameId === PAGE_ROOT_ID ? state.layers : state.rootLayers,
               animation:
-                state.selectedFrameId === PAGE_ROOT_ID
-                  ? state.animation
-                  : state.rootAnimation,
+                state.selectedFrameId === PAGE_ROOT_ID ? state.animation : state.rootAnimation,
               hiddenLayerIds:
                 state.selectedFrameId === PAGE_ROOT_ID
                   ? state.hiddenLayerIds
@@ -1128,7 +1122,9 @@ export default function ShapeShifter2026() {
                 </div>
                 <div className="flex items-center justify-between">
                   <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">Esc / Enter</kbd>
-                  <span className="text-muted-foreground">Clear selection (or finish pen path)</span>
+                  <span className="text-muted-foreground">
+                    Clear selection (or finish pen path)
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">⌘W</kbd>
@@ -1161,7 +1157,9 @@ export default function ShapeShifter2026() {
               onSelect={() =>
                 runCommand(() => {
                   useEditorStore.getState().setToolMode("pen");
-                  toast.success("Pen tool — click to add, drag curves, dbl-click last or Esc/Enter to finish");
+                  toast.success(
+                    "Pen tool — click to add, drag curves, dbl-click last or Esc/Enter to finish",
+                  );
                 })
               }
             >
@@ -1175,8 +1173,8 @@ export default function ShapeShifter2026() {
                 })
               }
             >
-              <Waypoints className="mr-2 size-4" /> Direct /
-              Bend (Ctrl+drag) <CommandShortcut>D</CommandShortcut>
+              <Waypoints className="mr-2 size-4" /> Direct / Bend (Ctrl+drag){" "}
+              <CommandShortcut>D</CommandShortcut>
             </CommandItem>
             <CommandItem
               onSelect={() =>

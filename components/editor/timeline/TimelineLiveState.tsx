@@ -6,10 +6,7 @@ import { EasingCurve } from "../EasingCurve";
 import type { TimelineBlock } from "@/lib/shapeshifter/types";
 import { cn } from "@/lib/utils";
 
-function formatCompactValue(
-  value: string | number | undefined,
-  propertyName?: string,
-): string {
+function formatCompactValue(value: string | number | undefined, propertyName?: string): string {
   if (value == null || value === "") return "—";
   if (
     propertyName === "pathData" ||
@@ -129,9 +126,7 @@ export function TimelinePropertyValue({
   if (!block) return <span className="w-[48px] shrink-0" />;
   const currentTimeMs = progress * duration;
   const display = formatCompactValue(
-    currentTimeMs < (block.startTime + block.endTime) / 2
-      ? block.fromValue
-      : block.toValue,
+    currentTimeMs < (block.startTime + block.endTime) / 2 ? block.fromValue : block.toValue,
     propertyName,
   );
   const title = `${formatCompactValue(block.fromValue, propertyName)} → ${formatCompactValue(block.toValue, propertyName)}`;

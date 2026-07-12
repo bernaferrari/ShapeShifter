@@ -55,59 +55,25 @@ export function resolveWorldLayerDraws(
         d: usePlayhead
           ? pathDAtTime(layer, animation.blocks, currentMs, duration, progress)
           : pathToString(layer.from || layer.pathData),
-        fill:
-          fillColor && fillColor !== "none" && fillColor !== "" ? fillColor : null,
-        stroke:
-          layer.strokeColor && layer.strokeColor !== "" ? layer.strokeColor : null,
+        fill: fillColor && fillColor !== "none" && fillColor !== "" ? fillColor : null,
+        stroke: layer.strokeColor && layer.strokeColor !== "" ? layer.strokeColor : null,
         fillOpacity: usePlayhead
-          ? numberAtTime(
-              layer,
-              animation.blocks,
-              "fillAlpha",
-              currentMs,
-              duration,
-              1,
-            )
+          ? numberAtTime(layer, animation.blocks, "fillAlpha", currentMs, duration, 1)
           : (layer.fillAlpha ?? 1),
         strokeOpacity: usePlayhead
-          ? numberAtTime(
-              layer,
-              animation.blocks,
-              "strokeAlpha",
-              currentMs,
-              duration,
-              1,
-            )
+          ? numberAtTime(layer, animation.blocks, "strokeAlpha", currentMs, duration, 1)
           : (layer.strokeAlpha ?? 1),
         strokeWidth: Number(layer.strokeWidth) || 0,
         fillGradient: layer.fillGradient,
         fillType: layer.fillType,
         translateX: usePlayhead
-          ? numberAtTime(
-              layer,
-              animation.blocks,
-              "translateX",
-              currentMs,
-              duration,
-            )
+          ? numberAtTime(layer, animation.blocks, "translateX", currentMs, duration)
           : Number(layer.translateX) || 0,
         translateY: usePlayhead
-          ? numberAtTime(
-              layer,
-              animation.blocks,
-              "translateY",
-              currentMs,
-              duration,
-            )
+          ? numberAtTime(layer, animation.blocks, "translateY", currentMs, duration)
           : Number(layer.translateY) || 0,
         rotation: usePlayhead
-          ? numberAtTime(
-              layer,
-              animation.blocks,
-              "rotation",
-              currentMs,
-              duration,
-            )
+          ? numberAtTime(layer, animation.blocks, "rotation", currentMs, duration)
           : Number(layer.rotation) || 0,
         scaleX: usePlayhead
           ? numberAtTime(layer, animation.blocks, "scaleX", currentMs, duration, 1)

@@ -24,7 +24,7 @@ export interface GestureCallbacks {
    * PR-01.1 / ShapeShifter-ish (fix round under mvd/xwx): these allow the GestureDispatcher + concrete SelectDragItemsGesture
    * to own the *decision* and lifecycle for marquee start (when toolMode is select/default), while PathCanvas retains
    * ownership of the actual rect rendering + pointer capture (correct separation; no store pollution for transient UI).
-   * 
+   *
    * beginMarqueeSelection: called by dispatcher on pointer down when it decides this is a marquee intent.
    *   - start: the initial point (in artboard coords)
    *   - additive: whether shift was held (do not clear prior selection)
@@ -60,7 +60,11 @@ export abstract class Gesture {
 
   // Lifecycle — override in subclasses
   onMouseDown?(point: Point, modifiers: { shift: boolean; alt: boolean; ctrl: boolean }): void;
-  onMouseDrag?(point: Point, delta: Point, modifiers: { shift: boolean; alt: boolean; ctrl: boolean }): void;
+  onMouseDrag?(
+    point: Point,
+    delta: Point,
+    modifiers: { shift: boolean; alt: boolean; ctrl: boolean },
+  ): void;
   onMouseMove?(point: Point, modifiers: { shift: boolean; alt: boolean; ctrl: boolean }): void;
   onMouseUp?(point: Point, modifiers: { shift: boolean; alt: boolean; ctrl: boolean }): void;
 

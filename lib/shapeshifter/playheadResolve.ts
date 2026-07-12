@@ -13,10 +13,7 @@ function blocksFor(
   propertyName: string,
 ): TimelineBlock[] {
   return blocks
-    .filter(
-      (b) =>
-        String(b.layerId) === String(layerId) && b.propertyName === propertyName,
-    )
+    .filter((b) => String(b.layerId) === String(layerId) && b.propertyName === propertyName)
     .sort((a, b) => a.startTime - b.startTime);
 }
 
@@ -46,8 +43,7 @@ export function numberAtTime(
     if (ms > block.endTime) continue;
     const t = evaluateBlock(ms / Math.max(1, duration), duration, block);
     if (t == null) {
-      const local =
-        (ms - block.startTime) / Math.max(1, block.endTime - block.startTime);
+      const local = (ms - block.startTime) / Math.max(1, block.endTime - block.startTime);
       const a = Number(block.fromValue) || 0;
       const b = Number(block.toValue) || 0;
       return a + (b - a) * Math.max(0, Math.min(1, local));
@@ -96,9 +92,7 @@ export function pathDAtTime(
   if (!from) return "";
 
   if (pathBlocks.length > 0) {
-    const block = pathBlocks.find(
-      (b) => ms >= b.startTime && ms <= b.endTime,
-    );
+    const block = pathBlocks.find((b) => ms >= b.startTime && ms <= b.endTime);
     if (block) {
       const t =
         evaluateBlock(progress01, duration, block) ??
@@ -133,12 +127,10 @@ export function sampleMotionPath(
 ): Array<{ x: number; y: number }> {
   const pts: Array<{ x: number; y: number }> = [];
   const hasX = blocks.some(
-    (b) =>
-      String(b.layerId) === String(layer.id) && b.propertyName === "translateX",
+    (b) => String(b.layerId) === String(layer.id) && b.propertyName === "translateX",
   );
   const hasY = blocks.some(
-    (b) =>
-      String(b.layerId) === String(layer.id) && b.propertyName === "translateY",
+    (b) => String(b.layerId) === String(layer.id) && b.propertyName === "translateY",
   );
   if (!hasX && !hasY) return pts;
   for (let i = 0; i <= samples; i++) {

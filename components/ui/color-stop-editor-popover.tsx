@@ -1,2 +1,4 @@
-"use client"
-export function ColorStopEditorPopover() { return null }
+"use client";
+export function ColorStopEditorPopover() {
+  return null;
+}

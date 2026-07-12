@@ -7,15 +7,16 @@ import {
   type SceneOwner,
 } from "../scene/selection";
 
-const layer = (id: string, x = 0): Layer => ({
-  id,
-  name: id,
-  type: "path",
-  from: parsePath("M0 0 L10 0 L10 10 L0 10 Z"),
-  to: parsePath("M0 0 L10 0 L10 10 L0 10 Z"),
-  translateX: x,
-  translateY: 0,
-} as Layer);
+const layer = (id: string, x = 0): Layer =>
+  ({
+    id,
+    name: id,
+    type: "path",
+    from: parsePath("M0 0 L10 0 L10 10 L0 10 Z"),
+    to: parsePath("M0 0 L10 0 L10 10 L0 10 Z"),
+    translateX: x,
+    translateY: 0,
+  }) as Layer;
 
 const owners: SceneOwner[] = [
   { ownerId: "frame-a", origin: { x: 0, y: 0 }, layers: [layer("a")] },

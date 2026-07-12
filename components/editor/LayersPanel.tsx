@@ -43,9 +43,7 @@ export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
   const selectFrames = useEditorStore((state) => state.selectFrames);
   const selectLayerRefs = useEditorStore((state) => state.selectLayerRefs);
   const addLayer = useEditorStore((state) => state.addLayer);
-  const toggleOwnedLayerVisibility = useEditorStore(
-    (state) => state.toggleOwnedLayerVisibility,
-  );
+  const toggleOwnedLayerVisibility = useEditorStore((state) => state.toggleOwnedLayerVisibility);
   const toggleOwnedLayerLock = useEditorStore((state) => state.toggleOwnedLayerLock);
   const [collapsedOwners, setCollapsedOwners] = React.useState<Set<string>>(() => new Set());
   const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(() => new Set());
@@ -58,11 +56,13 @@ export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
         layers: frame.id === selectedFrameId ? activeLayers : frame.layers,
       })),
       ...(rootLayers.length
-        ? [{
-            id: PAGE_ROOT_ID,
-            name: "Page vectors",
-            layers: selectedFrameId === PAGE_ROOT_ID ? activeLayers : rootLayers,
-          }]
+        ? [
+            {
+              id: PAGE_ROOT_ID,
+              name: "Page vectors",
+              layers: selectedFrameId === PAGE_ROOT_ID ? activeLayers : rootLayers,
+            },
+          ]
         : []),
     ],
     [activeLayers, frames, rootLayers, selectedFrameId],
@@ -92,9 +92,7 @@ export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
     const key = `${ownerId}:${String(layerId)}`;
     const next = additive
       ? selectedKeys.has(key)
-        ? selectedLayerRefs.filter(
-            (ref) => `${ref.ownerId}:${String(ref.layerId)}` !== key,
-          )
+        ? selectedLayerRefs.filter((ref) => `${ref.ownerId}:${String(ref.layerId)}` !== key)
         : [...selectedLayerRefs, { ownerId, layerId }]
       : [{ ownerId, layerId }];
     selectLayerRefs(next);
@@ -125,7 +123,11 @@ export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
       const key = String(layer.parentId);
       byParent.set(key, [...(byParent.get(key) ?? []), layer]);
     }
-    const nestedIds = new Set(Array.from(byParent.values()).flat().map((layer) => String(layer.id)));
+    const nestedIds = new Set(
+      Array.from(byParent.values())
+        .flat()
+        .map((layer) => String(layer.id)),
+    );
     const roots = depth === 0 ? layers.filter((layer) => !nestedIds.has(String(layer.id))) : layers;
 
     const renderLayer = (layer: Layer, layerDepth: number): React.ReactNode => {
@@ -141,7 +143,9 @@ export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
           <div
             className={cn(
               "group flex h-8 items-center gap-1 px-1.5 text-[11px]",
-              selected ? "bg-primary/15 text-foreground" : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+              selected
+                ? "bg-primary/15 text-foreground"
+                : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
             )}
             style={{ paddingLeft: 8 + layerDepth * 12 }}
           >
@@ -152,14 +156,18 @@ export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
               onClick={() => toggleGroup(key)}
               aria-label={expanded ? `Collapse ${layer.name}` : `Expand ${layer.name}`}
             >
-              <ChevronRight className={cn("size-3 transition-transform", expanded && "rotate-90")} />
+              <ChevronRight
+                className={cn("size-3 transition-transform", expanded && "rotate-90")}
+              />
             </button>
             <button
               type="button"
               className="flex min-w-0 flex-1 items-center gap-2 text-left"
               onClick={(event) => selectLayer(ownerId, layer.id, event.shiftKey)}
             >
-              <span className="shrink-0 text-muted-foreground"><LayerIcon type={layer.type} /></span>
+              <span className="shrink-0 text-muted-foreground">
+                <LayerIcon type={layer.type} />
+              </span>
               <span className="truncate">{layer.name || "Layer"}</span>
             </button>
             <button
@@ -220,7 +228,9 @@ export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
                   onClick={() => toggleOwner(owner.id)}
                   aria-label={expanded ? `Collapse ${owner.name}` : `Expand ${owner.name}`}
                 >
-                  <ChevronRight className={cn("size-3 transition-transform", expanded && "rotate-90")} />
+                  <ChevronRight
+                    className={cn("size-3 transition-transform", expanded && "rotate-90")}
+                  />
                 </button>
                 <button
                   type="button"

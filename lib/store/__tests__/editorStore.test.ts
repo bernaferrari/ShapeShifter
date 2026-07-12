@@ -126,7 +126,9 @@ describe("editorStore", () => {
       const firstFrameId = getStore().selectedFrameId;
       getStore().addFrame();
       const secondFrameId = getStore().selectedFrameId;
-      const before = new Map(getStore().frames.map((frame) => [frame.id, { x: frame.x, y: frame.y }]));
+      const before = new Map(
+        getStore().frames.map((frame) => [frame.id, { x: frame.x, y: frame.y }]),
+      );
       getStore().selectFrames([firstFrameId, secondFrameId]);
 
       getStore().moveFrames(getStore().selectedFrameIds, 12, -7);
@@ -171,8 +173,8 @@ describe("editorStore", () => {
       getStore().syncActiveOwner();
 
       expect(
-        getStore().frames
-          .find((candidate) => candidate.id === frame.id)!
+        getStore()
+          .frames.find((candidate) => candidate.id === frame.id)!
           .layers.find((candidate) => candidate.id === layer.id)!.translateX,
       ).toBe(17);
     });
@@ -209,8 +211,8 @@ describe("editorStore", () => {
 
       getStore().undo();
       expect(
-        getStore().frames
-          .find((frame) => frame.id === first.id)!
+        getStore()
+          .frames.find((frame) => frame.id === first.id)!
           .layers.find((layer) => layer.id === firstLayer.id)!.translateX ?? 0,
       ).toBe(firstX);
     });
@@ -259,8 +261,7 @@ describe("editorStore", () => {
         expect(
           frame.animation.blocks.some(
             (block) =>
-              String(block.layerId) === String(layerId) &&
-              block.propertyName === "translateX",
+              String(block.layerId) === String(layerId) && block.propertyName === "translateX",
           ),
         ).toBe(true);
       }
@@ -379,8 +380,8 @@ describe("editorStore", () => {
 
       expect(getStore().moveSelectedLayersToFrame(target.id)).toBe(true);
 
-      const moved = getStore().frames
-        .find((frame) => frame.id === target.id)!
+      const moved = getStore()
+        .frames.find((frame) => frame.id === target.id)!
         .layers.find((candidate) => candidate.id === layer.id)!;
       expect(target.x + (moved.translateX ?? 0)).toBeCloseTo(worldBefore.x);
       expect(target.y + (moved.translateY ?? 0)).toBeCloseTo(worldBefore.y);
@@ -397,9 +398,7 @@ describe("editorStore", () => {
 
       expect(getStore().selectedFrameId).toBe(source.id);
       expect(getStore().rootLayers).toHaveLength(0);
-      expect(getStore().frames[0].layers).toContainEqual(
-        expect.objectContaining({ id: layer.id }),
-      );
+      expect(getStore().frames[0].layers).toContainEqual(expect.objectContaining({ id: layer.id }));
     });
   });
 

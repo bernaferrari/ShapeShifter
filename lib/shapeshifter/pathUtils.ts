@@ -488,7 +488,8 @@ export function changeCommandType(
   const oldCmd = sub.commands[cmdIdx];
   if (oldCmd.type === newType) return newData;
 
-  const endPoint = oldCmd.points.length > 0 ? oldCmd.points[oldCmd.points.length - 1] : { x: 0, y: 0 };
+  const endPoint =
+    oldCmd.points.length > 0 ? oldCmd.points[oldCmd.points.length - 1] : { x: 0, y: 0 };
 
   // Real segment start = previous command's endpoint (or 0,0 for the first command).
   // The previous code used the command's OWN first point as `prev`, which produced
@@ -497,7 +498,9 @@ export function changeCommandType(
   // valid default arc.
   const prevCmd = cmdIdx > 0 ? sub.commands[cmdIdx - 1] : null;
   const prev =
-    prevCmd && prevCmd.points.length > 0 ? prevCmd.points[prevCmd.points.length - 1] : { x: 0, y: 0 };
+    prevCmd && prevCmd.points.length > 0
+      ? prevCmd.points[prevCmd.points.length - 1]
+      : { x: 0, y: 0 };
 
   let newPoints: Point[] = [];
   let newArcParams: Command["arcParams"] = undefined;
@@ -527,10 +530,7 @@ export function changeCommandType(
     }
     case "Q": {
       const mid = oldCmd.points[0] || endPoint;
-      newPoints = [
-        { x: (mid.x + endPoint.x) / 2, y: (mid.y + endPoint.y) / 2 },
-        endPoint,
-      ];
+      newPoints = [{ x: (mid.x + endPoint.x) / 2, y: (mid.y + endPoint.y) / 2 }, endPoint];
       break;
     }
     case "S": {
@@ -672,7 +672,10 @@ export function deleteSubPath(pathData: PathData, subIdx: number): PathData {
  * remaining path (with that subpath removed) and the extracted one.
  * Useful for "split to new layer" to allow independent styling (e.g. different strokes).
  */
-export function extractSubPath(pathData: PathData, subIdx: number): { remaining: PathData; extracted: PathData } {
+export function extractSubPath(
+  pathData: PathData,
+  subIdx: number,
+): { remaining: PathData; extracted: PathData } {
   const cloned = structuredClone(pathData);
   if (subIdx < 0 || subIdx >= cloned.subPaths.length) {
     return { remaining: cloned, extracted: { subPaths: [] } };
@@ -1407,7 +1410,10 @@ function convertCommandType(cmd: Command, start: Point, targetType: CommandType)
  * can be used by the renderer for high-quality interpolation.
  * This is the bridge that lets us keep the excellent NW + pole logic while moving to a better model.
  */
-export function prepareForMorph(from: PathData, to: PathData): {
+export function prepareForMorph(
+  from: PathData,
+  to: PathData,
+): {
   from: PathData;
   to: PathData;
   mapping: any; // Will be replaced by real MorphMapping interface once v2 types land
@@ -1415,7 +1421,11 @@ export function prepareForMorph(from: PathData, to: PathData): {
   const [a, b] = autoFixPathPair(from, to);
   // For now, the mapping is implicit in the aligned output.
   // Future: serialize the alignments, poles, permutations into a proper MorphMapping object.
-  return { from: a, to: b, mapping: { version: 1, note: "placeholder - real mapping coming with v2 types" } };
+  return {
+    from: a,
+    to: b,
+    mapping: { version: 1, note: "placeholder - real mapping coming with v2 types" },
+  };
 }
 
 // Original kept for backward compat during migration

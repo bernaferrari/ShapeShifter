@@ -77,55 +77,59 @@ export function BottomToolPalette() {
             {/* Divider between navigate/edit tools and create tools (Figma-style grouping) */}
             {tool.mode === "pen" && <div className="my-0.5 h-px w-5 bg-border" />}
             <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className={`size-10 rounded-lg transition-[background-color,color,transform] active:scale-95 ${
-                    isActive
-                      ? "bg-primary text-primary-foreground hover:bg-primary"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  }`}
-                  onClick={() => setToolMode(tool.mode)}
-                  aria-label={tool.label}
-                  aria-pressed={isActive}
-                >
-                  {tool.icon}
-                </Button>
-              }
-            />
-            <TooltipContent side="right" className="flex flex-col gap-1 text-[11px] max-w-[220px]">
-              <div className="flex items-center gap-2">
-                <span>{tool.label}</span>
-                {tool.shortcut && (
-                  <kbd className="rounded bg-muted px-1 py-px font-mono text-[10px] text-muted-foreground">
-                    {tool.shortcut}
-                  </kbd>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className={`size-10 rounded-lg transition-[background-color,color,transform] active:scale-95 ${
+                      isActive
+                        ? "bg-primary text-primary-foreground hover:bg-primary"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    }`}
+                    onClick={() => setToolMode(tool.mode)}
+                    aria-label={tool.label}
+                    aria-pressed={isActive}
+                  >
+                    {tool.icon}
+                  </Button>
+                }
+              />
+              <TooltipContent
+                side="right"
+                className="flex flex-col gap-1 text-[11px] max-w-[220px]"
+              >
+                <div className="flex items-center gap-2">
+                  <span>{tool.label}</span>
+                  {tool.shortcut && (
+                    <kbd className="rounded bg-muted px-1 py-px font-mono text-[10px] text-muted-foreground">
+                      {tool.shortcut}
+                    </kbd>
+                  )}
+                </div>
+                {tool.mode === "direct" && (
+                  <div className="text-[10px] text-muted-foreground leading-tight">
+                    Edit path points (Figma vector). Drag blue squares. Play timeline to preview
+                    morph.
+                  </div>
                 )}
-              </div>
-              {tool.mode === "direct" && (
-                <div className="text-[10px] text-muted-foreground leading-tight">
-                  Edit path points (Figma vector). Drag blue squares. Play timeline to preview morph.
-                </div>
-              )}
-              {tool.mode === "select" && (
-                <div className="text-[10px] text-muted-foreground leading-tight">
-                  Move whole shapes or frames. Double-click a shape to edit its vector.
-                </div>
-              )}
-              {tool.mode === "pen" && (
-                <div className="text-[10px] text-muted-foreground leading-tight">
-                  Click to place points · drag for curves · Esc to finish
-                </div>
-              )}
-              {tool.mode === "paint" && (
-                <div className="text-[10px] text-muted-foreground leading-tight">
-                  Click a region to fill with the current color
-                </div>
-              )}
-            </TooltipContent>
-          </Tooltip>
+                {tool.mode === "select" && (
+                  <div className="text-[10px] text-muted-foreground leading-tight">
+                    Move whole shapes or frames. Double-click a shape to edit its vector.
+                  </div>
+                )}
+                {tool.mode === "pen" && (
+                  <div className="text-[10px] text-muted-foreground leading-tight">
+                    Click to place points · drag for curves · Esc to finish
+                  </div>
+                )}
+                {tool.mode === "paint" && (
+                  <div className="text-[10px] text-muted-foreground leading-tight">
+                    Click a region to fill with the current color
+                  </div>
+                )}
+              </TooltipContent>
+            </Tooltip>
           </React.Fragment>
         );
       })}

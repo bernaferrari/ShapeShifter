@@ -30,10 +30,9 @@ const TIPS: Tip[] = [
     title: "From → To morph",
     body: (
       <>
-        Each shape has a{" "}
-        <span className="rounded bg-muted px-1 text-[10px] capitalize">from</span> and a{" "}
-        <span className="rounded bg-muted px-1 text-[10px] capitalize">to</span>. Edit both, then
-        hit Play to morph between them.
+        Each shape has a <span className="rounded bg-muted px-1 text-[10px] capitalize">from</span>{" "}
+        and a <span className="rounded bg-muted px-1 text-[10px] capitalize">to</span>. Edit both,
+        then hit Play to morph between them.
       </>
     ),
   },
@@ -116,7 +115,12 @@ export function Onboarding() {
         ))}
       </ul>
       <div className="mt-3 flex justify-end">
-        <Button size="sm" className="h-7 px-3 text-xs" onClick={dismiss} aria-label="Dismiss onboarding">
+        <Button
+          size="sm"
+          className="h-7 px-3 text-xs"
+          onClick={dismiss}
+          aria-label="Dismiss onboarding"
+        >
           Got it
         </Button>
       </div>

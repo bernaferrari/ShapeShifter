@@ -37,8 +37,7 @@ export function recordTranslationAtProgress(
       .map((block, index) => ({ block, index }))
       .filter(
         ({ block }) =>
-          String(block.layerId) === String(layer.id) &&
-          block.propertyName === propertyName,
+          String(block.layerId) === String(layer.id) && block.propertyName === propertyName,
       )
       .sort((a, b) => a.block.startTime - b.block.startTime);
 
@@ -61,9 +60,7 @@ export function recordTranslationAtProgress(
       ];
     }
 
-    const cover = segments.find(
-      ({ block }) => ms >= block.startTime && ms <= block.endTime,
-    );
+    const cover = segments.find(({ block }) => ms >= block.startTime && ms <= block.endTime);
     if (!cover) {
       const last = segments[segments.length - 1]!.block;
       if (ms > last.endTime) {

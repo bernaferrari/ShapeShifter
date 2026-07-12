@@ -233,13 +233,10 @@ export function distort(
 
   const X = luSolve(a, b);
 
-  // prettier-ignore
-  const matrix = [
-    X[0], X[3], 0, X[6],
-    X[1], X[4], 0, X[7],
-       0,    0, 1,    0,
-    X[2], X[5], 0,    1,
-  ].map((x) => Math.round(x * 10e6) / 10e6);
+  // Deliberately arranged in column-major order for the transform helper.
+  const matrix = [X[0], X[3], 0, X[6], X[1], X[4], 0, X[7], 0, 0, 1, 0, X[2], X[5], 0, 1].map(
+    (x) => Math.round(x * 10e6) / 10e6,
+  );
 
   return (point: [number, number]): [number, number] => {
     const pt = mat4MulVec4(matrix, [point[0], point[1], 0, 1]);
@@ -248,7 +245,10 @@ export function distort(
 }
 
 /** Post-multiply a 4x4 matrix (column-major) by a 4x1 column vector. */
-function mat4MulVec4(m: number[], v: [number, number, number, number]): [number, number, number, number] {
+function mat4MulVec4(
+  m: number[],
+  v: [number, number, number, number],
+): [number, number, number, number] {
   return [
     m[0] * v[0] + m[4] * v[1] + m[8] * v[2] + m[12] * v[3],
     m[1] * v[0] + m[5] * v[1] + m[9] * v[2] + m[13] * v[3],
@@ -268,7 +268,15 @@ function cloneDeep(x: number[] | number[][]): typeof x {
 }
 
 function luDecompose(A: number[][], _fast?: boolean): { LU: number[][]; P: number[] } {
-  let i: number, j: number, k: number, absAjk: number, Akk: number, Ak: number[], Pk: number, Ai: number[], max: number;
+  let i: number,
+    j: number,
+    k: number,
+    absAjk: number,
+    Akk: number,
+    Ak: number[],
+    Pk: number,
+    Ai: number[],
+    max: number;
   const n = A.length;
   const n1 = n - 1;
   const P = Array.from({ length: n }, () => 0);

@@ -44,15 +44,9 @@ describe("ObjectDragGesture", () => {
       },
     );
 
-    gesture.update(
-      { x: 12, y: 4 },
-      { shift: true, alt: false, bypassSnap: false },
-    );
+    gesture.update({ x: 12, y: 4 }, { shift: true, alt: false, bypassSnap: false });
 
-    expect(resolve).toHaveBeenCalledWith(
-      { x: 12, y: 0 },
-      expect.objectContaining({ shift: true }),
-    );
+    expect(resolve).toHaveBeenCalledWith({ x: 12, y: 0 }, expect.objectContaining({ shift: true }));
     expect(apply).toHaveBeenCalledWith({ x: 12, y: 0 }, { x: 12, y: 0 });
   });
 

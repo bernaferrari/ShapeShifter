@@ -50,7 +50,7 @@ describe("arcToBeziers conversion", () => {
   it("converts a standard arc into cubic Bezier segments", () => {
     const beziers = arcToBeziers(0, 0, 5, 5, 0, false, true, 5, 5);
     expect(beziers.length).toBeGreaterThan(0);
-    
+
     // The final segment's endpoint must equal the target coordinate
     const last = beziers.at(-1)!;
     expect(last.to.x).toBeCloseTo(5, 1);

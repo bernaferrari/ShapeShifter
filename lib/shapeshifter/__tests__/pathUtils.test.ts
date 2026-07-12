@@ -614,16 +614,26 @@ describe("pathUtils", () => {
     it("produces human labels and short coords matching reference style", () => {
       // Explicit construction to avoid any parser normalization surprises on H/V after curves
       const explicit: any = {
-        subPaths: [{
-          commands: [
-            { id: "m", type: "M", points: [{ x: 17, y: 3 }] },
-            { id: "l", type: "L", points: [{ x: 20, y: 6 }] },
-            { id: "c", type: "C", points: [{ x: 7, y: 6 }, { x: 4, y: 9 }, { x: 4, y: 12.5 }] },
-            { id: "h", type: "H", points: [{ x: 10, y: 12.5 }] },
-            { id: "v", type: "V", points: [{ x: 10, y: 20 }] },
-            { id: "z", type: "Z", points: [] },
-          ]
-        }]
+        subPaths: [
+          {
+            commands: [
+              { id: "m", type: "M", points: [{ x: 17, y: 3 }] },
+              { id: "l", type: "L", points: [{ x: 20, y: 6 }] },
+              {
+                id: "c",
+                type: "C",
+                points: [
+                  { x: 7, y: 6 },
+                  { x: 4, y: 9 },
+                  { x: 4, y: 12.5 },
+                ],
+              },
+              { id: "h", type: "H", points: [{ x: 10, y: 12.5 }] },
+              { id: "v", type: "V", points: [{ x: 10, y: 20 }] },
+              { id: "z", type: "Z", points: [] },
+            ],
+          },
+        ],
       };
 
       const cmds = explicit.subPaths[0].commands;
@@ -654,7 +664,9 @@ describe("pathUtils", () => {
     });
 
     it("is resilient to edge cases", () => {
-      expect(getCommandDescription({ id: "x", type: "M", points: [] } as any).label).toBe("move to");
+      expect(getCommandDescription({ id: "x", type: "M", points: [] } as any).label).toBe(
+        "move to",
+      );
       expect(getCommandDescription(null as any).label).toBe("unknown");
     });
   });

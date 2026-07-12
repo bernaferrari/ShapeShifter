@@ -28,7 +28,7 @@ export function ColorRow({
   mixed?: boolean;
   alphaMixed?: boolean;
 }) {
-  const hex = (color?.startsWith("#") ? color : color ? `#${color}` : "#000000");
+  const hex = color?.startsWith("#") ? color : color ? `#${color}` : "#000000";
   const hasLabel = Boolean(label);
   return (
     <div
@@ -135,9 +135,7 @@ export function GradientEditor({
             aria-label={`Stop ${i + 1}`}
             className={cn(
               "absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 shadow-sm transition-transform",
-              i === activeIdx
-                ? "border-primary scale-110"
-                : "border-white ring-1 ring-black/20",
+              i === activeIdx ? "border-primary scale-110" : "border-white ring-1 ring-black/20",
             )}
             style={{ left: `${s.offset * 100}%`, background: s.color }}
           />
@@ -210,4 +208,3 @@ export function GradientEditor({
     </div>
   );
 }
-

@@ -87,9 +87,7 @@ export function Toolbar({
   const autoFixSelectedLayer = useEditorStore((state) => state.autoFixSelectedLayer);
   const closeActionMode = useEditorStore((state) => state.closeActionMode);
   const splitSelectedCommand = useEditorStore((state) => state.splitSelectedCommand);
-  const setSelectedCommandAsFirst = useEditorStore(
-    (state) => state.setSelectedCommandAsFirst,
-  );
+  const setSelectedCommandAsFirst = useEditorStore((state) => state.setSelectedCommandAsFirst);
   const deleteSelectedPoint = useEditorStore((state) => state.deleteSelectedPoint);
   const deleteSelectedSubPath = useEditorStore((state) => state.deleteSelectedSubPath);
   const extractSelectedSubPathToNewLayer = useEditorStore(
@@ -232,20 +230,20 @@ export function Toolbar({
                 <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
                   Selected command
                 </DropdownMenuLabel>
-              <DropdownMenuItem onClick={() => splitSelectedCommand()}>
-                <Scissors size={16} className="mr-2" /> Split in half
-                <span className="ml-auto text-xs text-muted-foreground">X</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSelectedCommandAsFirst()}>
-                <ChevronFirst size={16} className="mr-2" /> Set as first point
-                <span className="ml-auto text-xs text-muted-foreground">F</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => deleteSelectedPoint()}>
-                <Trash2 size={16} className="mr-2" /> Delete point(s)
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => deleteSelectedSubPath()}>
-                <X size={16} className="mr-2" /> Delete subpath(s)
-              </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => splitSelectedCommand()}>
+                  <Scissors size={16} className="mr-2" /> Split in half
+                  <span className="ml-auto text-xs text-muted-foreground">X</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSelectedCommandAsFirst()}>
+                  <ChevronFirst size={16} className="mr-2" /> Set as first point
+                  <span className="ml-auto text-xs text-muted-foreground">F</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => deleteSelectedPoint()}>
+                  <Trash2 size={16} className="mr-2" /> Delete point(s)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => deleteSelectedSubPath()}>
+                  <X size={16} className="mr-2" /> Delete subpath(s)
+                </DropdownMenuItem>
               </DropdownMenuGroup>
             </>
           )}
@@ -264,7 +262,9 @@ export function Toolbar({
             </DropdownMenuLabel>
             <DropdownMenuItem onClick={() => booleanCombine("union")}>Union</DropdownMenuItem>
             <DropdownMenuItem onClick={() => booleanCombine("subtract")}>Subtract</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => booleanCombine("intersect")}>Intersect</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => booleanCombine("intersect")}>
+              Intersect
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => booleanCombine("exclude")}>Exclude</DropdownMenuItem>
           </DropdownMenuGroup>
         </DropdownMenuContent>
@@ -306,9 +306,7 @@ export function Toolbar({
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {side === "from" ? (
-                  <ChevronLeft size={14} />
-                ) : null}
+                {side === "from" ? <ChevronLeft size={14} /> : null}
                 {side}
                 {side === "to" ? <ChevronRight size={14} /> : null}
               </Button>

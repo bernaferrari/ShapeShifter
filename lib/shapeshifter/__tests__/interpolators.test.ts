@@ -4,10 +4,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  evaluateInterpolator,
-  INTERPOLATOR_CURVES,
-} from "../interpolators";
+import { evaluateInterpolator, INTERPOLATOR_CURVES } from "../interpolators";
 
 type InterpolatorName =
   | "FAST_OUT_SLOW_IN"

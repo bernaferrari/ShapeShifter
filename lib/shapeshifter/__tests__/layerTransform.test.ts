@@ -33,7 +33,11 @@ describe("layer transforms", () => {
   });
 
   it("returns the transformed axis-aligned bounds", () => {
-    expect(transformLayerRect({ x: 0, y: 0, w: 10, h: 20 }, { scaleX: 2, scaleY: 0.5 }))
-      .toEqual({ x: 0, y: 0, w: 20, h: 10 });
+    expect(transformLayerRect({ x: 0, y: 0, w: 10, h: 20 }, { scaleX: 2, scaleY: 0.5 })).toEqual({
+      x: 0,
+      y: 0,
+      w: 20,
+      h: 10,
+    });
   });
 });

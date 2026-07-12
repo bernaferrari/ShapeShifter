@@ -6,12 +6,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  numberAtTime,
-  colorAtTime,
-  pathDAtTime,
-  sampleMotionPath,
-} from "../playheadResolve";
+import { numberAtTime, colorAtTime, pathDAtTime, sampleMotionPath } from "../playheadResolve";
 import { parsePath, pathToString, getInterpolatedPath } from "../pathUtils";
 import type { Layer, TimelineBlock } from "../types";
 
@@ -191,18 +186,17 @@ describe("numberAtTime", () => {
       toValue: 100,
       interpolator: "LINEAR",
     });
-    expect(
-      numberAtTime(layer, [blockA, blockB, blockC], "translateX", 500, 1000),
-    ).toBeCloseTo(77, 5);
+    expect(numberAtTime(layer, [blockA, blockB, blockC], "translateX", 500, 1000)).toBeCloseTo(
+      77,
+      5,
+    );
   });
 });
 
 describe("colorAtTime", () => {
   it("returns fallback when there are zero blocks", () => {
     const layer = makeLayer();
-    expect(colorAtTime(layer, [], "fillColor", 500, 1000, "#000000")).toBe(
-      "#000000",
-    );
+    expect(colorAtTime(layer, [], "fillColor", 500, 1000, "#000000")).toBe("#000000");
   });
 
   it("returns the first block's fromValue when ms is before its startTime", () => {
@@ -216,9 +210,7 @@ describe("colorAtTime", () => {
       startTime: 200,
       endTime: 800,
     };
-    expect(colorAtTime(layer, [block], "fillColor", 100, 1000, "#fallback")).toBe(
-      "#ff0000",
-    );
+    expect(colorAtTime(layer, [block], "fillColor", 100, 1000, "#fallback")).toBe("#ff0000");
   });
 
   it("returns the last block's toValue when ms is after its endTime", () => {
@@ -232,9 +224,7 @@ describe("colorAtTime", () => {
       startTime: 200,
       endTime: 800,
     };
-    expect(colorAtTime(layer, [block], "fillColor", 900, 1000, "#fallback")).toBe(
-      "#00ff00",
-    );
+    expect(colorAtTime(layer, [block], "fillColor", 900, 1000, "#fallback")).toBe("#00ff00");
   });
 
   it("picks fromValue before the block's midpoint and toValue after — no smooth interpolation", () => {
@@ -249,17 +239,11 @@ describe("colorAtTime", () => {
       endTime: 1000,
     };
     // mid = 500. Just before midpoint -> fromValue.
-    expect(colorAtTime(layer, [block], "fillColor", 499, 1000, "#fallback")).toBe(
-      "#ff0000",
-    );
+    expect(colorAtTime(layer, [block], "fillColor", 499, 1000, "#fallback")).toBe("#ff0000");
     // Just after midpoint -> toValue.
-    expect(colorAtTime(layer, [block], "fillColor", 501, 1000, "#fallback")).toBe(
-      "#00ff00",
-    );
+    expect(colorAtTime(layer, [block], "fillColor", 501, 1000, "#fallback")).toBe("#00ff00");
     // Exactly at midpoint: ms < mid is false, so toValue.
-    expect(colorAtTime(layer, [block], "fillColor", 500, 1000, "#fallback")).toBe(
-      "#00ff00",
-    );
+    expect(colorAtTime(layer, [block], "fillColor", 500, 1000, "#fallback")).toBe("#00ff00");
     // Confirm it's NOT an intermediate/blended color at any point inside the range.
     const atQuarter = colorAtTime(layer, [block], "fillColor", 250, 1000, "#fallback");
     expect(["#ff0000", "#00ff00"]).toContain(atQuarter);

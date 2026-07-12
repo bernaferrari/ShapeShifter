@@ -137,9 +137,7 @@ export function NumberRow({
   };
 
   return (
-    <div
-      className="group grid grid-cols-[58px_minmax(0,1fr)] items-center gap-2"
-    >
+    <div className="group grid grid-cols-[58px_minmax(0,1fr)] items-center gap-2">
       <span
         role="slider"
         aria-label={label}
@@ -153,7 +151,13 @@ export function NumberRow({
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onKeyDown={(event) => {
-          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+          if (
+            event.key !== "ArrowLeft" &&
+            event.key !== "ArrowRight" &&
+            event.key !== "ArrowDown" &&
+            event.key !== "ArrowUp"
+          )
+            return;
           event.preventDefault();
           const direction = event.key === "ArrowLeft" || event.key === "ArrowDown" ? -1 : 1;
           onChange(clamp(value + direction * (step || 1) * (event.shiftKey ? 10 : 1)));
@@ -187,7 +191,6 @@ export function NumberRow({
     </div>
   );
 }
-
 
 export function Segmented<T extends string>({
   value,

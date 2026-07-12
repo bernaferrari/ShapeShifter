@@ -51,8 +51,9 @@ describe("inspector selection helpers", () => {
       value: "#000000",
       mixed: false,
     });
-    expect(sharedValue([layer("a"), layer("b", 0, "#ffffff")], (item) => item.fillColor, ""))
-      .toMatchObject({ mixed: true });
+    expect(
+      sharedValue([layer("a"), layer("b", 0, "#ffffff")], (item) => item.fillColor, ""),
+    ).toMatchObject({ mixed: true });
   });
 
   it("uses owner-local coordinates for one owner and world coordinates across owners", () => {

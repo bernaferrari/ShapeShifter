@@ -81,11 +81,7 @@ export class ObjectDragGesture {
       this.callbacks.beginTransaction();
       this.transactionStarted = true;
     }
-    if (
-      modifiers.alt &&
-      !this.cloned &&
-      Math.hypot(total.x, total.y) > CLONE_THRESHOLD
-    ) {
+    if (modifiers.alt && !this.cloned && Math.hypot(total.x, total.y) > CLONE_THRESHOLD) {
       this.callbacks.cloneSelection();
       this.cloned = true;
     }

@@ -17,9 +17,36 @@ const animation: AnimationState = {
   name: "Motion",
   duration: 1000,
   blocks: [
-    { id: "path", layerId: "shape", propertyName: "pathData", fromValue: "", toValue: "", startTime: 0, endTime: 1000, type: "path" },
-    { id: "x", layerId: "shape", propertyName: "translateX", fromValue: 0, toValue: 10, startTime: 0, endTime: 1000, type: "number" },
-    { id: "y", layerId: "shape", propertyName: "translateY", fromValue: 0, toValue: 10, startTime: 0, endTime: 1000, type: "number" },
+    {
+      id: "path",
+      layerId: "shape",
+      propertyName: "pathData",
+      fromValue: "",
+      toValue: "",
+      startTime: 0,
+      endTime: 1000,
+      type: "path",
+    },
+    {
+      id: "x",
+      layerId: "shape",
+      propertyName: "translateX",
+      fromValue: 0,
+      toValue: 10,
+      startTime: 0,
+      endTime: 1000,
+      type: "number",
+    },
+    {
+      id: "y",
+      layerId: "shape",
+      propertyName: "translateY",
+      fromValue: 0,
+      toValue: 10,
+      startTime: 0,
+      endTime: 1000,
+      type: "number",
+    },
   ],
 };
 const frame = {
@@ -64,4 +91,3 @@ describe("timeline projection", () => {
     expect(projection.rows[0]?.kind).toBe("frame");
   });
 });
-

@@ -4,10 +4,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  isOriginalShapeShifterProject,
-  flattenOriginalProject,
-} from "../project";
+import { isOriginalShapeShifterProject, flattenOriginalProject } from "../project";
 
 // Minimal valid project fixture (based on existing test data patterns)
 const MINIMAL_PROJECT = {
@@ -78,5 +75,4 @@ describe("project.ts - Phase 0 coverage", () => {
       expect(result.layers.length).toBe(0);
     });
   });
-
 });

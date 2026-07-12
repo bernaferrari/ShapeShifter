@@ -29,7 +29,11 @@ import {
   ensureStableCommandIds,
 } from "../shapeshifter/pathUtils";
 import type { Viewport } from "../shapeshifter/camera";
-import { computeDetailViewport, computeFitViewport, zoomAtWorldPoint } from "../shapeshifter/camera";
+import {
+  computeDetailViewport,
+  computeFitViewport,
+  zoomAtWorldPoint,
+} from "../shapeshifter/camera";
 import type {
   AnimationState,
   Layer,
@@ -1167,9 +1171,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       get().deselectAll();
       return;
     }
-    const primary = primaryId && normalized.includes(primaryId)
-      ? primaryId
-      : normalized[normalized.length - 1]!;
+    const primary =
+      primaryId && normalized.includes(primaryId) ? primaryId : normalized[normalized.length - 1]!;
     get().selectFrame(primary);
     set({ selectedFrameIds: normalized });
   },
@@ -1306,10 +1309,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       });
     const movedBlockIds = new Set(movedBlocks.map((block) => block.id));
     if (target.animation.blocks.some((block) => movedBlockIds.has(block.id))) return false;
-    const targetLayers = [
-      ...target.layers,
-      ...movedLayers,
-    ];
+    const targetLayers = [...target.layers, ...movedLayers];
     const targetAnimation: AnimationState = {
       ...structuredClone(target.animation),
       duration: Math.max(
@@ -1317,10 +1317,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ...movedBlocks.map((block) => block.endTime),
         1,
       ),
-      blocks: [
-        ...target.animation.blocks,
-        ...movedBlocks,
-      ],
+      blocks: [...target.animation.blocks, ...movedBlocks],
     };
     const sourceHidden = new Set(source.hiddenLayerIds.map(String));
     const movedHiddenIds = moving
@@ -1343,9 +1340,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
               (block) => !actualMovedIds.has(String(block.layerId)),
             ),
           },
-          hiddenLayerIds: frame.hiddenLayerIds.filter(
-            (id) => !actualMovedIds.has(String(id)),
-          ),
+          hiddenLayerIds: frame.hiddenLayerIds.filter((id) => !actualMovedIds.has(String(id))),
         };
       }
       if (frame.id === target.id) {
@@ -1506,9 +1501,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
                 (block) => !actualMovedIds.has(String(block.layerId)),
               ),
             },
-            hiddenLayerIds: frame.hiddenLayerIds.filter(
-              (id) => !actualMovedIds.has(String(id)),
-            ),
+            hiddenLayerIds: frame.hiddenLayerIds.filter((id) => !actualMovedIds.has(String(id))),
           }
         : frame,
     );
@@ -1668,9 +1661,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       hiddenLayerIds: [...project.hiddenLayerIds],
       selectedLayerId: getFirstEditableLayerId(normalized),
       selectedLayerIds: [getFirstEditableLayerId(normalized)],
-      selectedLayerRefs: [
-        { ownerId: frame.id, layerId: getFirstEditableLayerId(normalized) },
-      ],
+      selectedLayerRefs: [{ ownerId: frame.id, layerId: getFirstEditableLayerId(normalized) }],
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -1757,9 +1748,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       hiddenLayerIds: [...project.hiddenLayerIds],
       selectedLayerId: getFirstEditableLayerId(normalized),
       selectedLayerIds: [getFirstEditableLayerId(normalized)],
-      selectedLayerRefs: [
-        { ownerId: frame.id, layerId: getFirstEditableLayerId(normalized) },
-      ],
+      selectedLayerRefs: [{ ownerId: frame.id, layerId: getFirstEditableLayerId(normalized) }],
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],
@@ -1803,8 +1792,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const state = get();
     const ids = state.selectedLayerIds;
     // Path geometry must never be batch-copied onto multi-select (corrupts siblings).
-    const isPathPatch =
-      patch.from != null || patch.to != null || patch.pathData != null;
+    const isPathPatch = patch.from != null || patch.to != null || patch.pathData != null;
     if ((ids.length > 1 || state.selectedLayerRefs.length > 1) && !isPathPatch) {
       // Shared style/transform props → all selected (Figma batch).
       get().updateSelectedLayers(patch, options);
@@ -2194,8 +2182,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const segs = blocks
         .map((b, i) => ({ b, i }))
         .filter(
-          ({ b }) =>
-            String(b.layerId) === String(layer.id) && b.propertyName === propertyName,
+          ({ b }) => String(b.layerId) === String(layer.id) && b.propertyName === propertyName,
         )
         .sort((a, c) => a.b.startTime - c.b.startTime);
 
@@ -2217,9 +2204,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }
 
       // Find covering segment
-      const cover = segs.find(
-        ({ b }) => ms >= b.startTime && ms <= b.endTime,
-      );
+      const cover = segs.find(({ b }) => ms >= b.startTime && ms <= b.endTime);
       if (!cover) {
         // Between segments or past end — extend last or create new
         const last = segs[segs.length - 1]!.b;
@@ -2388,18 +2373,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (!idSet.has(String(layer.id)) || layer.locked) return layer;
       if (layer.type === "group") return layer;
       const ownB = getPathDataBounds(layer.from);
-      const frozenOwn = ownB
-        ? { x: ownB.x, y: ownB.y, width: ownB.w, height: ownB.h }
-        : null;
+      const frozenOwn = ownB ? { x: ownB.x, y: ownB.y, width: ownB.w, height: ownB.h } : null;
       // Note: live bounds each move is ok when we use proportional mapping from control AABB;
       // for frozen-source multi, canvas should pass control AABB from primary freeze.
       const from = mapOwn(layer.from, frozenOwn);
       const to = mapToEnd(layer, (p) => {
         const ob = getPathDataBounds(p);
-        return mapOwn(
-          p,
-          ob ? { x: ob.x, y: ob.y, width: ob.w, height: ob.h } : null,
-        );
+        return mapOwn(p, ob ? { x: ob.x, y: ob.y, width: ob.w, height: ob.h } : null);
       });
       return { ...layer, from, to, pathData: from };
     });
@@ -2481,9 +2461,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const nextRootAnimation = rootIds
       ? {
           ...savedRoot.animation,
-          blocks: savedRoot.animation.blocks.filter(
-            (block) => !rootIds.has(String(block.layerId)),
-          ),
+          blocks: savedRoot.animation.blocks.filter((block) => !rootIds.has(String(block.layerId))),
         }
       : savedRoot.animation;
     const nextRootHidden = rootIds
@@ -2602,9 +2580,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const next = layers
       .filter((l) => String(l.id) !== gid)
       .map((l) =>
-        String(l.parentId) === gid
-          ? { ...l, parentId: group.parentId ?? undefined }
-          : l,
+        String(l.parentId) === gid ? { ...l, parentId: group.parentId ?? undefined } : l,
       );
     get().pushHistory();
     set({
@@ -2661,10 +2637,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       ...frame,
       layers: [...frame.layers, ...(clonesByOwner.get(frame.id) ?? [])],
     }));
-    const nextRootLayers = [
-      ...savedRoot.layers,
-      ...(clonesByOwner.get(PAGE_ROOT_ID) ?? []),
-    ];
+    const nextRootLayers = [...savedRoot.layers, ...(clonesByOwner.get(PAGE_ROOT_ID) ?? [])];
     const activeClones = cloneRefs
       .filter((ref) => ref.ownerId === state.selectedFrameId)
       .map((ref) => ref.layerId);
@@ -2916,7 +2889,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   deleteSelectedPoint: () => {
     const { layers, selectedLayerId, selection, selectedPoints } = get();
-    const toDelete = selectedPoints.length > 0 ? selectedPoints : (selection ? [selection] : []);
+    const toDelete = selectedPoints.length > 0 ? selectedPoints : selection ? [selection] : [];
     if (toDelete.length === 0) return;
 
     const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
@@ -2961,7 +2934,18 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   deleteSelectedSubPath: () => {
     const { layers, selectedLayerId, editingSide, selection, selectedSubPaths } = get();
-    const toDelete = selectedSubPaths.length > 0 ? selectedSubPaths : (selection ? [{ layerId: selection.layerId, side: selection.side, subPathIndex: selection.subPathIndex }] : []);
+    const toDelete =
+      selectedSubPaths.length > 0
+        ? selectedSubPaths
+        : selection
+          ? [
+              {
+                layerId: selection.layerId,
+                side: selection.side,
+                subPathIndex: selection.subPathIndex,
+              },
+            ]
+          : [];
     if (toDelete.length === 0) return;
 
     const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
@@ -2973,16 +2957,16 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     // Delete subpaths descending per side to keep indices valid
     const fromIdxs = toDelete
-      .filter(s => s.side === "from" && String(s.layerId) === String(selectedLayerId))
-      .map(s => s.subPathIndex)
+      .filter((s) => s.side === "from" && String(s.layerId) === String(selectedLayerId))
+      .map((s) => s.subPathIndex)
       .sort((a, b) => b - a);
     for (const idx of fromIdxs) {
       targetFrom = deleteSubPath(targetFrom, idx);
     }
 
     const toIdxs = toDelete
-      .filter(s => s.side === "to" && String(s.layerId) === String(selectedLayerId))
-      .map(s => s.subPathIndex)
+      .filter((s) => s.side === "to" && String(s.layerId) === String(selectedLayerId))
+      .map((s) => s.subPathIndex)
       .sort((a, b) => b - a);
     if (targetTo) {
       for (const idx of toIdxs) {
@@ -3014,7 +2998,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     );
     if (subSel) {
       subIdx = subSel.subPathIndex;
-    } else if (selection && String(selection.layerId) === String(selectedLayerId) && selection.side === editingSide) {
+    } else if (
+      selection &&
+      String(selection.layerId) === String(selectedLayerId) &&
+      selection.side === editingSide
+    ) {
       subIdx = selection.subPathIndex;
     }
     if (subIdx == null) return;
@@ -3027,7 +3015,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const fromExtract = extractSubPath(layer.from, subIdx);
     const toExtract = layer.to ? extractSubPath(layer.to, subIdx) : null;
 
-    if (fromExtract.extracted.subPaths.length === 0 && (toExtract?.extracted.subPaths.length ?? 0) === 0)
+    if (
+      fromExtract.extracted.subPaths.length === 0 &&
+      (toExtract?.extracted.subPaths.length ?? 0) === 0
+    )
       return;
 
     // Create a new independent layer for the extracted subpath (inherits style, can now be edited separately)
@@ -3109,14 +3100,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({ layers: newLayers });
   },
 
-  togglePlayback: () => set((state) => {
-    const atEnd = state.progress >= 0.999;
-    if (!state.isPlaying && atEnd) {
-      // Restart from beginning when hitting Play after the animation finished
-      return { isPlaying: true, progress: 0 };
-    }
-    return { isPlaying: !state.isPlaying };
-  }),
+  togglePlayback: () =>
+    set((state) => {
+      const atEnd = state.progress >= 0.999;
+      if (!state.isPlaying && atEnd) {
+        // Restart from beginning when hitting Play after the animation finished
+        return { isPlaying: true, progress: 0 };
+      }
+      return { isPlaying: !state.isPlaying };
+    }),
   setProgress: (progress) => set({ progress: Math.max(0, Math.min(1, progress)) }),
   setSpeed: (speed) => set({ speed }),
   toggleSlowMotion: () => set((state) => ({ isSlowMotion: !state.isSlowMotion })),
@@ -3284,9 +3276,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       : layers.findIndex((l) => l.id === selectedLayerId);
     if (idxA === -1) return;
     layerA = layers[idxA]!;
-    let idxB = layerB
-      ? layers.findIndex((l) => String(l.id) === String(layerB!.id))
-      : -1;
+    let idxB = layerB ? layers.findIndex((l) => String(l.id) === String(layerB!.id)) : -1;
     if (idxB === -1 || idxB === idxA) {
       idxB = (idxA + 1) % layers.length;
     }
@@ -3493,9 +3483,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set(
       updateOwnedLayers(state, ownerId, (layers) =>
         layers.map((layer) =>
-          String(layer.id) === String(id)
-            ? { ...layer, visible: layer.visible === false }
-            : layer,
+          String(layer.id) === String(id) ? { ...layer, visible: layer.visible === false } : layer,
         ),
       ),
     );
@@ -3614,9 +3602,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       layers: cloneLayers(active.layers),
       selectedLayerId: getFirstEditableLayerId(active.layers),
       selectedLayerIds: [getFirstEditableLayerId(active.layers)],
-      selectedLayerRefs: [
-        { ownerId: active.id, layerId: getFirstEditableLayerId(active.layers) },
-      ],
+      selectedLayerRefs: [{ ownerId: active.id, layerId: getFirstEditableLayerId(active.layers) }],
       selection: null,
       selectedPoints: [],
       selectedSubPaths: [],

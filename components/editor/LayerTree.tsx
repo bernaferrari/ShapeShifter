@@ -30,7 +30,11 @@ function buildLayerPaths(layers: Layer[]) {
   };
 
   const paths = layers
-    .filter((layer) => layer.type !== "group" || !layers.some((candidate) => String(candidate.parentId) === String(layer.id)))
+    .filter(
+      (layer) =>
+        layer.type !== "group" ||
+        !layers.some((candidate) => String(candidate.parentId) === String(layer.id)),
+    )
     .map(buildPath);
 
   for (const layer of layers) {
@@ -46,7 +50,17 @@ function animatableProperties(layer?: Layer) {
   if (!layer) return [];
   return layer.type === "group"
     ? ["rotation", "scaleX", "scaleY", "pivotX", "pivotY", "translateX", "translateY"]
-    : ["pathData", "fillColor", "fillAlpha", "strokeColor", "strokeAlpha", "strokeWidth", "trimPathStart", "trimPathEnd", "trimPathOffset"];
+    : [
+        "pathData",
+        "fillColor",
+        "fillAlpha",
+        "strokeColor",
+        "strokeAlpha",
+        "strokeWidth",
+        "trimPathStart",
+        "trimPathEnd",
+        "trimPathOffset",
+      ];
 }
 
 export function LayerTree({
@@ -58,7 +72,10 @@ export function LayerTree({
 }: LayerTreeProps) {
   const { paths, layerIdByPath } = React.useMemo(() => buildLayerPaths(layers), [layers]);
   const selectedPath = React.useMemo(
-    () => Array.from(layerIdByPath.entries()).find(([, id]) => String(id) === String(selectedLayerId))?.[0],
+    () =>
+      Array.from(layerIdByPath.entries()).find(
+        ([, id]) => String(id) === String(selectedLayerId),
+      )?.[0],
     [layerIdByPath, selectedLayerId],
   );
 
@@ -82,7 +99,8 @@ export function LayerTree({
     },
     renderRowDecoration: ({ item }) => {
       const id = layerIdByPath.get(item.path);
-      const layer = id == null ? undefined : layers.find((candidate) => String(candidate.id) === String(id));
+      const layer =
+        id == null ? undefined : layers.find((candidate) => String(candidate.id) === String(id));
       const count = layer?.timeline?.length ?? 0;
       return count > 0 ? { text: String(count), title: `${count} animation block(s)` } : null;
     },
@@ -102,7 +120,8 @@ export function LayerTree({
 
   const renderContextMenu = (item: ContextMenuItem, context: ContextMenuOpenContext) => {
     const id = layerIdByPath.get(item.path);
-    const layer = id == null ? undefined : layers.find((candidate) => String(candidate.id) === String(id));
+    const layer =
+      id == null ? undefined : layers.find((candidate) => String(candidate.id) === String(id));
     if (!layer) return null;
 
     return (

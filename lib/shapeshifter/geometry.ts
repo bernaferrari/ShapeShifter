@@ -32,7 +32,7 @@ export function getCommandArea(cmd: Command, start: Point): number {
   const end = cmd.points.at(-1) || { x: 0, y: 0 };
   const x3 = end.x;
   const y3 = end.y;
-  
+
   let area = 0;
   switch (cmd.type) {
     case "L":
@@ -78,7 +78,7 @@ export function isSubPathClockwise(subPath: SubPath): boolean {
   let sum = 0;
   let current = { x: 0, y: 0 };
   subPath.commands.forEach((cmd, idx) => {
-    const start = idx === 0 ? (cmd.points[0] || { x: 0, y: 0 }) : current;
+    const start = idx === 0 ? cmd.points[0] || { x: 0, y: 0 } : current;
     sum += getCommandArea(cmd, start);
     current = cmd.points.at(-1) || current;
   });
@@ -122,7 +122,14 @@ function sampleQuadBezier(p0: Point, p1: Point, p2: Point, steps = 8): Point[] {
 
 // ─── POLYLABEL QUAD-TREE SEARCH ──────────────────────────────────────────
 
-function getPointToSegmentDistanceSq(x: number, y: number, x1: number, y1: number, x2: number, y2: number): number {
+function getPointToSegmentDistanceSq(
+  x: number,
+  y: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+): number {
   const dx = x2 - x1;
   const dy = y2 - y1;
   if (dx === 0 && dy === 0) {
@@ -177,7 +184,7 @@ export function getPoleOfInaccessibility(subPath: SubPath, precision = 0.5): Poi
   let current = { x: 0, y: 0 };
 
   subPath.commands.forEach((cmd, idx) => {
-    const start = idx === 0 ? (cmd.points[0] || { x: 0, y: 0 }) : current;
+    const start = idx === 0 ? cmd.points[0] || { x: 0, y: 0 } : current;
     if (idx === 0) polygon.push(start);
 
     if (cmd.type === "L" || cmd.type === "Z") {
@@ -292,16 +299,18 @@ export function arcToBeziers(
   largeArc: boolean,
   sweep: boolean,
   x2: number,
-  y2: number
+  y2: number,
 ): { cp1: Point; cp2: Point; to: Point }[] {
   if (x1 === x2 && y1 === y2) return [];
 
   if (rx === 0 || ry === 0) {
-    return [{
-      cp1: { x: x1 + (x2 - x1) / 3, y: y1 + (y2 - y1) / 3 },
-      cp2: { x: x1 + 2 * (x2 - x1) / 3, y: y1 + 2 * (y2 - y1) / 3 },
-      to: { x: x2, y: y2 }
-    }];
+    return [
+      {
+        cp1: { x: x1 + (x2 - x1) / 3, y: y1 + (y2 - y1) / 3 },
+        cp2: { x: x1 + (2 * (x2 - x1)) / 3, y: y1 + (2 * (y2 - y1)) / 3 },
+        to: { x: x2, y: y2 },
+      },
+    ];
   }
 
   rx = Math.abs(rx);
@@ -372,7 +381,7 @@ export function arcToBeziers(
   for (let i = 0; i < segments; i++) {
     const a1 = startAngle + (i * deltaAngle) / segments;
     const a2 = startAngle + ((i + 1) * deltaAngle) / segments;
-    
+
     const theta = a2 - a1;
     const t = Math.tan(theta / 4);
     const alpha = (Math.sin(theta) * (Math.sqrt(4 + 3 * t * t) - 1)) / 3;

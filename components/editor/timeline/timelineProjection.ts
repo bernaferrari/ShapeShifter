@@ -97,11 +97,7 @@ export function buildTimelineProjection({
     contentForFrame(frameId).animation.blocks.filter(
       (block) => String(block.layerId) === String(layerId),
     );
-  const blocksForProperty = (
-    frameId: string,
-    layerId: string | number,
-    propertyName: string,
-  ) =>
+  const blocksForProperty = (frameId: string, layerId: string | number, propertyName: string) =>
     blocksForLayer(frameId, layerId).filter((block) => block.propertyName === propertyName);
 
   const rows: TimelineRow[] = [];

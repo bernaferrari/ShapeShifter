@@ -90,11 +90,7 @@ describe("transformPoint", () => {
   });
 
   it("chaining multiple matrices", () => {
-    const result = transformPoint(
-      { x: 1, y: 0 },
-      Matrix.translation(5, 5),
-      Matrix.scaling(2, 2),
-    );
+    const result = transformPoint({ x: 1, y: 0 }, Matrix.translation(5, 5), Matrix.scaling(2, 2));
     expect(result).toEqual({ x: 12, y: 10 });
   });
 });

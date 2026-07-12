@@ -25,9 +25,7 @@ export interface ParseSpec {
 export const parserSpecs: ParseSpec[] = [
   {
     description: "empty path data",
-    tests: [
-      { description: "empty string", before: "", after: "" },
-    ],
+    tests: [{ description: "empty string", before: "", after: "" }],
   },
   {
     description: "paths with shorthand lineto commands",

@@ -82,8 +82,6 @@ export const PathCanvas = React.memo(function PathCanvas({
   // so clicking a point/handle (no movement) doesn't also insert a stray point.
   const pointerDownPosRef = useRef<{ x: number; y: number } | null>(null);
 
-
-
   // GestureDispatcher (PR-01.1 / ShapeShifter-ish fix round xwx under mvd).
   // The ref that owns the decision logic for canvas interactions (Key Decision #2).
   // Created once, context kept fresh via useEffect below so BottomToolPalette + keyboard
@@ -293,7 +291,9 @@ export const PathCanvas = React.memo(function PathCanvas({
             // Action mode / edit-path point selection (multi AABB).
             const layer = curLayers.find((l) => l.id === curSelId);
             const pathForEdit = layer
-              ? curEditSide === "from" ? layer.from : (layer.to ?? layer.from)
+              ? curEditSide === "from"
+                ? layer.from
+                : (layer.to ?? layer.from)
               : { subPaths: [] as any[] };
             const hits = collectPointsInRect(pathForEdit as any, selectRect);
             if (hits.length > 0) {
@@ -656,7 +656,9 @@ export const PathCanvas = React.memo(function PathCanvas({
 
         const layer = curLayers.find((l) => l.id === curSelId);
         const pathForEdit = layer
-          ? curEditSide === "from" ? layer.from : (layer.to ?? layer.from)
+          ? curEditSide === "from"
+            ? layer.from
+            : (layer.to ?? layer.from)
           : { subPaths: [] as any[] };
 
         const hits = collectPointsInLasso(pathForEdit as any, lassoPointsRef.current, {
@@ -1247,7 +1249,7 @@ export const PathCanvas = React.memo(function PathCanvas({
       const origFrom = structuredClone(layer.from);
       const origTo = layer.to ? structuredClone(layer.to) : null;
       const origBounds = getPathBounds(origFrom) ?? selectedLayerBounds;
-      const origToBounds = origTo ? getPathBounds(origTo) ?? origBounds : null;
+      const origToBounds = origTo ? (getPathBounds(origTo) ?? origBounds) : null;
       // Freeze the layer's world→local mapping for this drag (cursor is world; bounds are local).
       const toLocal = makeWorldToLocal(selectedPreviewTransform);
 
@@ -1274,7 +1276,15 @@ export const PathCanvas = React.memo(function PathCanvas({
       window.addEventListener("pointerup", handleUp);
       window.addEventListener("pointercancel", handleUp);
     },
-    [isActionMode, pointFromEvent, pushHistory, selectedLayerBounds, selectedLayerId, selectedPreviewTransform, side],
+    [
+      isActionMode,
+      pointFromEvent,
+      pushHistory,
+      selectedLayerBounds,
+      selectedLayerId,
+      selectedPreviewTransform,
+      side,
+    ],
   );
 
   const handleRotatePointerDown = useCallback(
@@ -1651,7 +1661,7 @@ export const PathCanvas = React.memo(function PathCanvas({
                 ? `url(#${gridId}-fill-grad)`
                 : currentLayer.fillColor || "none"
             }
-            fillOpacity={currentLayer.fillGradient ? 1 : currentLayer.fillAlpha ?? 1}
+            fillOpacity={currentLayer.fillGradient ? 1 : (currentLayer.fillAlpha ?? 1)}
             stroke={currentLayer.strokeColor || fallbackStroke}
             strokeOpacity={currentLayer.strokeAlpha ?? 1}
             strokeWidth={strokeWidth}
@@ -2245,7 +2255,10 @@ function makeWorldToLocal(transform: string | undefined): (p: Point) => Point {
     let match: RegExpExecArray | null;
     while ((match = re.exec(transform))) {
       const op = match[1].toLowerCase();
-      const a = match[2].trim().split(/[\s,]+/).map(Number);
+      const a = match[2]
+        .trim()
+        .split(/[\s,]+/)
+        .map(Number);
       if (op === "translate") m.translateSelf(a[0] || 0, a[1] || 0);
       else if (op === "scale") m.scaleSelf(a[0] ?? 1, a[1] ?? a[0] ?? 1);
       else if (op === "rotate") m.rotateSelf(a[0] || 0);

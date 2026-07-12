@@ -38,14 +38,8 @@ export class FrameResizeGesture {
     if (this.finished) return { ...this.lastSize };
     let width = this.handle === "s" ? this.bounds.w : point.x - this.bounds.x;
     let height = this.handle === "e" ? this.bounds.h : point.y - this.bounds.y;
-    width = Math.max(
-      1,
-      modifiers.bypassSnap ? Number(width.toFixed(2)) : Math.round(width),
-    );
-    height = Math.max(
-      1,
-      modifiers.bypassSnap ? Number(height.toFixed(2)) : Math.round(height),
-    );
+    width = Math.max(1, modifiers.bypassSnap ? Number(width.toFixed(2)) : Math.round(width));
+    height = Math.max(1, modifiers.bypassSnap ? Number(height.toFixed(2)) : Math.round(height));
     if (
       Math.abs(width - this.lastSize.width) <= 1e-6 &&
       Math.abs(height - this.lastSize.height) <= 1e-6

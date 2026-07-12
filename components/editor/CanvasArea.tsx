@@ -5,24 +5,14 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import {
-  Copy,
-  Grid3x3,
-  Plus,
-  RotateCcw,
-  Trash2,
-} from "lucide-react";
+import { Copy, Grid3x3, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { PathCanvas } from "./PathCanvas";
 import {
   WorldSelectionOverlay,
   type LayerResizeSession,
   type LayerRotateSession,
 } from "./canvas/WorldSelectionOverlay";
-import {
-  PAGE_ROOT_ID,
-  useEditorStore,
-  type LayerSelectionRef,
-} from "@/lib/store/editorStore";
+import { PAGE_ROOT_ID, useEditorStore, type LayerSelectionRef } from "@/lib/store/editorStore";
 import type { Viewport } from "@/lib/shapeshifter/camera";
 import {
   clientToWorld,
@@ -39,10 +29,7 @@ import {
   scalePathToBounds,
   updateCommandPoint,
 } from "@/lib/shapeshifter/pathUtils";
-import {
-  numberAtTime,
-  sampleMotionPath,
-} from "@/lib/shapeshifter/playheadResolve";
+import { numberAtTime, sampleMotionPath } from "@/lib/shapeshifter/playheadResolve";
 import { snapRectToGuides, type GuideLine } from "@/lib/shapeshifter/smartGuides";
 import { collectPointsInLasso, pointInPolygon } from "@/lib/shapeshifter/gestures/HitTests";
 import {
@@ -61,10 +48,7 @@ import {
   unionOwnedLayerBounds,
   type SceneOwner,
 } from "@/lib/shapeshifter/scene/selection";
-import {
-  resolveWorldLayerDraws,
-  type WorldLayerDraw,
-} from "@/lib/shapeshifter/scene/render";
+import { resolveWorldLayerDraws, type WorldLayerDraw } from "@/lib/shapeshifter/scene/render";
 import { hitTestOwnedLayers } from "@/lib/shapeshifter/scene/hitTest";
 import { layerTransformToSvg } from "@/lib/shapeshifter/scene/layerTransform";
 import type { Command, PathData, Selection } from "@/lib/shapeshifter/types";
@@ -146,7 +130,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   // edge-to-edge while screen↔world mapping stays exact for every consumer below.
   const [worldSize, setWorldSize] = useState({ w: 0, h: 0 });
   const worldView = useMemo(
-    () => fitViewportToAspect(worldViewport, worldSize.w > 0 && worldSize.h > 0 ? worldSize.w / worldSize.h : 1),
+    () =>
+      fitViewportToAspect(
+        worldViewport,
+        worldSize.w > 0 && worldSize.h > 0 ? worldSize.w / worldSize.h : 1,
+      ),
     [worldViewport, worldSize],
   );
   const setWorldView = useCallback(
@@ -193,10 +181,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     [frames, layers, rootLayers, selectedFrameId],
   );
   const selectedLayerRefKeys = useMemo(
-    () =>
-      new Set(
-        selectedLayerRefs.map((ref) => `${ref.ownerId}:${String(ref.layerId)}`),
-      ),
+    () => new Set(selectedLayerRefs.map((ref) => `${ref.ownerId}:${String(ref.layerId)}`)),
     [selectedLayerRefs],
   );
   const selectedLayerOwnerCount = useMemo(
@@ -307,9 +292,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   /** Frame contains the active layer selection — soft “parent” outline only, not primary chrome. */
   const isFrameContainingSelection = useCallback(
     (frameId: string) =>
-      hasCanvasSelection &&
-      selectTarget === "layer" &&
-      frameId === selectedFrameId,
+      hasCanvasSelection && selectTarget === "layer" && frameId === selectedFrameId,
     [hasCanvasSelection, selectTarget, selectedFrameId],
   );
 
@@ -320,7 +303,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   const [paintHoverValid, setPaintHoverValid] = useState(false);
 
   // Custom paint bucket cursor (static, offset for tip of handle)
-
 
   // Pen tool state. The active sub-path is the one currently being drawn; the
   // "outgoing" handle of the last committed anchor curves the next segment; the
@@ -399,8 +381,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                 y: snapValueToStep(total.y, 1),
               }
             : total,
-        applyDelta: (delta) =>
-          useEditorStore.getState().moveFrames(ids, delta.x, delta.y),
+        applyDelta: (delta) => useEditorStore.getState().moveFrames(ids, delta.x, delta.y),
         commit: clearArtboardDrag,
         rollback: () => useEditorStore.getState().cancelLastHistoryTransaction(),
         cancelled: clearArtboardDrag,
@@ -410,11 +391,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   );
 
   const updateArtboardDrag = useCallback(
-    (
-      clientX: number,
-      clientY: number,
-      modifiers: { shift: boolean; bypassSnap: boolean },
-    ) => {
+    (clientX: number, clientY: number, modifiers: { shift: boolean; bypassSnap: boolean }) => {
       const gesture = artboardDragRef.current;
       if (!gesture) return false;
       const point = worldPointFromEvent(clientX, clientY);
@@ -430,11 +407,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   );
 
   const finishArtboardDrag = useCallback(
-    (
-      clientX: number,
-      clientY: number,
-      modifiers: { shift: boolean; bypassSnap: boolean },
-    ) => {
+    (clientX: number, clientY: number, modifiers: { shift: boolean; bypassSnap: boolean }) => {
       const gesture = artboardDragRef.current;
       if (!gesture) return false;
       const point = worldPointFromEvent(clientX, clientY);
@@ -760,13 +733,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
             useEditorStore
               .getState()
               .moveSelectedLayersToFrame(dropFrameId, { recordHistory: false });
-          } else if (
-            !dropFrameId &&
-            useEditorStore.getState().selectedFrameId !== PAGE_ROOT_ID
-          ) {
-            useEditorStore
-              .getState()
-              .moveSelectedLayersToRoot({ recordHistory: false });
+          } else if (!dropFrameId && useEditorStore.getState().selectedFrameId !== PAGE_ROOT_ID) {
+            useEditorStore.getState().moveSelectedLayersToRoot({ recordHistory: false });
           }
           setSmartGuides([]);
         },
@@ -807,29 +775,23 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     }
   }, []);
 
-  const startLayerResize = useCallback(
-    (session: LayerResizeSession, pointerId: number) => {
-      layerResizeRef.current = session;
-      try {
-        worldSvgRef.current?.setPointerCapture(pointerId);
-      } catch {
-        /* The SVG may have lost capture before React receives the handle event. */
-      }
-    },
-    [],
-  );
+  const startLayerResize = useCallback((session: LayerResizeSession, pointerId: number) => {
+    layerResizeRef.current = session;
+    try {
+      worldSvgRef.current?.setPointerCapture(pointerId);
+    } catch {
+      /* The SVG may have lost capture before React receives the handle event. */
+    }
+  }, []);
 
-  const startLayerRotate = useCallback(
-    (session: LayerRotateSession, pointerId: number) => {
-      layerRotateRef.current = session;
-      try {
-        worldSvgRef.current?.setPointerCapture(pointerId);
-      } catch {
-        /* The SVG may have lost capture before React receives the handle event. */
-      }
-    },
-    [],
-  );
+  const startLayerRotate = useCallback((session: LayerRotateSession, pointerId: number) => {
+    layerRotateRef.current = session;
+    try {
+      worldSvgRef.current?.setPointerCapture(pointerId);
+    } catch {
+      /* The SVG may have lost capture before React receives the handle event. */
+    }
+  }, []);
 
   useEffect(
     () => () => {
@@ -891,10 +853,9 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   // Commit an edited path back to the selected layer (mirrors inline anchor drag).
   const commitEditPath = useCallback(
     (next: PathData, recordHistory = true) => {
-      updateSelectedLayer(
-        editingSide === "from" ? { from: next, pathData: next } : { to: next },
-        { recordHistory },
-      );
+      updateSelectedLayer(editingSide === "from" ? { from: next, pathData: next } : { to: next }, {
+        recordHistory,
+      });
     },
     [editingSide, updateSelectedLayer],
   );
@@ -930,10 +891,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         // Click the last point again to finish the open path (common pen UX).
         const lastCmd = sub.commands[sub.commands.length - 1];
         const lastAnchor = lastCmd?.points[lastCmd.points.length - 1];
-        if (
-          lastAnchor &&
-          Math.hypot(local.x - lastAnchor.x, local.y - lastAnchor.y) <= closeTol
-        ) {
+        if (lastAnchor && Math.hypot(local.x - lastAnchor.x, local.y - lastAnchor.y) <= closeTol) {
           finishPen();
           return;
         }
@@ -1017,16 +975,11 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       if (!editFrame) return;
       e.stopPropagation();
       e.preventDefault();
-      frameResizeRef.current = new FrameResizeGesture(
-        getFrameBounds(editFrame),
-        handle,
-        {
-          beginTransaction: () => useEditorStore.getState().pushHistory(),
-          applySize: ({ width, height }) =>
-            useEditorStore.getState().updateVector({ width, height }),
-          rollback: () => useEditorStore.getState().cancelLastHistoryTransaction(),
-        },
-      );
+      frameResizeRef.current = new FrameResizeGesture(getFrameBounds(editFrame), handle, {
+        beginTransaction: () => useEditorStore.getState().pushHistory(),
+        applySize: ({ width, height }) => useEditorStore.getState().updateVector({ width, height }),
+        rollback: () => useEditorStore.getState().cancelLastHistoryTransaction(),
+      });
       try {
         worldSvgRef.current?.setPointerCapture(e.pointerId);
       } catch {
@@ -1181,10 +1134,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
               ? selectedLayerRefs.filter(
                   (ref) => `${ref.ownerId}:${String(ref.layerId)}` !== hitKey,
                 )
-              : [
-                  ...selectedLayerRefs,
-                  { ownerId: layerHit.frameId, layerId: layerHit.layerId },
-                ];
+              : [...selectedLayerRefs, { ownerId: layerHit.frameId, layerId: layerHit.layerId }];
             selectLayerRefs(next);
           } else {
             // Grabbing any member of an existing multi-selection moves the group.
@@ -1482,10 +1432,10 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         const st = useEditorStore.getState();
         const nextLayers = st.layers.map((layer) => {
           const item = rz.items.find((it) => String(it.id) === String(layer.id)) as
-            | (typeof rz.items)[number] & {
+            | ((typeof rz.items)[number] & {
                 frameOrigin?: { x: number; y: number; w: number; h: number };
                 baseTranslate?: { x: number; y: number };
-              }
+              })
             | undefined;
           if (!item) return layer;
           const po = item.origin; // path-local freeze
@@ -1506,9 +1456,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
             height: po.h * sy,
           };
           const from = scalePathToBounds(item.origFrom, pathFrom, pathTo);
-          const to = item.origTo
-            ? scalePathToBounds(item.origTo, pathFrom, pathTo)
-            : layer.to;
+          const to = item.origTo ? scalePathToBounds(item.origTo, pathFrom, pathTo) : layer.to;
           // Keep path origin; move via translate so the object sits in nfx/nfy
           return {
             ...layer,
@@ -1577,7 +1525,9 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
           setWorldSelectedIds(next);
           if (hits.length > 0) {
             // Multi-frame: select each (last is primary active doc)
-            const primary = hits.includes(selectedFrameId) ? selectedFrameId : hits[hits.length - 1]!;
+            const primary = hits.includes(selectedFrameId)
+              ? selectedFrameId
+              : hits[hits.length - 1]!;
             selectFrames(next, primary);
           }
         }
@@ -1677,8 +1627,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
             bypassSnap: e.metaKey || e.ctrlKey,
           });
           objectDrag.finish(end);
-        }
-        else objectDrag.cancel();
+        } else objectDrag.cancel();
       }
       if (artboardDrag) {
         const end = worldPointFromEvent(e.clientX, e.clientY);
@@ -1776,9 +1725,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
             })
             .map((f) => f.id);
           if (hitIds.length > 0) {
-            const next = additive
-              ? Array.from(new Set([...worldSelectedIds, ...hitIds]))
-              : hitIds;
+            const next = additive ? Array.from(new Set([...worldSelectedIds, ...hitIds])) : hitIds;
             selectFrames(next, next[next.length - 1]);
           } else if (!additive) {
             deselectAll();
@@ -1911,10 +1858,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         cancelObjectDrag();
         return;
       }
-      if (
-        e.key === "Escape" &&
-        (layerResizeRef.current || layerRotateRef.current)
-      ) {
+      if (e.key === "Escape" && (layerResizeRef.current || layerRotateRef.current)) {
         e.preventDefault();
         cancelLayerTransform();
         return;
@@ -2016,9 +1960,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       variant="ghost"
                       className="h-7 w-7 text-xs text-white/60 hover:bg-white/10 hover:text-white"
                       onClick={() =>
-                        isActionMode
-                          ? setZoom(Math.max(0.5, zoom - 0.25))
-                          : zoomWorldAtCenter(0.8)
+                        isActionMode ? setZoom(Math.max(0.5, zoom - 0.25)) : zoomWorldAtCenter(0.8)
                       }
                       aria-label="Zoom out"
                     >
@@ -2032,9 +1974,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       variant="ghost"
                       className="h-7 w-7 text-xs text-white/60 hover:bg-white/10 hover:text-white"
                       onClick={() =>
-                        isActionMode
-                          ? setZoom(Math.min(4, zoom + 0.25))
-                          : zoomWorldAtCenter(1.25)
+                        isActionMode ? setZoom(Math.min(4, zoom + 0.25)) : zoomWorldAtCenter(1.25)
                       }
                       aria-label="Zoom in"
                     >
@@ -2153,15 +2093,16 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                     onDoubleClick={handleWorldDoubleClick}
                     style={{
                       background: "var(--muted)",
-                      cursor: isWorldPanning || isDraggingArtboards || layerDragRef.current
-                        ? "grabbing"
-                        : toolMode === "paint"
-                          ? paintBucketCursor
-                          : toolMode === "pen" || toolMode === "pencil"
-                            ? "crosshair"
-                            : hoveredLayerKey
-                              ? "move"
-                              : "default",
+                      cursor:
+                        isWorldPanning || isDraggingArtboards || layerDragRef.current
+                          ? "grabbing"
+                          : toolMode === "paint"
+                            ? paintBucketCursor
+                            : toolMode === "pen" || toolMode === "pencil"
+                              ? "crosshair"
+                              : hoveredLayerKey
+                                ? "move"
+                                : "default",
                     }}
                   >
                     <defs>
@@ -2207,8 +2148,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       const isSel = isFrameChromeSelected(frame.id);
                       const isParentOfLayer = isFrameContainingSelection(frame.id);
                       const isBeingDragged = draggingArtboardIds.includes(frame.id);
-                      const isHovered =
-                        hoveredFrameId === frame.id && !isSel && !isParentOfLayer;
+                      const isHovered = hoveredFrameId === frame.id && !isSel && !isParentOfLayer;
                       // Morph when playing/scrubbing; selected frame at t=0 can show live edit path.
                       const morph = isPlaying || progress > 0;
                       let draws = frameLayerDraws(frame, morph);
@@ -2254,15 +2194,14 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                           : isHovered
                             ? 1.5
                             : 1;
-                      const borderDash = isParentOfLayer && !isSel ? `${worldPerPx * 3} ${worldPerPx * 2}` : undefined;
+                      const borderDash =
+                        isParentOfLayer && !isSel
+                          ? `${worldPerPx * 3} ${worldPerPx * 2}`
+                          : undefined;
                       const rx = Math.max(0.5, b.w * 0.015);
 
                       return (
-                        <g
-                          key={frame.id}
-                          transform={`translate(${b.x} ${b.y})`}
-                          opacity={1}
-                        >
+                        <g key={frame.id} transform={`translate(${b.x} ${b.y})`} opacity={1}>
                           {/* white paper */}
                           <rect
                             x={0}
@@ -2304,92 +2243,86 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                                 : `url(#frame-clip-${frame.id})`
                             }
                           >
-                          {/* End-state morph ghost (Figma-like spatial feedback for from→to) */}
-                          {onionD && !isPlaying && progress < 0.001 && (
-                            <path
-                              d={onionD}
-                              fill="none"
-                              stroke="#0d99ff"
-                              strokeWidth={Math.max(0.8, Math.min(2.2, b.w / 24))}
-                              strokeDasharray={`${worldPerPx * 4} ${worldPerPx * 3}`}
-                              opacity={0.35}
-                              vectorEffect="non-scaling-stroke"
-                              pointerEvents="none"
-                            />
-                          )}
-                          {draws.map((draw) => {
-                            const gradId = draw.fillGradient
-                              ? `${gradientDomId(frame.id)}-${draw.id}`
-                              : null;
-                            const pathFill = gradId
-                              ? `url(#${gradId})`
-                              : (draw.fill ?? "none");
-                            const pathStroke =
-                              draw.stroke ?? (draw.fill || draw.fillGradient ? "none" : "#111111");
-                            const isLayerSel =
-                              hasCanvasSelection &&
-                              selectTarget === "layer" &&
-                              selectedLayerRefKeys.has(`${frame.id}:${String(draw.id)}`);
-                            const isLayerHover =
-                              hoveredLayerKey === `${frame.id}:${draw.id}` && !isLayerSel;
-                            // Hover outline only here (tight AABB). Selected chrome is a
-                            // single world-space overlay below so box + handles never desync.
-                            const hoverBb =
-                              !isPointTool &&
-                              isLayerHover &&
-                              !isLayerSel &&
-                              draw.d
-                                ? boundsFromPathD(draw.d)
+                            {/* End-state morph ghost (Figma-like spatial feedback for from→to) */}
+                            {onionD && !isPlaying && progress < 0.001 && (
+                              <path
+                                d={onionD}
+                                fill="none"
+                                stroke="#0d99ff"
+                                strokeWidth={Math.max(0.8, Math.min(2.2, b.w / 24))}
+                                strokeDasharray={`${worldPerPx * 4} ${worldPerPx * 3}`}
+                                opacity={0.35}
+                                vectorEffect="non-scaling-stroke"
+                                pointerEvents="none"
+                              />
+                            )}
+                            {draws.map((draw) => {
+                              const gradId = draw.fillGradient
+                                ? `${gradientDomId(frame.id)}-${draw.id}`
                                 : null;
-                            const tform = layerTransformToSvg(draw);
-                            return (
-                              <g key={String(draw.id)} transform={tform}>
-                                {draw.fillGradient && gradId && (
-                                  <defs
-                                    dangerouslySetInnerHTML={{
-                                      __html: gradientToSvg(
-                                        draw.fillGradient,
-                                        gradId,
-                                        draw.fillOpacity,
-                                      ),
-                                    }}
-                                  />
-                                )}
-                                {draw.d && (
-                                  <path
-                                    d={draw.d}
-                                    fill={pathFill}
-                                    fillOpacity={gradId ? 1 : draw.fillOpacity}
-                                    fillRule={
-                                      draw.fillType === "evenOdd" ? "evenodd" : "nonzero"
-                                    }
-                                    stroke={pathStroke}
-                                    strokeOpacity={draw.strokeOpacity}
-                                    strokeWidth={
-                                      draw.strokeWidth || Math.max(0.8, Math.min(2.2, b.w / 24))
-                                    }
-                                    opacity={1}
-                                    vectorEffect="non-scaling-stroke"
-                                    pointerEvents="none"
-                                  />
-                                )}
-                                {hoverBb && (
-                                  <rect
-                                    x={hoverBb.x}
-                                    y={hoverBb.y}
-                                    width={hoverBb.w}
-                                    height={hoverBb.h}
-                                    fill="none"
-                                    stroke="#0d99ff"
-                                    strokeWidth={1}
-                                    strokeOpacity={0.55}
-                                    vectorEffect="non-scaling-stroke"
-                                    pointerEvents="none"
-                                  />
-                                )}
-                              </g>
-                            );
-                          })}
+                              const pathFill = gradId ? `url(#${gradId})` : (draw.fill ?? "none");
+                              const pathStroke =
+                                draw.stroke ??
+                                (draw.fill || draw.fillGradient ? "none" : "#111111");
+                              const isLayerSel =
+                                hasCanvasSelection &&
+                                selectTarget === "layer" &&
+                                selectedLayerRefKeys.has(`${frame.id}:${String(draw.id)}`);
+                              const isLayerHover =
+                                hoveredLayerKey === `${frame.id}:${draw.id}` && !isLayerSel;
+                              // Hover outline only here (tight AABB). Selected chrome is a
+                              // single world-space overlay below so box + handles never desync.
+                              const hoverBb =
+                                !isPointTool && isLayerHover && !isLayerSel && draw.d
+                                  ? boundsFromPathD(draw.d)
+                                  : null;
+                              const tform = layerTransformToSvg(draw);
+                              return (
+                                <g key={String(draw.id)} transform={tform}>
+                                  {draw.fillGradient && gradId && (
+                                    <defs
+                                      dangerouslySetInnerHTML={{
+                                        __html: gradientToSvg(
+                                          draw.fillGradient,
+                                          gradId,
+                                          draw.fillOpacity,
+                                        ),
+                                      }}
+                                    />
+                                  )}
+                                  {draw.d && (
+                                    <path
+                                      d={draw.d}
+                                      fill={pathFill}
+                                      fillOpacity={gradId ? 1 : draw.fillOpacity}
+                                      fillRule={draw.fillType === "evenOdd" ? "evenodd" : "nonzero"}
+                                      stroke={pathStroke}
+                                      strokeOpacity={draw.strokeOpacity}
+                                      strokeWidth={
+                                        draw.strokeWidth || Math.max(0.8, Math.min(2.2, b.w / 24))
+                                      }
+                                      opacity={1}
+                                      vectorEffect="non-scaling-stroke"
+                                      pointerEvents="none"
+                                    />
+                                  )}
+                                  {hoverBb && (
+                                    <rect
+                                      x={hoverBb.x}
+                                      y={hoverBb.y}
+                                      width={hoverBb.w}
+                                      height={hoverBb.h}
+                                      fill="none"
+                                      stroke="#0d99ff"
+                                      strokeWidth={1}
+                                      strokeOpacity={0.55}
+                                      vectorEffect="non-scaling-stroke"
+                                      pointerEvents="none"
+                                    />
+                                  )}
+                                </g>
+                              );
+                            })}
                           </g>
                           {/* thin, zoom-independent border / selection */}
                           <rect
@@ -2514,10 +2447,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                         );
                         if (pts.length < 2) return null;
                         const poly = pts
-                          .map(
-                            (pt) =>
-                              `${editOrigin.x + pt.x},${editOrigin.y + pt.y}`,
-                          )
+                          .map((pt) => `${editOrigin.x + pt.x},${editOrigin.y + pt.y}`)
                           .join(" ");
                         const cur = {
                           x:
@@ -2596,7 +2526,9 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       editPath &&
                       editOrigin &&
                       (() => {
-                        const segs: Array<[{ x: number; y: number }, { x: number; y: number }, string]> = [];
+                        const segs: Array<
+                          [{ x: number; y: number }, { x: number; y: number }, string]
+                        > = [];
                         for (let s = 0; s < editPath.subPaths.length; s++) {
                           const cmds = editPath.subPaths[s].commands;
                           let cur: { x: number; y: number } | null = null;
@@ -2702,13 +2634,24 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       })()}
 
                     {/* Paint bucket live preview (world view) - shows the region that would be filled with the currently selected color */}
-                    {toolMode === "paint" && paintHoverValid && (
-                      editOrigin && editPath ? (
-                        <g transform={`translate(${editOrigin.x} ${editOrigin.y})`} pointerEvents="none">
+                    {toolMode === "paint" &&
+                      paintHoverValid &&
+                      (editOrigin && editPath ? (
+                        <g
+                          transform={`translate(${editOrigin.x} ${editOrigin.y})`}
+                          pointerEvents="none"
+                        >
                           <path
                             d={pathToString(editPath)}
                             fill={currentFillColor}
-                            fillOpacity={Math.max(0.25, Math.min(0.65, (layers.find((l) => l.id === selectedLayerId)?.fillAlpha ?? 1) * 0.7))}
+                            fillOpacity={Math.max(
+                              0.25,
+                              Math.min(
+                                0.65,
+                                (layers.find((l) => l.id === selectedLayerId)?.fillAlpha ?? 1) *
+                                  0.7,
+                              ),
+                            )}
                             stroke="#0d99ff"
                             strokeWidth={worldPerPx * 1.5}
                             strokeDasharray={`${worldPerPx * 3} ${worldPerPx * 1.5}`}
@@ -2738,8 +2681,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                             </g>
                           );
                         })()
-                      ) : null
-                    )}
+                      ) : null)}
 
                     {/* Vector network — Direct tool (Figma double-click edit) */}
                     {!isPlaying && isPointTool && editPath && editOrigin && (
@@ -2843,10 +2785,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
 
                     <WorldSelectionOverlay
                       visible={
-                        !isPlaying &&
-                        isObjectTool &&
-                        hasCanvasSelection &&
-                        selectTarget === "layer"
+                        !isPlaying && isObjectTool && hasCanvasSelection && selectTarget === "layer"
                       }
                       activeOrigin={editOrigin}
                       activeLayers={layers}
@@ -2862,7 +2801,9 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                 ) : (
                   <PathCanvas
                     side={isPlaying ? "preview" : editingSide}
-                    resetKey={isPlaying ? resetPreview : editingSide === "from" ? resetFrom : resetTo}
+                    resetKey={
+                      isPlaying ? resetPreview : editingSide === "from" ? resetFrom : resetTo
+                    }
                     width={456}
                     height={456}
                   />
@@ -2884,7 +2825,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       const isParentOfLayer = isFrameContainingSelection(frame.id);
                       const isRenaming = renamingFrameId === frame.id;
                       // Show title for selected frame or parent-of-layer, and always a quiet label when nearby
-                      const showTitleChrome = isSel || isParentOfLayer || frame.id === hoveredFrameId;
+                      const showTitleChrome =
+                        isSel || isParentOfLayer || frame.id === hoveredFrameId;
                       return (
                         <div
                           key={frame.id}
@@ -2989,34 +2931,34 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                                   isSel ? "opacity-100" : "pointer-events-none opacity-0",
                                 )}
                               >
-                                  <button
-                                    type="button"
-                                    data-frame-chrome-action
-                                    title="Duplicate frame"
-                                    tabIndex={isSel ? 0 : -1}
-                                    disabled={!isSel}
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onClick={() => {
-                                      const st = useEditorStore.getState();
-                                      st.selectFrame(frame.id);
-                                      st.duplicateFrame();
-                                    }}
-                                    className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
-                                  >
-                                    <Copy className="size-3" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    data-frame-chrome-action
-                                    title="Delete frame"
-                                    tabIndex={isSel ? 0 : -1}
-                                    disabled={!isSel || frames.length <= 1}
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onClick={() => deleteFrame(frame.id)}
-                                    className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-destructive disabled:pointer-events-none disabled:opacity-40 cursor-pointer"
-                                  >
-                                    <Trash2 className="size-3" />
-                                  </button>
+                                <button
+                                  type="button"
+                                  data-frame-chrome-action
+                                  title="Duplicate frame"
+                                  tabIndex={isSel ? 0 : -1}
+                                  disabled={!isSel}
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onClick={() => {
+                                    const st = useEditorStore.getState();
+                                    st.selectFrame(frame.id);
+                                    st.duplicateFrame();
+                                  }}
+                                  className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer"
+                                >
+                                  <Copy className="size-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  data-frame-chrome-action
+                                  title="Delete frame"
+                                  tabIndex={isSel ? 0 : -1}
+                                  disabled={!isSel || frames.length <= 1}
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onClick={() => deleteFrame(frame.id)}
+                                  className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-destructive disabled:pointer-events-none disabled:opacity-40 cursor-pointer"
+                                >
+                                  <Trash2 className="size-3" />
+                                </button>
                               </span>
                             </div>
                           )}

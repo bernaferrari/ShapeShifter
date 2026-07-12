@@ -1008,14 +1008,11 @@ describe("kus 24t export fidelity", () => {
         },
       ],
     };
-    const project = exportProjectJSON(
-      [makeLayer()],
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { layers: [rootLayer], animation: rootAnimation, hiddenLayerIds: [] },
-    );
+    const project = exportProjectJSON([makeLayer()], undefined, undefined, undefined, undefined, {
+      layers: [rootLayer],
+      animation: rootAnimation,
+      hiddenLayerIds: [],
+    });
 
     expect((project as any).pageRoot.layers[0].id).toBe("root-vector");
     expect((project as any).pageRoot.layers[0].translateX).toBe(120);

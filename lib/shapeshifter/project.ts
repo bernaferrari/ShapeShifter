@@ -76,8 +76,8 @@ export function isOriginalShapeShifterProject(value: unknown): value is ShapeShi
   const candidate = value as Partial<ShapeShifterProject>;
   return Boolean(
     candidate.layers?.vectorLayer &&
-      candidate.timeline?.animation &&
-      Array.isArray(candidate.timeline.animation.blocks),
+    candidate.timeline?.animation &&
+    Array.isArray(candidate.timeline.animation.blocks),
   );
 }
 
@@ -116,7 +116,9 @@ export function flattenOriginalProject(project: ShapeShifterProject): FlattenedS
         pivotY: layer.pivotY ?? 0,
         translateX: layer.translateX ?? 0,
         translateY: layer.translateY ?? 0,
-        timeline: project.timeline.animation.blocks.filter((block) => String(block.layerId) === layer.id),
+        timeline: project.timeline.animation.blocks.filter(
+          (block) => String(block.layerId) === layer.id,
+        ),
       });
     }
 
@@ -156,7 +158,9 @@ export function flattenOriginalProject(project: ShapeShifterProject): FlattenedS
         pivotY: layer.pivotY ?? 0,
         translateX: layer.translateX ?? 0,
         translateY: layer.translateY ?? 0,
-        timeline: project.timeline.animation.blocks.filter((block) => String(block.layerId) === layer.id),
+        timeline: project.timeline.animation.blocks.filter(
+          (block) => String(block.layerId) === layer.id,
+        ),
       });
     }
 

@@ -3,22 +3,12 @@ import type { PathData } from "../types";
 import type { OwnedLayerRef, SceneOwner } from "./selection";
 import { inverseTransformLayerPoint } from "./layerTransform";
 
-function distanceToSegment(
-  px: number,
-  py: number,
-  ax: number,
-  ay: number,
-  bx: number,
-  by: number,
-) {
+function distanceToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
   const abx = bx - ax;
   const aby = by - ay;
   const lengthSquared = abx * abx + aby * aby;
   if (lengthSquared < 1e-12) return Math.hypot(px - ax, py - ay);
-  const t = Math.max(
-    0,
-    Math.min(1, ((px - ax) * abx + (py - ay) * aby) / lengthSquared),
-  );
+  const t = Math.max(0, Math.min(1, ((px - ax) * abx + (py - ay) * aby) / lengthSquared));
   return Math.hypot(px - (ax + t * abx), py - (ay + t * aby));
 }
 
@@ -41,10 +31,7 @@ export function hitTestOwnedLayers(
       if (
         layer.visible === false ||
         layer.locked ||
-        (layer.type !== "path" &&
-          layer.type !== "clipPath" &&
-          !layer.from &&
-          !layer.pathData)
+        (layer.type !== "path" && layer.type !== "clipPath" && !layer.from && !layer.pathData)
       ) {
         continue;
       }
@@ -72,9 +59,7 @@ export function hitTestOwnedLayers(
           if (points.length === 0) continue;
           const end = points[points.length - 1];
           for (const candidate of points) {
-            if (
-              Math.hypot(local.x - candidate.x, local.y - candidate.y) <= localStrokeTolerance
-            ) {
+            if (Math.hypot(local.x - candidate.x, local.y - candidate.y) <= localStrokeTolerance) {
               nearStroke = true;
               break;
             }
@@ -82,14 +67,8 @@ export function hitTestOwnedLayers(
           if (nearStroke) break;
           if (
             previous &&
-            distanceToSegment(
-              local.x,
-              local.y,
-              previous.x,
-              previous.y,
-              end.x,
-              end.y,
-            ) <= localStrokeTolerance
+            distanceToSegment(local.x, local.y, previous.x, previous.y, end.x, end.y) <=
+              localStrokeTolerance
           ) {
             nearStroke = true;
             break;

@@ -22,7 +22,13 @@ interface EasingCurveProps {
  * reads as a *shape*, not just a name. When `onChange` is provided the handles
  * are draggable and emit a new custom curve.
  */
-export function EasingCurve({ points, progress, onChange, className, size = 96 }: EasingCurveProps) {
+export function EasingCurve({
+  points,
+  progress,
+  onChange,
+  className,
+  size = 96,
+}: EasingCurveProps) {
   const [x1, y1, x2, y2] = points;
   const pad = 8;
   const span = size - pad * 2;

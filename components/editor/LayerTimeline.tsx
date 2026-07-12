@@ -141,10 +141,9 @@ export function LayerTimeline() {
     return (timeMs / 1000).toFixed(1);
   };
   /** Position (translate) uses Figma keyframe diamonds, not a filled clip bar. */
-  const isPositionProperty = (name: string) =>
-    name === "translateX" || name === "translateY";
-  const isTimelineEmpty = frames.every((f) => (f.animation?.blocks?.length ?? 0) === 0) &&
-    animation.blocks.length === 0;
+  const isPositionProperty = (name: string) => name === "translateX" || name === "translateY";
+  const isTimelineEmpty =
+    frames.every((f) => (f.animation?.blocks?.length ?? 0) === 0) && animation.blocks.length === 0;
   const [emptyHintDismissed, setEmptyHintDismissed] = React.useState(false);
   React.useEffect(() => {
     // Re-show the empty card when the timeline becomes empty again
@@ -194,9 +193,7 @@ export function LayerTimeline() {
   };
 
   const [collapsedFrameIds, setCollapsedFrameIds] = React.useState<Set<string>>(() => new Set());
-  const [collapsedGroupKeys, setCollapsedGroupKeys] = React.useState<Set<string>>(
-    () => new Set(),
-  );
+  const [collapsedGroupKeys, setCollapsedGroupKeys] = React.useState<Set<string>>(() => new Set());
   const toggleFrameExpanded = (frameId: string) => {
     setCollapsedFrameIds((previous) => {
       const next = new Set(previous);
@@ -223,14 +220,7 @@ export function LayerTimeline() {
         collapsedFrameIds,
         collapsedGroupKeys,
       }),
-    [
-      animation,
-      collapsedFrameIds,
-      collapsedGroupKeys,
-      frames,
-      layers,
-      selectedFrameId,
-    ],
+    [animation, collapsedFrameIds, collapsedGroupKeys, frames, layers, selectedFrameId],
   );
   const timelineRows = timelineProjection.rows;
   const blocksForLayerInFrame = timelineProjection.blocksForLayer;
@@ -277,10 +267,7 @@ export function LayerTimeline() {
   const renderPropertyBlock = (block: TimelineBlock) => {
     const isSelected = selectedBlockIds.includes(block.id);
     const leftPct = (block.startTime / animation.duration) * 100;
-    const widthPct = Math.max(
-      0.8,
-      ((block.endTime - block.startTime) / animation.duration) * 100,
-    );
+    const widthPct = Math.max(0.8, ((block.endTime - block.startTime) / animation.duration) * 100);
     const interp = block.interpolator || "FAST_OUT_SLOW_IN";
     const isLinear = interp === "LINEAR";
     const asKeyframes = isPositionProperty(block.propertyName);
@@ -602,50 +589,50 @@ export function LayerTimeline() {
                     />
                   }
                 >
-                {isLinear ? (
-                  <svg width="11" height="9" viewBox="0 0 12 10" fill="none" aria-hidden>
-                    <path
-                      d="M1.5 8.5 L10.5 1.5"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                ) : (
-                  <svg width="11" height="9" viewBox="0 0 12 10" fill="none" aria-hidden>
-                    <path
-                      d="M1 8.5C3.5 8.5 4 1.5 11 1.5"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                )}
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="center" className="w-52 text-xs" side="top">
-                <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Android interpolator
-                </div>
-                {INTERPOLATOR_OPTIONS.map((opt) => (
-                  <DropdownMenuItem
-                    key={opt.value}
-                    className={cn(interp === opt.value && "bg-primary/10 text-primary")}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      updateTimelineBlock(block.id, { interpolator: opt.value });
-                    }}
-                  >
-                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <span>{opt.label}</span>
-                      <span className="font-mono text-[10px] text-muted-foreground/80">
-                        {opt.hint}
+                  {isLinear ? (
+                    <svg width="11" height="9" viewBox="0 0 12 10" fill="none" aria-hidden>
+                      <path
+                        d="M1.5 8.5 L10.5 1.5"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  ) : (
+                    <svg width="11" height="9" viewBox="0 0 12 10" fill="none" aria-hidden>
+                      <path
+                        d="M1 8.5C3.5 8.5 4 1.5 11 1.5"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  )}
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="center" className="w-52 text-xs" side="top">
+                  <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Android interpolator
+                  </div>
+                  {INTERPOLATOR_OPTIONS.map((opt) => (
+                    <DropdownMenuItem
+                      key={opt.value}
+                      className={cn(interp === opt.value && "bg-primary/10 text-primary")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateTimelineBlock(block.id, { interpolator: opt.value });
+                      }}
+                    >
+                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span>{opt.label}</span>
+                        <span className="font-mono text-[10px] text-muted-foreground/80">
+                          {opt.hint}
+                        </span>
                       </span>
-                    </span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           )}
           {/* Edge resize hit targets */}
           <button
@@ -765,7 +752,9 @@ export function LayerTimeline() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44">
               <DropdownMenuItem onClick={() => addLayer("path")}>New path</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => addLayer("clipPath")}>New clip path</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => addLayer("clipPath")}>
+                New clip path
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => addLayer("group")}>New group layer</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -794,8 +783,7 @@ export function LayerTimeline() {
                 const ms = index * rulerMinorStepMs;
                 if (ms <= 0 || ms >= animation.duration) return null;
                 // Skip major positions (integer-safe via nearest major)
-                const nearMajor =
-                  Math.round(ms / rulerMajorStepMs) * rulerMajorStepMs;
+                const nearMajor = Math.round(ms / rulerMajorStepMs) * rulerMajorStepMs;
                 if (Math.abs(ms - nearMajor) < 0.01) return null;
                 const t = ms / animation.duration;
                 return (
@@ -897,9 +885,7 @@ export function LayerTimeline() {
             if (row.kind === "frame") {
               // Figma: frame row is selected only when selectionKind is the frame (not a child).
               const isActive =
-                hasCanvasSelection &&
-                selectionKind === "frame" &&
-                row.frameId === selectedFrameId;
+                hasCanvasSelection && selectionKind === "frame" && row.frameId === selectedFrameId;
               return (
                 <div
                   key={row.key}
@@ -907,7 +893,9 @@ export function LayerTimeline() {
                   tabIndex={0}
                   className={cn(
                     "group flex w-full items-center gap-1 pr-2 text-left",
-                    isActive ? "bg-white/[0.05] text-white/90" : "text-white/55 hover:bg-white/[0.03]",
+                    isActive
+                      ? "bg-white/[0.05] text-white/90"
+                      : "text-white/55 hover:bg-white/[0.03]",
                   )}
                   style={{ height: ROW_LAYER, paddingLeft: 8 }}
                   onClick={() => selectFrame(row.frameId)}
@@ -947,8 +935,7 @@ export function LayerTimeline() {
                 selectionKind === "layer" &&
                 selectedLayerRefs.some(
                   (ref) =>
-                    ref.ownerId === row.frameId &&
-                    String(ref.layerId) === String(row.layer.id),
+                    ref.ownerId === row.frameId && String(ref.layerId) === String(row.layer.id),
                 );
               const showChrome = hoveredRowKey === row.key || isSelected;
               return (
@@ -976,10 +963,7 @@ export function LayerTimeline() {
                         ? selectedLayerRefs.filter(
                             (ref) => `${ref.ownerId}:${String(ref.layerId)}` !== key,
                           )
-                        : [
-                            ...selectedLayerRefs,
-                            { ownerId: row.frameId, layerId: row.layer.id },
-                          ];
+                        : [...selectedLayerRefs, { ownerId: row.frameId, layerId: row.layer.id }];
                       selectLayerRefs(next);
                       return;
                     }
@@ -1159,11 +1143,7 @@ export function LayerTimeline() {
             }
 
             if (row.kind === "property") {
-              const blocks = blocksForPropertyInFrame(
-                row.frameId,
-                row.layer.id,
-                row.propertyName,
-              );
+              const blocks = blocksForPropertyInFrame(row.frameId, row.layer.id, row.propertyName);
               const blockIds = blocks.map((b) => b.id);
               const isSelected =
                 row.frameId === selectedFrameId &&
@@ -1302,162 +1282,153 @@ export function LayerTimeline() {
             )}
 
             {timelineRows.map((row) => {
-                if (row.kind === "frame") {
-                  const isActive = row.frameId === selectedFrameId;
-                  return (
-                    <div
-                      key={row.key}
-                      data-timeline-row
-                      className={cn(
-                        "relative border-b border-white/[0.03]",
-                        isActive ? "bg-white/[0.025]" : "",
-                      )}
-                      style={{ height: ROW_LAYER }}
-                      onClick={() => selectFrame(row.frameId)}
-                    />
-                  );
-                }
-
-                const isObject = row.kind === "object";
-                const frameAnim =
-                  row.frameId === selectedFrameId
-                    ? animation
-                    : frames.find((f) => f.id === row.frameId)?.animation ?? animation;
-                const dur = Math.max(1, frameAnim.duration || 1000);
-                const propBlocks =
-                  row.kind === "property"
-                    ? blocksForPropertyInFrame(row.frameId, row.layer.id, row.propertyName)
-                    : [];
-                // Object bar = morph (pathData) only — other props get their own labeled rows
-                const morphBlocks = isObject
-                  ? blocksForLayerInFrame(row.frameId, row.layer.id).filter(
-                      (b) => b.propertyName === "pathData",
-                    )
-                  : [];
-                const propSelected =
-                  row.kind === "property" &&
-                  hasCanvasSelection &&
-                  selectionKind === "layer" &&
-                  row.frameId === selectedFrameId &&
-                  propBlocks.length > 0 &&
-                  propBlocks.every((b) => selectedBlockIds.includes(b.id));
-                const objectSelected =
-                  isObject &&
-                  hasCanvasSelection &&
-                  selectionKind === "layer" &&
-                  row.frameId === selectedFrameId &&
-                  String(selectedLayerId) === String(row.layer.id);
-
-                const hasImplicitMorph =
-                  isObject &&
-                  morphBlocks.length === 0 &&
-                  row.layer.type !== "group" &&
-                  row.layer.from &&
-                  row.layer.to &&
-                  JSON.stringify(row.layer.from) !== JSON.stringify(row.layer.to);
-
-                const objectSpan = isObject
-                  ? morphBlocks.length > 0
-                    ? {
-                        start: Math.min(...morphBlocks.map((b) => b.startTime)),
-                        end: Math.max(...morphBlocks.map((b) => b.endTime)),
-                        blocks: morphBlocks,
-                      }
-                    : hasImplicitMorph
-                      ? { start: 0, end: dur, blocks: [] as TimelineBlock[] }
-                      : null
-                  : null;
-
+              if (row.kind === "frame") {
+                const isActive = row.frameId === selectedFrameId;
                 return (
                   <div
                     key={row.key}
                     data-timeline-row
                     className={cn(
                       "relative border-b border-white/[0.03]",
-                      propSelected
-                        ? ROW_SEL
-                        : objectSelected
-                          ? "bg-white/[0.035]"
-                          : "bg-transparent",
-                      row.kind === "property" && !propSelected && "hover:bg-white/[0.02]",
-                      isObject && !objectSelected && "hover:bg-white/[0.02]",
+                      isActive ? "bg-white/[0.025]" : "",
                     )}
-                    style={{ height: isObject ? ROW_LAYER : ROW_PROP }}
-                    onClick={() => {
-                      if (row.frameId !== selectedFrameId) selectFrame(row.frameId);
-                      if (row.kind === "property") {
-                        selectBlocks(propBlocks.map((b) => b.id));
-                      } else if (row.kind === "object") {
-                        selectLayer(row.layer.id);
-                        if (objectSpan?.blocks.length) {
-                          selectBlocks(objectSpan.blocks.map((b) => b.id));
-                        }
-                      }
-                    }}
-                  >
-                    {row.kind === "property" &&
-                      row.frameId === selectedFrameId &&
-                      propBlocks.map((block) => renderPropertyBlock(block))}
+                    style={{ height: ROW_LAYER }}
+                    onClick={() => selectFrame(row.frameId)}
+                  />
+                );
+              }
 
-                    {row.kind === "property" &&
-                      row.frameId !== selectedFrameId &&
-                      propBlocks.map((block) => {
-                        const startPct = (block.startTime / dur) * 100;
-                        const endPct = (block.endTime / dur) * 100;
-                        const widthPct = Math.max(1.2, endPct - startPct);
-                        // Position = Figma keyframe rail (diamonds), not a clip bar
-                        if (isPositionProperty(block.propertyName)) {
-                          return (
-                            <div
-                              key={block.id}
-                              className="pointer-events-none absolute inset-0"
-                            >
-                              <div
-                                className="absolute top-1/2 h-px -translate-y-1/2 bg-white/12"
-                                style={{ left: `${startPct}%`, width: `${widthPct}%` }}
-                              />
-                              <span
-                                className="absolute top-1/2 flex size-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center"
-                                style={{ left: `${startPct}%` }}
-                              >
-                                <KeyframeDiamond size={6} />
-                              </span>
-                              <span
-                                className="absolute top-1/2 flex size-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center"
-                                style={{ left: `${endPct}%` }}
-                              >
-                                <KeyframeDiamond size={6} />
-                              </span>
-                            </div>
-                          );
-                        }
+              const isObject = row.kind === "object";
+              const frameAnim =
+                row.frameId === selectedFrameId
+                  ? animation
+                  : (frames.find((f) => f.id === row.frameId)?.animation ?? animation);
+              const dur = Math.max(1, frameAnim.duration || 1000);
+              const propBlocks =
+                row.kind === "property"
+                  ? blocksForPropertyInFrame(row.frameId, row.layer.id, row.propertyName)
+                  : [];
+              // Object bar = morph (pathData) only — other props get their own labeled rows
+              const morphBlocks = isObject
+                ? blocksForLayerInFrame(row.frameId, row.layer.id).filter(
+                    (b) => b.propertyName === "pathData",
+                  )
+                : [];
+              const propSelected =
+                row.kind === "property" &&
+                hasCanvasSelection &&
+                selectionKind === "layer" &&
+                row.frameId === selectedFrameId &&
+                propBlocks.length > 0 &&
+                propBlocks.every((b) => selectedBlockIds.includes(b.id));
+              const objectSelected =
+                isObject &&
+                hasCanvasSelection &&
+                selectionKind === "layer" &&
+                row.frameId === selectedFrameId &&
+                String(selectedLayerId) === String(row.layer.id);
+
+              const hasImplicitMorph =
+                isObject &&
+                morphBlocks.length === 0 &&
+                row.layer.type !== "group" &&
+                row.layer.from &&
+                row.layer.to &&
+                JSON.stringify(row.layer.from) !== JSON.stringify(row.layer.to);
+
+              const objectSpan = isObject
+                ? morphBlocks.length > 0
+                  ? {
+                      start: Math.min(...morphBlocks.map((b) => b.startTime)),
+                      end: Math.max(...morphBlocks.map((b) => b.endTime)),
+                      blocks: morphBlocks,
+                    }
+                  : hasImplicitMorph
+                    ? { start: 0, end: dur, blocks: [] as TimelineBlock[] }
+                    : null
+                : null;
+
+              return (
+                <div
+                  key={row.key}
+                  data-timeline-row
+                  className={cn(
+                    "relative border-b border-white/[0.03]",
+                    propSelected ? ROW_SEL : objectSelected ? "bg-white/[0.035]" : "bg-transparent",
+                    row.kind === "property" && !propSelected && "hover:bg-white/[0.02]",
+                    isObject && !objectSelected && "hover:bg-white/[0.02]",
+                  )}
+                  style={{ height: isObject ? ROW_LAYER : ROW_PROP }}
+                  onClick={() => {
+                    if (row.frameId !== selectedFrameId) selectFrame(row.frameId);
+                    if (row.kind === "property") {
+                      selectBlocks(propBlocks.map((b) => b.id));
+                    } else if (row.kind === "object") {
+                      selectLayer(row.layer.id);
+                      if (objectSpan?.blocks.length) {
+                        selectBlocks(objectSpan.blocks.map((b) => b.id));
+                      }
+                    }
+                  }}
+                >
+                  {row.kind === "property" &&
+                    row.frameId === selectedFrameId &&
+                    propBlocks.map((block) => renderPropertyBlock(block))}
+
+                  {row.kind === "property" &&
+                    row.frameId !== selectedFrameId &&
+                    propBlocks.map((block) => {
+                      const startPct = (block.startTime / dur) * 100;
+                      const endPct = (block.endTime / dur) * 100;
+                      const widthPct = Math.max(1.2, endPct - startPct);
+                      // Position = Figma keyframe rail (diamonds), not a clip bar
+                      if (isPositionProperty(block.propertyName)) {
                         return (
-                          <div
-                            key={block.id}
-                            className="pointer-events-none absolute top-1/2 flex h-[18px] -translate-y-1/2 items-center justify-center overflow-hidden rounded-sm border border-white/[0.06] bg-[#3A3A3A]"
-                            style={{ left: `${startPct}%`, width: `${widthPct}%` }}
-                          >
-                            <span className="truncate px-2 text-[9px] text-white/35">
-                              {propertyLabel(block.propertyName)}
+                          <div key={block.id} className="pointer-events-none absolute inset-0">
+                            <div
+                              className="absolute top-1/2 h-px -translate-y-1/2 bg-white/12"
+                              style={{ left: `${startPct}%`, width: `${widthPct}%` }}
+                            />
+                            <span
+                              className="absolute top-1/2 flex size-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center"
+                              style={{ left: `${startPct}%` }}
+                            >
+                              <KeyframeDiamond size={6} />
+                            </span>
+                            <span
+                              className="absolute top-1/2 flex size-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center"
+                              style={{ left: `${endPct}%` }}
+                            >
+                              <KeyframeDiamond size={6} />
                             </span>
                           </div>
                         );
-                      })}
+                      }
+                      return (
+                        <div
+                          key={block.id}
+                          className="pointer-events-none absolute top-1/2 flex h-[18px] -translate-y-1/2 items-center justify-center overflow-hidden rounded-sm border border-white/[0.06] bg-[#3A3A3A]"
+                          style={{ left: `${startPct}%`, width: `${widthPct}%` }}
+                        >
+                          <span className="truncate px-2 text-[9px] text-white/35">
+                            {propertyLabel(block.propertyName)}
+                          </span>
+                        </div>
+                      );
+                    })}
 
-                    {isObject && objectSpan && (() => {
+                  {isObject &&
+                    objectSpan &&
+                    (() => {
                       const span = objectSpan;
                       const leftPct = (span.start / dur) * 100;
-                      const widthPct = Math.max(
-                        1.2,
-                        ((span.end - span.start) / dur) * 100,
-                      );
+                      const widthPct = Math.max(1.2, ((span.end - span.start) / dur) * 100);
                       const anySelected =
                         objectSelected ||
                         (row.frameId === selectedFrameId &&
                           span.blocks.some((b) => selectedBlockIds.includes(b.id)));
                       const primaryId = span.blocks[0]?.id;
-                      const interactive =
-                        row.frameId === selectedFrameId && span.blocks.length > 0;
+                      const interactive = row.frameId === selectedFrameId && span.blocks.length > 0;
                       return (
                         <div
                           className={cn(
@@ -1510,10 +1481,7 @@ export function LayerTimeline() {
                             const track = (e.currentTarget as HTMLElement).closest(
                               "[data-timeline-row]",
                             ) as HTMLElement | null;
-                            const width = Math.max(
-                              1,
-                              track?.getBoundingClientRect().width ?? 300,
-                            );
+                            const width = Math.max(1, track?.getBoundingClientRect().width ?? 300);
                             const deltaTime = ((e.clientX - session.startX) / width) * dur;
                             let shift = deltaTime;
                             for (const item of session.items) {
@@ -1547,9 +1515,7 @@ export function LayerTimeline() {
                           onClick={(e) => {
                             e.stopPropagation();
                             if (span.blocks.length) {
-                              useEditorStore
-                                .getState()
-                                .selectBlocks(span.blocks.map((b) => b.id));
+                              useEditorStore.getState().selectBlocks(span.blocks.map((b) => b.id));
                             }
                           }}
                         >
@@ -1568,9 +1534,9 @@ export function LayerTimeline() {
                         </div>
                       );
                     })()}
-                  </div>
-                );
-              })}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

@@ -197,7 +197,7 @@ export interface MorphMapping {
 export interface Node {
   id: NodeId;
   name: string;
-  type: 'group' | 'path' | 'boolean' | 'componentInstance';
+  type: "group" | "path" | "boolean" | "componentInstance";
   parentId?: NodeId;
   childrenIds?: NodeId[];
   visible: boolean;
