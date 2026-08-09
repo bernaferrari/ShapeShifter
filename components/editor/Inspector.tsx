@@ -3,13 +3,11 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Maximize2,
   Minimize2,
   Trash2,
   ChevronRight,
-  SlidersHorizontal,
   MousePointerClick,
   Crop,
   Folder,
@@ -17,7 +15,6 @@ import {
   Pencil,
   RectangleHorizontal,
   Activity,
-  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -28,16 +25,14 @@ import {
   pathToString,
   updateCommandPoint,
 } from "@/lib/shapeshifter/pathUtils";
-import type { FillType, GradientType, Layer } from "@/lib/shapeshifter/types";
-import { gradientFromSolid } from "@/lib/shapeshifter/gradients";
+import type { Layer } from "@/lib/shapeshifter/types";
 import { PathCommandsList } from "./PathCommandsList";
 import {
   getInspectorSelectionBounds,
   resolveOwnedLayers,
-  sharedValue,
 } from "@/lib/shapeshifter/scene/inspectorSelection";
 import { NumberRow, Row, Section, Segmented, TextInput } from "./inspector/InspectorControls";
-import { ColorRow, GradientEditor } from "./inspector/InspectorColorControls";
+import { LayerAppearanceSections } from "./inspector/LayerAppearanceSections";
 import {
   FrameDesignPanel,
   InspectorTabs,
@@ -128,7 +123,6 @@ export function Inspector() {
 
   const [isCommandsFocused, setIsCommandsFocused] = React.useState(false);
   const [showPathData, setShowPathData] = React.useState(false);
-  const [strokeSettingsOpen, setStrokeSettingsOpen] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<InspectorTab>("design");
   const changeInspectorTab = (tab: InspectorTab) => {
     setActiveTab(tab);
@@ -282,54 +276,6 @@ export function Inspector() {
   const isGroup = currentLayer.type === "group";
   const inspectorLayers = selectedLayers.length ? selectedLayers : [currentLayer];
   const allPaths = inspectorLayers.every((layer) => layer.type !== "group");
-  const fillKindValue = (layer: Layer): "solid" | GradientType =>
-    layer.fillGradient?.type ?? "solid";
-  const fillKind = sharedValue(inspectorLayers, fillKindValue, fillKindValue(currentLayer));
-  const fillColor = sharedValue(
-    inspectorLayers,
-    (layer) => layer.fillColor || "#000000",
-    currentLayer.fillColor || "#000000",
-  );
-  const fillAlpha = sharedValue(
-    inspectorLayers,
-    (layer) => layer.fillAlpha ?? 1,
-    currentLayer.fillAlpha ?? 1,
-  );
-  const fillRule = sharedValue(
-    inspectorLayers,
-    (layer) => layer.fillType ?? "nonZero",
-    currentLayer.fillType ?? "nonZero",
-  );
-  const strokeColor = sharedValue(
-    inspectorLayers,
-    (layer) => layer.strokeColor || "#000000",
-    currentLayer.strokeColor || "#000000",
-  );
-  const strokeAlpha = sharedValue(
-    inspectorLayers,
-    (layer) => layer.strokeAlpha ?? 1,
-    currentLayer.strokeAlpha ?? 1,
-  );
-  const strokeWidth = sharedValue(
-    inspectorLayers,
-    (layer) => layer.strokeWidth ?? 0,
-    currentLayer.strokeWidth ?? 0,
-  );
-  const trimStart = sharedValue(
-    inspectorLayers,
-    (layer) => layer.trimPathStart ?? 0,
-    currentLayer.trimPathStart ?? 0,
-  );
-  const trimEnd = sharedValue(
-    inspectorLayers,
-    (layer) => layer.trimPathEnd ?? 1,
-    currentLayer.trimPathEnd ?? 1,
-  );
-  const trimOffset = sharedValue(
-    inspectorLayers,
-    (layer) => layer.trimPathOffset ?? 0,
-    currentLayer.trimPathOffset ?? 0,
-  );
 
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
@@ -351,11 +297,7 @@ export function Inspector() {
           </div>
           <div className="mt-0.5 flex items-center gap-1 text-[10px] leading-none text-muted-foreground">
             <span>
-              {isGroup
-                ? "Group"
-                : currentLayer.type === "clipPath"
-                  ? "Clip path"
-                  : "Vector path"}
+              {isGroup ? "Group" : currentLayer.type === "clipPath" ? "Clip path" : "Vector path"}
             </span>
             <span aria-hidden="true">·</span>
             <span>
@@ -428,443 +370,11 @@ export function Inspector() {
 
           {allPaths && (
             <>
-              {/* Fill */}
-              <Section title="Fill">
-                {(() => {
-                  const setKind = (kind: "solid" | GradientType) => {
-                    if (kind === "solid") {
-                      updateLayer({ fillGradient: undefined });
-                      return;
-                    }
-                    const existing = currentLayer.fillGradient;
-                    updateLayer({
-                      fillGradient: existing
-                        ? { ...existing, type: kind }
-                        : gradientFromSolid(kind, currentLayer.fillColor || "#000000"),
-                    });
-                  };
-                  return (
-                    <>
-                      <Row label="Type">
-                        <Segmented<"solid" | GradientType>
-                          value={fillKind.value}
-                          mixed={fillKind.mixed}
-                          onChange={setKind}
-                          options={[
-                            { value: "solid", label: "Solid" },
-                            { value: "linear", label: "Linear" },
-                            { value: "radial", label: "Radial" },
-                          ]}
-                        />
-                      </Row>
-                      {fillKind.mixed ? (
-                        <p className="rounded-md bg-muted/55 px-2 py-1.5 text-[10px] leading-relaxed text-muted-foreground">
-                          Multiple fill types. Choose one above to apply it to the selection.
-                        </p>
-                      ) : currentLayer.fillGradient ? (
-                        <>
-                          <GradientEditor
-                            gradient={currentLayer.fillGradient}
-                            onChange={(g) => updateLayer({ fillGradient: g })}
-                          />
-                          {currentLayer.fillGradient.type === "linear" && (
-                            <NumberRow
-                              label="Angle"
-                              value={currentLayer.fillGradient.angle ?? 90}
-                              suffix="°"
-                              onChange={(v) =>
-                                updateLayer({
-                                  fillGradient: { ...currentLayer.fillGradient!, angle: v },
-                                })
-                              }
-                            />
-                          )}
-                          <NumberRow
-                            label="Opacity"
-                            value={Math.round(fillAlpha.value * 100)}
-                            mixed={fillAlpha.mixed}
-                            min={0}
-                            max={100}
-                            suffix="%"
-                            onChange={(v) => updateLayer({ fillAlpha: v / 100 })}
-                          />
-                        </>
-                      ) : (
-                        <ColorRow
-                          label="Color"
-                          color={fillColor.value}
-                          alpha={fillAlpha.value}
-                          mixed={fillColor.mixed}
-                          alphaMixed={fillAlpha.mixed}
-                          onColor={(v) => updateLayer({ fillColor: v })}
-                          onAlpha={(v) => updateLayer({ fillAlpha: v })}
-                        />
-                      )}
-                    </>
-                  );
-                })()}
-                <Row label="Rule">
-                  <Segmented
-                    value={fillRule.value}
-                    mixed={fillRule.mixed}
-                    onChange={(v) => updateLayer({ fillType: v as FillType })}
-                    options={[
-                      { value: "nonZero", label: "Non-zero" },
-                      { value: "evenOdd", label: "Even-odd" },
-                    ]}
-                  />
-                </Row>
-              </Section>
-
-              {/* Stroke */}
-              <Section title="Stroke">
-                <ColorRow
-                  color={strokeColor.value}
-                  alpha={strokeAlpha.value}
-                  mixed={strokeColor.mixed}
-                  alphaMixed={strokeAlpha.mixed}
-                  onColor={(v) => updateLayer({ strokeColor: v })}
-                  onAlpha={(v) => updateLayer({ strokeAlpha: v })}
-                />
-                <div className="flex items-center gap-1.5">
-                  <div className="min-w-0 flex-1">
-                    <NumberRow
-                      label="Width"
-                      value={strokeWidth.value}
-                      mixed={strokeWidth.mixed}
-                      min={0}
-                      step={0.1}
-                      onChange={(v) => updateLayer({ strokeWidth: v })}
-                    />
-                  </div>
-                  {/* Figma tucks cap/join/dash behind a settings popover instead of
-                    always showing them — keeps the panel compact when they're rarely touched. */}
-                  <Popover open={strokeSettingsOpen} onOpenChange={setStrokeSettingsOpen}>
-                    <PopoverTrigger
-                      className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-foreground/20 hover:bg-muted/70 hover:text-foreground"
-                      aria-label="Stroke settings"
-                      title="Stroke settings"
-                    >
-                      <SlidersHorizontal className="size-3.5" />
-                    </PopoverTrigger>
-                    <PopoverContent
-                      align="end"
-                      side="bottom"
-                      sideOffset={8}
-                      className="w-80 gap-0 overflow-hidden rounded-xl p-0"
-                    >
-                      <div className="flex h-12 items-center justify-between border-b border-border px-4">
-                        <span className="text-[13px] font-semibold">Stroke settings</span>
-                        <button
-                          type="button"
-                          onClick={() => setStrokeSettingsOpen(false)}
-                          className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                          aria-label="Close stroke settings"
-                        >
-                          <X className="size-4" />
-                        </button>
-                      </div>
-                      <div className="space-y-3 p-4">
-                        <div
-                          className="grid grid-cols-3 rounded-lg bg-muted p-0.5"
-                          role="tablist"
-                          aria-label="Stroke settings mode"
-                        >
-                          <button
-                            type="button"
-                            role="tab"
-                            aria-selected="true"
-                            className="h-8 rounded-md bg-background text-[12px] font-medium text-foreground shadow-sm"
-                          >
-                            Basic
-                          </button>
-                          {(["Dynamic", "Brush"] as const).map((label) => (
-                            <button
-                              key={label}
-                              type="button"
-                              role="tab"
-                              disabled
-                              aria-selected="false"
-                              title={`${label} strokes are not supported by Android Vector Drawable`}
-                              className="h-8 rounded-md text-[12px] text-muted-foreground disabled:cursor-not-allowed disabled:text-muted-foreground/50"
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-
-                        <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-2">
-                          <span className="text-[11px] text-muted-foreground">Style</span>
-                          <div className="flex h-8 items-center gap-2 rounded-md border border-border bg-background px-2 text-[12px]">
-                            <span className="h-px w-6 bg-foreground" />
-                            Solid
-                          </div>
-                        </div>
-
-                        <div>
-                        <div className="mb-1 text-[10px] font-medium text-muted-foreground">
-                          End points
-                        </div>
-                        <div className="flex items-center gap-px rounded-md bg-muted p-0.5">
-                          {(
-                            [
-                              {
-                                v: "butt",
-                                label: "Butt",
-                                icon: (
-                                  <svg
-                                    width="14"
-                                    height="10"
-                                    viewBox="0 0 14 10"
-                                    className="mx-auto"
-                                  >
-                                    <line
-                                      x1="1"
-                                      y1="5"
-                                      x2="13"
-                                      y2="5"
-                                      stroke="currentColor"
-                                      strokeWidth="2"
-                                      strokeLinecap="butt"
-                                    />
-                                  </svg>
-                                ),
-                              },
-                              {
-                                v: "round",
-                                label: "Round",
-                                icon: (
-                                  <svg
-                                    width="14"
-                                    height="10"
-                                    viewBox="0 0 14 10"
-                                    className="mx-auto"
-                                  >
-                                    <line
-                                      x1="1"
-                                      y1="5"
-                                      x2="11"
-                                      y2="5"
-                                      stroke="currentColor"
-                                      strokeWidth="2"
-                                      strokeLinecap="round"
-                                    />
-                                    <circle
-                                      cx="11"
-                                      cy="5"
-                                      r="1.5"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      strokeWidth="1"
-                                    />
-                                  </svg>
-                                ),
-                              },
-                              {
-                                v: "square",
-                                label: "Square",
-                                icon: (
-                                  <svg
-                                    width="14"
-                                    height="10"
-                                    viewBox="0 0 14 10"
-                                    className="mx-auto"
-                                  >
-                                    <line
-                                      x1="1"
-                                      y1="5"
-                                      x2="11"
-                                      y2="5"
-                                      stroke="currentColor"
-                                      strokeWidth="2"
-                                      strokeLinecap="square"
-                                    />
-                                    <rect
-                                      x="10"
-                                      y="3.5"
-                                      width="3"
-                                      height="3"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      strokeWidth="1"
-                                    />
-                                  </svg>
-                                ),
-                              },
-                            ] as const
-                          ).map(({ v, label, icon }) => (
-                            <button
-                              key={v}
-                              type="button"
-                              onClick={() => updateLayer({ strokeLinecap: v })}
-                              className={cn(
-                                "flex h-7 flex-1 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/70",
-                                (currentLayer.strokeLinecap ?? "butt") === v &&
-                                  "bg-card text-foreground shadow-sm",
-                              )}
-                              title={label}
-                              aria-label={label}
-                            >
-                              {icon}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="mb-1 text-[10px] font-medium text-muted-foreground">
-                          Join
-                        </div>
-                        <div className="flex items-center gap-px rounded-md bg-muted p-0.5">
-                          {(
-                            [
-                              {
-                                v: "miter",
-                                label: "Miter",
-                                icon: (
-                                  <svg
-                                    width="14"
-                                    height="10"
-                                    viewBox="0 0 14 10"
-                                    className="mx-auto"
-                                  >
-                                    <polyline
-                                      points="1,8 7,2 13,8"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      strokeWidth="2"
-                                      strokeLinejoin="miter"
-                                    />
-                                  </svg>
-                                ),
-                              },
-                              {
-                                v: "round",
-                                label: "Round",
-                                icon: (
-                                  <svg
-                                    width="14"
-                                    height="10"
-                                    viewBox="0 0 14 10"
-                                    className="mx-auto"
-                                  >
-                                    <polyline
-                                      points="1,8 7,2 13,8"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      strokeWidth="2"
-                                      strokeLinejoin="round"
-                                    />
-                                  </svg>
-                                ),
-                              },
-                              {
-                                v: "bevel",
-                                label: "Bevel",
-                                icon: (
-                                  <svg
-                                    width="14"
-                                    height="10"
-                                    viewBox="0 0 14 10"
-                                    className="mx-auto"
-                                  >
-                                    <polyline
-                                      points="1,8 7,3 13,8"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      strokeWidth="2"
-                                      strokeLinejoin="bevel"
-                                    />
-                                  </svg>
-                                ),
-                              },
-                            ] as const
-                          ).map(({ v, label, icon }) => (
-                            <button
-                              key={v}
-                              type="button"
-                              onClick={() => updateLayer({ strokeLinejoin: v })}
-                              className={cn(
-                                "flex h-7 flex-1 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/70",
-                                (currentLayer.strokeLinejoin ?? "miter") === v &&
-                                  "bg-card text-foreground shadow-sm",
-                              )}
-                              title={label}
-                              aria-label={label}
-                            >
-                              {icon}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <span className="w-[72px] shrink-0 text-[11px] text-muted-foreground">
-                          Dash
-                        </span>
-                        <TextInput
-                          ariaLabel="Stroke dash pattern"
-                          value={currentLayer.strokeDasharray ?? ""}
-                          placeholder="e.g. 4 2"
-                          onChange={(v) => updateLayer({ strokeDasharray: v || undefined })}
-                        />
-                      </div>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                {/* Clarify scope: stroke is per-layer (affects every subpath). Users can split for independent styling. */}
-                {currentLayer.from?.subPaths && currentLayer.from.subPaths.length > 1 && (
-                  <p className="mt-1 text-[9px] leading-tight text-muted-foreground/60">
-                    Applies to all {currentLayer.from.subPaths.length} subpaths in this layer.
-                    Select a subpath (in path commands or direct tool) then use Edit → Extract to
-                    separate.
-                  </p>
-                )}
-              </Section>
-
-              {/* Trim path — collapsed unless already in use (Figma keeps rarely-touched
-                sections like this closed by default to keep the panel scannable). */}
-              <Section
-                title="Trim path"
-                defaultOpen={
-                  (currentLayer.trimPathStart ?? 0) !== 0 ||
-                  (currentLayer.trimPathEnd ?? 1) !== 1 ||
-                  (currentLayer.trimPathOffset ?? 0) !== 0
-                }
-              >
-                <NumberRow
-                  label="Start"
-                  value={Math.round(trimStart.value * 100)}
-                  mixed={trimStart.mixed}
-                  min={0}
-                  max={100}
-                  step={1}
-                  suffix="%"
-                  onChange={(v) =>
-                    updateLayer({ trimPathStart: Math.max(0, Math.min(1, v / 100)) })
-                  }
-                />
-                <NumberRow
-                  label="End"
-                  value={Math.round(trimEnd.value * 100)}
-                  mixed={trimEnd.mixed}
-                  min={0}
-                  max={100}
-                  step={1}
-                  suffix="%"
-                  onChange={(v) => updateLayer({ trimPathEnd: Math.max(0, Math.min(1, v / 100)) })}
-                />
-                <NumberRow
-                  label="Offset"
-                  value={Math.round(trimOffset.value * 100)}
-                  mixed={trimOffset.mixed}
-                  step={1}
-                  suffix="%"
-                  onChange={(v) => updateLayer({ trimPathOffset: v / 100 })}
-                />
-              </Section>
-
+              <LayerAppearanceSections
+                layer={currentLayer}
+                selectedLayers={inspectorLayers}
+                onChange={updateLayer}
+              />
               {/* Path — raw command list is the densest, most technical part of the
                 panel (Figma never shows this by default); collapsed until asked for. */}
               {multiCount <= 1 && (

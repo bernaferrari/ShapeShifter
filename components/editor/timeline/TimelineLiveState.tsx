@@ -133,13 +133,29 @@ export function LiveEasingCurve({
   size,
   points,
   onChange,
+  onEditStart,
+  onEditEnd,
+  onEditCancel,
 }: {
   size: number;
   points: [number, number, number, number];
   onChange: (points: [number, number, number, number]) => void;
+  onEditStart?: () => void;
+  onEditEnd?: () => void;
+  onEditCancel?: () => void;
 }) {
   const progress = useEditorStore((state) => state.progress);
-  return <EasingCurve size={size} points={points} progress={progress} onChange={onChange} />;
+  return (
+    <EasingCurve
+      size={size}
+      points={points}
+      progress={progress}
+      onChange={onChange}
+      onEditStart={onEditStart}
+      onEditEnd={onEditEnd}
+      onEditCancel={onEditCancel}
+    />
+  );
 }
 
 export function TimelinePropertyValue({

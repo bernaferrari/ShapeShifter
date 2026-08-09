@@ -15,8 +15,7 @@ interface CanvasNavigationControlsProps {
   onReset: () => void;
 }
 
-const iconButtonClass =
-  "h-7 text-muted-foreground hover:bg-muted hover:text-foreground";
+const iconButtonClass = "h-7 text-muted-foreground hover:bg-muted hover:text-foreground";
 
 export function CanvasNavigationControls({
   zoomPercent,
@@ -29,7 +28,7 @@ export function CanvasNavigationControls({
   onReset,
 }: CanvasNavigationControlsProps) {
   return (
-    <div className="pointer-events-none absolute bottom-3 right-3 z-30 flex items-center gap-0.5 rounded-lg border border-border/80 bg-background/95 p-0.5 shadow-md backdrop-blur-md">
+    <div className="pointer-events-none absolute bottom-3 right-3 z-30 flex items-center gap-0.5 rounded-md bg-background/95 p-0.5 [box-shadow:var(--elevation-floating)] backdrop-blur-md">
       <div className="pointer-events-auto flex items-center gap-0.5">
         <Button
           size="icon-xs"

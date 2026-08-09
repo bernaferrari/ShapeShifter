@@ -12,6 +12,10 @@ interface EasingCurveProps {
   progress?: number;
   /** When set, the two control handles become draggable and fire onChange. */
   onChange?: (points: Pts) => void;
+  /** Starts/ends a continuous edit transaction around a handle drag. */
+  onEditStart?: () => void;
+  onEditEnd?: () => void;
+  onEditCancel?: () => void;
   className?: string;
   size?: number;
 }
@@ -26,6 +30,9 @@ export function EasingCurve({
   points,
   progress,
   onChange,
+  onEditStart,
+  onEditEnd,
+  onEditCancel,
   className,
   size = 96,
 }: EasingCurveProps) {
@@ -73,6 +80,7 @@ export function EasingCurve({
     e.preventDefault();
     e.stopPropagation();
     dragging.current = which;
+    onEditStart?.();
     (e.target as Element).setPointerCapture?.(e.pointerId);
   };
 
@@ -90,12 +98,14 @@ export function EasingCurve({
     onChange(next);
   };
 
-  const endDrag = (e: React.PointerEvent) => {
+  const endDrag = (e: React.PointerEvent, cancelled = false) => {
     if (dragging.current) {
       try {
         (e.target as Element).releasePointerCapture?.(e.pointerId);
       } catch {}
       dragging.current = null;
+      if (cancelled) onEditCancel?.();
+      else onEditEnd?.();
     }
   };
 
@@ -111,8 +121,8 @@ export function EasingCurve({
         className,
       )}
       onPointerMove={editable ? handlePointerMove : undefined}
-      onPointerUp={editable ? endDrag : undefined}
-      onPointerCancel={editable ? endDrag : undefined}
+      onPointerUp={editable ? (event) => endDrag(event) : undefined}
+      onPointerCancel={editable ? (event) => endDrag(event, true) : undefined}
     >
       {/* baseline diagonal (linear reference) */}
       <line

@@ -3,6 +3,7 @@ import { PAGE_ROOT_ID, useEditorStore } from "../editorStore";
 import { parsePath, pathToString } from "../../shapeshifter/pathUtils";
 import { DEMO_INFOS } from "../../shapeshifter/demoProjects";
 import type { Selection, Layer } from "../../shapeshifter/types";
+import type { LegacyDocumentSnapshot } from "../../shapeshifter/documentModel";
 
 // Helper: get a fresh store state by resetting
 function freshStore() {
@@ -160,6 +161,74 @@ describe("editorStore", () => {
     });
   });
 
+  describe("frame history", () => {
+    it("undoes frame creation and duplication", () => {
+      const originalCount = getStore().frames.length;
+
+      getStore().addFrame();
+      expect(getStore().frames).toHaveLength(originalCount + 1);
+      getStore().undo();
+      expect(getStore().frames).toHaveLength(originalCount);
+
+      getStore().duplicateFrame();
+      expect(getStore().frames).toHaveLength(originalCount + 1);
+      getStore().undo();
+      expect(getStore().frames).toHaveLength(originalCount);
+    });
+
+    it("undoes frame rename and deletion", () => {
+      const original = getStore().frames[0];
+      getStore().renameFrame(original.id, "Renamed frame");
+      expect(getStore().frames[0].name).toBe("Renamed frame");
+      getStore().undo();
+      expect(getStore().frames[0].name).toBe(original.name);
+
+      getStore().addFrame();
+      const addedId = getStore().selectedFrameId;
+      const count = getStore().frames.length;
+      getStore().deleteFrame(addedId);
+      expect(getStore().frames).toHaveLength(count - 1);
+      getStore().undo();
+      expect(getStore().frames.some((frame) => frame.id === addedId)).toBe(true);
+    });
+
+    it("does not create a history entry for a no-op rename", () => {
+      const frame = getStore().frames[0];
+      const historyLength = getStore().history.length;
+      getStore().renameFrame(frame.id, frame.name);
+      expect(getStore().history).toHaveLength(historyLength);
+    });
+
+    it("preserves the active document when deleting a different frame", () => {
+      const activeFrameId = getStore().selectedFrameId;
+      const deletedFrameId = getStore().frames.find((frame) => frame.id !== activeFrameId)!.id;
+      const selectedLayerId = getStore().layers[0]!.id;
+      getStore().selectLayer(selectedLayerId);
+
+      getStore().deleteFrame(deletedFrameId);
+
+      expect(getStore().selectedFrameId).toBe(activeFrameId);
+      expect(getStore().selectedLayerId).toBe(selectedLayerId);
+      expect(getStore().selectionKind).toBe("layer");
+      expect(getStore().selectedLayerRefs).toEqual([
+        { ownerId: activeFrameId, layerId: selectedLayerId },
+      ]);
+    });
+
+    it("promotes selection to the fallback frame when deleting the active frame", () => {
+      const deletedFrameId = getStore().selectedFrameId;
+      getStore().selectLayer(getStore().layers[0]!.id);
+
+      getStore().deleteFrame(deletedFrameId);
+
+      expect(getStore().selectedFrameId).not.toBe(deletedFrameId);
+      expect(getStore().selectionKind).toBe("frame");
+      expect(getStore().hasCanvasSelection).toBe(true);
+      expect(getStore().selectedFrameIds).toEqual([getStore().selectedFrameId]);
+      expect(getStore().selectedLayerRefs).toEqual([]);
+    });
+  });
+
   describe("cross-frame layer reparenting", () => {
     it("persists the live active-owner projection through a store command", () => {
       const frame = getStore().frames[0];
@@ -292,6 +361,98 @@ describe("editorStore", () => {
       expect(state.selectionKind).toBe("layer");
     });
 
+    it("moves a same-frame multi-selection as one cross-frame transaction", () => {
+      const source = getStore().frames[0];
+      const target = getStore().frames[1];
+      const movingIds = getStore()
+        .layers.slice(0, 2)
+        .map((layer) => layer.id);
+      expect(movingIds).toHaveLength(2);
+      getStore().selectLayers(movingIds);
+
+      expect(getStore().moveSelectedLayersToFrame(target.id)).toBe(true);
+
+      const state = getStore();
+      const sourceAfter = state.frames.find((frame) => frame.id === source.id)!;
+      const targetAfter = state.frames.find((frame) => frame.id === target.id)!;
+      expect(sourceAfter.layers.filter((layer) => movingIds.includes(layer.id))).toHaveLength(0);
+      expect(targetAfter.layers.filter((layer) => movingIds.includes(layer.id))).toHaveLength(2);
+      expect(state.selectedLayerIds).toEqual(movingIds);
+      expect(state.selectedLayerRefs).toEqual(
+        movingIds.map((layerId) => ({ ownerId: target.id, layerId })),
+      );
+
+      getStore().undo();
+      expect(
+        getStore().frames[0].layers.filter((layer) => movingIds.includes(layer.id)),
+      ).toHaveLength(2);
+      expect(
+        getStore().frames[1].layers.filter((layer) => movingIds.includes(layer.id)),
+      ).toHaveLength(0);
+    });
+
+    it("keeps locked descendants attached when their unlocked group changes frames", () => {
+      const source = getStore().frames[0];
+      const target = getStore().frames[1];
+      const child = getStore().layers[0]!;
+      getStore().selectLayer(child.id);
+      getStore().groupSelectedLayers();
+      const groupId = getStore().selectedLayerId;
+      getStore().toggleLayerLock(child.id);
+
+      expect(getStore().moveSelectedLayersToFrame(target.id)).toBe(true);
+
+      const state = getStore();
+      const sourceAfter = state.frames.find((frame) => frame.id === source.id)!;
+      const targetAfter = state.frames.find((frame) => frame.id === target.id)!;
+      expect(sourceAfter.layers.some((layer) => String(layer.id) === String(child.id))).toBe(false);
+      expect(targetAfter.layers).toContainEqual(
+        expect.objectContaining({ id: child.id, parentId: groupId, locked: true }),
+      );
+      expect(targetAfter.layers).toContainEqual(expect.objectContaining({ id: groupId }));
+    });
+
+    it("does not move a locked selection root", () => {
+      const source = getStore().frames[0];
+      const target = getStore().frames[1];
+      const layer = getStore().layers[0]!;
+      getStore().selectLayer(layer.id);
+      getStore().toggleLayerLock(layer.id);
+
+      expect(getStore().moveSelectedLayersToFrame(target.id)).toBe(false);
+      expect(getStore().selectedFrameId).toBe(source.id);
+      expect(getStore().frames.find((frame) => frame.id === source.id)!.layers).toContainEqual(
+        expect.objectContaining({ id: layer.id, locked: true }),
+      );
+    });
+
+    it("places a cross-frame move atomically at the requested hierarchy position", () => {
+      const source = getStore().frames[0];
+      const target = getStore().frames[1];
+      const moving = getStore().layers[0];
+      const beforeId = target.layers[0]!.id;
+      getStore().selectLayer(moving.id);
+
+      expect(
+        getStore().moveSelectedLayersToFrame(target.id, {
+          placement: { parentId: null, beforeId },
+        }),
+      ).toBe(true);
+
+      const targetAfter = getStore().frames.find((frame) => frame.id === target.id)!;
+      expect(targetAfter.layers.findIndex((layer) => layer.id === moving.id)).toBeLessThan(
+        targetAfter.layers.findIndex((layer) => layer.id === beforeId),
+      );
+      getStore().undo();
+      expect(getStore().selectedFrameId).toBe(source.id);
+      expect(getStore().frames[0].layers).toContainEqual(
+        expect.objectContaining({ id: moving.id }),
+      );
+      expect(getStore().frames[1].layers).not.toContainEqual(
+        expect.objectContaining({ id: moving.id }),
+      );
+    });
+
     it("moves the layer animation tracks and rebases position values", () => {
       const source = getStore().frames[0];
       const target = getStore().frames[1];
@@ -404,6 +565,53 @@ describe("editorStore", () => {
 
   // ─── Layer CRUD ──────────────────────────────────────────────────────
   describe("layer CRUD", () => {
+    it("reparents a layer into and out of a group at an exact hierarchy position", () => {
+      const ownerId = getStore().selectedFrameId;
+      const [first, second] = getStore().layers;
+      expect(first).toBeDefined();
+      expect(second).toBeDefined();
+      getStore().selectLayer(first.id);
+      getStore().groupSelectedLayers();
+      const groupId = getStore().selectedLayerId;
+
+      expect(getStore().reparentOwnedLayer(ownerId, second.id, { parentId: groupId })).toBe(true);
+      expect(
+        getStore().layers.find((layer) => String(layer.id) === String(second.id))?.parentId,
+      ).toBe(groupId);
+
+      expect(
+        getStore().reparentOwnedLayer(ownerId, second.id, {
+          parentId: null,
+          afterId: groupId,
+        }),
+      ).toBe(true);
+      const groupIndex = getStore().layers.findIndex(
+        (layer) => String(layer.id) === String(groupId),
+      );
+      const firstChildIndex = getStore().layers.findIndex(
+        (layer) => String(layer.id) === String(first.id),
+      );
+      const secondIndex = getStore().layers.findIndex(
+        (layer) => String(layer.id) === String(second.id),
+      );
+      expect(secondIndex).toBeGreaterThan(groupIndex);
+      expect(secondIndex).toBeGreaterThan(firstChildIndex);
+      expect(getStore().layers[secondIndex]?.parentId ?? null).toBeNull();
+    });
+
+    it("refuses to move a group inside its own descendant", () => {
+      const ownerId = getStore().selectedFrameId;
+      const first = getStore().layers[0]!;
+      getStore().selectLayer(first.id);
+      getStore().groupSelectedLayers();
+      const groupId = getStore().selectedLayerId;
+
+      expect(getStore().reparentOwnedLayer(ownerId, groupId, { parentId: first.id })).toBe(false);
+      expect(
+        getStore().layers.find((layer) => String(layer.id) === String(groupId))?.parentId ?? null,
+      ).toBeNull();
+    });
+
     it("renames and reorders a layer in a non-active frame without changing the active owner", () => {
       const activeFrameId = getStore().selectedFrameId;
       const targetFrame = getStore().frames.find((frame) => frame.id !== activeFrameId)!;
@@ -506,6 +714,17 @@ describe("editorStore", () => {
         getStore().selectPoint(makeSelection(getStore().layers[0].id));
         getStore().deleteLayer(getStore().layers[1].id);
         expect(getStore().selection).toBeNull();
+      });
+
+      it("removes animation tracks owned by the deleted layer", () => {
+        ensureTwoLayers();
+        const targetId = getStore().layers[1].id;
+        getStore().addTimelineBlock(targetId, "rotation");
+        expect(getStore().animation.blocks.some((block) => block.layerId === targetId)).toBe(true);
+
+        getStore().deleteLayer(targetId);
+
+        expect(getStore().animation.blocks.some((block) => block.layerId === targetId)).toBe(false);
       });
     });
 
@@ -1219,11 +1438,50 @@ describe("editorStore", () => {
     it("updateTimelineBlock patches block properties", () => {
       const layer = getStore().layers[0];
       getStore().addTimelineBlock(layer.id, "pathData");
-      const blockId = getStore().animation.blocks[0].id;
+      const blockId = getStore().animation.blocks.at(-1)!.id;
       getStore().updateTimelineBlock(blockId, { startTime: 100, endTime: 500 });
-      const block = getStore().animation.blocks[0];
+      const block = getStore().animation.blocks.at(-1)!;
       expect(block.startTime).toBe(100);
       expect(block.endTime).toBe(500);
+      const cachedBlock = getStore().layers[0].timeline?.find(
+        (candidate) => candidate.id === blockId,
+      );
+      expect(cachedBlock?.startTime).toBe(100);
+      expect(cachedBlock?.endTime).toBe(500);
+    });
+
+    it("updateTimelineBlock is undoable by default", () => {
+      const block = getStore().animation.blocks[0];
+      const originalStart = block.startTime;
+
+      getStore().updateTimelineBlock(block.id, { startTime: originalStart + 100 });
+      getStore().undo();
+
+      expect(
+        getStore().animation.blocks.find((candidate) => candidate.id === block.id)?.startTime,
+      ).toBe(originalStart);
+    });
+
+    it("supports one history snapshot for a continuous timeline gesture", () => {
+      const block = getStore().animation.blocks[0];
+      const originalStart = block.startTime;
+      getStore().pushHistory();
+
+      getStore().updateTimelineBlock(
+        block.id,
+        { startTime: originalStart + 50 },
+        { recordHistory: false },
+      );
+      getStore().updateTimelineBlock(
+        block.id,
+        { startTime: originalStart + 100 },
+        { recordHistory: false },
+      );
+      getStore().undo();
+
+      expect(
+        getStore().animation.blocks.find((candidate) => candidate.id === block.id)?.startTime,
+      ).toBe(originalStart);
     });
 
     it("selectBlocks sets selected block ids", () => {
@@ -1295,7 +1553,7 @@ describe("editorStore", () => {
       expect(getStore().isSlowMotion).toBe(false);
       expect(getStore().isRepeating).toBe(true);
       expect(getStore().toolMode).toBe("select");
-      expect(getStore().timelineCollapsed).toBe(true);
+      expect(getStore().timelineCollapsed).toBe(false);
       expect(getStore().editingSide).toBe("from");
       expect(getStore().isActionMode).toBe(false);
       expect(getStore().selection).toBeNull();
@@ -1550,6 +1808,89 @@ describe("editorStore", () => {
       expect(getStore().isActionMode).toBe(false);
     });
 
+    it("loadProject clears stale frame and point selection atomically", () => {
+      const layer = getStore().layers[0];
+      useEditorStore.setState({
+        selectedFrameIds: getStore().frames.map((frame) => frame.id),
+        selectionKind: "frame",
+        hasCanvasSelection: true,
+        selectedPoints: [
+          {
+            layerId: layer.id,
+            side: "from",
+            subPathIndex: 0,
+            commandIndex: 0,
+            pointIndex: 0,
+          },
+        ],
+      });
+
+      getStore().loadProject({
+        layers: [layer],
+        vector: { id: "fresh", name: "Fresh", width: 24, height: 24, alpha: 1 },
+        animation: { id: "fresh-animation", name: "Fresh", duration: 1000, blocks: [] },
+        hiddenLayerIds: [],
+      });
+
+      expect(getStore().selectedFrameIds).toEqual([]);
+      expect(getStore().selectedPoints).toEqual([]);
+      expect(getStore().selectionKind).toBe("layer");
+      expect(getStore().selectedLayerRefs).toEqual([
+        { ownerId: getStore().selectedFrameId, layerId: layer.id },
+      ]);
+    });
+
+    it("loadDocument restores every frame and page-root owner atomically", () => {
+      const beforeFrameIds = getStore().frames.map((frame) => frame.id);
+      const sourceFrames = getStore().frames.slice(0, 2);
+      const rootLayer = { ...structuredClone(getStore().layers[0]), id: "page-vector" };
+      const snapshot: LegacyDocumentSnapshot = {
+        id: "imported-document",
+        name: "Imported document",
+        frames: sourceFrames.map((frame, index) => ({
+          ...structuredClone(frame),
+          id: `imported-frame-${index}`,
+          name: `Imported frame ${index + 1}`,
+          x: index * 80,
+          y: index * 24,
+          layers: frame.layers.map((layer) => ({
+            ...structuredClone(layer),
+            id: `imported-${index}-${String(layer.id)}`,
+            name: `${layer.name} imported ${index}`,
+          })),
+        })),
+        rootLayers: [rootLayer],
+        rootVector: { id: "page", name: "Page", width: 240, height: 160, alpha: 1 },
+        rootAnimation: {
+          id: "page-motion",
+          name: "Page motion",
+          duration: 1800,
+          blocks: [],
+        },
+        rootHiddenLayerIds: [String(rootLayer.id)],
+      };
+
+      getStore().loadDocument(snapshot);
+
+      const state = getStore();
+      expect(state.frames.map((frame) => frame.id)).toEqual([
+        "imported-frame-0",
+        "imported-frame-1",
+      ]);
+      expect(state.frames[1].x).toBe(80);
+      expect(state.frames[1].y).toBe(24);
+      expect(state.frames[1].layers[0].name).toContain("imported 1");
+      expect(state.rootLayers).toHaveLength(1);
+      expect(state.rootLayers[0].id).toBe("page-vector");
+      expect(state.rootAnimation.duration).toBe(1800);
+      expect(state.selectedFrameId).toBe("imported-frame-0");
+      expect(state.layers).toEqual(state.frames[0].layers);
+      expect(state.timelineCollapsed).toBe(false);
+
+      getStore().undo();
+      expect(getStore().frames.map((frame) => frame.id)).toEqual(beforeFrameIds);
+    });
+
     it("normalizes fragile command IDs at store boundaries", () => {
       const legacyLayer: Layer = {
         ...getStore().layers[0],
@@ -1627,6 +1968,15 @@ describe("editorStore", () => {
       expect(getStore().animation.duration).toBe(2000);
       const block = getStore().animation.blocks[0];
       expect(block.endTime).toBe(2000);
+    });
+
+    it("setAnimationDuration is undoable", () => {
+      const originalDuration = getStore().animation.duration;
+      getStore().setAnimationDuration(originalDuration + 500);
+
+      getStore().undo();
+
+      expect(getStore().animation.duration).toBe(originalDuration);
     });
   });
 

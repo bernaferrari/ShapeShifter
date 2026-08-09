@@ -7,9 +7,9 @@ import {
   Eye,
   EyeOff,
   Folder,
-  Frame,
   GripVertical,
   Lock,
+  MoreHorizontal,
   PanelLeftClose,
   Plus,
   Search,
@@ -25,8 +25,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PAGE_ROOT_ID, useEditorStore } from "@/lib/store/editorStore";
+import { createLayerTreeModel, type LayerPlacement } from "@/lib/shapeshifter/scene/layerHierarchy";
 import type { Layer, TimelineBlock } from "@/lib/shapeshifter/types";
 import { cn } from "@/lib/utils";
+import { LayerOwnerRow } from "./layers/LayerOwnerRow";
 
 function LayerIcon({ type }: { type: Layer["type"] }) {
   if (type === "group") return <Folder className="size-3.5" />;
@@ -47,7 +49,21 @@ interface DraggedLayer {
   layerId: string | number;
 }
 
-export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
+type DropPosition = "before" | "inside" | "after" | "owner";
+
+interface LayerDropTarget {
+  ownerId: string;
+  layerId?: string | number;
+  position: DropPosition;
+}
+
+export function LayersPanel({
+  onCollapse,
+  className,
+}: {
+  onCollapse: () => void;
+  className?: string;
+}) {
   const frames = useEditorStore((state) => state.frames);
   const rootLayers = useEditorStore((state) => state.rootLayers);
   const rootAnimation = useEditorStore((state) => state.rootAnimation);
@@ -64,7 +80,7 @@ export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
   const toggleOwnedLayerVisibility = useEditorStore((state) => state.toggleOwnedLayerVisibility);
   const toggleOwnedLayerLock = useEditorStore((state) => state.toggleOwnedLayerLock);
   const renameOwnedLayer = useEditorStore((state) => state.renameOwnedLayer);
-  const reorderOwnedLayer = useEditorStore((state) => state.reorderOwnedLayer);
+  const reparentOwnedLayer = useEditorStore((state) => state.reparentOwnedLayer);
   const moveSelectedLayersToFrame = useEditorStore((state) => state.moveSelectedLayersToFrame);
   const moveSelectedLayersToRoot = useEditorStore((state) => state.moveSelectedLayersToRoot);
 
@@ -75,7 +91,16 @@ export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
   const [renamingKey, setRenamingKey] = React.useState<string | null>(null);
   const [renameDraft, setRenameDraft] = React.useState("");
   const [draggedLayer, setDraggedLayer] = React.useState<DraggedLayer | null>(null);
-  const [dropKey, setDropKey] = React.useState<string | null>(null);
+  const [dropTarget, setDropTarget] = React.useState<LayerDropTarget | null>(null);
+  const expandTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const expandTargetRef = React.useRef<string | null>(null);
+
+  React.useEffect(
+    () => () => {
+      if (expandTimerRef.current) clearTimeout(expandTimerRef.current);
+    },
+    [],
+  );
 
   const owners = React.useMemo<LayerOwner[]>(
     () => [
@@ -86,17 +111,12 @@ export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
         dimensions: `${frame.vector.width} × ${frame.vector.height}`,
         blocks: frame.id === selectedFrameId ? activeAnimation.blocks : frame.animation.blocks,
       })),
-      ...(rootLayers.length
-        ? [
-            {
-              id: PAGE_ROOT_ID,
-              name: "Page vectors",
-              layers: selectedFrameId === PAGE_ROOT_ID ? activeLayers : rootLayers,
-              blocks:
-                selectedFrameId === PAGE_ROOT_ID ? activeAnimation.blocks : rootAnimation.blocks,
-            },
-          ]
-        : []),
+      {
+        id: PAGE_ROOT_ID,
+        name: "Page vectors",
+        layers: selectedFrameId === PAGE_ROOT_ID ? activeLayers : rootLayers,
+        blocks: selectedFrameId === PAGE_ROOT_ID ? activeAnimation.blocks : rootAnimation.blocks,
+      },
     ],
     [
       activeAnimation.blocks,
@@ -125,14 +145,9 @@ export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
       const next = new Set(previous);
       for (const ref of selectedLayerRefs) {
         const owner = owners.find((candidate) => candidate.id === ref.ownerId);
-        const byId = new Map(owner?.layers.map((layer) => [String(layer.id), layer]) ?? []);
-        let current = byId.get(String(ref.layerId));
-        const seen = new Set<string>();
-        while (current?.parentId != null && !seen.has(String(current.parentId))) {
-          const parentId = String(current.parentId);
-          seen.add(parentId);
-          next.delete(`${ref.ownerId}:${parentId}`);
-          current = byId.get(parentId);
+        if (!owner) continue;
+        for (const ancestor of createLayerTreeModel(owner.layers).ancestorsOf(ref.layerId)) {
+          next.delete(`${ref.ownerId}:${String(ancestor.id)}`);
         }
       }
       return next;
@@ -183,46 +198,74 @@ export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
     setRenamingKey(null);
   };
 
-  const moveDraggedLayer = (targetOwnerId: string) => {
-    if (!draggedLayer || draggedLayer.ownerId === targetOwnerId) return false;
-    selectLayerRefs([draggedLayer]);
+  const moveLayerToOwner = (
+    layerRef: DraggedLayer,
+    targetOwnerId: string,
+    placement?: LayerPlacement,
+    preserveSelection = false,
+  ) => {
+    const isSelectedSiblingSet =
+      preserveSelection &&
+      selectedLayerRefs.some(
+        (ref) =>
+          ref.ownerId === layerRef.ownerId && String(ref.layerId) === String(layerRef.layerId),
+      ) &&
+      selectedLayerRefs.every((ref) => ref.ownerId === layerRef.ownerId);
+    if (!isSelectedSiblingSet) selectLayerRefs([layerRef]);
     return targetOwnerId === PAGE_ROOT_ID
-      ? moveSelectedLayersToRoot()
-      : moveSelectedLayersToFrame(targetOwnerId);
+      ? moveSelectedLayersToRoot({ placement })
+      : moveSelectedLayersToFrame(targetOwnerId, { placement });
+  };
+
+  const moveDraggedLayer = (targetOwnerId: string, placement?: LayerPlacement) => {
+    if (!draggedLayer || draggedLayer.ownerId === targetOwnerId) return false;
+    return moveLayerToOwner(draggedLayer, targetOwnerId, placement, true);
+  };
+
+  const clearLayerDrag = () => {
+    if (expandTimerRef.current) clearTimeout(expandTimerRef.current);
+    expandTimerRef.current = null;
+    expandTargetRef.current = null;
+    setDraggedLayer(null);
+    setDropTarget(null);
+  };
+
+  const scheduleGroupExpand = (key: string) => {
+    if (!collapsedGroups.has(key) || expandTargetRef.current === key) return;
+    if (expandTimerRef.current) clearTimeout(expandTimerRef.current);
+    expandTargetRef.current = key;
+    expandTimerRef.current = setTimeout(() => {
+      setCollapsedGroups((previous) => {
+        const next = new Set(previous);
+        next.delete(key);
+        return next;
+      });
+      expandTimerRef.current = null;
+      expandTargetRef.current = null;
+    }, 450);
   };
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const renderLayers = (owner: LayerOwner): React.ReactNode => {
-    const byParent = new Map<string, Layer[]>();
-    for (const layer of owner.layers) {
-      if (layer.parentId == null || layer.parentId === "") continue;
-      const parentId = String(layer.parentId);
-      byParent.set(parentId, [...(byParent.get(parentId) ?? []), layer]);
-    }
-    const nestedIds = new Set(
-      Array.from(byParent.values())
-        .flat()
-        .map((layer) => String(layer.id)),
-    );
-    const roots = owner.layers.filter((layer) => !nestedIds.has(String(layer.id)));
-
-    const childrenFor = (layer: Layer) =>
-      layer.children?.length ? layer.children : (byParent.get(String(layer.id)) ?? []);
+    const tree = createLayerTreeModel(owner.layers);
     const layerMatches = (layer: Layer): boolean =>
       !normalizedQuery ||
       (layer.name || "Layer").toLocaleLowerCase().includes(normalizedQuery) ||
-      childrenFor(layer).some(layerMatches);
+      tree.childrenOf(layer).some(layerMatches);
 
     const renderLayer = (layer: Layer, depth: number): React.ReactNode => {
       if (!layerMatches(layer)) return null;
       const key = `${owner.id}:${String(layer.id)}`;
-      const children = childrenFor(layer);
+      const children = tree.childrenOf(layer);
       const expandable = children.length > 0;
       const expanded = normalizedQuery.length > 0 || !collapsedGroups.has(key);
       const selected = selectionKind === "layer" && selectedKeys.has(key);
       const animated = owner.blocks.some((block) => String(block.layerId) === String(layer.id));
       const renaming = renamingKey === key;
-      const isDropTarget = dropKey === key;
+      const activeDropPosition =
+        dropTarget?.ownerId === owner.id && String(dropTarget.layerId) === String(layer.id)
+          ? dropTarget.position
+          : null;
 
       return (
         <React.Fragment key={key}>
@@ -235,39 +278,62 @@ export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
             onDragStart={(event) => {
               event.dataTransfer.effectAllowed = "move";
               event.dataTransfer.setData("text/plain", key);
+              if (!selectedKeys.has(key))
+                selectLayerRefs([{ ownerId: owner.id, layerId: layer.id }]);
               setDraggedLayer({ ownerId: owner.id, layerId: layer.id });
             }}
-            onDragEnd={() => {
-              setDraggedLayer(null);
-              setDropKey(null);
-            }}
+            onDragEnd={clearLayerDrag}
             onDragOver={(event) => {
               if (!draggedLayer) return;
               event.preventDefault();
+              event.stopPropagation();
               event.dataTransfer.dropEffect = "move";
-              setDropKey(key);
+              const bounds = event.currentTarget.getBoundingClientRect();
+              const ratio = bounds.height ? (event.clientY - bounds.top) / bounds.height : 0.5;
+              const position: DropPosition = expandable
+                ? ratio < 0.25
+                  ? "before"
+                  : ratio > 0.75
+                    ? "after"
+                    : "inside"
+                : ratio < 0.5
+                  ? "before"
+                  : "after";
+              setDropTarget({ ownerId: owner.id, layerId: layer.id, position });
+              if (position === "inside" && expandable) scheduleGroupExpand(key);
+              else if (expandTimerRef.current) {
+                clearTimeout(expandTimerRef.current);
+                expandTimerRef.current = null;
+                expandTargetRef.current = null;
+              }
             }}
             onDrop={(event) => {
               event.preventDefault();
               event.stopPropagation();
               if (!draggedLayer) return;
+              const position = activeDropPosition ?? (expandable ? "inside" : "after");
+              const parentId = position === "inside" ? layer.id : (layer.parentId ?? null);
+              const target = {
+                parentId,
+                ...(position === "before" ? { beforeId: layer.id } : {}),
+                ...(position === "after" ? { afterId: layer.id } : {}),
+              };
               if (draggedLayer.ownerId === owner.id) {
-                const targetIndex = owner.layers.findIndex(
-                  (candidate) => String(candidate.id) === String(layer.id),
-                );
-                reorderOwnedLayer(owner.id, draggedLayer.layerId, targetIndex);
+                reparentOwnedLayer(owner.id, draggedLayer.layerId, target);
               } else {
-                moveDraggedLayer(owner.id);
+                moveDraggedLayer(owner.id, target);
               }
-              setDraggedLayer(null);
-              setDropKey(null);
+              clearLayerDrag();
             }}
             className={cn(
               "group relative flex h-8 items-center gap-1 pr-1.5 text-[11px] outline-none",
               selected
                 ? "bg-primary/14 text-foreground"
                 : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
-              isDropTarget &&
+              activeDropPosition === "inside" && "bg-primary/10 ring-1 ring-inset ring-primary/70",
+              activeDropPosition === "before" &&
+                "before:absolute before:inset-x-2 before:top-0 before:h-0.5 before:bg-primary",
+              activeDropPosition === "after" &&
                 "after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:bg-primary",
             )}
             style={{ paddingLeft: 6 + depth * 12 }}
@@ -328,6 +394,40 @@ export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
               </button>
             )}
             <div className="flex shrink-0 items-center">
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <button
+                      type="button"
+                      className={cn(
+                        "grid size-6 place-items-center rounded text-muted-foreground/55 hover:bg-muted hover:text-foreground focus-visible:opacity-100",
+                        selected
+                          ? "opacity-100"
+                          : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+                      )}
+                      aria-label={`Move ${layer.name || "layer"} to another frame`}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => event.stopPropagation()}
+                    />
+                  }
+                >
+                  <MoreHorizontal className="size-3" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  {owners
+                    .filter((targetOwner) => targetOwner.id !== owner.id)
+                    .map((targetOwner) => (
+                      <DropdownMenuItem
+                        key={targetOwner.id}
+                        onClick={() =>
+                          moveLayerToOwner({ ownerId: owner.id, layerId: layer.id }, targetOwner.id)
+                        }
+                      >
+                        Move to {targetOwner.name}
+                      </DropdownMenuItem>
+                    ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
               <button
                 type="button"
                 className={cn(
@@ -365,20 +465,25 @@ export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
       );
     };
 
-    return roots.map((layer) => renderLayer(layer, 0));
+    return tree.roots.map((layer) => renderLayer(layer, 0));
   };
 
   const visibleOwners = owners.filter(
     (owner) =>
       !normalizedQuery ||
       owner.name.toLocaleLowerCase().includes(normalizedQuery) ||
-      owner.layers.some((layer) =>
+      createLayerTreeModel(owner.layers).allLayers.some((layer) =>
         (layer.name || "Layer").toLocaleLowerCase().includes(normalizedQuery),
       ),
   );
 
   return (
-    <aside className="flex h-full w-60 shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground">
+    <aside
+      className={cn(
+        "flex h-full w-60 shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground",
+        className,
+      )}
+    >
       <div className="flex h-10 shrink-0 items-center border-b border-border px-2">
         <span className="flex-1 px-1 text-[11px] font-semibold">Layers</span>
         <Button
@@ -426,74 +531,61 @@ export function LayersPanel({ onCollapse }: { onCollapse: () => void }) {
         {visibleOwners.map((owner) => {
           const expanded = normalizedQuery.length > 0 || !collapsedOwners.has(owner.id);
           const frameSelected = selectionKind === "frame" && selectedFrameIds.includes(owner.id);
-          const ownerTitle = [
-            owner.dimensions,
-            owner.blocks.length ? `${owner.blocks.length} animated track(s)` : "",
-          ]
-            .filter(Boolean)
-            .join(" · ");
           return (
             <div key={owner.id}>
-              <div
-                role="treeitem"
-                aria-level={1}
-                aria-expanded={expanded}
-                aria-selected={frameSelected}
-                className={cn(
-                  "group flex h-8 items-center px-1.5",
-                  frameSelected && "bg-primary/14 text-foreground",
-                  dropKey === `owner:${owner.id}` && "ring-1 ring-inset ring-primary",
-                )}
+              <LayerOwnerRow
+                name={owner.name}
+                dimensions={owner.dimensions}
+                expanded={expanded}
+                selected={frameSelected}
+                selectable={owner.id !== PAGE_ROOT_ID}
+                dropActive={dropTarget?.ownerId === owner.id && dropTarget.position === "owner"}
+                onToggle={() => toggleSetValue(setCollapsedOwners, owner.id)}
+                onSelect={(additive) => selectFrameRow(owner.id, additive)}
                 onDragOver={(event) => {
                   if (!draggedLayer) return;
                   event.preventDefault();
-                  setDropKey(`owner:${owner.id}`);
+                  setDropTarget({ ownerId: owner.id, position: "owner" });
+                  setCollapsedOwners((previous) => {
+                    if (!previous.has(owner.id)) return previous;
+                    const next = new Set(previous);
+                    next.delete(owner.id);
+                    return next;
+                  });
                 }}
                 onDrop={(event) => {
                   event.preventDefault();
                   if (!draggedLayer) return;
                   if (draggedLayer.ownerId === owner.id) {
-                    reorderOwnedLayer(owner.id, draggedLayer.layerId, owner.layers.length - 1);
+                    reparentOwnedLayer(owner.id, draggedLayer.layerId, { parentId: null });
                   } else {
                     moveDraggedLayer(owner.id);
                   }
-                  setDraggedLayer(null);
-                  setDropKey(null);
+                  clearLayerDrag();
                 }}
-              >
-                <button
-                  type="button"
-                  className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-muted"
-                  onClick={() => toggleSetValue(setCollapsedOwners, owner.id)}
-                  aria-label={expanded ? `Collapse ${owner.name}` : `Expand ${owner.name}`}
-                >
-                  <ChevronRight
-                    className={cn(
-                      "size-3 transition-transform duration-100",
-                      expanded && "rotate-90",
-                    )}
-                  />
-                </button>
-                <button
-                  type="button"
-                  className="flex min-w-0 flex-1 items-center gap-2 px-1 text-left text-[11px] font-medium"
-                  onClick={(event) =>
-                    owner.id !== PAGE_ROOT_ID && selectFrameRow(owner.id, event.shiftKey)
-                  }
-                  aria-pressed={frameSelected}
-                  title={ownerTitle || undefined}
-                >
-                  <Frame className="size-3.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate">{owner.name}</span>
-                  {owner.blocks.length > 0 && (
-                    <span className="ml-auto flex shrink-0 items-center gap-1 font-mono text-[9px] font-normal text-muted-foreground/65">
-                      <span className="size-1.5 rotate-45 rounded-[1px] bg-primary" />
-                      {owner.blocks.length}
-                    </span>
-                  )}
-                </button>
-              </div>
+              />
               {expanded && renderLayers(owner)}
+              {expanded && owner.layers.length === 0 && (
+                <div
+                  className={cn(
+                    "mx-2 flex h-7 items-center rounded px-6 text-[10px] text-muted-foreground/60",
+                    dropTarget?.ownerId === owner.id &&
+                      "bg-primary/8 text-primary ring-1 ring-inset ring-primary/50",
+                  )}
+                  onDragOver={(event) => {
+                    if (!draggedLayer) return;
+                    event.preventDefault();
+                    setDropTarget({ ownerId: owner.id, position: "owner" });
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    if (draggedLayer?.ownerId !== owner.id) moveDraggedLayer(owner.id);
+                    clearLayerDrag();
+                  }}
+                >
+                  {draggedLayer ? "Move here" : "No vectors"}
+                </div>
+              )}
             </div>
           );
         })}

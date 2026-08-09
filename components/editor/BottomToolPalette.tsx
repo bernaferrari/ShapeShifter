@@ -69,20 +69,20 @@ export function BottomToolPalette() {
   const setToolMode = useEditorStore((state) => state.setToolMode);
 
   return (
-    <div className="flex flex-col items-center gap-1 rounded-xl border border-border bg-card/95 p-1 shadow-lg shadow-black/10 backdrop-blur-md dark:shadow-black/40">
+    <div className="flex items-center gap-0.5 rounded-lg bg-card/95 p-1 [box-shadow:var(--elevation-floating)] backdrop-blur-md">
       {TOOLS.map((tool) => {
         const isActive = toolMode === tool.mode;
         return (
           <React.Fragment key={tool.mode}>
             {/* Divider between navigate/edit tools and create tools (Figma-style grouping) */}
-            {tool.mode === "pen" && <div className="my-0.5 h-px w-5 bg-border" />}
+            {tool.mode === "pen" && <div className="mx-0.5 h-5 w-px bg-border" />}
             <Tooltip>
               <TooltipTrigger
                 render={
                   <Button
                     size="icon"
                     variant="ghost"
-                    className={`size-10 rounded-lg transition-[background-color,color,transform] active:scale-95 ${
+                    className={`size-8 rounded-md transition-[background-color,color,transform] active:scale-[0.96] ${
                       isActive
                         ? "bg-primary text-primary-foreground hover:bg-primary"
                         : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -95,10 +95,7 @@ export function BottomToolPalette() {
                   </Button>
                 }
               />
-              <TooltipContent
-                side="right"
-                className="flex flex-col gap-1 text-[11px] max-w-[220px]"
-              >
+              <TooltipContent side="top" className="flex flex-col gap-1 text-[11px] max-w-[220px]">
                 <div className="flex items-center gap-2">
                   <span>{tool.label}</span>
                   {tool.shortcut && (

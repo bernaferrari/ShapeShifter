@@ -6,7 +6,7 @@ import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const fieldBase =
-  "h-8 w-full rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground/50 hover:border-foreground/20 focus:border-primary focus:ring-2 focus:ring-primary/20";
+  "h-7 w-full rounded-[4px] border border-transparent bg-muted/65 px-2 text-xs text-foreground outline-none transition-[background-color,border-color,box-shadow] placeholder:text-muted-foreground/50 hover:bg-muted focus:border-primary/70 focus:bg-background focus:ring-1 focus:ring-primary/25";
 
 export function Section({
   title,
@@ -22,7 +22,7 @@ export function Section({
   const [open, setOpen] = React.useState(defaultOpen);
   return (
     <section className="border-b border-border/60 last:border-b-0">
-      <div className="flex h-9 items-center justify-between pl-1.5 pr-3">
+      <div className="flex h-9 items-center justify-between pl-1.5 pr-2.5">
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
@@ -93,6 +93,8 @@ export function NumberRow({
   step = 1,
   suffix,
   mixed = false,
+  keyframe,
+  compact = false,
 }: {
   label: string;
   value: number;
@@ -102,6 +104,12 @@ export function NumberRow({
   step?: number;
   suffix?: string;
   mixed?: boolean;
+  keyframe?: {
+    active: boolean;
+    onClick: () => void;
+    label: string;
+  };
+  compact?: boolean;
 }) {
   const scrub = React.useRef<{ startX: number; startVal: number } | null>(null);
   // While the field is focused we keep the raw keystrokes so typing "2." or a
@@ -135,6 +143,82 @@ export function NumberRow({
     } catch {}
     scrub.current = null;
   };
+
+  if (compact) {
+    return (
+      <div className="group relative min-w-0">
+        <span
+          role="slider"
+          aria-label={label}
+          aria-valuenow={value}
+          aria-valuetext={mixed ? "Mixed values" : undefined}
+          tabIndex={0}
+          className="absolute inset-y-0 left-0 z-10 flex w-7 cursor-ew-resize select-none items-center justify-center text-[9px] font-medium uppercase tracking-wide text-muted-foreground hover:text-foreground"
+          title="Drag to adjust"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          onKeyDown={(event) => {
+            if (!["ArrowLeft", "ArrowRight", "ArrowDown", "ArrowUp"].includes(event.key)) return;
+            event.preventDefault();
+            const direction = event.key === "ArrowLeft" || event.key === "ArrowDown" ? -1 : 1;
+            onChange(clamp(value + direction * (step || 1) * (event.shiftKey ? 10 : 1)));
+          }}
+        >
+          {label}
+        </span>
+        <input
+          type="text"
+          inputMode="decimal"
+          aria-label={label}
+          value={display}
+          placeholder={mixed ? "Mixed" : undefined}
+          onFocus={() => setDraft(mixed ? "" : Number.isFinite(value) ? String(value) : "0")}
+          onChange={(event) => {
+            const raw = event.target.value;
+            setDraft(raw);
+            const number = Number(raw.replace(",", "."));
+            if (Number.isFinite(number)) onChange(clamp(number));
+          }}
+          onBlur={() => setDraft(null)}
+          className={cn(
+            fieldBase,
+            "pl-7 font-mono tabular-nums",
+            keyframe ? (suffix ? "pr-12" : "pr-7") : suffix ? "pr-7" : "pr-2",
+          )}
+        />
+        {suffix && (
+          <span
+            className={cn(
+              "pointer-events-none absolute top-1/2 -translate-y-1/2 text-[9px] text-muted-foreground/55",
+              keyframe ? "right-7" : "right-2",
+            )}
+          >
+            {suffix}
+          </span>
+        )}
+        {keyframe && (
+          <button
+            type="button"
+            onClick={keyframe.onClick}
+            className="absolute right-0.5 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded hover:bg-background/70"
+            aria-label={keyframe.label}
+            title={keyframe.label}
+          >
+            <span
+              className={cn(
+                "size-2 rotate-45 rounded-[1px] border",
+                keyframe.active
+                  ? "border-primary bg-primary"
+                  : "border-muted-foreground/40 bg-background",
+              )}
+            />
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="group grid grid-cols-[58px_minmax(0,1fr)] items-center gap-2">
@@ -180,12 +264,39 @@ export function NumberRow({
             if (Number.isFinite(n)) onChange(clamp(n));
           }}
           onBlur={() => setDraft(null)}
-          className={cn(fieldBase, "pr-7 font-mono tabular-nums")}
+          className={cn(
+            fieldBase,
+            "font-mono tabular-nums",
+            keyframe ? (suffix ? "pr-14" : "pr-8") : "pr-7",
+          )}
         />
         {suffix && (
-          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground/60">
+          <span
+            className={cn(
+              "pointer-events-none absolute top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground/60",
+              keyframe ? "right-8" : "right-2",
+            )}
+          >
             {suffix}
           </span>
+        )}
+        {keyframe && (
+          <button
+            type="button"
+            onClick={keyframe.onClick}
+            className="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded hover:bg-muted focus-visible:outline focus-visible:outline-1 focus-visible:outline-foreground/60"
+            aria-label={keyframe.label}
+            title={keyframe.label}
+          >
+            <span
+              className={cn(
+                "size-2 rotate-45 rounded-[1px] border",
+                keyframe.active
+                  ? "border-primary bg-primary"
+                  : "border-muted-foreground/45 bg-background",
+              )}
+            />
+          </button>
         )}
       </div>
     </div>
@@ -204,7 +315,7 @@ export function Segmented<T extends string>({
   mixed?: boolean;
 }) {
   return (
-    <div className="flex h-8 items-center rounded-md bg-muted p-0.5">
+    <div className="flex h-7 items-center rounded-[4px] bg-muted/65 p-0.5">
       {options.map((o) => (
         <Button
           key={o.value}
@@ -213,9 +324,9 @@ export function Segmented<T extends string>({
           variant="ghost"
           onClick={() => onChange(o.value)}
           className={cn(
-            "h-7 flex-1 rounded-sm px-1 text-[11px] capitalize",
+            "h-6 flex-1 rounded-[3px] px-1 text-[11px] capitalize",
             !mixed && value === o.value
-              ? "bg-card font-medium text-foreground shadow-sm hover:bg-card"
+              ? "bg-card font-medium text-foreground shadow-xs hover:bg-card"
               : "text-muted-foreground hover:text-foreground",
           )}
         >

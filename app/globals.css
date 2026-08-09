@@ -56,6 +56,9 @@
  *   --border                           → hairline dividers
  */
 :root {
+  --border-hairline: 1px;
+  --elevation-floating:
+    0 0 0 1px rgb(0 0 0 / 0.055), 0 1px 3px rgb(0 0 0 / 0.08), 0 7px 18px -5px rgb(0 0 0 / 0.16);
   --background: oklch(1 0 0); /* white panels & top bar */
   --foreground: oklch(0.21 0 0); /* calm near-black text */
   --card: oklch(1 0 0);
@@ -91,6 +94,7 @@
 }
 
 .dark {
+  --elevation-floating: 0 0 0 1px rgb(255 255 255 / 0.1);
   --background: oklch(0.205 0 0); /* #2c2c2c panels */
   --foreground: oklch(0.97 0 0);
   --card: oklch(0.225 0 0);
@@ -152,6 +156,8 @@ select:focus-visible,
 
   body {
     @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
   button:not(:disabled),
@@ -160,10 +166,30 @@ select:focus-visible,
   }
 }
 
+@media only screen and (min-device-pixel-ratio: 2), only screen and (min-resolution: 192dpi) {
+  :root {
+    --border-hairline: 0.5px;
+  }
+}
+
 html,
 body {
   height: 100%;
   overflow: hidden;
+}
+
+/*
+ * Keep the dense desktop property UI without triggering Safari's automatic
+ * viewport zoom when a compact control receives focus on a touch device.
+ * Pointer capability is the meaningful distinction here: viewport width alone
+ * misclassifies larger iPads as desktop hardware.
+ */
+@media (pointer: coarse) {
+  input:not([type="file"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
 }
 
 /*

@@ -27,9 +27,7 @@ const PATH_STYLE_DEFAULTS = {
   fillType: "nonZero" as const,
 };
 
-export function createPathLayer(
-  layer: Omit<Layer, "type"> & Partial<Pick<Layer, "type">>,
-): Layer {
+export function createPathLayer(layer: Omit<Layer, "type"> & Partial<Pick<Layer, "type">>): Layer {
   return {
     ...PATH_STYLE_DEFAULTS,
     pathData: layer.from,

@@ -54,7 +54,7 @@ function propertyNames(animation: AnimationState, layerId: string | number): str
     new Set(
       animation.blocks
         .filter((block) => String(block.layerId) === String(layerId))
-        .map((block) => block.propertyName)
+        .map((block) => block.propertyName),
     ),
   );
   const hasX = names.includes("translateX");

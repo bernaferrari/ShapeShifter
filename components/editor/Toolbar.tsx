@@ -108,17 +108,9 @@ export function Toolbar({
   };
 
   return (
-    <header className="relative flex h-12 shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-card px-3 text-foreground [scrollbar-width:none]">
-      {/* Centered document name — Figma-style, fills the chrome's quiet middle */}
-      {!isActionMode && (
-        <div className="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 max-w-[40%] md:block">
-          <span className="block truncate text-center text-[12px] font-medium text-muted-foreground">
-            {vector?.name || "Untitled"}
-          </span>
-        </div>
-      )}
-      {/* Brand / back */}
-      <div className="flex items-center gap-2 pr-1">
+    <header className="relative flex h-10 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border/80 bg-card px-2 text-foreground [scrollbar-width:none]">
+      {/* Document identity stays compact and left-aligned, like an editor tab. */}
+      <div className="flex min-w-0 items-center gap-1.5 pr-1">
         {isActionMode && (
           <Tooltip>
             <TooltipTrigger
@@ -137,20 +129,15 @@ export function Toolbar({
             <TooltipContent>Back to canvas (⌘W)</TooltipContent>
           </Tooltip>
         )}
-        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-primary">
-          <Sparkles size={16} />
+        <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+          <Sparkles size={13} />
         </div>
-        <div className="hidden leading-none sm:block">
-          <div className="text-[13px] font-semibold tracking-tight">
-            {isActionMode ? "Path morphing" : "Shape Shifter"}
-          </div>
-          <div className="mt-0.5 text-[10px] leading-none text-muted-foreground">
-            {isActionMode ? "Compatibility editor" : "Vector motion studio"}
-          </div>
-        </div>
+        <span className="hidden max-w-36 truncate text-[12px] font-medium tracking-tight sm:block">
+          {isActionMode ? "Path morphing" : vector?.name || "Untitled"}
+        </span>
       </div>
 
-      <div className="mx-1 h-5 w-px bg-border" />
+      <div className="mx-1 h-4 w-px bg-border/80" />
 
       {/* File */}
       <DropdownMenu>
@@ -317,7 +304,7 @@ export function Toolbar({
 
       <div className="flex-1" />
 
-      {/* Transport — reset · play · loop · slow-mo */}
+      {/* Transport stays icon-first; Export is the single primary action. */}
       <div className="flex items-center gap-0.5">
         <Tooltip>
           <TooltipTrigger
@@ -339,15 +326,22 @@ export function Toolbar({
           <TooltipTrigger
             render={
               <Button
-                size="sm"
-                className="h-7 gap-1.5 px-3"
+                variant="ghost"
+                size="icon-sm"
+                className={cn(
+                  "text-muted-foreground hover:text-foreground",
+                  isPlaying && "bg-primary/10 text-primary hover:text-primary",
+                )}
                 onClick={onTogglePlay}
                 aria-label={isPlaying ? "Pause" : "Play"}
               />
             }
           >
-            {isPlaying ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
-            <span className="text-xs">{isPlaying ? "Pause" : "Play"}</span>
+            {isPlaying ? (
+              <Pause className="size-3.5 fill-current" />
+            ) : (
+              <Play className="ml-px size-3.5 fill-current" />
+            )}
           </TooltipTrigger>
           <TooltipContent>{isPlaying ? "Pause" : "Play"} (Space)</TooltipContent>
         </Tooltip>
@@ -393,11 +387,11 @@ export function Toolbar({
         </Tooltip>
       </div>
 
-      <div className="mx-1 h-5 w-px bg-border" />
+      <div className="mx-1 h-4 w-px bg-border/80" />
 
       {/* Export */}
       <ExportDialog>
-        <Button variant="ghost" size="sm" className="gap-1.5 px-2.5 text-[13px] font-medium">
+        <Button size="sm" className="gap-1.5 px-2.5 text-[12px] font-medium">
           <Download className="size-3.5" /> Export
         </Button>
       </ExportDialog>

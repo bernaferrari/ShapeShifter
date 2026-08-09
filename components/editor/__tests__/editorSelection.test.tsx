@@ -26,6 +26,14 @@ afterEach(() => {
 });
 
 describe("editor selection contracts", () => {
+  it("always exposes the page-root layer destination, even when it is empty", () => {
+    useEditorStore.setState({ rootLayers: [] });
+    rendered = renderEditorComponent(<LayersPanel onCollapse={() => {}} />);
+
+    expect(buttonWithText(rendered.container, "Page vectors")).toBeDefined();
+    expect(rendered.container.textContent).toContain("No vectors");
+  });
+
   it("selects an artboard from the left scene navigator without selecting its children", () => {
     const target = useEditorStore.getState().frames[1]!;
     rendered = renderEditorComponent(<LayersPanel onCollapse={() => {}} />);
@@ -51,5 +59,34 @@ describe("editor selection contracts", () => {
     expect(state.timelineCollapsed).toBe(false);
     expect(state.selectedFrameId).toBe(target.id);
     expect(state.selectionKind).toBe("frame");
+  });
+
+  it("adds animation directly from a transform property and reveals its timeline track", () => {
+    const layer = useEditorStore.getState().layers[0]!;
+    useEditorStore.setState((state) => ({
+      animation: {
+        ...state.animation,
+        blocks: state.animation.blocks.filter(
+          (block) =>
+            String(block.layerId) !== String(layer.id) || block.propertyName !== "rotation",
+        ),
+      },
+      timelineCollapsed: true,
+    }));
+    useEditorStore.getState().selectLayer(layer.id);
+    rendered = renderEditorComponent(<Inspector />);
+
+    const animateRotation = rendered.container.querySelector('[aria-label="Animate Rotation"]');
+    expect(animateRotation).toBeInstanceOf(HTMLButtonElement);
+    click(animateRotation!);
+
+    const state = useEditorStore.getState();
+    const block = state.animation.blocks.find(
+      (candidate) =>
+        String(candidate.layerId) === String(layer.id) && candidate.propertyName === "rotation",
+    );
+    expect(block).toBeDefined();
+    expect(state.selectedBlockIds).toEqual([block!.id]);
+    expect(state.timelineCollapsed).toBe(false);
   });
 });

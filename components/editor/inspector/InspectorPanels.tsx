@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { Copy, Lock, Pencil, Trash2, Unlock } from "lucide-react";
+import { Copy, Link2, Lock, Pencil, Trash2, Unlink2, Unlock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/lib/store/editorStore";
 import type { CanvasFrame } from "@/lib/store/editorStore";
@@ -25,7 +25,7 @@ export function InspectorTabs({
 }) {
   return (
     <div
-      className="grid h-10 grid-cols-2 border-b border-border px-3"
+      className="grid h-9 grid-cols-2 border-b border-border/80 px-3"
       role="tablist"
       aria-label="Inspector mode"
     >
@@ -37,14 +37,12 @@ export function InspectorTabs({
           aria-selected={value === tab}
           onClick={() => onChange(tab)}
           className={cn(
-            "relative text-[11px] font-medium capitalize text-muted-foreground transition-colors hover:text-foreground",
+            "relative text-[11px] font-medium capitalize text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-foreground/35",
             value === tab && "text-foreground",
           )}
         >
           {tab}
-          {value === tab && (
-            <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-primary" />
-          )}
+          {value === tab && <span className="absolute inset-x-4 bottom-0 h-px bg-primary" />}
         </button>
       ))}
     </div>
@@ -73,56 +71,121 @@ export function LayerTransformSection({
   const rotation = sharedValue(selectedLayers, (item) => item.rotation ?? 0, layer.rotation ?? 0);
   const positionX = bounds?.x ?? layer.translateX ?? 0;
   const positionY = bounds?.y ?? layer.translateY ?? 0;
+  const blocks = useEditorStore((state) => state.animation.blocks);
+  const addTimelineBlock = useEditorStore((state) => state.addTimelineBlock);
+  const selectBlocks = useEditorStore((state) => state.selectBlocks);
+  const [scaleLinked, setScaleLinked] = React.useState(
+    () => !scaleX.mixed && !scaleY.mixed && Math.abs(scaleX.value - scaleY.value) < 1e-6,
+  );
+  React.useEffect(() => {
+    if (scaleX.mixed || scaleY.mixed) setScaleLinked(false);
+  }, [layer.id, scaleX.mixed, scaleY.mixed]);
+
+  const patchScale = (axis: "x" | "y", percent: number) => {
+    const value = percent / 100;
+    if (!scaleLinked) {
+      onPatch(axis === "x" ? { scaleX: value } : { scaleY: value });
+      return;
+    }
+    const current = axis === "x" ? scaleX.value : scaleY.value;
+    const other = axis === "x" ? scaleY.value : scaleX.value;
+    const linkedValue = Math.abs(current) > 1e-6 ? other * (value / current) : value;
+    onPatch(
+      axis === "x"
+        ? { scaleX: value, scaleY: linkedValue }
+        : { scaleX: linkedValue, scaleY: value },
+    );
+  };
+  const keyframeFor = (propertyName: string) => {
+    if (count !== 1) return undefined;
+    const matches = blocks.filter(
+      (block) => String(block.layerId) === String(layer.id) && block.propertyName === propertyName,
+    );
+    const active = matches.length > 0;
+    const label = propertyLabel(propertyName);
+    return {
+      active,
+      label: active ? `Select ${label} animation` : `Animate ${label}`,
+      onClick: () =>
+        active
+          ? selectBlocks(matches.map((block) => block.id))
+          : addTimelineBlock(layer.id, propertyName),
+    };
+  };
   return (
     <Section
       title={count > 1 ? `Transform · ${count} layers` : "Transform"}
       action={
-        <button
-          type="button"
-          onClick={onToggleLock}
-          className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label={layer.locked ? "Unlock layer" : "Lock layer"}
-          title={layer.locked ? "Unlock layer" : "Lock layer"}
-        >
-          {layer.locked ? <Lock className="size-3.5" /> : <Unlock className="size-3.5" />}
-        </button>
+        <div className="flex items-center">
+          <button
+            type="button"
+            onClick={() => setScaleLinked((linked) => !linked)}
+            className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="Link scale proportions"
+            aria-pressed={scaleLinked}
+            title={scaleLinked ? "Scale proportions linked" : "Scale proportions unlinked"}
+          >
+            {scaleLinked ? <Link2 className="size-3.5" /> : <Unlink2 className="size-3.5" />}
+          </button>
+          <button
+            type="button"
+            onClick={onToggleLock}
+            className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label={layer.locked ? "Unlock layer" : "Lock layer"}
+            title={layer.locked ? "Unlock layer" : "Lock layer"}
+          >
+            {layer.locked ? <Lock className="size-3.5" /> : <Unlock className="size-3.5" />}
+          </button>
+        </div>
       }
     >
       {count > 1 && (
         <p className="text-[10px] text-muted-foreground">Values apply to the full selection.</p>
       )}
-      <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+      <div className="grid grid-cols-2 gap-1.5">
         <NumberRow
           label="X"
+          compact
           value={positionX}
           onChange={(value) => onTranslate(value - positionX, 0)}
+          keyframe={keyframeFor("translateX")}
         />
         <NumberRow
           label="Y"
+          compact
           value={positionY}
           onChange={(value) => onTranslate(0, value - positionY)}
+          keyframe={keyframeFor("translateY")}
         />
         <NumberRow
-          label="Scale X"
-          value={scaleX.value}
+          label="SX"
+          compact
+          value={Math.round(scaleX.value * 10000) / 100}
           mixed={scaleX.mixed}
-          step={0.1}
-          onChange={(value) => onPatch({ scaleX: value })}
+          step={1}
+          suffix="%"
+          onChange={(value) => patchScale("x", value)}
+          keyframe={keyframeFor("scaleX")}
         />
         <NumberRow
-          label="Scale Y"
-          value={scaleY.value}
+          label="SY"
+          compact
+          value={Math.round(scaleY.value * 10000) / 100}
           mixed={scaleY.mixed}
-          step={0.1}
-          onChange={(value) => onPatch({ scaleY: value })}
+          step={1}
+          suffix="%"
+          onChange={(value) => patchScale("y", value)}
+          keyframe={keyframeFor("scaleY")}
         />
       </div>
       <NumberRow
-        label="Rotation"
+        label="R"
+        compact
         value={rotation.value}
         mixed={rotation.mixed}
         suffix="°"
         onChange={(value) => onPatch({ rotation: value })}
+        keyframe={keyframeFor("rotation")}
       />
       {count > 1 && bounds?.coordinateSpace === "world" && (
         <p className="text-[10px] leading-relaxed text-muted-foreground">
@@ -319,19 +382,21 @@ export function MotionPanel({
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <Section title="Path motion">
+      <Section title="Vector morph">
         <button
           type="button"
           onClick={onEditMorph}
-          className="flex h-9 w-full items-center justify-center gap-2 rounded-md bg-primary text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
+          className="flex h-8 w-full items-center gap-2 rounded-[4px] bg-muted/65 px-2 text-left text-[11px] text-foreground transition-colors hover:bg-muted"
         >
-          <Pencil className="size-3.5" /> Edit start and end paths
+          <Pencil className="size-3.5 text-muted-foreground" />
+          <span className="flex-1">Start and end paths</span>
+          <span className="text-[10px] text-muted-foreground">Edit</span>
         </button>
         <p className="text-[10px] leading-relaxed text-muted-foreground">
-          ShapeShifter morphs compatible vector paths while preserving editable geometry.
+          Define both geometries for the vector morph.
         </p>
       </Section>
-      <Section title={`Animated properties${layerBlocks.length ? ` · ${layerBlocks.length}` : ""}`}>
+      <Section title="Animations">
         <div className="space-y-1">
           {propertyNames.map((propertyName) => {
             const matches = layerBlocks.filter((block) => block.propertyName === propertyName);
@@ -346,7 +411,7 @@ export function MotionPanel({
                     : addTimelineBlock(layer.id, propertyName)
                 }
                 className={cn(
-                  "group flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[11px] hover:bg-muted",
+                  "group flex h-7 w-full items-center gap-2 rounded-[4px] px-2 text-left text-[11px] hover:bg-muted",
                   active ? "text-foreground" : "text-muted-foreground",
                 )}
               >
@@ -357,8 +422,8 @@ export function MotionPanel({
                   )}
                 />
                 <span className="flex-1">{propertyLabel(propertyName)}</span>
-                <span className="text-[10px] opacity-0 group-hover:opacity-70">
-                  {active ? "Select" : "Add"}
+                <span className="text-[10px] opacity-60 transition-opacity group-hover:opacity-100">
+                  {active ? "Edit" : "Animate"}
                 </span>
               </button>
             );
