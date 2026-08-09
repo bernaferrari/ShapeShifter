@@ -174,6 +174,38 @@ export type KeyframeId = string;
 export type FrameId = string;
 export type ComponentId = string;
 
+export interface NodeTransform {
+  translateX: number;
+  translateY: number;
+  scaleX: number;
+  scaleY: number;
+  rotation: number;
+  pivotX: number;
+  pivotY: number;
+}
+
+export type AnimatableProperty =
+  | "pathData"
+  | "alpha"
+  | "fillColor"
+  | "fillAlpha"
+  | "strokeColor"
+  | "strokeAlpha"
+  | "strokeWidth"
+  | "trimPathStart"
+  | "trimPathEnd"
+  | "trimPathOffset"
+  | "translateX"
+  | "translateY"
+  | "scaleX"
+  | "scaleY"
+  | "rotation"
+  | "pivotX"
+  | "pivotY";
+
+export type AnimationValue = number | string;
+export type TrackValueType = "number" | "color" | "path";
+
 /** Immutable versioned geometry. Commands keep stable IDs. */
 export interface GeometryVersion {
   id: GeometryVersionId;
@@ -188,7 +220,7 @@ export interface MorphMapping {
   fromGeometryId: GeometryVersionId;
   toGeometryId: GeometryVersionId;
   // Serialized result of NW + pole collapse, winding fixes, etc.
-  alignments: any;
+  alignments: unknown;
   polePositions: Point[];
   createdAt: number;
 }
@@ -197,12 +229,12 @@ export interface MorphMapping {
 export interface Node {
   id: NodeId;
   name: string;
-  type: "group" | "path" | "boolean" | "componentInstance";
+  type: "group" | "path" | "clipPath" | "boolean" | "componentInstance";
   parentId?: NodeId;
   childrenIds?: NodeId[];
   visible: boolean;
   locked: boolean;
-  transform: any; // matrix or decomposed
+  transform: NodeTransform;
   style: PathStyle;
   alpha: number;
   geometryVersionId?: GeometryVersionId; // for path nodes
@@ -214,30 +246,43 @@ export interface Frame {
   name: string;
   x: number;
   y: number;
-  width?: number;
-  height?: number;
+  width: number;
+  height: number;
+  alpha: number;
   childrenNodeIds: NodeId[];
+  clipIds: string[];
+}
+
+export interface PageMetadata {
+  name: string;
+  width: number;
+  height: number;
+  alpha: number;
 }
 
 /** Unified animation primitive. */
 export interface Track {
   id: TrackId;
-  target: { nodeId: NodeId; property: string };
+  target: { nodeId: NodeId; property: AnimatableProperty };
+  valueType: TrackValueType;
   keyframeIds: KeyframeId[];
 }
 
 export interface Keyframe {
   id: KeyframeId;
   time: number;
-  value: any;
+  value: AnimationValue;
   interpolator?: InterpolatorName;
   morphMappingId?: MorphMappingId; // only for geometry tracks
+  /** Temporary migration marker so disjoint v1 timeline blocks round-trip losslessly. */
+  legacyBlockId?: string;
 }
 
 export interface AnimationClip {
   id: string;
   name: string;
   duration: number;
+  frameId: FrameId | null;
   trackIds: TrackId[];
 }
 
@@ -247,13 +292,18 @@ export interface DocumentV2 {
   name: string;
   version: 2;
   frameIds: FrameId[];
-  nodeIds: NodeId[]; // root nodes
+  frames: Record<FrameId, Frame>;
+  page: PageMetadata;
+  /** Nodes that live on the infinite page instead of inside an artboard. */
+  rootNodeIds: NodeId[];
+  rootClipIds: string[];
+  nodes: Record<NodeId, Node>;
   geometryVersions: Record<GeometryVersionId, GeometryVersion>;
   morphMappings: Record<MorphMappingId, MorphMapping>;
   clips: Record<string, AnimationClip>;
   tracks: Record<TrackId, Track>;
   keyframes: Record<KeyframeId, Keyframe>;
-  components?: any; // future
+  components?: Record<ComponentId, unknown>;
 }
 
 /**

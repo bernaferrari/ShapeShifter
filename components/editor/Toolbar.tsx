@@ -204,7 +204,7 @@ export function Toolbar({
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={handleAutoFix}>
             <Zap className="mr-2 size-4 text-amber-500" /> Auto fix compatibility
-            <span className="ml-auto text-xs text-muted-foreground">A</span>
+            <span className="ml-auto text-xs text-muted-foreground">⇧F</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() => {
@@ -213,11 +213,11 @@ export function Toolbar({
             }}
           >
             <RotateCw className="mr-2 size-4" /> Reverse points
-            <span className="ml-auto text-xs text-muted-foreground">R</span>
+            <span className="ml-auto text-xs text-muted-foreground">⇧R</span>
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => shiftSelectedLayer(1)}>
             <ArrowLeftRight className="mr-2 size-4" /> Shift points forward
-            <span className="ml-auto text-xs text-muted-foreground">S</span>
+            <span className="ml-auto text-xs text-muted-foreground">⇧S</span>
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => shiftSelectedLayer(-1)}>
             <ArrowLeftRight className="mr-2 size-4 -scale-x-100" /> Shift points back

@@ -12,6 +12,7 @@ import {
   linearVector,
   normalizeStops,
 } from "./gradients";
+import { createDocumentV2FromLegacy } from "./documentModel";
 
 export interface ExportOptions {
   duration?: number; // in seconds
@@ -1062,6 +1063,37 @@ export function exportProjectJSON(
       })),
     };
   }
+
+  const root = pageRoot ?? { layers, animation, hiddenLayerIds };
+  result.documentV2 = createDocumentV2FromLegacy({
+    id: String(vector.id),
+    name: vector.name || "ShapeShifter",
+    rootLayers: root.layers,
+    rootVector: vector,
+    rootAnimation: root.animation,
+    rootHiddenLayerIds: root.hiddenLayerIds ?? [],
+    frames: (frames ?? []).map((frame) => ({
+      id: frame.id,
+      name: frame.name,
+      x: frame.x,
+      y: frame.y,
+      layers: frame.layers ?? [],
+      vector: frame.vector ?? {
+        id: frame.id,
+        name: frame.name,
+        width: vector.width,
+        height: vector.height,
+        alpha: 1,
+      },
+      animation: frame.animation ?? {
+        id: `${frame.id}-motion`,
+        name: "Motion",
+        duration: animation.duration,
+        blocks: [],
+      },
+      hiddenLayerIds: frame.hiddenLayerIds ?? [],
+    })),
+  });
 
   return result as any; // preserve loose contract for existing tests + importers roundtrips (pre-existing unknown accesses)
 }

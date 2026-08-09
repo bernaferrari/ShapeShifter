@@ -3,6 +3,7 @@ import {
   computeDetailViewport,
   computeFitViewport,
   computeGridSpec,
+  computeGridVisibility,
   snapValueToStep,
   zoomAtWorldPoint,
 } from "../camera";
@@ -70,6 +71,18 @@ describe("world camera utilities", () => {
     const ios = computeGridSpec(10, { divisions: 5 });
     expect(ios.minor).toBe(1);
     expect(ios.major).toBe(5);
+  });
+
+  it("progressively reveals grid detail as the canvas zooms in", () => {
+    expect(computeGridVisibility(1)).toEqual({ majorOpacity: 0, minorOpacity: 0 });
+
+    const overview = computeGridVisibility(3);
+    expect(overview.majorOpacity).toBeGreaterThan(0);
+    expect(overview.minorOpacity).toBe(0);
+
+    const pixelEditing = computeGridVisibility(10);
+    expect(pixelEditing.majorOpacity).toBe(0.14);
+    expect(pixelEditing.minorOpacity).toBe(0.07);
   });
 
   it("snaps to a step and scrubs floating-point dust", () => {

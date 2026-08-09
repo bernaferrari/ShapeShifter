@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -12,11 +11,14 @@ import {
   type LayerResizeSession,
   type LayerRotateSession,
 } from "./canvas/WorldSelectionOverlay";
+import { CoordinateRulers } from "./canvas/CoordinateRulers";
 import { PAGE_ROOT_ID, useEditorStore, type LayerSelectionRef } from "@/lib/store/editorStore";
 import type { Viewport } from "@/lib/shapeshifter/camera";
 import {
   clientToWorld,
+  computeFitViewport,
   computeGridSpec,
+  computeGridVisibility,
   fitViewportToAspect,
   snapValueToStep,
   zoomAtWorldPoint,
@@ -165,6 +167,21 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
           : null,
     [editFrame?.x, editFrame?.y, selectedFrameId],
   );
+  const rulerOwnerIds = useMemo(() => {
+    const candidates =
+      selectionKind === "layer"
+        ? selectedLayerRefs.map((ref) => ref.ownerId)
+        : selectionKind === "frame"
+          ? selectedFrameIds
+          : [];
+    return Array.from(new Set(candidates));
+  }, [selectedFrameIds, selectedLayerRefs, selectionKind]);
+  // Figma-like rulers: one selected frame/layer uses local coordinates; a
+  // cross-frame selection falls back to unambiguous world coordinates.
+  const rulerFrame =
+    rulerOwnerIds.length === 1 && rulerOwnerIds[0] !== PAGE_ROOT_ID
+      ? frames.find((frame) => frame.id === rulerOwnerIds[0])
+      : undefined;
   const sceneOwners = useMemo<SceneOwner[]>(
     () => [
       {
@@ -222,6 +239,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     () => computeGridSpec(pxPerUnit, { divisions: gridDivisions }),
     [pxPerUnit, gridDivisions],
   );
+  const gridVisibility = useMemo(() => computeGridVisibility(pxPerUnit), [pxPerUnit]);
   // Snap anchors to the visible sub-grid, but never coarser than 1px (clean ints
   // for the 24×24 case) and never finer than the grid you can actually see.
   const editSnap = Math.min(gridSpec.minor, 1);
@@ -592,6 +610,42 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     },
     [setWorldView, worldView],
   );
+
+  const fitWorldToSelection = useCallback(() => {
+    if (selectionKind === "layer" && documentSelectionBounds) {
+      const fitted = fitViewportToAspect(
+        computeFitViewport([documentSelectionBounds], {
+          minPadding: Math.max(
+            1,
+            Math.min(documentSelectionBounds.w, documentSelectionBounds.h) * 0.2,
+          ),
+          maxScale: 20,
+        }),
+        worldView.w / worldView.h,
+      );
+      const scaleMultiplier = Math.min(worldView.w / fitted.w, worldView.h / fitted.h);
+      setWorldView({
+        ...fitted,
+        scale: Math.max(0.05, Math.min(20, worldView.scale * scaleMultiplier)),
+      });
+      return;
+    }
+    const frameIds = selectedFrameIds.length
+      ? selectedFrameIds
+      : selectedFrameId && selectedFrameId !== PAGE_ROOT_ID
+        ? [selectedFrameId]
+        : [];
+    if (frameIds.length) fitWorldToFrames(frameIds);
+    else fitWorldToFrames();
+  }, [
+    documentSelectionBounds,
+    fitWorldToFrames,
+    selectedFrameId,
+    selectedFrameIds,
+    selectionKind,
+    setWorldView,
+    worldView,
+  ]);
 
   const hitArtboard = useCallback(
     (pt: { x: number; y: number } | null) => {
@@ -1898,11 +1952,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         e.preventDefault();
         fitWorldToFrames();
       } else if (e.shiftKey && e.code === "Digit2") {
-        // Zoom *to* the selected frame (tight fit), not just pan it into view.
-        if (selectedFrameId) {
-          e.preventDefault();
-          fitWorldToFrames([selectedFrameId]);
-        }
+        e.preventDefault();
+        fitWorldToSelection();
       } else if (e.code === "Digit0") {
         e.preventDefault();
         zoomWorldAtCenter(1 / useEditorStore.getState().worldViewport.scale);
@@ -1919,6 +1970,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   }, [
     isActionMode,
     fitWorldToFrames,
+    fitWorldToSelection,
     bringFrameIntoView,
     selectedFrameId,
     selectedLayerId,
@@ -1939,17 +1991,12 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     <div className="relative flex min-w-0 flex-1 overflow-hidden bg-muted">
       <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          <motion.div
-            className="flex h-full w-full"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.18, ease: "easeOut" }}
-          >
+          <div className="flex h-full w-full">
             <div className="relative flex h-full min-h-0 w-full flex-col">
               {/* Full-bleed canvas — no chrome border (Figma-style workspace) */}
               <div
                 className="relative min-h-0 w-full flex-1 overflow-hidden bg-muted"
-                role="img"
+                role="region"
                 aria-label="Canvas"
               >
                 {/* Top-right: zoom / fit / grid — absolute, not a layout row */}
@@ -2040,26 +2087,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                   </div>
                 </div>
 
-                {isActionMode && (
-                  <div className="pointer-events-auto absolute left-14 top-3 z-30 flex items-center gap-2 rounded-lg border border-white/10 bg-[#2C2C2C]/90 px-2.5 py-1 shadow-lg backdrop-blur-md">
-                    <span className="text-[12px] font-medium text-white/90">
-                      {isPlaying
-                        ? "Preview"
-                        : editingSide === "from"
-                          ? "Editing Start"
-                          : "Editing End"}
-                    </span>
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      className="h-6 border-white/15 bg-transparent px-2 text-[10px] text-white/80 hover:bg-white/10"
-                      onClick={() => useEditorStore.getState().closeActionMode()}
-                    >
-                      Done
-                    </Button>
-                  </div>
-                )}
-
                 {!isActionMode && (
                   <Button
                     size="sm"
@@ -2071,6 +2098,17 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                     Add frame
                   </Button>
                 )}
+                {!isActionMode && worldSize.w > 0 && worldSize.h > 0 && (
+                  <CoordinateRulers
+                    viewport={worldView}
+                    width={worldSize.w}
+                    height={worldSize.h}
+                    origin={
+                      rulerFrame ? { x: rulerFrame.x || 0, y: rulerFrame.y || 0 } : { x: 0, y: 0 }
+                    }
+                    scopeLabel={rulerFrame ? rulerFrame.name : "World"}
+                  />
+                )}
                 {!isActionMode ? (
                   <svg
                     ref={worldSvgRef}
@@ -2078,6 +2116,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                     height="100%"
                     viewBox={`${worldView.x} ${worldView.y} ${worldView.w} ${worldView.h}`}
                     preserveAspectRatio="xMidYMid meet"
+                    aria-label="World canvas"
                     className="touch-none"
                     onWheel={handleWorldWheel}
                     onPointerDown={handleWorldPointerDown}
@@ -2119,7 +2158,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                           d={`M ${gridSpec.minor} 0 L 0 0 0 ${gridSpec.minor}`}
                           fill="none"
                           stroke="#000000"
-                          strokeOpacity="0.07"
+                          strokeOpacity={gridVisibility.minorOpacity}
                           strokeWidth={worldPerPx * 0.6}
                         />
                       </pattern>
@@ -2133,7 +2172,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                           d={`M ${gridSpec.major} 0 L 0 0 0 ${gridSpec.major}`}
                           fill="none"
                           stroke="#000000"
-                          strokeOpacity="0.14"
+                          strokeOpacity={gridVisibility.majorOpacity}
                           strokeWidth={worldPerPx}
                         />
                       </pattern>
@@ -2213,24 +2252,28 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                             filter="url(#dragShadow)"
                           />
                           {/* adaptive grid inside the frame: sub-grid then emphasised major */}
-                          <rect
-                            x={0}
-                            y={0}
-                            width={b.w}
-                            height={b.h}
-                            rx={rx}
-                            fill="url(#frame-grid-minor)"
-                            pointerEvents="none"
-                          />
-                          <rect
-                            x={0}
-                            y={0}
-                            width={b.w}
-                            height={b.h}
-                            rx={rx}
-                            fill="url(#frame-grid-major)"
-                            pointerEvents="none"
-                          />
+                          {gridVisibility.minorOpacity > 0 && (
+                            <rect
+                              x={0}
+                              y={0}
+                              width={b.w}
+                              height={b.h}
+                              rx={rx}
+                              fill="url(#frame-grid-minor)"
+                              pointerEvents="none"
+                            />
+                          )}
+                          {gridVisibility.majorOpacity > 0 && (
+                            <rect
+                              x={0}
+                              y={0}
+                              width={b.w}
+                              height={b.h}
+                              rx={rx}
+                              fill="url(#frame-grid-major)"
+                              pointerEvents="none"
+                            />
+                          )}
                           {/* Clip layer content to artboard (Figma “Clip content”) */}
                           <clipPath id={`frame-clip-${frame.id}`}>
                             <rect x={0} y={0} width={b.w} height={b.h} rx={rx} />
@@ -2999,7 +3042,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                 )}
               </div>
             </div>
-          </motion.div>
+          </div>
         </div>
 
         {/* Compatibility chip — floats over the canvas, never steals layout height */}

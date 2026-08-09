@@ -315,7 +315,9 @@ interface EditorState {
   deleteSelectedLayers: () => void;
   toggleLayerLock: (id: string | number) => void;
   toggleOwnedLayerLock: (ownerId: string, id: string | number) => void;
+  renameOwnedLayer: (ownerId: string, id: string | number, name: string) => void;
   reorderLayer: (id: string | number, toIndex: number) => void;
+  reorderOwnedLayer: (ownerId: string, id: string | number, toIndex: number) => void;
   /** Z-order: +1 bring forward, -1 send backward (Figma ] / [ style). */
   nudgeLayerZOrder: (id: string | number, delta: number) => void;
   groupSelectedLayers: () => void;
@@ -1974,6 +1976,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => ({
       editingSide: side,
       selection: state.editingSide === side ? state.selection : null,
+      selectedPoints: state.editingSide === side ? state.selectedPoints : [],
       selectedSubPaths: state.editingSide === side ? state.selectedSubPaths : [],
     })),
   startActionMode: () =>
@@ -1983,7 +1986,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selectedPoints: [],
       selectedSubPaths: [],
       // Enter morph edit ready to manipulate points directly (best default for "edit")
-      toolMode: "select",
+      toolMode: "direct",
     }),
   closeActionMode: () =>
     set({ isActionMode: false, selection: null, selectedPoints: [], selectedSubPaths: [] }),
@@ -2511,6 +2514,26 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     );
   },
 
+  renameOwnedLayer: (ownerId, id, name) => {
+    const nextName = name.trim();
+    if (!nextName) return;
+    const state = get();
+    const ownerLayers =
+      ownerId === PAGE_ROOT_ID
+        ? saveActiveRoot(state).layers
+        : saveActiveFrame(state).find((frame) => frame.id === ownerId)?.layers;
+    const current = ownerLayers?.find((layer) => String(layer.id) === String(id));
+    if (!current || current.name === nextName) return;
+    get().pushHistory();
+    set(
+      updateOwnedLayers(state, ownerId, (layers) =>
+        layers.map((layer) =>
+          String(layer.id) === String(id) ? { ...layer, name: nextName } : layer,
+        ),
+      ),
+    );
+  },
+
   reorderLayer: (id, toIndex) => {
     const { layers } = get();
     const fromIndex = layers.findIndex((l) => String(l.id) === String(id));
@@ -2522,6 +2545,28 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     next.splice(clamped, 0, item!);
     get().pushHistory();
     set({ layers: next });
+  },
+
+  reorderOwnedLayer: (ownerId, id, toIndex) => {
+    const state = get();
+    const ownerLayers =
+      ownerId === PAGE_ROOT_ID
+        ? saveActiveRoot(state).layers
+        : saveActiveFrame(state).find((frame) => frame.id === ownerId)?.layers;
+    if (!ownerLayers) return;
+    const fromIndex = ownerLayers.findIndex((layer) => String(layer.id) === String(id));
+    if (fromIndex === -1) return;
+    const clamped = Math.max(0, Math.min(ownerLayers.length - 1, toIndex));
+    if (clamped === fromIndex) return;
+    get().pushHistory();
+    set(
+      updateOwnedLayers(state, ownerId, (layers) => {
+        const next = [...layers];
+        const [item] = next.splice(fromIndex, 1);
+        next.splice(clamped, 0, item!);
+        return next;
+      }),
+    );
   },
 
   nudgeLayerZOrder: (id, delta) => {
@@ -3145,8 +3190,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   toggleTimelineCollapsed: () => set((state) => ({ timelineCollapsed: !state.timelineCollapsed })),
   setTimelineCollapsed: (collapsed: boolean) => set({ timelineCollapsed: collapsed }),
 
-  // H5: switching tool exits Action Mode so tool shortcuts actually take effect on the canvas.
-  setToolMode: (mode) => set({ toolMode: mode, isActionMode: false }),
+  // Tool changes are contextual: in morph edit they switch the detail-canvas
+  // gesture, and in the workspace they switch the world-canvas gesture. Leaving
+  // morph edit is an explicit Back/Done action, so a Pen or Vector shortcut never
+  // throws the user out of the editor they are working in.
+  setToolMode: (mode) => set({ toolMode: mode }),
   setCursorType: (cursor) => set({ cursorType: cursor }),
   setHoveredItem: (item) => set({ hoveredItem: item }),
   startDrag: (type, x, y) =>

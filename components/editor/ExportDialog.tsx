@@ -18,16 +18,16 @@ import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editorStore";
 import {
   exportAnimatedSVG,
-  exportAnimatedVectorDrawable,
   exportCSSKeyframes,
   exportLottieDocument,
   exportPDF,
   exportProjectJSON,
   exportStaticSVG,
   exportSvgSpritesheet,
-  exportVectorDrawable,
   type ExportOptions,
 } from "@/lib/shapeshifter/exporter";
+import { compileAndroidArtboard, type AndroidDiagnostic } from "@/lib/shapeshifter/androidCompiler";
+import { createZip } from "@/lib/shapeshifter/zip";
 
 interface ExportDialogProps {
   children: React.ReactNode;
@@ -40,12 +40,18 @@ export function ExportDialog({ children }: ExportDialogProps) {
   const animation = useEditorStore((state) => state.animation);
   const hiddenLayerIds = useEditorStore((state) => state.hiddenLayerIds);
   const frames = useEditorStore((state) => state.frames);
+  const selectedFrameId = useEditorStore((state) => state.selectedFrameId);
   const currentLayer = layers.find((l) => l.id === selectedLayerId) || layers[0];
+  const selectedFrame = frames.find((frame) => frame.id === selectedFrameId);
+  const androidAnimation = selectedFrame?.animation ?? animation;
+  const androidTrackCount = new Set(
+    androidAnimation.blocks.map((block) => `${String(block.layerId)}:${block.propertyName}`),
+  ).size;
 
   const [open, setOpen] = useState(false);
   const [format, setFormat] = useState<
     "svg" | "css" | "lottie" | "vector" | "avd" | "spritesheet" | "json" | "pdf" | "static"
-  >("svg");
+  >("avd");
   const [options, setOptions] = useState<ExportOptions>({
     duration: 1.4,
     fps: 60,
@@ -59,6 +65,18 @@ export function ExportDialog({ children }: ExportDialogProps) {
 
   // Pro Figma-grade format config (smallest addition for visual scan + icons, consistent w/ 5xa polish)
   const formats = [
+    {
+      key: "avd" as const,
+      label: "Android AVD",
+      hint: "Vector + motion ZIP",
+      icon: <FileCode2 className="h-3.5 w-3.5" />,
+    },
+    {
+      key: "vector" as const,
+      label: "Vector XML",
+      hint: "Android static",
+      icon: <FileText className="h-3.5 w-3.5" />,
+    },
     {
       key: "svg" as const,
       label: "Animated SVG",
@@ -76,18 +94,6 @@ export function ExportDialog({ children }: ExportDialogProps) {
       label: "Lottie",
       hint: "JSON for apps",
       icon: <FileJson className="h-3.5 w-3.5" />,
-    },
-    {
-      key: "vector" as const,
-      label: "Vector XML",
-      hint: "Android static",
-      icon: <FileText className="h-3.5 w-3.5" />,
-    },
-    {
-      key: "avd" as const,
-      label: "AVD",
-      hint: "Animated XML",
-      icon: <FileCode2 className="h-3.5 w-3.5" />,
     },
     {
       key: "spritesheet" as const,
@@ -116,7 +122,7 @@ export function ExportDialog({ children }: ExportDialogProps) {
   ] as const;
 
   const handleExport = async () => {
-    if (!currentLayer && format !== "json" && format !== "static" && format !== "pdf") {
+    if (!currentLayer && ["svg", "css", "lottie", "spritesheet"].includes(format)) {
       toast.error("No layer selected");
       return;
     }
@@ -128,8 +134,9 @@ export function ExportDialog({ children }: ExportDialogProps) {
     try {
       let blob: Blob | null = null;
       let filename = "";
+      let androidDiagnostics: AndroidDiagnostic[] = [];
 
-      const baseName = (currentLayer?.name || vector.name || "export")
+      const baseName = (selectedFrame?.name || currentLayer?.name || vector.name || "export")
         .replace(/\s+/g, "-")
         .toLowerCase();
       const allVisibleLayers = layers.filter(
@@ -170,17 +177,51 @@ export function ExportDialog({ children }: ExportDialogProps) {
           break;
 
         case "vector":
-          blob = new Blob([exportVectorDrawable(currentLayer!, options)], {
-            type: "application/xml",
+          const vectorBundle = compileAndroidArtboard({
+            name: selectedFrame?.name || vector.name,
+            layers: selectedFrame?.layers ?? layers,
+            vector: selectedFrame?.vector ?? vector,
+            animation: selectedFrame?.animation ?? animation,
+            hiddenLayerIds: selectedFrame?.hiddenLayerIds ?? hiddenLayerIds,
           });
-          filename = `${baseName}-vector.xml`;
+          androidDiagnostics = vectorBundle.diagnostics;
+          blob = new Blob(
+            [vectorBundle.files.find((file) => file.path.endsWith("_vector.xml"))?.content ?? ""],
+            {
+              type: "application/xml",
+            },
+          );
+          filename = `${vectorBundle.resourceName}_vector.xml`;
           break;
 
         case "avd":
-          blob = new Blob([exportAnimatedVectorDrawable(currentLayer!, options)], {
-            type: "application/xml",
+          const androidBundle = compileAndroidArtboard({
+            name: selectedFrame?.name || vector.name,
+            layers: selectedFrame?.layers ?? layers,
+            vector: selectedFrame?.vector ?? vector,
+            animation: selectedFrame?.animation ?? animation,
+            hiddenLayerIds: selectedFrame?.hiddenLayerIds ?? hiddenLayerIds,
           });
-          filename = `${baseName}-animated-vector.xml`;
+          androidDiagnostics = androidBundle.diagnostics;
+          const report = androidBundle.diagnostics
+            .map(
+              (diagnostic) =>
+                `[${diagnostic.severity.toUpperCase()}] ${diagnostic.code}: ${diagnostic.message}`,
+            )
+            .join("\n");
+          const zipBytes = createZip([
+            ...androidBundle.files,
+            {
+              path: "SHAPESHIFTER_EXPORT.txt",
+              content: report || "Android export completed without diagnostics.",
+            },
+          ]);
+          const zipBuffer = zipBytes.buffer.slice(
+            zipBytes.byteOffset,
+            zipBytes.byteOffset + zipBytes.byteLength,
+          ) as ArrayBuffer;
+          blob = new Blob([zipBuffer], { type: "application/zip" });
+          filename = `${androidBundle.resourceName}-android.zip`;
           break;
 
         case "spritesheet":
@@ -228,7 +269,9 @@ export function ExportDialog({ children }: ExportDialogProps) {
         URL.revokeObjectURL(url);
 
         toast.success(`Exported ${format.toUpperCase()}`, {
-          description: filename,
+          description: androidDiagnostics.some((diagnostic) => diagnostic.severity === "error")
+            ? `${filename} — review Android export diagnostics`
+            : filename,
         });
         setOpen(false);
       }
@@ -252,8 +295,8 @@ export function ExportDialog({ children }: ExportDialogProps) {
             Export Animation
           </DialogTitle>
           <DialogDescription>
-            Export your morph as production-ready assets. Real interpolation powered by the same
-            engine as the preview.
+            Export the active artboard as production-ready Android resources or portable vector
+            formats. Android exports preserve the scene hierarchy and timeline tracks.
           </DialogDescription>
         </DialogHeader>
 
@@ -287,7 +330,35 @@ export function ExportDialog({ children }: ExportDialogProps) {
           </div>
 
           {/* Options */}
-          {format !== "json" && (
+          {(format === "vector" || format === "avd") && (
+            <div className="grid grid-cols-3 gap-2 rounded-lg border border-border bg-muted/40 p-3 text-xs">
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Artboard
+                </div>
+                <div className="mt-1 truncate font-medium">
+                  {selectedFrame?.name || vector.name}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Viewport
+                </div>
+                <div className="mt-1 font-mono">
+                  {selectedFrame?.vector.width ?? vector.width} ×{" "}
+                  {selectedFrame?.vector.height ?? vector.height}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Motion
+                </div>
+                <div className="mt-1 font-mono">{androidTrackCount} tracks</div>
+              </div>
+            </div>
+          )}
+
+          {!["json", "vector", "avd"].includes(format) && (
             <div className="space-y-4">
               <div>
                 <div className="flex justify-between text-xs mb-1.5">

@@ -10,9 +10,9 @@ import {
   isPointInFillRegion,
   scalePathToBounds,
 } from "@/lib/shapeshifter/pathUtils";
-import { evaluateBlock } from "@/lib/shapeshifter/interpolators";
 import type { SegmentSelection, SubPathSelection } from "@/lib/store/editorStore";
 import type { Command, Layer, PathData, Point, TimelineBlock } from "@/lib/shapeshifter/types";
+import { colorAtTime, numberAtTime, pathDAtTime } from "@/lib/shapeshifter/playheadResolve";
 import { gradientToSvg } from "@/lib/shapeshifter/gradients";
 import type { Viewport } from "@/lib/shapeshifter/camera";
 import { fitViewportToAspect, zoomAtWorldPoint } from "@/lib/shapeshifter/camera";
@@ -2368,68 +2368,55 @@ function getPreviewLayers(
     .filter(
       (layer) => layer.visible !== false && (layer.type === "path" || layer.type === "clipPath"),
     )
-    .map((layer) => ({
-      layer,
-      d: getAnimatedPath(layer, blocks, duration, progress),
-      transform: getLayerTransform(layer, layers, blocks, duration, progress),
-      opacity: getAnimatedNumber(layer, "alpha", blocks, duration, progress, layer.alpha ?? 1),
-      fillColor: getAnimatedString(
+    .map((layer) => {
+      const currentMs = progress * duration;
+      return {
         layer,
-        "fillColor",
-        blocks,
-        duration,
-        progress,
-        layer.fillColor ?? "",
-      ),
-      fillAlpha: getAnimatedNumber(
-        layer,
-        "fillAlpha",
-        blocks,
-        duration,
-        progress,
-        layer.fillAlpha ?? 1,
-      ),
-      strokeColor: getAnimatedString(
-        layer,
-        "strokeColor",
-        blocks,
-        duration,
-        progress,
-        layer.strokeColor ?? "",
-      ),
-      strokeAlpha: getAnimatedNumber(
-        layer,
-        "strokeAlpha",
-        blocks,
-        duration,
-        progress,
-        layer.strokeAlpha ?? 1,
-      ),
-      strokeWidth: getAnimatedNumber(
-        layer,
-        "strokeWidth",
-        blocks,
-        duration,
-        progress,
-        layer.strokeWidth ?? 0,
-      ),
-    }));
-}
-
-function getAnimatedPath(
-  layer: Layer,
-  blocks: TimelineBlock[],
-  duration: number,
-  progress: number,
-) {
-  const block = getRelevantBlock(layer.id, "pathData", blocks, duration, progress);
-  if (!block) return pathToString(layer.pathData ?? layer.from);
-  const blockProgress = evaluateBlock(progress, duration, block);
-  // BUG-6: morph the LIVE layer geometry (from → to) so the preview never lags behind path
-  // edits. The block contributes only timing + easing; its fromValue/toValue snapshots go stale.
-  // This also keeps PathCanvas consistent with the CanvasArea world view.
-  const t = blockProgress == null ? (progress * duration < block.startTime ? 0 : 1) : blockProgress;
-  return getInterpolatedPath(layer.from, layer.to ?? layer.from, t);
+        d: pathDAtTime(layer, blocks, currentMs, duration, progress),
+        transform: getLayerTransform(layer, layers, blocks, duration, progress),
+        opacity: numberAtTime(layer, blocks, "alpha", currentMs, duration, layer.alpha ?? 1),
+        fillColor: colorAtTime(
+          layer,
+          blocks,
+          "fillColor",
+          currentMs,
+          duration,
+          layer.fillColor ?? "",
+        ),
+        fillAlpha: numberAtTime(
+          layer,
+          blocks,
+          "fillAlpha",
+          currentMs,
+          duration,
+          layer.fillAlpha ?? 1,
+        ),
+        strokeColor: colorAtTime(
+          layer,
+          blocks,
+          "strokeColor",
+          currentMs,
+          duration,
+          layer.strokeColor ?? "",
+        ),
+        strokeAlpha: numberAtTime(
+          layer,
+          blocks,
+          "strokeAlpha",
+          currentMs,
+          duration,
+          layer.strokeAlpha ?? 1,
+        ),
+        strokeWidth: numberAtTime(
+          layer,
+          blocks,
+          "strokeWidth",
+          currentMs,
+          duration,
+          layer.strokeWidth ?? 0,
+        ),
+      };
+    });
 }
 
 function getLayerTransform(
@@ -2439,6 +2426,7 @@ function getLayerTransform(
   duration: number,
   progress: number,
 ) {
+  const currentMs = progress * duration;
   const chain: Layer[] = [];
   let current: Layer | undefined = layer;
   while (current) {
@@ -2451,60 +2439,60 @@ function getLayerTransform(
 
   return chain
     .map((candidate) => {
-      const pivotX = getAnimatedNumber(
+      const pivotX = numberAtTime(
         candidate,
-        "pivotX",
         blocks,
+        "pivotX",
+        currentMs,
         duration,
-        progress,
         candidate.pivotX ?? 0,
       );
-      const pivotY = getAnimatedNumber(
+      const pivotY = numberAtTime(
         candidate,
-        "pivotY",
         blocks,
+        "pivotY",
+        currentMs,
         duration,
-        progress,
         candidate.pivotY ?? 0,
       );
-      const translateX = getAnimatedNumber(
+      const translateX = numberAtTime(
         candidate,
-        "translateX",
         blocks,
+        "translateX",
+        currentMs,
         duration,
-        progress,
         candidate.translateX ?? 0,
       );
-      const translateY = getAnimatedNumber(
+      const translateY = numberAtTime(
         candidate,
-        "translateY",
         blocks,
+        "translateY",
+        currentMs,
         duration,
-        progress,
         candidate.translateY ?? 0,
       );
-      const rotation = getAnimatedNumber(
+      const rotation = numberAtTime(
         candidate,
-        "rotation",
         blocks,
+        "rotation",
+        currentMs,
         duration,
-        progress,
         candidate.rotation ?? 0,
       );
-      const scaleX = getAnimatedNumber(
+      const scaleX = numberAtTime(
         candidate,
-        "scaleX",
         blocks,
+        "scaleX",
+        currentMs,
         duration,
-        progress,
         candidate.scaleX ?? 1,
       );
-      const scaleY = getAnimatedNumber(
+      const scaleY = numberAtTime(
         candidate,
-        "scaleY",
         blocks,
+        "scaleY",
+        currentMs,
         duration,
-        progress,
         candidate.scaleY ?? 1,
       );
       return [
@@ -2519,59 +2507,4 @@ function getLayerTransform(
     })
     .filter(Boolean)
     .join(" ");
-}
-
-function getAnimatedNumber(
-  layer: Layer,
-  propertyName: string,
-  blocks: TimelineBlock[],
-  duration: number,
-  progress: number,
-  fallback: number,
-) {
-  const block = getRelevantBlock(layer.id, propertyName, blocks, duration, progress);
-  if (!block) return fallback;
-  const from = Number(block.fromValue);
-  const to = Number(block.toValue);
-  if (!Number.isFinite(from) || !Number.isFinite(to)) return fallback;
-  const blockProgress = evaluateBlock(progress, duration, block);
-  if (blockProgress == null) return progress * duration < block.startTime ? from : to;
-  return from + (to - from) * blockProgress;
-}
-
-function getAnimatedString(
-  layer: Layer,
-  propertyName: string,
-  blocks: TimelineBlock[],
-  duration: number,
-  progress: number,
-  fallback: string,
-) {
-  const block = getRelevantBlock(layer.id, propertyName, blocks, duration, progress);
-  if (!block) return fallback;
-  const blockProgress = evaluateBlock(progress, duration, block);
-  if (blockProgress == null)
-    return progress * duration < block.startTime ? String(block.fromValue) : String(block.toValue);
-  return blockProgress < 1 ? String(block.fromValue) : String(block.toValue);
-}
-
-function getRelevantBlock(
-  layerId: string | number,
-  propertyName: string,
-  blocks: TimelineBlock[],
-  duration: number,
-  progress: number,
-) {
-  const time = progress * duration;
-  const candidates = blocks
-    .filter(
-      (block) => String(block.layerId) === String(layerId) && block.propertyName === propertyName,
-    )
-    .sort((a, b) => a.startTime - b.startTime);
-  if (candidates.length === 0) return null;
-  return (
-    candidates.find((block) => time >= block.startTime && time <= block.endTime) ??
-    [...candidates].reverse().find((block) => time > block.endTime) ??
-    candidates[0]
-  );
 }

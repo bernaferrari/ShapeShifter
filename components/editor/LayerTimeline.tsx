@@ -1063,9 +1063,8 @@ export function LayerTimeline() {
                   >
                     {row.frameId === selectedFrameId && (
                       <>
-                        <span
-                          role="button"
-                          tabIndex={0}
+                        <button
+                          type="button"
                           className="grid size-5 place-items-center rounded-sm text-white/30 hover:bg-white/[0.07] hover:text-white/75"
                           title="Bring forward (])"
                           onClick={(event) => {
@@ -1075,10 +1074,9 @@ export function LayerTimeline() {
                           aria-label={`Bring ${row.name} forward`}
                         >
                           <ArrowUp className="h-3 w-3" strokeWidth={1.75} />
-                        </span>
-                        <span
-                          role="button"
-                          tabIndex={0}
+                        </button>
+                        <button
+                          type="button"
                           className="grid size-5 place-items-center rounded-sm text-white/30 hover:bg-white/[0.07] hover:text-white/75"
                           title="Send backward ([)"
                           onClick={(event) => {
@@ -1088,10 +1086,9 @@ export function LayerTimeline() {
                           aria-label={`Send ${row.name} backward`}
                         >
                           <ArrowDown className="h-3 w-3" strokeWidth={1.75} />
-                        </span>
-                        <span
-                          role="button"
-                          tabIndex={0}
+                        </button>
+                        <button
+                          type="button"
                           className="grid size-5 place-items-center rounded-sm text-white/30 hover:bg-white/[0.07] hover:text-white/75"
                           onClick={(event) => {
                             event.stopPropagation();
@@ -1111,10 +1108,9 @@ export function LayerTimeline() {
                           ) : (
                             <Unlock className="h-3 w-3 opacity-40" strokeWidth={1.75} />
                           )}
-                        </span>
-                        <span
-                          role="button"
-                          tabIndex={0}
+                        </button>
+                        <button
+                          type="button"
                           className="grid size-5 place-items-center rounded-sm text-white/30 hover:bg-white/[0.07] hover:text-white/75"
                           onClick={(event) => {
                             event.stopPropagation();
@@ -1134,7 +1130,7 @@ export function LayerTimeline() {
                           ) : (
                             <EyeOff className="h-3 w-3" strokeWidth={1.75} />
                           )}
-                        </span>
+                        </button>
                       </>
                     )}
                   </div>

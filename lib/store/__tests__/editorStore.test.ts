@@ -404,6 +404,21 @@ describe("editorStore", () => {
 
   // ─── Layer CRUD ──────────────────────────────────────────────────────
   describe("layer CRUD", () => {
+    it("renames and reorders a layer in a non-active frame without changing the active owner", () => {
+      const activeFrameId = getStore().selectedFrameId;
+      const targetFrame = getStore().frames.find((frame) => frame.id !== activeFrameId)!;
+      const firstId = targetFrame.layers[0]!.id;
+
+      getStore().renameOwnedLayer(targetFrame.id, firstId, "Renamed remotely");
+      getStore().reorderOwnedLayer(targetFrame.id, firstId, targetFrame.layers.length - 1);
+
+      const updated = getStore().frames.find((frame) => frame.id === targetFrame.id)!;
+      expect(updated.layers.find((layer) => layer.id === firstId)?.name).toBe("Renamed remotely");
+      expect(updated.layers.at(-1)?.id).toBe(firstId);
+      expect(getStore().selectedFrameId).toBe(activeFrameId);
+      expect(getStore().canUndo).toBe(true);
+    });
+
     describe("addLayer", () => {
       it("adds a new path layer to the end of layers", () => {
         const before = getStore().layers.length;
@@ -1333,8 +1348,10 @@ describe("editorStore", () => {
     it("setEditingSide clears selection when side changes", () => {
       getStore().selectPoint(makeSelection(getStore().layers[0].id));
       expect(getStore().selection).not.toBeNull();
+      expect(getStore().selectedPoints).toHaveLength(1);
       getStore().setEditingSide("to");
       expect(getStore().selection).toBeNull();
+      expect(getStore().selectedPoints).toEqual([]);
     });
 
     it("setEditingSide preserves selection when same side", () => {
@@ -1350,6 +1367,16 @@ describe("editorStore", () => {
       expect(getStore().isActionMode).toBe(true);
       expect(getStore().selection).toBeNull();
       expect(getStore().selectedPoints).toEqual([]);
+      expect(getStore().toolMode).toBe("direct");
+    });
+
+    it("switches tools inside path morphing without leaving the editor", () => {
+      getStore().startActionMode();
+
+      getStore().setToolMode("pen");
+
+      expect(getStore().toolMode).toBe("pen");
+      expect(getStore().isActionMode).toBe(true);
     });
 
     it("closeActionMode sets isActionMode=false and clears selection", () => {

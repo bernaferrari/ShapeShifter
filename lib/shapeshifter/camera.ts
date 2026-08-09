@@ -157,6 +157,30 @@ export interface GridSpec {
   major: number;
 }
 
+export interface GridVisibility {
+  /** Opacity for the coarse structural grid. Zero means it should not render. */
+  majorOpacity: number;
+  /** Opacity for the fine pixel/sub-pixel grid. Zero means it should not render. */
+  minorOpacity: number;
+}
+
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+
+/**
+ * Progressive grid disclosure for a dense vector editor. At overview zoom the
+ * artwork stays clean, structural lines resolve first, and individual pixels
+ * only appear once they have enough screen space to be useful.
+ */
+export function computeGridVisibility(pxPerUnit: number): GridVisibility {
+  const safe = pxPerUnit > 0 && Number.isFinite(pxPerUnit) ? pxPerUnit : 0;
+  const majorProgress = clamp01((safe - 1.5) / 2.5);
+  const minorProgress = clamp01((safe - 5) / 4);
+  return {
+    majorOpacity: Number((majorProgress * 0.14).toFixed(4)),
+    minorOpacity: Number((minorProgress * 0.07).toFixed(4)),
+  };
+}
+
 /**
  * Adaptive pixel grid, Figma-style. Picks a minor step from how many screen
  * pixels one world unit currently occupies so a single cell is never a hairline

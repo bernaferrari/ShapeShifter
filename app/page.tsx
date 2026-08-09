@@ -208,6 +208,17 @@ export default function ShapeShifter2026() {
         store.splitSelectedCommand?.();
         return;
       }
+      if (
+        e.key.toLowerCase() === "f" &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.shiftKey &&
+        store.isActionMode
+      ) {
+        e.preventDefault();
+        store.setSelectedCommandAsFirst?.();
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w") {
         e.preventDefault();
         store.closeActionMode?.();
@@ -292,12 +303,17 @@ export default function ShapeShifter2026() {
         return;
       }
 
-      // Quick side switching
-      if (e.key === "1") {
+      // Quick side switching is scoped to morph edit. In the workspace,
+      // Shift+1/2 belong to Figma-style canvas framing shortcuts.
+      if (store.isActionMode && !e.shiftKey && !e.metaKey && !e.ctrlKey && e.key === "1") {
+        e.preventDefault();
         store.setEditingSide("from");
+        return;
       }
-      if (e.key === "2") {
+      if (store.isActionMode && !e.shiftKey && !e.metaKey && !e.ctrlKey && e.key === "2") {
+        e.preventDefault();
         store.setEditingSide("to");
+        return;
       }
     };
 
@@ -864,7 +880,7 @@ export default function ShapeShifter2026() {
     >
       {/* File Drag-and-Drop Overlay — pro Figma drop target polish (dashed target + refined elevation) */}
       {isDraggingFile && (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-background/80 backdrop-blur-md transition-all duration-200 animate-in fade-in zoom-in-95">
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-background/80 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
           <div className="flex flex-col items-center gap-6 rounded-2xl border-2 border-dashed border-primary/40 bg-card/95 p-12 shadow-2xl ring-1 ring-primary/10 max-w-md text-center">
             <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <CloudUpload size={48} className="animate-bounce" />
@@ -962,24 +978,21 @@ export default function ShapeShifter2026() {
           </button>
         )}
 
-        {!isActionMode && (
-          <aside
-            className={cn(
-              "flex h-full shrink-0 flex-col overflow-hidden border-l bg-sidebar shadow-xs transition-[width,opacity] duration-300 ease-out",
-              inspectorHidden ? "w-0 border-l-0 opacity-0" : "w-80 opacity-100",
-            )}
-          >
-            {/* Inner content keeps a fixed width so it clips cleanly during the width animation. */}
-            <div className="flex h-full w-80 flex-col">
-              <Inspector />
-            </div>
-          </aside>
-        )}
+        <aside
+          className={cn(
+            "flex h-full shrink-0 flex-col overflow-hidden border-l bg-sidebar shadow-xs",
+            inspectorHidden ? "w-0 border-l-0 opacity-0" : "w-80 opacity-100",
+          )}
+        >
+          <div className="flex h-full w-80 flex-col">
+            <Inspector />
+          </div>
+        </aside>
 
         {/* Inspector collapse/expand toggle — always at the workspace top-right corner
             (sits inside the panel when open, at the screen edge when collapsed), so its
             position is consistent and discoverable. Hidden in Action Mode / narrow viewports. */}
-        {!isActionMode && !isNarrow && (
+        {!isNarrow && (
           <button
             type="button"
             onClick={toggleInspector}
@@ -1118,7 +1131,11 @@ export default function ShapeShifter2026() {
                 </div>
                 <div className="flex items-center justify-between">
                   <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">1 / 2</kbd>
-                  <span className="text-muted-foreground">From / To side</span>
+                  <span className="text-muted-foreground">Start / End path (morph edit)</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">⇧1 / ⇧2</kbd>
+                  <span className="text-muted-foreground">Fit all / Fit selection</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">Esc / Enter</kbd>
