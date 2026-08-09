@@ -17,6 +17,7 @@ import {
   Pencil,
   RectangleHorizontal,
   Activity,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -118,12 +119,16 @@ export function Inspector() {
     [sceneOwners, selectedLayerRefs],
   );
   const multiCount = selectedLayerRefs.length || selectedLayerIds?.length || 0;
+  const animatedPropertyCount = animation.blocks.filter(
+    (block) => String(block.layerId) === String(currentLayer?.id),
+  ).length;
   const updateLayer = (patch: Partial<Layer>) => updateSelectedLayer(patch);
   const setPath = (parsed: ReturnType<typeof parsePath>) =>
     updateLayer(editingSide === "from" ? { from: parsed, pathData: parsed } : { to: parsed });
 
   const [isCommandsFocused, setIsCommandsFocused] = React.useState(false);
   const [showPathData, setShowPathData] = React.useState(false);
+  const [strokeSettingsOpen, setStrokeSettingsOpen] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<InspectorTab>("design");
   const changeInspectorTab = (tab: InspectorTab) => {
     setActiveTab(tab);
@@ -344,18 +349,20 @@ export function Inspector() {
           <div className="truncate text-[12px] font-semibold leading-tight">
             {currentLayer.name}
           </div>
-          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] leading-none text-muted-foreground">
-            <span className="capitalize">{currentLayer.type}</span>
-            {!isGroup && (
-              <span className="rounded bg-muted px-1 py-0.5 text-[10px] capitalize">
-                {editingSide}
-              </span>
-            )}
-            {animation.blocks.some((b) => String(b.layerId) === String(currentLayer.id)) && (
-              <span className="rounded bg-primary/10 px-1 py-0.5 text-[10px] text-primary">
-                anim
-              </span>
-            )}
+          <div className="mt-0.5 flex items-center gap-1 text-[10px] leading-none text-muted-foreground">
+            <span>
+              {isGroup
+                ? "Group"
+                : currentLayer.type === "clipPath"
+                  ? "Clip path"
+                  : "Vector path"}
+            </span>
+            <span aria-hidden="true">·</span>
+            <span>
+              {animatedPropertyCount > 0
+                ? `${animatedPropertyCount} animated ${animatedPropertyCount === 1 ? "property" : "properties"}`
+                : "Static"}
+            </span>
           </div>
         </div>
         {!isGroup && (
@@ -367,13 +374,13 @@ export function Inspector() {
                   variant="ghost"
                   className="text-muted-foreground hover:text-foreground"
                   onClick={startActionMode}
-                  aria-label="Edit path morph"
+                  aria-label="Edit start and end paths"
                 />
               }
             >
               <Pencil size={17} />
             </TooltipTrigger>
-            <TooltipContent>Edit path morph (start → end)</TooltipContent>
+            <TooltipContent>Edit start and end paths</TooltipContent>
           </Tooltip>
         )}
       </div>
@@ -532,7 +539,7 @@ export function Inspector() {
                   </div>
                   {/* Figma tucks cap/join/dash behind a settings popover instead of
                     always showing them — keeps the panel compact when they're rarely touched. */}
-                  <Popover>
+                  <Popover open={strokeSettingsOpen} onOpenChange={setStrokeSettingsOpen}>
                     <PopoverTrigger
                       className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:border-foreground/20 hover:bg-muted/70 hover:text-foreground"
                       aria-label="Stroke settings"
@@ -540,10 +547,63 @@ export function Inspector() {
                     >
                       <SlidersHorizontal className="size-3.5" />
                     </PopoverTrigger>
-                    <PopoverContent align="end" side="bottom" sideOffset={6} className="w-56">
-                      <div>
+                    <PopoverContent
+                      align="end"
+                      side="bottom"
+                      sideOffset={8}
+                      className="w-80 gap-0 overflow-hidden rounded-xl p-0"
+                    >
+                      <div className="flex h-12 items-center justify-between border-b border-border px-4">
+                        <span className="text-[13px] font-semibold">Stroke settings</span>
+                        <button
+                          type="button"
+                          onClick={() => setStrokeSettingsOpen(false)}
+                          className="grid size-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          aria-label="Close stroke settings"
+                        >
+                          <X className="size-4" />
+                        </button>
+                      </div>
+                      <div className="space-y-3 p-4">
+                        <div
+                          className="grid grid-cols-3 rounded-lg bg-muted p-0.5"
+                          role="tablist"
+                          aria-label="Stroke settings mode"
+                        >
+                          <button
+                            type="button"
+                            role="tab"
+                            aria-selected="true"
+                            className="h-8 rounded-md bg-background text-[12px] font-medium text-foreground shadow-sm"
+                          >
+                            Basic
+                          </button>
+                          {(["Dynamic", "Brush"] as const).map((label) => (
+                            <button
+                              key={label}
+                              type="button"
+                              role="tab"
+                              disabled
+                              aria-selected="false"
+                              title={`${label} strokes are not supported by Android Vector Drawable`}
+                              className="h-8 rounded-md text-[12px] text-muted-foreground disabled:cursor-not-allowed disabled:text-muted-foreground/50"
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-2">
+                          <span className="text-[11px] text-muted-foreground">Style</span>
+                          <div className="flex h-8 items-center gap-2 rounded-md border border-border bg-background px-2 text-[12px]">
+                            <span className="h-px w-6 bg-foreground" />
+                            Solid
+                          </div>
+                        </div>
+
+                        <div>
                         <div className="mb-1 text-[10px] font-medium text-muted-foreground">
-                          Cap
+                          End points
                         </div>
                         <div className="flex items-center gap-px rounded-md bg-muted p-0.5">
                           {(
@@ -651,7 +711,7 @@ export function Inspector() {
                         </div>
                       </div>
 
-                      <div className="mt-2.5">
+                      <div>
                         <div className="mb-1 text-[10px] font-medium text-muted-foreground">
                           Join
                         </div>
@@ -738,8 +798,8 @@ export function Inspector() {
                         </div>
                       </div>
 
-                      <div className="mt-2.5 flex items-center gap-2">
-                        <span className="w-10 shrink-0 text-[11px] text-muted-foreground">
+                      <div className="flex items-center gap-2">
+                        <span className="w-[72px] shrink-0 text-[11px] text-muted-foreground">
                           Dash
                         </span>
                         <TextInput
@@ -748,6 +808,7 @@ export function Inspector() {
                           placeholder="e.g. 4 2"
                           onChange={(v) => updateLayer({ strokeDasharray: v || undefined })}
                         />
+                      </div>
                       </div>
                     </PopoverContent>
                   </Popover>

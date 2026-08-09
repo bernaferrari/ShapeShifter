@@ -55,18 +55,19 @@ function propertyNames(animation: AnimationState, layerId: string | number): str
       animation.blocks
         .filter((block) => String(block.layerId) === String(layerId))
         .map((block) => block.propertyName)
-        .filter((name) => name !== "pathData"),
     ),
   );
   const hasX = names.includes("translateX");
   const rank = (name: string) =>
-    name === "translateX" || name === "translateY"
+    name === "pathData"
       ? 0
-      : name === "rotation"
+      : name === "translateX" || name === "translateY"
         ? 1
-        : name.startsWith("scale")
+        : name === "rotation"
           ? 2
-          : 3;
+          : name.startsWith("scale")
+            ? 3
+            : 4;
   return names
     .filter((name) => !(name === "translateY" && hasX))
     .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));

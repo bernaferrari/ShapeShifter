@@ -15,7 +15,6 @@ import {
   PanelRightClose,
   PanelRightOpen,
   PanelLeftOpen,
-  ChevronDown,
   ChevronUp,
   Waypoints,
   CloudUpload,
@@ -58,15 +57,15 @@ import { BottomToolPalette } from "@/components/editor/BottomToolPalette";
 import { Onboarding } from "@/components/editor/Onboarding";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { cn } from "@/lib/utils";
+import {
+  isEditableTarget,
+  useEditorKeyboardShortcuts,
+} from "@/components/editor/hooks/useEditorKeyboardShortcuts";
+import { useEditorPlayback } from "@/components/editor/hooks/useEditorPlayback";
 
 // Below this viewport width the fixed w-80 inspector + timeline get cramped, so
 // the inspector auto-collapses into a toggle (Figma-style responsive degrade).
 const NARROW_BREAKPOINT = 1100;
-
-function isEditableTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) return false;
-  return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
-}
 
 function readPageRoot(project: unknown): {
   layers: Layer[];
@@ -111,271 +110,8 @@ function readPageRoot(project: unknown): {
 }
 
 export default function ShapeShifter2026() {
-  // Keyboard shortcuts for 2026 power user experience
-  React.useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (isEditableTarget(e.target)) return;
-      const store = useEditorStore.getState();
-
-      // Undo / Redo
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
-        e.preventDefault();
-        if (e.shiftKey) {
-          if (store.canRedo) store.redo();
-        } else {
-          if (store.canUndo) store.undo();
-        }
-        return;
-      }
-
-      // Tools — Figma-aligned single keys (A = vector, not auto-fix)
-      if (e.key.toLowerCase() === "v" && !e.metaKey) {
-        e.preventDefault();
-        store.setToolMode("select");
-        return;
-      }
-      if (e.key.toLowerCase() === "a" && !e.metaKey) {
-        // Vector / Direct (palette + Figma A muscle memory)
-        e.preventDefault();
-        store.setToolMode("direct");
-        return;
-      }
-      if (e.key.toLowerCase() === "p" && !e.metaKey) {
-        e.preventDefault();
-        store.setToolMode("pen");
-        return;
-      }
-      if (e.key.toLowerCase() === "d" && !e.metaKey) {
-        // Alias: Direct (also A)
-        e.preventDefault();
-        store.setToolMode("direct");
-        return;
-      }
-      if (e.key.toLowerCase() === "l" && !e.metaKey) {
-        e.preventDefault();
-        store.setToolMode("pencil");
-        return;
-      }
-      if (e.key.toLowerCase() === "b" && !e.metaKey) {
-        e.preventDefault();
-        store.setToolMode("paint");
-        return;
-      }
-      if (e.key.toLowerCase() === "k" && !e.metaKey) {
-        e.preventDefault();
-        store.setToolMode("knife");
-        return;
-      }
-      if (e.key.toLowerCase() === "h" && !e.metaKey) {
-        // Hand tool (temporary pan via space is primary; H arms pan mode)
-        e.preventDefault();
-        store.setSpacePanActive(true);
-        return;
-      }
-
-      // Morph power actions require Shift so they never steal Figma tool letters.
-      if (e.key.toLowerCase() === "r" && e.shiftKey && !e.metaKey) {
-        e.preventDefault();
-        store.reverseSelectedLayer();
-        return;
-      }
-      if (e.key.toLowerCase() === "s" && e.shiftKey && !e.metaKey) {
-        e.preventDefault();
-        store.shiftSelectedLayer(1);
-        return;
-      }
-      if (e.key.toLowerCase() === "f" && e.shiftKey && !e.metaKey) {
-        e.preventDefault();
-        store.autoFixSelectedLayer();
-        return;
-      }
-
-      // Delete — multi-layer aware
-      if (e.key === "Delete" || e.key === "Backspace") {
-        e.preventDefault();
-        if ((store.selectedPoints && store.selectedPoints.length > 0) || store.selection) {
-          store.deleteSelectedPoint();
-        } else if (store.selectedSubPaths && store.selectedSubPaths.length > 0) {
-          store.deleteSelectedSubPath();
-        } else if (store.selectionKind === "layer") {
-          store.deleteSelectedLayers();
-        }
-        return;
-      }
-
-      if (e.key.toLowerCase() === "x" && !e.metaKey && !e.shiftKey) {
-        e.preventDefault();
-        store.splitSelectedCommand?.();
-        return;
-      }
-      if (
-        e.key.toLowerCase() === "f" &&
-        !e.metaKey &&
-        !e.ctrlKey &&
-        !e.shiftKey &&
-        store.isActionMode
-      ) {
-        e.preventDefault();
-        store.setSelectedCommandAsFirst?.();
-        return;
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "w") {
-        e.preventDefault();
-        store.closeActionMode?.();
-        return;
-      }
-      // Group / Ungroup (Figma ⌘G / ⇧⌘G)
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "g") {
-        e.preventDefault();
-        if (e.shiftKey) store.ungroupSelectedLayer();
-        else store.groupSelectedLayers();
-        return;
-      }
-      // Z-order (Figma ] / [ )
-      if (e.key === "]" && !e.metaKey && !e.ctrlKey) {
-        e.preventDefault();
-        store.nudgeLayerZOrder(store.selectedLayerId, 1);
-        return;
-      }
-      if (e.key === "[" && !e.metaKey && !e.ctrlKey) {
-        e.preventDefault();
-        store.nudgeLayerZOrder(store.selectedLayerId, -1);
-        return;
-      }
-      // Lock toggle
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "l" && e.shiftKey) {
-        e.preventDefault();
-        store.toggleLayerLock(store.selectedLayerId);
-        return;
-      }
-      // Clipboard — full multi-select set
-      const multiIds =
-        store.selectedLayerIds?.length > 0 ? store.selectedLayerIds : [store.selectedLayerId];
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c") {
-        e.preventDefault();
-        store.copyLayers?.(multiIds);
-        return;
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v") {
-        e.preventDefault();
-        store.pasteLayers?.();
-        return;
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "x") {
-        e.preventDefault();
-        store.cutLayers?.(multiIds);
-        return;
-      }
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "d") {
-        e.preventDefault();
-        store.copyLayers?.(multiIds);
-        store.pasteLayers?.();
-        return;
-      }
-
-      // Arrow nudges — multi-layer translate when no points selected
-      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
-        e.preventDefault();
-        const step = e.shiftKey ? 5 : 0.5;
-        const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
-        const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
-        const s = useEditorStore.getState();
-        if (s.selectedPoints && s.selectedPoints.length > 0) {
-          s.translateSelectedPoints(dx, dy);
-        } else if (s.selection) {
-          const point = s.getCurrentSelectedPoint();
-          if (point) s.updateSelectedPoint({ x: point.x + dx, y: point.y + dy });
-        } else if (s.selectedSubPaths && s.selectedSubPaths.length > 0) {
-          s.translateSelectedSubPaths(dx, dy);
-        } else {
-          s.translateSelectedLayer(dx, dy);
-        }
-        return;
-      }
-
-      // Space: arm pan on keydown; play/pause on keyup if no pan happened (Figma-like hold-to-pan).
-      if (e.code === "Space" || e.key === " ") {
-        if (e.repeat) return;
-        e.preventDefault();
-        store.setSpacePanActive(true);
-        (window as unknown as { __ssSpacePanUsed?: boolean }).__ssSpacePanUsed = false;
-        (window as unknown as { __ssSpaceDownAt?: number }).__ssSpaceDownAt = performance.now();
-        return;
-      }
-
-      // Quick side switching is scoped to morph edit. In the workspace,
-      // Shift+1/2 belong to Figma-style canvas framing shortcuts.
-      if (store.isActionMode && !e.shiftKey && !e.metaKey && !e.ctrlKey && e.key === "1") {
-        e.preventDefault();
-        store.setEditingSide("from");
-        return;
-      }
-      if (store.isActionMode && !e.shiftKey && !e.metaKey && !e.ctrlKey && e.key === "2") {
-        e.preventDefault();
-        store.setEditingSide("to");
-        return;
-      }
-    };
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (isEditableTarget(e.target)) return;
-      if (e.code === "Space" || e.key === " ") {
-        e.preventDefault();
-        const store = useEditorStore.getState();
-        const panUsed = !!(window as unknown as { __ssSpacePanUsed?: boolean }).__ssSpacePanUsed;
-        const downAt = (window as unknown as { __ssSpaceDownAt?: number }).__ssSpaceDownAt ?? 0;
-        const brief = performance.now() - downAt < 450;
-        store.setSpacePanActive(false);
-        // H tool stays pan until another tool key — only clear H if it was space
-        if (!panUsed && brief) {
-          store.togglePlayback();
-        }
-      }
-      if (e.key.toLowerCase() === "h" && !e.metaKey) {
-        useEditorStore.getState().setSpacePanActive(false);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
-    };
-  }, []);
-
-  // BUG-9: only run the playback RAF while actually playing (no perpetual 60fps no-op when paused).
-  const playbackActive = useEditorStore((s) => s.isPlaying);
-  React.useEffect(() => {
-    if (!playbackActive) return;
-    let frameId = 0;
-    let previousTime = performance.now();
-
-    const tick = (time: number) => {
-      const store = useEditorStore.getState();
-      const elapsed = time - previousTime;
-      previousTime = time;
-      const duration = Math.max(1, store.animation.duration);
-      const speed = store.isSlowMotion ? 0.25 : store.speed;
-      const nextProgress = store.progress + (elapsed * speed) / duration;
-
-      if (nextProgress >= 1) {
-        if (store.isRepeating) {
-          store.setProgress(nextProgress % 1);
-        } else {
-          store.setProgress(1);
-          store.togglePlayback();
-        }
-      } else {
-        store.setProgress(nextProgress);
-      }
-
-      frameId = requestAnimationFrame(tick);
-    };
-
-    frameId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frameId);
-  }, [playbackActive]);
+  useEditorKeyboardShortcuts();
+  const playbackActive = useEditorPlayback();
 
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -919,13 +655,14 @@ export default function ShapeShifter2026() {
         canRedo={canRedo}
       />
 
-      {/* Main Workspace Layout */}
-      <div className="relative flex min-h-0 flex-1 overflow-hidden bg-muted">
-        {!layersHidden && <LayersPanel onCollapse={toggleLayers} />}
-        <div className="relative min-w-0 flex-1 overflow-hidden">
-          <ResizablePanelGroup orientation="vertical" className="min-h-0">
-            <ResizablePanel id="canvas" minSize={58} defaultSize={timelineCollapsed ? 100 : 76}>
-              <main className="relative flex h-full min-h-0 overflow-hidden">
+      {/* Figma Motion model: the timeline is a document-wide bottom workspace,
+          not a canvas-only panel trapped between the sidebars. */}
+      <div className="relative min-h-0 flex-1 overflow-hidden bg-muted">
+        <ResizablePanelGroup orientation="vertical" className="min-h-0">
+          <ResizablePanel id="workspace" minSize={54} defaultSize={timelineCollapsed ? 100 : 72}>
+            <div className="relative flex h-full min-h-0 overflow-hidden">
+              {!layersHidden && <LayersPanel onCollapse={toggleLayers} />}
+              <main className="relative flex min-w-0 flex-1 overflow-hidden">
                 <CanvasArea
                   resetFrom={resetFrom}
                   resetPreview={resetPreview}
@@ -939,72 +676,67 @@ export default function ShapeShifter2026() {
                 </div>
                 <Onboarding />
               </main>
-            </ResizablePanel>
-            {!timelineCollapsed && (
-              <>
-                <ResizableHandle className="bg-border/80" />
-                <ResizablePanel id="timeline" minSize={16} defaultSize={24}>
-                  <LayerTimeline />
-                </ResizablePanel>
-              </>
-            )}
-          </ResizablePanelGroup>
 
-          {/* Timeline collapse toggle — sits on the canvas chrome, bottom-center. */}
+              <aside
+                className={cn(
+                  "flex h-full shrink-0 flex-col overflow-hidden border-l bg-sidebar shadow-xs",
+                  inspectorHidden ? "w-0 border-l-0 opacity-0" : "w-72 opacity-100",
+                )}
+              >
+                <div className="flex h-full w-72 flex-col">
+                  <Inspector />
+                </div>
+              </aside>
+
+              {layersHidden && !isNarrow && (
+                <button
+                  type="button"
+                  onClick={toggleLayers}
+                  aria-label="Show layers"
+                  className="absolute left-2 top-2.5 z-30 grid size-7 place-items-center rounded-md border border-border bg-card/90 text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:text-foreground"
+                >
+                  <PanelLeftOpen className="size-4" />
+                </button>
+              )}
+
+              {!isNarrow && (
+                <button
+                  type="button"
+                  onClick={toggleInspector}
+                  aria-label={inspectorCollapsed ? "Show inspector" : "Hide inspector"}
+                  aria-expanded={!inspectorCollapsed}
+                  className="absolute right-2 top-2.5 z-30 grid size-7 place-items-center rounded-md border border-border bg-card/90 text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:text-foreground"
+                >
+                  {inspectorCollapsed ? (
+                    <PanelRightOpen className="size-4" />
+                  ) : (
+                    <PanelRightClose className="size-4" />
+                  )}
+                </button>
+              )}
+            </div>
+          </ResizablePanel>
+
+          {!timelineCollapsed && (
+            <>
+              <ResizableHandle className="bg-border/80" />
+              <ResizablePanel id="timeline" minSize={18} defaultSize={30}>
+                <LayerTimeline onCollapse={toggleTimeline} />
+              </ResizablePanel>
+            </>
+          )}
+        </ResizablePanelGroup>
+
+        {timelineCollapsed && (
           <button
             type="button"
             onClick={toggleTimeline}
-            aria-label={timelineCollapsed ? "Show timeline" : "Hide timeline"}
-            aria-expanded={!timelineCollapsed}
+            aria-label="Show timeline"
+            aria-expanded={false}
             className="absolute bottom-1.5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 rounded-md border border-border bg-card/90 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:text-foreground"
           >
-            {timelineCollapsed ? (
-              <ChevronUp className="size-3.5" />
-            ) : (
-              <ChevronDown className="size-3.5" />
-            )}
+            <ChevronUp className="size-3.5" />
             Timeline
-          </button>
-        </div>
-
-        {layersHidden && !isNarrow && (
-          <button
-            type="button"
-            onClick={toggleLayers}
-            aria-label="Show layers"
-            className="absolute left-2 top-2.5 z-30 grid size-7 place-items-center rounded-md border border-border bg-card/90 text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:text-foreground"
-          >
-            <PanelLeftOpen className="size-4" />
-          </button>
-        )}
-
-        <aside
-          className={cn(
-            "flex h-full shrink-0 flex-col overflow-hidden border-l bg-sidebar shadow-xs",
-            inspectorHidden ? "w-0 border-l-0 opacity-0" : "w-80 opacity-100",
-          )}
-        >
-          <div className="flex h-full w-80 flex-col">
-            <Inspector />
-          </div>
-        </aside>
-
-        {/* Inspector collapse/expand toggle — always at the workspace top-right corner
-            (sits inside the panel when open, at the screen edge when collapsed), so its
-            position is consistent and discoverable. Hidden in Action Mode / narrow viewports. */}
-        {!isNarrow && (
-          <button
-            type="button"
-            onClick={toggleInspector}
-            aria-label={inspectorCollapsed ? "Show inspector" : "Hide inspector"}
-            aria-expanded={!inspectorCollapsed}
-            className="absolute right-2 top-2.5 z-30 grid size-7 place-items-center rounded-md border border-border bg-card/90 text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:text-foreground"
-          >
-            {inspectorCollapsed ? (
-              <PanelRightOpen className="size-4" />
-            ) : (
-              <PanelRightClose className="size-4" />
-            )}
           </button>
         )}
       </div>

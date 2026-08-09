@@ -9,6 +9,7 @@ import {
   ArrowUp,
   Lock,
   Pause,
+  PanelBottomClose,
   Play,
   Plus,
   Square,
@@ -30,6 +31,7 @@ import { INTERPOLATOR_CURVES } from "@/lib/shapeshifter/interpolators";
 import {
   LiveEasingCurve,
   TimelineCurrentTimeInput,
+  TimelineDurationInput,
   TimelinePlayhead,
   TimelinePropertyValue,
 } from "./timeline/TimelineLiveState";
@@ -58,22 +60,22 @@ function curvePointsFor(interp: string | undefined): [number, number, number, nu
   return INTERPOLATOR_CURVES.FAST_OUT_SLOW_IN;
 }
 
-/** Figma playhead */
-const PLAYHEAD = "#F24822";
 /** Selected / active clip accent */
 const FIGMA_BLUE = "#0C8CE9";
+/** Figma Motion uses the same blue selection language for the playhead. */
+const PLAYHEAD = FIGMA_BLUE;
 /** Selected property row band */
-const ROW_SEL = "bg-[#2A3544]";
+const ROW_SEL = "bg-[#34445F]";
 const SURFACE = "bg-[#2C2C2C]";
-const SURFACE_TRACK = "bg-[#1E1E1E]";
+const SURFACE_TRACK = "bg-[#242424]";
 
 const ROW_LAYER = 30;
 const ROW_PROP = 28;
-const HEADER_H = 36;
-const LAYERS_W = 200;
+const HEADER_H = 42;
+const LAYERS_W = 240;
 /** Figma clip heights — object slightly thicker than property */
-const CLIP_H_OBJ = 10;
-const CLIP_H_PROP = 18;
+const CLIP_H_OBJ = 18;
+const CLIP_H_PROP = 16;
 
 /** Hollow diamond keyframes — Figma motion timeline (losange). */
 function KeyframeDiamond({
@@ -108,7 +110,7 @@ function KeyframeDiamond({
   );
 }
 
-export function LayerTimeline() {
+export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
   const frames = useEditorStore((state) => state.frames);
   const selectedFrameId = useEditorStore((state) => state.selectedFrameId);
   const selectFrame = useEditorStore((state) => state.selectFrame);
@@ -131,7 +133,6 @@ export function LayerTimeline() {
   const isPlaying = useEditorStore((state) => state.isPlaying);
   const togglePlayback = useEditorStore((state) => state.togglePlayback);
 
-  const durationSec = animation.duration / 1000;
   /**
    * Figma motion ruler labels: short clips in whole ms (0 · 200 · 400),
    * longer clips in seconds with one decimal (0.0 · 0.5 · 1.0).
@@ -140,8 +141,8 @@ export function LayerTimeline() {
     if (animation.duration <= 2000) return String(Math.round(timeMs));
     return (timeMs / 1000).toFixed(1);
   };
-  /** Position (translate) uses Figma keyframe diamonds, not a filled clip bar. */
-  const isPositionProperty = (name: string) => name === "translateX" || name === "translateY";
+  /** Every child property uses Figma's keyframe rail; the parent object owns the clip bar. */
+  const usesKeyframeRail = (_name: string) => true;
   const isTimelineEmpty =
     frames.every((f) => (f.animation?.blocks?.length ?? 0) === 0) && animation.blocks.length === 0;
   const [emptyHintDismissed, setEmptyHintDismissed] = React.useState(false);
@@ -270,7 +271,7 @@ export function LayerTimeline() {
     const widthPct = Math.max(0.8, ((block.endTime - block.startTime) / animation.duration) * 100);
     const interp = block.interpolator || "FAST_OUT_SLOW_IN";
     const isLinear = interp === "LINEAR";
-    const asKeyframes = isPositionProperty(block.propertyName);
+    const asKeyframes = usesKeyframeRail(block.propertyName);
 
     const handleDragStart = (e: React.PointerEvent) => {
       e.stopPropagation();
@@ -379,7 +380,7 @@ export function LayerTimeline() {
 
     const label = propertyLabel(block.propertyName);
 
-    // ── Figma Position: thin rail + diamond keyframe breakpoints (not a clip bar) ──
+    // ── Figma property track: thin rail + diamond keyframe breakpoints ──
     if (asKeyframes) {
       const startPct = (block.startTime / animation.duration) * 100;
       const endPct = (block.endTime / animation.duration) * 100;
@@ -715,26 +716,11 @@ export function LayerTimeline() {
               <Play className="size-3 fill-current" strokeWidth={0} />
             )}
           </button>
-          <div className="flex min-w-0 items-baseline gap-[3px] font-mono text-[11px] tabular-nums leading-none tracking-tight">
+          <div className="flex h-6 min-w-0 items-center gap-[3px] rounded-md border border-white/[0.06] bg-black/20 px-1.5 font-mono text-[11px] tabular-nums leading-none tracking-tight">
             <TimelineCurrentTimeInput color={PLAYHEAD} />
             <span className="text-white/20">/</span>
-            <input
-              type="number"
-              min={0.1}
-              step={0.05}
-              value={Number(durationSec.toFixed(2))}
-              onChange={(e) => {
-                const n = Number(e.target.value);
-                // Match the store's >=100ms clamp so the input round-trips:
-                // e.g. typing 0.05 lands on 0.10 instead of being silently clamped.
-                if (Number.isFinite(n) && n > 0) {
-                  setAnimationDuration(Math.max(100, Math.round(n * 1000)));
-                }
-              }}
-              aria-label="Animation duration in seconds"
-              className="h-4 w-[34px] border-0 bg-transparent p-0 text-[11px] tabular-nums text-white/50 outline-none [appearance:textfield] hover:text-white/80 focus:text-white [&::-webkit-inner-spin-button]:appearance-none"
-            />
-            <span className="text-white/25">s</span>
+            <TimelineDurationInput />
+            <span className="text-white/25">ms</span>
           </div>
           <div className="flex-1" />
           <DropdownMenu>
@@ -758,6 +744,17 @@ export function LayerTimeline() {
               <DropdownMenuItem onClick={() => addLayer("group")}>New group layer</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          {onCollapse && (
+            <button
+              type="button"
+              onClick={onCollapse}
+              className="grid size-6 place-items-center rounded text-white/35 transition-colors hover:bg-white/[0.07] hover:text-white/80"
+              aria-label="Hide timeline"
+              title="Hide timeline"
+            >
+              <PanelBottomClose className="size-3.5" />
+            </button>
+          )}
         </div>
 
         {/* Ruler — Figma motion: continuous baseline, major labels, minor ticks */}
@@ -946,7 +943,7 @@ export function LayerTimeline() {
                   className={cn(
                     "group flex w-full items-center gap-1 pr-1.5 text-left",
                     isSelected
-                      ? "bg-white/[0.055] text-white"
+                      ? `${ROW_SEL} text-white`
                       : "text-white/80 hover:bg-white/[0.03]",
                   )}
                   style={{ height: ROW_LAYER, paddingLeft: 6 + row.depth * 12 }}
@@ -1350,7 +1347,7 @@ export function LayerTimeline() {
                   data-timeline-row
                   className={cn(
                     "relative border-b border-white/[0.03]",
-                    propSelected ? ROW_SEL : objectSelected ? "bg-white/[0.035]" : "bg-transparent",
+                    propSelected || objectSelected ? ROW_SEL : "bg-transparent",
                     row.kind === "property" && !propSelected && "hover:bg-white/[0.02]",
                     isObject && !objectSelected && "hover:bg-white/[0.02]",
                   )}
@@ -1377,8 +1374,7 @@ export function LayerTimeline() {
                       const startPct = (block.startTime / dur) * 100;
                       const endPct = (block.endTime / dur) * 100;
                       const widthPct = Math.max(1.2, endPct - startPct);
-                      // Position = Figma keyframe rail (diamonds), not a clip bar
-                      if (isPositionProperty(block.propertyName)) {
+                      if (usesKeyframeRail(block.propertyName)) {
                         return (
                           <div key={block.id} className="pointer-events-none absolute inset-0">
                             <div

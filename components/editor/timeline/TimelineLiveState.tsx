@@ -67,22 +67,20 @@ export function TimelineCurrentTimeInput({ color }: { color: string }) {
   const duration = useEditorStore((state) => state.animation.duration);
   const setProgress = useEditorStore((state) => state.setProgress);
   const [draft, setDraft] = React.useState<string | null>(null);
-  const currentSeconds = (progress * duration) / 1000;
+  const currentMilliseconds = progress * duration;
   const commit = () => {
-    const seconds = Number(draft);
-    if (Number.isFinite(seconds)) {
-      setProgress(Math.max(0, Math.min(1, (seconds * 1000) / Math.max(1, duration))));
+    const milliseconds = Number(draft);
+    if (Number.isFinite(milliseconds)) {
+      setProgress(Math.max(0, Math.min(1, milliseconds / Math.max(1, duration))));
     }
     setDraft(null);
   };
   return (
     <input
-      type="number"
-      min={0}
-      max={duration / 1000}
-      step={0.05}
-      value={draft ?? currentSeconds.toFixed(2)}
-      onFocus={() => setDraft(currentSeconds.toFixed(2))}
+      type="text"
+      inputMode="numeric"
+      value={draft ?? Math.round(currentMilliseconds)}
+      onFocus={() => setDraft(String(Math.round(currentMilliseconds)))}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => {
@@ -92,9 +90,41 @@ export function TimelineCurrentTimeInput({ color }: { color: string }) {
           event.currentTarget.blur();
         }
       }}
-      aria-label="Current time in seconds"
-      className="w-[38px] border-0 bg-transparent p-0 font-medium tabular-nums outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+      aria-label="Current time in milliseconds"
+      className="w-[42px] border-0 bg-transparent p-0 font-medium tabular-nums outline-none"
       style={{ color }}
+    />
+  );
+}
+
+export function TimelineDurationInput() {
+  const duration = useEditorStore((state) => state.animation.duration);
+  const setAnimationDuration = useEditorStore((state) => state.setAnimationDuration);
+  const [draft, setDraft] = React.useState<string | null>(null);
+  const commit = () => {
+    const milliseconds = Number(draft);
+    if (Number.isFinite(milliseconds) && milliseconds > 0) {
+      setAnimationDuration(Math.max(100, Math.round(milliseconds)));
+    }
+    setDraft(null);
+  };
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={draft ?? String(duration)}
+      onFocus={() => setDraft(String(duration))}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Escape") {
+          setDraft(null);
+          event.currentTarget.blur();
+        }
+      }}
+      aria-label="Animation duration in milliseconds"
+      className="h-4 w-[42px] border-0 bg-transparent p-0 text-[11px] tabular-nums text-white/50 outline-none hover:text-white/80 focus:text-white"
     />
   );
 }

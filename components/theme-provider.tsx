@@ -11,7 +11,7 @@ type ThemeContextValue = {
 };
 
 const ThemeContext = React.createContext<ThemeContextValue>({
-  theme: "system",
+  theme: "dark",
   resolvedTheme: "dark",
   setTheme: () => {},
 });
@@ -27,7 +27,9 @@ function applyTheme(theme: "light" | "dark") {
 }
 
 function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = React.useState<Theme>("system");
+  // Vector and motion tools benefit from stable dark chrome around a bright canvas.
+  // Existing user preference still wins when one has already been stored.
+  const [theme, setThemeState] = React.useState<Theme>("dark");
   const [systemTheme, setSystemTheme] = React.useState<"light" | "dark">("dark");
 
   React.useEffect(() => {

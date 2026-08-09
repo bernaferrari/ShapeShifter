@@ -2,9 +2,8 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { Copy, Grid3x3, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Copy, Plus, Trash2 } from "lucide-react";
 import { PathCanvas } from "./PathCanvas";
 import {
   WorldSelectionOverlay,
@@ -12,6 +11,7 @@ import {
   type LayerRotateSession,
 } from "./canvas/WorldSelectionOverlay";
 import { CoordinateRulers } from "./canvas/CoordinateRulers";
+import { CanvasNavigationControls } from "./canvas/CanvasNavigationControls";
 import { PAGE_ROOT_ID, useEditorStore, type LayerSelectionRef } from "@/lib/store/editorStore";
 import type { Viewport } from "@/lib/shapeshifter/camera";
 import {
@@ -1999,93 +1999,26 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                 role="region"
                 aria-label="Canvas"
               >
-                {/* Top-right: zoom / fit / grid — absolute, not a layout row */}
-                <div className="pointer-events-none absolute right-3 top-3 z-30 flex items-center gap-0.5 rounded-lg border border-white/10 bg-[#2C2C2C]/90 p-0.5 shadow-lg backdrop-blur-md">
-                  <div className="pointer-events-auto flex items-center gap-0.5">
-                    <Button
-                      size="icon-xs"
-                      variant="ghost"
-                      className="h-7 w-7 text-xs text-white/60 hover:bg-white/10 hover:text-white"
-                      onClick={() =>
-                        isActionMode ? setZoom(Math.max(0.5, zoom - 0.25)) : zoomWorldAtCenter(0.8)
-                      }
-                      aria-label="Zoom out"
-                    >
-                      -
-                    </Button>
-                    <span className="min-w-[2.5rem] select-none px-0.5 text-center font-mono text-[10px] font-medium text-white/55">
-                      {Math.round((isActionMode ? zoom : worldView.scale) * 100)}%
-                    </span>
-                    <Button
-                      size="icon-xs"
-                      variant="ghost"
-                      className="h-7 w-7 text-xs text-white/60 hover:bg-white/10 hover:text-white"
-                      onClick={() =>
-                        isActionMode ? setZoom(Math.min(4, zoom + 0.25)) : zoomWorldAtCenter(1.25)
-                      }
-                      aria-label="Zoom in"
-                    >
-                      +
-                    </Button>
-                    {!isActionMode && (
-                      <>
-                        <div className="mx-0.5 h-4 w-px bg-white/10" />
-                        <Tooltip>
-                          <TooltipTrigger
-                            render={
-                              <Button
-                                size="icon-xs"
-                                variant="ghost"
-                                className="h-7 w-auto gap-0.5 px-1.5 font-mono text-[10px] text-white/55 hover:bg-white/10 hover:text-white"
-                                onClick={() => {
-                                  const cycle = [4, 5, 8];
-                                  const next =
-                                    cycle[(cycle.indexOf(gridDivisions) + 1) % cycle.length] ?? 4;
-                                  setGridDivisions(next);
-                                }}
-                                aria-label="Grid divisions"
-                              >
-                                <Grid3x3 className="size-3" />
-                                {gridDivisions}
-                              </Button>
-                            }
-                          />
-                          <TooltipContent>
-                            Grid: major every {gridDivisions} px · click to cycle 4/5/8
-                          </TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger
-                            render={
-                              <Button
-                                size="icon-xs"
-                                variant="ghost"
-                                className="h-7 w-auto px-1.5 text-[10px] font-medium text-white/55 hover:bg-white/10 hover:text-white"
-                                onClick={() => fitWorldToFrames()}
-                                aria-label="Zoom to fit"
-                              />
-                            }
-                          >
-                            Fit
-                          </TooltipTrigger>
-                          <TooltipContent>Zoom to fit all frames (⇧1)</TooltipContent>
-                        </Tooltip>
-                      </>
-                    )}
-                    <Button
-                      size="icon-xs"
-                      variant="ghost"
-                      className="h-7 w-7 text-white/55 hover:bg-white/10 hover:text-white"
-                      onClick={() => {
-                        fitWorldToFrames();
-                        resetAllViews();
-                      }}
-                      aria-label="Reset canvas views"
-                    >
-                      <RotateCcw className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
+                <CanvasNavigationControls
+                  zoomPercent={(isActionMode ? zoom : worldView.scale) * 100}
+                  showWorldControls={!isActionMode}
+                  gridDivisions={gridDivisions}
+                  onZoomOut={() =>
+                    isActionMode ? setZoom(Math.max(0.5, zoom - 0.25)) : zoomWorldAtCenter(0.8)
+                  }
+                  onZoomIn={() =>
+                    isActionMode ? setZoom(Math.min(4, zoom + 0.25)) : zoomWorldAtCenter(1.25)
+                  }
+                  onCycleGrid={() => {
+                    const cycle = [4, 5, 8];
+                    setGridDivisions(cycle[(cycle.indexOf(gridDivisions) + 1) % cycle.length] ?? 4);
+                  }}
+                  onFitSelection={fitWorldToSelection}
+                  onReset={() => {
+                    fitWorldToFrames();
+                    resetAllViews();
+                  }}
+                />
 
                 {!isActionMode && (
                   <Button

@@ -61,7 +61,7 @@ const frame = {
 } satisfies CanvasFrame;
 
 describe("timeline projection", () => {
-  it("shows only the active frame and de-duplicates the Position property", () => {
+  it("shows the active frame with Path and a de-duplicated Position property", () => {
     const projection = buildTimelineProjection({
       frames: [frame, { ...frame, id: "other", name: "Other" }],
       selectedFrameId: frame.id,
@@ -73,6 +73,7 @@ describe("timeline projection", () => {
     expect(projection.rows.map((row) => row.key)).toEqual([
       "frame-frame",
       "object-frame-shape",
+      "prop-frame-shape-pathData",
       "prop-frame-shape-translateX",
     ]);
     expect(projection.blocksForLayer("frame", "shape")).toHaveLength(3);

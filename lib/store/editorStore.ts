@@ -47,6 +47,13 @@ import type { ToolMode, CursorType } from "../shapeshifter/toolModes";
 import { getDemoProject } from "../shapeshifter/demoProjects";
 import { flexCurvature } from "../shapeshifter/gestures/HitTests";
 import { recordTranslationAtProgress } from "../shapeshifter/motion/recordTranslation";
+import {
+  createDefaultWorkspace,
+  createPathLayer,
+  type CanvasFrame,
+} from "./defaultWorkspace";
+
+export type { CanvasFrame } from "./defaultWorkspace";
 
 export interface HoveredItem {
   type: "point" | "command" | "layer" | "block";
@@ -67,17 +74,6 @@ export interface DragState {
 export interface ClipboardData {
   layers: Layer[];
   timestamp: number;
-}
-
-export interface CanvasFrame {
-  id: string;
-  name: string;
-  x: number;
-  y: number;
-  layers: Layer[];
-  vector: VectorMetadata;
-  animation: AnimationState;
-  hiddenLayerIds: string[];
 }
 
 /** Stable owner id for vectors placed directly on the infinite page. */
@@ -114,38 +110,6 @@ export interface SegmentSelection {
   commandIndex: number;
 }
 
-const PATH_STYLE_DEFAULTS = {
-  fillColor: "",
-  fillAlpha: 1,
-  strokeColor: "",
-  strokeAlpha: 1,
-  strokeWidth: 0,
-  strokeLinecap: "butt" as const,
-  strokeLinejoin: "miter" as const,
-  strokeMiterLimit: 4,
-  trimPathStart: 0,
-  trimPathEnd: 1,
-  trimPathOffset: 0,
-  fillType: "nonZero" as const,
-};
-
-function createPathLayer(layer: Omit<Layer, "type"> & Partial<Pick<Layer, "type">>): Layer {
-  return {
-    ...PATH_STYLE_DEFAULTS,
-    pathData: layer.from,
-    alpha: 1,
-    translateX: 0,
-    translateY: 0,
-    scaleX: 1,
-    scaleY: 1,
-    rotation: 0,
-    pivotX: 0,
-    pivotY: 0,
-    timeline: [],
-    ...layer,
-    type: layer.type ?? "path",
-  };
-}
 
 /** Full editable-state snapshot for trustworthy undo/redo (C7). */
 interface HistoryEntry {
@@ -468,180 +432,14 @@ interface EditorState {
   };
 }
 
-/**
- * Default workspace = three artboards. Shapes that are *visually* separate pieces
- * are real layers (Figma model) — not one compound path with fake names.
- *
- *  Play → Pause: 2 layers (upper / lower triangle → pause bars)
- *  Menu → Close: 3 layers (top / mid / bottom bar → X arms + collapse)
- *  Heart → Star: 1 layer (single silhouette morph)
- */
-const DEFAULT_DURATION_MS = 1000;
-
-type MorphPart = {
-  id: string;
-  name: string;
-  from: string;
-  to: string;
-};
-
-function makeMorphFrame(opts: {
-  id: string;
-  name: string;
-  x: number;
-  y: number;
-  stroke?: boolean;
-  fill?: boolean;
-  /** One timeline object + pathData block per part */
-  parts: MorphPart[];
-}): CanvasFrame {
-  const stroke = opts.stroke !== false;
-  const fill = !!opts.fill;
-  const layers = opts.parts.map((part) => {
-    const from = parsePath(part.from);
-    const to = parsePath(part.to);
-    return createPathLayer({
-      id: part.id,
-      name: part.name,
-      from,
-      to,
-      pathData: from,
-      visible: true,
-      locked: false,
-      strokeColor: stroke ? "#000000" : "",
-      strokeWidth: stroke ? 2.4 : 0,
-      fillColor: fill ? "#000000" : "",
-    });
-  });
-  const animation: AnimationState = {
-    id: `anim-${opts.id}`,
-    name: opts.name,
-    duration: DEFAULT_DURATION_MS,
-    blocks: opts.parts.map((part, i) => {
-      const layer = layers[i]!;
-      return {
-        id: `block-${opts.id}-${part.id}`,
-        layerId: layer.id,
-        propertyName: "pathData",
-        fromValue: pathToString(layer.from),
-        toValue: pathToString(layer.to ?? layer.from),
-        startTime: 0,
-        endTime: DEFAULT_DURATION_MS,
-        interpolator: "FAST_OUT_SLOW_IN" as const,
-        type: "path" as const,
-      };
-    }),
-  };
-  return {
-    id: opts.id,
-    name: opts.name,
-    x: opts.x,
-    y: opts.y,
-    layers,
-    vector: {
-      id: `vector-${opts.id}`,
-      name: opts.name,
-      width: 24,
-      height: 24,
-      alpha: 1,
-    },
-    animation,
-    hiddenLayerIds: [],
-  };
-}
-
-/**
- * Default morph frames. Paths designed for linear point interpolation
- * (matching topology + vertex order — wrong order causes mid-morph flips).
- */
-const initialFrames: CanvasFrame[] = [
-  makeMorphFrame({
-    id: "frame-play-pause",
-    // Frame name = artboard label only (Figma). Morph intent lives on animation.name.
-    name: "Play icon",
-    x: 0,
-    y: 0,
-    stroke: false,
-    fill: true,
-    // Classic two-piece play icon → two pause bars (each piece is its own layer)
-    parts: [
-      {
-        id: "layer-play-upper",
-        name: "Upper",
-        from: "M 8 5 L 8 12 L 19 12 L 19 12 L 8 5",
-        to: "M 5 6 L 5 10 L 19 10 L 19 6 L 5 6",
-      },
-      {
-        id: "layer-play-lower",
-        name: "Lower",
-        from: "M 8 12 L 8 19 L 19 12 L 19 12 L 8 12",
-        to: "M 5 14 L 5 18 L 19 18 L 19 14 L 5 14",
-      },
-    ],
-  }),
-  makeMorphFrame({
-    id: "frame-menu-close",
-    name: "Menu icon",
-    x: 48,
-    y: 0,
-    stroke: false,
-    fill: true,
-    // Each hamburger line is a layer (Figma: three rectangles, not one compound path).
-    // Vertex order TL→TR→BR→BL on every bar so they rotate without flipping.
-    parts: [
-      {
-        id: "layer-menu-top",
-        name: "Top bar",
-        from: "M 3 5 L 21 5 L 21 7.5 L 3 7.5 Z",
-        to: "M 6.45 4.55 L 19.45 17.55 L 17.55 19.45 L 4.55 6.45 Z",
-      },
-      {
-        id: "layer-menu-mid",
-        name: "Middle bar",
-        from: "M 3 10.75 L 21 10.75 L 21 13.25 L 3 13.25 Z",
-        to: "M 12 12 L 12 12 L 12 12 L 12 12 Z",
-      },
-      {
-        id: "layer-menu-bottom",
-        name: "Bottom bar",
-        from: "M 3 16.5 L 21 16.5 L 21 19 L 3 19 Z",
-        to: "M 4.55 17.55 L 17.55 4.55 L 19.45 6.45 L 6.45 19.45 Z",
-      },
-    ],
-  }),
-  makeMorphFrame({
-    id: "frame-heart-star",
-    name: "Heart icon",
-    x: 96,
-    y: 0,
-    stroke: false,
-    fill: true,
-    // One continuous silhouette — truly a single layer
-    parts: [
-      {
-        id: "layer-heart-star",
-        name: "Shape",
-        from: "M 12 6.8 L 15.4 4.1 L 19.6 5.3 L 21 9.2 L 19 14 L 12 20.8 L 5 14 L 3 9.2 L 4.4 5.3 L 8.6 4.1 Z",
-        to: "M 12 3 L 14.4 9.1 L 20.9 9.4 L 15.9 13.5 L 17.6 20 L 12 16.4 L 6.4 20 L 8.1 13.5 L 3.1 9.4 L 9.6 9.1 Z",
-      },
-    ],
-  }),
-];
-
-const initialFrame = initialFrames[0];
-const initialLayers = cloneLayersForInit(initialFrame.layers);
-const initialVector = structuredClone(initialFrame.vector);
-const initialAnimation = structuredClone(initialFrame.animation);
-const initialRootAnimation: AnimationState = {
-  id: "page-root-animation",
-  name: "Page motion",
-  duration: initialAnimation.duration,
-  blocks: [],
-};
-
-function cloneLayersForInit(layers: Layer[]) {
-  return structuredClone(layers);
-}
+const {
+  initialFrames,
+  initialFrame,
+  initialLayers,
+  initialVector,
+  initialAnimation,
+  initialRootAnimation,
+} = createDefaultWorkspace();
 
 const cloneLayers = (layers: Layer[]) => structuredClone(layers);
 /** Apply fn to a layer's end geometry only when it exists (static layers have no `to`). */

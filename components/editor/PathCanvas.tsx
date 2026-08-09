@@ -11,8 +11,7 @@ import {
   scalePathToBounds,
 } from "@/lib/shapeshifter/pathUtils";
 import type { SegmentSelection, SubPathSelection } from "@/lib/store/editorStore";
-import type { Command, Layer, PathData, Point, TimelineBlock } from "@/lib/shapeshifter/types";
-import { colorAtTime, numberAtTime, pathDAtTime } from "@/lib/shapeshifter/playheadResolve";
+import type { Command, Layer, PathData, Point } from "@/lib/shapeshifter/types";
 import { gradientToSvg } from "@/lib/shapeshifter/gradients";
 import type { Viewport } from "@/lib/shapeshifter/camera";
 import { fitViewportToAspect, zoomAtWorldPoint } from "@/lib/shapeshifter/camera";
@@ -26,6 +25,7 @@ import {
   // References: DESIGN_ID 67dd105e, beads 9rp/ny0/ubf/v6j.
   collectPointsInLasso,
 } from "@/lib/shapeshifter/gestures/HitTests";
+import { getPreviewLayers } from "./canvas/pathCanvasPreview";
 
 type ViewBox = Viewport;
 type Bounds = { x: number; y: number; width: number; height: number };
@@ -261,7 +261,6 @@ export const PathCanvas = React.memo(function PathCanvas({
                 curAnim.blocks,
                 curAnim.duration,
                 curProgress,
-                curSelId,
               );
               const hitLayer = [...renderedLayers].reverse().find(({ d }) => {
                 const bounds = getPathBounds(parsePath(d));
@@ -769,7 +768,7 @@ export const PathCanvas = React.memo(function PathCanvas({
   const previewLayers = useMemo(
     () =>
       side === "preview"
-        ? getPreviewLayers(layers, animation.blocks, animation.duration, progress, selectedLayerId)
+        ? getPreviewLayers(layers, animation.blocks, animation.duration, progress)
         : [],
     [animation.blocks, animation.duration, layers, progress, selectedLayerId, side],
   );
@@ -2340,171 +2339,4 @@ function getBoundsFromResizeHandle(
   }
 
   return next;
-}
-
-type PreviewLayer = {
-  layer: Layer;
-  d: string;
-  transform: string;
-  opacity: number;
-  fillColor: string;
-  fillAlpha: number;
-  strokeColor: string;
-  strokeAlpha: number;
-  strokeWidth: number;
-};
-
-function getPreviewLayers(
-  layers: Layer[],
-  blocks: TimelineBlock[],
-  duration: number,
-  progress: number,
-  _selectedLayerId: string | number,
-): PreviewLayer[] {
-  // Always render every visible path/clip layer. Selection must never solo-hide
-  // siblings (that made the default multi-layer project feel broken).
-  void _selectedLayerId;
-  return layers
-    .filter(
-      (layer) => layer.visible !== false && (layer.type === "path" || layer.type === "clipPath"),
-    )
-    .map((layer) => {
-      const currentMs = progress * duration;
-      return {
-        layer,
-        d: pathDAtTime(layer, blocks, currentMs, duration, progress),
-        transform: getLayerTransform(layer, layers, blocks, duration, progress),
-        opacity: numberAtTime(layer, blocks, "alpha", currentMs, duration, layer.alpha ?? 1),
-        fillColor: colorAtTime(
-          layer,
-          blocks,
-          "fillColor",
-          currentMs,
-          duration,
-          layer.fillColor ?? "",
-        ),
-        fillAlpha: numberAtTime(
-          layer,
-          blocks,
-          "fillAlpha",
-          currentMs,
-          duration,
-          layer.fillAlpha ?? 1,
-        ),
-        strokeColor: colorAtTime(
-          layer,
-          blocks,
-          "strokeColor",
-          currentMs,
-          duration,
-          layer.strokeColor ?? "",
-        ),
-        strokeAlpha: numberAtTime(
-          layer,
-          blocks,
-          "strokeAlpha",
-          currentMs,
-          duration,
-          layer.strokeAlpha ?? 1,
-        ),
-        strokeWidth: numberAtTime(
-          layer,
-          blocks,
-          "strokeWidth",
-          currentMs,
-          duration,
-          layer.strokeWidth ?? 0,
-        ),
-      };
-    });
-}
-
-function getLayerTransform(
-  layer: Layer,
-  layers: Layer[],
-  blocks: TimelineBlock[],
-  duration: number,
-  progress: number,
-) {
-  const currentMs = progress * duration;
-  const chain: Layer[] = [];
-  let current: Layer | undefined = layer;
-  while (current) {
-    chain.unshift(current);
-    current =
-      current.parentId == null
-        ? undefined
-        : layers.find((candidate) => String(candidate.id) === String(current?.parentId));
-  }
-
-  return chain
-    .map((candidate) => {
-      const pivotX = numberAtTime(
-        candidate,
-        blocks,
-        "pivotX",
-        currentMs,
-        duration,
-        candidate.pivotX ?? 0,
-      );
-      const pivotY = numberAtTime(
-        candidate,
-        blocks,
-        "pivotY",
-        currentMs,
-        duration,
-        candidate.pivotY ?? 0,
-      );
-      const translateX = numberAtTime(
-        candidate,
-        blocks,
-        "translateX",
-        currentMs,
-        duration,
-        candidate.translateX ?? 0,
-      );
-      const translateY = numberAtTime(
-        candidate,
-        blocks,
-        "translateY",
-        currentMs,
-        duration,
-        candidate.translateY ?? 0,
-      );
-      const rotation = numberAtTime(
-        candidate,
-        blocks,
-        "rotation",
-        currentMs,
-        duration,
-        candidate.rotation ?? 0,
-      );
-      const scaleX = numberAtTime(
-        candidate,
-        blocks,
-        "scaleX",
-        currentMs,
-        duration,
-        candidate.scaleX ?? 1,
-      );
-      const scaleY = numberAtTime(
-        candidate,
-        blocks,
-        "scaleY",
-        currentMs,
-        duration,
-        candidate.scaleY ?? 1,
-      );
-      return [
-        translateX || translateY ? `translate(${translateX} ${translateY})` : "",
-        pivotX || pivotY ? `translate(${pivotX} ${pivotY})` : "",
-        rotation ? `rotate(${rotation})` : "",
-        scaleX !== 1 || scaleY !== 1 ? `scale(${scaleX} ${scaleY})` : "",
-        pivotX || pivotY ? `translate(${-pivotX} ${-pivotY})` : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
-    })
-    .filter(Boolean)
-    .join(" ");
 }
