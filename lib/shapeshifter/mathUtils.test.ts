@@ -421,6 +421,10 @@ describe("svgToAndroidColor", () => {
     expect(svgToAndroidColor("#ff0000")).toBe("#ff0000");
   });
 
+  it("converts CSS alpha-last hex to Android alpha-first ordering", () => {
+    expect(svgToAndroidColor("#ff000080")).toBe("#80ff0000");
+  });
+
   it("converts rgba() to Android", () => {
     const result = svgToAndroidColor("rgba(255, 0, 0, 0.5)");
     expect(result).toBeDefined();

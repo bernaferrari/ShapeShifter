@@ -111,26 +111,18 @@ export function exportProjectJSON(
       vector: f.vector,
       animation: f.animation,
       hiddenLayerIds: f.hiddenLayerIds ?? [],
-      // serialize frame's layers if provided (for complete multi-artboard export)
+      // Keep frame snapshots lossless. documentV2 is canonical on import, but the
+      // legacy payload remains a recovery path for older clients and must not erase
+      // authored morph endpoints or Android metadata.
       layers: f.layers
-        ? (f.layers as Layer[]).map((l) => {
-            // lightweight per-frame layer (reuse logic would duplicate; minimal: basic fields + pathData)
+        ? (f.layers as Layer[]).map(function serializeFrameLayer(layer: Layer): Record<string, unknown> {
             return {
-              id: String(l.id),
-              name: l.name,
-              type: l.type,
-              pathData: pathToString(l.pathData ?? l.from),
-              from: undefined, // prefer pathData in frame snapshots
-              to: undefined,
-              visible: l.visible,
-              locked: l.locked,
-              parentId: l.parentId,
-              // transforms etc for fidelity
-              translateX: l.translateX,
-              translateY: l.translateY,
-              scaleX: l.scaleX,
-              scaleY: l.scaleY,
-              rotation: l.rotation,
+              ...layer,
+              id: String(layer.id),
+              from: pathToString(layer.from),
+              to: layer.to ? pathToString(layer.to) : undefined,
+              pathData: pathToString(layer.pathData ?? layer.from),
+              children: layer.children?.map(serializeFrameLayer),
             };
           })
         : undefined,

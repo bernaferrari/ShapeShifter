@@ -1,5 +1,4 @@
 import { snapValueToStep } from "@/lib/shapeshifter/camera";
-import { scalePathToBounds } from "@/lib/shapeshifter/pathUtils";
 import type { Layer, Point } from "@/lib/shapeshifter/types";
 import type { LayerResizeSession, LayerRotateSession } from "./WorldSelectionOverlay";
 
@@ -32,14 +31,47 @@ export function applyLayerRotation(
   session: LayerRotateSession,
   delta: number,
 ): Layer[] {
-  const rotations = new Map(
-    session.baseRotations.map((candidate) => [String(candidate.id), candidate.rotation]),
+  const baseTransforms = new Map(
+    session.baseTransforms.map((candidate) => [String(candidate.id), candidate]),
   );
-  return layers.map((layer) => {
-    const baseRotation = rotations.get(String(layer.id));
-    if (baseRotation == null || layer.locked) return layer;
-    return { ...layer, rotation: baseRotation + delta };
+  const center = {
+    x: session.center.x - session.ownerOrigin.x,
+    y: session.center.y - session.ownerOrigin.y,
+  };
+  const radians = (delta * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const rotateAroundSelection = (point: Point) => ({
+    x: center.x + (point.x - center.x) * cos - (point.y - center.y) * sin,
+    y: center.y + (point.x - center.x) * sin + (point.y - center.y) * cos,
   });
+  return layers.map((layer) => {
+    const base = baseTransforms.get(String(layer.id));
+    if (!base || layer.locked) return layer;
+    // M = T(translate) T(pivot) R T(-pivot). Rotate the complete frozen
+    // matrix around the displayed selection center, then solve its translation
+    // back against the existing pivot. This keeps multi-selection spacing intact.
+    const priorTranslation = {
+      x: base.translateX + base.pivotX - rotatePoint(base.pivotX, base.pivotY, base.rotation).x,
+      y: base.translateY + base.pivotY - rotatePoint(base.pivotX, base.pivotY, base.rotation).y,
+    };
+    const desiredTranslation = rotateAroundSelection(priorTranslation);
+    const nextRotation = base.rotation + delta;
+    const nextPivotRotation = rotatePoint(base.pivotX, base.pivotY, nextRotation);
+    return {
+      ...layer,
+      rotation: nextRotation,
+      translateX: desiredTranslation.x - base.pivotX + nextPivotRotation.x,
+      translateY: desiredTranslation.y - base.pivotY + nextPivotRotation.y,
+    };
+  });
+}
+
+function rotatePoint(x: number, y: number, degrees: number): Point {
+  const radians = (degrees * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return { x: x * cos - y * sin, y: x * sin + y * cos };
 }
 
 export function computeLayerResizeTarget(
@@ -120,24 +152,15 @@ export function applyLayerResize(
     };
     const nextFrameX = target.x + (frameBounds.x - original.x) * scaleX;
     const nextFrameY = target.y + (frameBounds.y - original.y) * scaleY;
-    const fromBounds = {
-      x: pathBounds.x,
-      y: pathBounds.y,
-      width: pathBounds.w,
-      height: pathBounds.h,
-    };
-    const toBounds = {
-      x: pathBounds.x,
-      y: pathBounds.y,
-      width: pathBounds.w * scaleX,
-      height: pathBounds.h * scaleY,
-    };
-    const from = scalePathToBounds(item.origFrom, fromBounds, toBounds);
+    // AVD supports group scale natively. Keeping path endpoints untouched makes
+    // a resize reversible, preserves morph compatibility, and lets it be keyed
+    // at the playhead just like a translation or rotation.
     return {
       ...layer,
-      from,
-      to: item.origTo ? scalePathToBounds(item.origTo, fromBounds, toBounds) : layer.to,
-      pathData: from,
+      scaleX,
+      scaleY,
+      pivotX: pathBounds.x,
+      pivotY: pathBounds.y,
       translateX: nextFrameX - pathBounds.x,
       translateY: nextFrameY - pathBounds.y,
     };

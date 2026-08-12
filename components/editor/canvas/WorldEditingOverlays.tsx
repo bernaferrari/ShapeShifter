@@ -1,5 +1,6 @@
 import { pathToString } from "@/lib/shapeshifter/pathUtils";
 import { numberAtTime, sampleMotionPath } from "@/lib/shapeshifter/playheadResolve";
+import { matrixToSvg, transformPointWithMatrix, type AffineMatrix } from "@/lib/shapeshifter/scene/layerTransform";
 import type { GuideLine } from "@/lib/shapeshifter/smartGuides";
 import type { AnimationState, Layer, PathData, Selection } from "@/lib/shapeshifter/types";
 import type { PointerEvent as ReactPointerEvent } from "react";
@@ -106,10 +107,12 @@ export function WorldMotionPaths({
 export function WorldBezierHandles({
   path,
   origin,
+  worldMatrix,
   worldPerPixel,
 }: {
   path: PathData;
   origin: Point;
+  worldMatrix?: AffineMatrix | null;
   worldPerPixel: number;
 }) {
   const segments: Array<[Point, Point, string]> = [];
@@ -141,18 +144,20 @@ export function WorldBezierHandles({
   }
   return (
     <g pointerEvents="none">
-      {segments.map(([anchor, control, key]) => (
-        <line
+      {segments.map(([anchor, control, key]) => {
+        const transformedAnchor = worldMatrix ? transformPointWithMatrix(anchor, worldMatrix) : anchor;
+        const transformedControl = worldMatrix ? transformPointWithMatrix(control, worldMatrix) : control;
+        return <line
           key={key}
-          x1={origin.x + anchor.x}
-          y1={origin.y + anchor.y}
-          x2={origin.x + control.x}
-          y2={origin.y + control.y}
+          x1={origin.x + transformedAnchor.x}
+          y1={origin.y + transformedAnchor.y}
+          x2={origin.x + transformedControl.x}
+          y2={origin.y + transformedControl.y}
           stroke="#0d99ff"
           strokeOpacity={0.5}
           strokeWidth={worldPerPixel}
-        />
-      ))}
+        />;
+      })}
     </g>
   );
 }
@@ -162,6 +167,7 @@ export function WorldPenPreview({
   activeSubpath,
   preview,
   origin,
+  worldMatrix,
   snapStep,
   worldPerPixel,
   anchorRadius,
@@ -170,6 +176,7 @@ export function WorldPenPreview({
   activeSubpath: number;
   preview: Point | null;
   origin: Point;
+  worldMatrix?: AffineMatrix | null;
   snapStep: number;
   worldPerPixel: number;
   anchorRadius: number;
@@ -179,6 +186,13 @@ export function WorldPenPreview({
   const lastAnchor = lastCommand?.points[lastCommand.points.length - 1];
   const first = subpath?.commands[0]?.points[0];
   if (!subpath || !lastAnchor || !first) return null;
+  const pointInWorld = (point: Point) => {
+    const transformed = worldMatrix ? transformPointWithMatrix(point, worldMatrix) : point;
+    return { x: origin.x + transformed.x, y: origin.y + transformed.y };
+  };
+  const lastAnchorWorld = pointInWorld(lastAnchor);
+  const firstWorld = pointInWorld(first);
+  const previewWorld = preview ? pointInWorld(preview) : null;
   const closeTolerance = Math.max(snapStep * 1.5, worldPerPixel * 6);
   const willClose =
     subpath.commands.length > 1 &&
@@ -190,18 +204,18 @@ export function WorldPenPreview({
       {preview && (
         <>
           <line
-            x1={origin.x + lastAnchor.x}
-            y1={origin.y + lastAnchor.y}
-            x2={origin.x + preview.x}
-            y2={origin.y + preview.y}
+            x1={lastAnchorWorld.x}
+            y1={lastAnchorWorld.y}
+            x2={previewWorld!.x}
+            y2={previewWorld!.y}
             stroke="#0d99ff"
             strokeOpacity={0.7}
             strokeWidth={worldPerPixel}
             strokeDasharray={`${worldPerPixel * 2} ${worldPerPixel * 2}`}
           />
           <circle
-            cx={origin.x + preview.x}
-            cy={origin.y + preview.y}
+            cx={previewWorld!.x}
+            cy={previewWorld!.y}
             r={anchorRadius * 0.9}
             fill={willClose ? "#0d99ff" : "#ffffff"}
             stroke="#0d99ff"
@@ -212,8 +226,8 @@ export function WorldPenPreview({
       )}
       {subpath.commands.length > 1 && (
         <circle
-          cx={origin.x + first.x}
-          cy={origin.y + first.y}
+          cx={firstWorld.x}
+          cy={firstWorld.y}
           r={willClose ? anchorRadius * 1.7 : anchorRadius * 1.3}
           fill="none"
           stroke="#0d99ff"
@@ -229,6 +243,7 @@ export function WorldPenPreview({
 export function WorldPaintPreview({
   path,
   origin,
+  worldMatrix,
   frameBounds,
   color,
   fillAlpha,
@@ -236,6 +251,7 @@ export function WorldPaintPreview({
 }: {
   path?: PathData | null;
   origin?: Point | null;
+  worldMatrix?: AffineMatrix | null;
   frameBounds?: Rect | null;
   color: string;
   fillAlpha: number;
@@ -243,7 +259,7 @@ export function WorldPaintPreview({
 }) {
   if (path && origin) {
     return (
-      <g transform={`translate(${origin.x} ${origin.y})`} pointerEvents="none">
+      <g transform={`translate(${origin.x} ${origin.y}) ${worldMatrix ? matrixToSvg(worldMatrix) : ""}`} pointerEvents="none">
         <path
           d={pathToString(path)}
           fill={color}
@@ -279,16 +295,20 @@ export function WorldVectorNetwork({
   path,
   origin,
   translation,
+  worldMatrix,
   selectedPoints,
   anchorRadius,
 }: {
   path: PathData;
   origin: Point;
   translation: Point;
+  worldMatrix?: AffineMatrix | null;
   selectedPoints: Selection[];
   anchorRadius: number;
 }) {
-  const transform = `translate(${origin.x + translation.x} ${origin.y + translation.y})`;
+  const transform = worldMatrix
+    ? `translate(${origin.x} ${origin.y}) ${matrixToSvg(worldMatrix)}`
+    : `translate(${origin.x + translation.x} ${origin.y + translation.y})`;
   return (
     <g pointerEvents="none">
       <path
@@ -303,8 +323,11 @@ export function WorldVectorNetwork({
       {path.subPaths.map((subpath, subpathIndex) =>
         subpath.commands.map((command, commandIndex) =>
           command.points.map((point, pointIndex) => {
-            const x = origin.x + translation.x + point.x;
-            const y = origin.y + translation.y + point.y;
+            const transformed = worldMatrix
+              ? transformPointWithMatrix(point, worldMatrix)
+              : { x: translation.x + point.x, y: translation.y + point.y };
+            const x = origin.x + transformed.x;
+            const y = origin.y + transformed.y;
             const selected = selectedPoints.some(
               (selection) =>
                 selection.subPathIndex === subpathIndex &&

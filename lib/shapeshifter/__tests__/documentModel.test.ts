@@ -98,6 +98,47 @@ describe("DocumentV2 migration adapter", () => {
     });
   });
 
+  it("preserves Android metadata, stable target names, and independent morph endpoints", () => {
+    const original = snapshot();
+    const glyph = original.frames[0]!.layers.find((layer) => layer.id === "glyph")!;
+    glyph.androidName = "animated_glyph";
+    glyph.to = parsePath("M0 0 L20 20");
+    original.frames[0]!.vector = {
+      ...original.frames[0]!.vector,
+      viewportWidth: 48,
+      viewportHeight: 32,
+      widthUnit: "px",
+      heightUnit: "dp",
+      tint: "#ff000080",
+      tintMode: "src_in",
+      autoMirrored: true,
+      minSdk: 24,
+    };
+
+    const document = createDocumentV2FromLegacy(original);
+    const node = Object.values(document.nodes).find((candidate) => candidate.androidName === "animated_glyph");
+    expect(node?.fromGeometryVersionId).toBeTruthy();
+    expect(node?.toGeometryVersionId).toBeTruthy();
+    expect(node?.fromGeometryVersionId).not.toBe(node?.toGeometryVersionId);
+    expect(Object.values(document.morphMappings)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ fromGeometryId: node?.fromGeometryVersionId })]),
+    );
+
+    const restored = legacySnapshotFromDocumentV2(document);
+    const restoredGlyph = restored.frames[0]!.layers.find((layer) => layer.id === "glyph")!;
+    expect(pathToString(restoredGlyph.from)).toBe("M0 0 L10 10");
+    expect(pathToString(restoredGlyph.to!)).toBe("M0 0 L20 20");
+    expect(restoredGlyph.androidName).toBe("animated_glyph");
+    expect(restored.frames[0]!.vector).toMatchObject({
+      viewportWidth: 48,
+      viewportHeight: 32,
+      widthUnit: "px",
+      tint: "#ff000080",
+      autoMirrored: true,
+      minSdk: 24,
+    });
+  });
+
   it("reports broken graph references before persistence", () => {
     const document = createDocumentV2FromLegacy(snapshot());
     document.frames["frame-1"]!.childrenNodeIds.push("missing");

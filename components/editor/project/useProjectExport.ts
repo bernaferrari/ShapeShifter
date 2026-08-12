@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import {
   downloadAnimatedSVG,
   downloadCSSKeyframes,
-  downloadLottie,
+  exportLottieDocument,
   exportAnimatedVectorDrawable,
   exportPDF,
   exportProjectJSON,
@@ -89,7 +89,23 @@ export function useProjectExport() {
         return;
       }
       if (exportType === "lottie") {
-        downloadLottie(from, to, name, layer);
+        const sourceAnimation =
+          state.selectedFrameId === PAGE_ROOT_ID ? state.animation : state.frames.find((frame) => frame.id === state.selectedFrameId)?.animation ?? state.animation;
+        const sourceVector =
+          state.selectedFrameId === PAGE_ROOT_ID ? state.vector : state.frames.find((frame) => frame.id === state.selectedFrameId)?.vector ?? state.vector;
+        downloadContent(
+          JSON.stringify(
+            exportLottieDocument(documentLayers, sourceVector.name || name, {
+              animation: sourceAnimation,
+              vector: sourceVector,
+              duration: sourceAnimation.duration / 1000,
+            }),
+            null,
+            2,
+          ),
+          "application/json",
+          `${name}.json`,
+        );
         toast.success("Lottie exported");
         return;
       }

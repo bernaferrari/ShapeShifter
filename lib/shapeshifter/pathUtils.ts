@@ -45,6 +45,14 @@ export {
   pathToString,
 } from "./path/pathDataIO";
 export {
+  distanceToPath,
+  distanceToSegment,
+  flattenPathData,
+  getAccuratePathBounds,
+  isPointInPath,
+  pathLength,
+} from "./path/pathGeometry";
+export {
   addPointAfter,
   changeCommandType,
   deleteCommand,

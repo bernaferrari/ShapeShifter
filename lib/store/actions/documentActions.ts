@@ -15,6 +15,9 @@ type DocumentActionKey =
   | "convertLayerType"
   | "addTimelineBlock"
   | "updateTimelineBlock"
+  | "removeTimelineBlocks"
+  | "removeTimelineProperty"
+  | "removeTimelineKeyframe"
   | "updateVector"
   | "setAnimationDuration";
 
@@ -50,6 +53,24 @@ function updateLayerById(
     return candidate.children?.length
       ? { ...candidate, children: updateLayerById(candidate.children, layerId, transform) }
       : candidate;
+  });
+}
+
+function withoutTimelineBlocks(layers: Layer[], blockIds: Set<string>): Layer[] {
+  return mapLayerTimelines(layers, (blocks) => blocks.filter((block) => !blockIds.has(block.id)));
+}
+
+function replaceTimelineBlocks(
+  layers: Layer[],
+  removedIds: Set<string>,
+  replacement: NonNullable<Layer["timeline"]>[number] | null,
+): Layer[] {
+  return mapLayerTimelines(layers, (blocks) => {
+    const firstRemovedIndex = blocks.findIndex((block) => removedIds.has(block.id));
+    const remaining = blocks.filter((block) => !removedIds.has(block.id));
+    if (!replacement || firstRemovedIndex < 0) return remaining;
+    const insertionIndex = firstRemovedIndex;
+    return [...remaining.slice(0, insertionIndex), replacement, ...remaining.slice(insertionIndex)];
   });
 }
 
@@ -201,6 +222,73 @@ export function createDocumentActions(
         layers: mapLayerTimelines(state.layers, (blocks) =>
           blocks.map((block) => (block.id === blockId ? { ...block, ...patch } : block)),
         ),
+      });
+    },
+
+    removeTimelineBlocks: (blockIds) => {
+      const state = get();
+      const ids = new Set(blockIds);
+      if (!state.animation.blocks.some((block) => ids.has(block.id))) return;
+      state.pushHistory();
+      set({
+        animation: {
+          ...state.animation,
+          blocks: state.animation.blocks.filter((block) => !ids.has(block.id)),
+        },
+        layers: withoutTimelineBlocks(state.layers, ids),
+        selectedBlockIds: state.selectedBlockIds.filter((id) => !ids.has(id)),
+      });
+    },
+
+    removeTimelineProperty: (layerId, propertyName) => {
+      const state = get();
+      const ids = state.animation.blocks
+        .filter(
+          (block) =>
+            String(block.layerId) === String(layerId) && block.propertyName === propertyName,
+        )
+        .map((block) => block.id);
+      if (ids.length) state.removeTimelineBlocks(ids);
+    },
+
+    removeTimelineKeyframe: (blockId, edge) => {
+      const state = get();
+      const target = state.animation.blocks.find((block) => block.id === blockId);
+      if (!target) return;
+      const time = edge === "start" ? target.startTime : target.endTime;
+      const sameTrack = state.animation.blocks.filter(
+        (block) =>
+          String(block.layerId) === String(target.layerId) &&
+          block.propertyName === target.propertyName,
+      );
+      const adjacent = sameTrack.find(
+        (block) =>
+          block.id !== target.id &&
+          (edge === "start" ? block.endTime === time : block.startTime === time),
+      );
+
+      if (!adjacent) {
+        state.removeTimelineBlocks([target.id]);
+        return;
+      }
+
+      const left = edge === "start" ? adjacent : target;
+      const right = edge === "start" ? target : adjacent;
+      const merged = {
+        ...left,
+        endTime: right.endTime,
+        toValue: right.toValue,
+      };
+      const removedIds = new Set([left.id, right.id]);
+      const nextBlocks = state.animation.blocks
+        .filter((block) => !removedIds.has(block.id))
+        .concat(merged)
+        .sort((a, b) => a.startTime - b.startTime);
+      state.pushHistory();
+      set({
+        animation: { ...state.animation, blocks: nextBlocks },
+        layers: replaceTimelineBlocks(state.layers, removedIds, merged),
+        selectedBlockIds: [merged.id],
       });
     },
 

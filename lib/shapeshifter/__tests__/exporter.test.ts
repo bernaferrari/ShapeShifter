@@ -648,10 +648,59 @@ describe("exportLottie", () => {
     expect(lottie.nm).toBe("document");
     expect(lottie.op).toBe(60);
     expect(lottie.layers).toHaveLength(2);
-    expect(lottie.layers.map((layer) => layer.nm)).toEqual(["One", "Two"]);
+    expect(lottie.layers.map((layer: any) => layer.nm)).toEqual(["One", "Two"]);
     expect(lottie.layers[0].ks.p.k[0]).toBeGreaterThan(256);
     expect(lottie.layers[1].ks.r.k).toBe(15);
     expect(lottie.layers[1].ks.o.k).toBe(50);
+  });
+
+  it("exports group parenting plus AVD-style transform and color timeline tracks", () => {
+    const lottie = exportLottieDocument(
+      [
+        { ...makeLayer({ id: "group", name: "Group" }), type: "group", children: undefined },
+        { ...makeLayer({ id: "child", name: "Child", parentId: "group" }), fillColor: "#ff0000" },
+      ],
+      "animated-document",
+      {
+        animation: {
+          id: "motion",
+          name: "Motion",
+          duration: 1000,
+          blocks: [
+            {
+              id: "move",
+              layerId: "child",
+              propertyName: "translateX",
+              type: "number",
+              fromValue: 0,
+              toValue: 12,
+              startTime: 0,
+              endTime: 1000,
+              interpolator: "LINEAR",
+            },
+            {
+              id: "color",
+              layerId: "child",
+              propertyName: "fillColor",
+              type: "color",
+              fromValue: "#ff0000",
+              toValue: "#0000ff",
+              startTime: 200,
+              endTime: 800,
+              interpolator: "FAST_OUT_SLOW_IN",
+            },
+          ],
+        },
+      },
+    );
+    const group = lottie.layers.find((layer: any) => layer.nm === "Group")!;
+    const child = lottie.layers.find((layer: any) => layer.nm === "Child")!;
+    expect(group.ty).toBe(3);
+    expect(child.parent).toBe(group.ind);
+    expect(child.ks.p.s).toBe(true);
+    expect(child.ks.p.x.a).toBe(1);
+    const fill = child.shapes[0].it.find((item: { ty: string }) => item.ty === "fl")!;
+    expect(fill.c.a).toBe(1);
   });
 });
 

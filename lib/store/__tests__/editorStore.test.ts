@@ -75,6 +75,34 @@ describe("editorStore", () => {
       expect(getStore().worldViewport).toEqual(before);
     });
 
+    it("centers a layer without changing zoom when selected from the Layers panel", () => {
+      const frame = getStore().frames[0]!;
+      const layer = frame.layers[0]!;
+      getStore().setWorldViewport({ x: -200, y: -150, w: 400, h: 300, scale: 1 });
+
+      getStore().bringLayerIntoView(frame.id, layer.id, { animate: false, fit: false });
+
+      const viewport = getStore().worldViewport;
+      expect(viewport.w).toBe(400);
+      expect(viewport.h).toBe(300);
+      expect(viewport.scale).toBe(1);
+      expect(viewport.x).toBeGreaterThan(-200);
+    });
+
+    it("fits a double-clicked layer instead of framing its entire artboard", () => {
+      const frame = getStore().frames[0]!;
+      const layer = frame.layers[0]!;
+      getStore().setWorldViewport({ x: -200, y: -150, w: 400, h: 300, scale: 1 });
+
+      getStore().bringLayerIntoView(frame.id, layer.id, { animate: false, fit: true });
+
+      const viewport = getStore().worldViewport;
+      expect(viewport.w).toBeLessThan(400);
+      expect(viewport.h).toBeLessThan(300);
+      expect(viewport.scale).toBeGreaterThan(1);
+      expect(viewport.scale).toBeLessThanOrEqual(12);
+    });
+
     it("restores artboard positions through undo", () => {
       const frameId = getStore().selectedFrameId;
       const before = getStore().frames.find((frame) => frame.id === frameId)!;
@@ -1482,6 +1510,68 @@ describe("editorStore", () => {
       expect(
         getStore().animation.blocks.find((candidate) => candidate.id === block.id)?.startTime,
       ).toBe(originalStart);
+    });
+
+    it("removes an animated property and restores it through undo", () => {
+      const layer = getStore().layers[0]!;
+      getStore().addTimelineBlock(layer.id, "rotation");
+      const block = getStore().animation.blocks.find(
+        (candidate) => candidate.propertyName === "rotation",
+      )!;
+
+      getStore().removeTimelineProperty(layer.id, "rotation");
+
+      expect(getStore().animation.blocks.some((candidate) => candidate.id === block.id)).toBe(
+        false,
+      );
+      expect(getStore().layers[0]!.timeline?.some((candidate) => candidate.id === block.id)).toBe(
+        false,
+      );
+      getStore().undo();
+      expect(getStore().animation.blocks.some((candidate) => candidate.id === block.id)).toBe(true);
+    });
+
+    it("merges adjacent segments when an interior keyframe is removed", () => {
+      const layer = getStore().layers[0]!;
+      const left = {
+        id: "rotation-left",
+        layerId: layer.id,
+        propertyName: "rotation",
+        type: "number" as const,
+        fromValue: 0,
+        toValue: 90,
+        startTime: 0,
+        endTime: 500,
+        interpolator: "LINEAR" as const,
+      };
+      const right = {
+        ...left,
+        id: "rotation-right",
+        fromValue: 90,
+        toValue: 180,
+        startTime: 500,
+        endTime: 1000,
+      };
+      useEditorStore.setState((state) => ({
+        animation: { ...state.animation, blocks: [left, right] },
+        layers: state.layers.map((candidate) =>
+          candidate.id === layer.id ? { ...candidate, timeline: [left, right] } : candidate,
+        ),
+        selectedBlockIds: [right.id],
+      }));
+
+      getStore().removeTimelineKeyframe(right.id, "start");
+
+      expect(getStore().animation.blocks).toEqual([
+        expect.objectContaining({
+          id: left.id,
+          startTime: 0,
+          endTime: 1000,
+          fromValue: 0,
+          toValue: 180,
+        }),
+      ]);
+      expect(getStore().selectedBlockIds).toEqual([left.id]);
     });
 
     it("selectBlocks sets selected block ids", () => {

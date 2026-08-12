@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
 import { toast } from "sonner";
 import { legacySnapshotFromDocumentV2, validateDocumentV2 } from "@/lib/shapeshifter/documentModel";
-import { importLayersFromSvg, importLayersFromVectorDrawable } from "@/lib/shapeshifter/importers";
+import { importLayersFromSvg } from "@/lib/shapeshifter/importers";
+import { importVectorDrawable } from "@/lib/shapeshifter/import/androidVectorDrawable";
 import { parsePath } from "@/lib/shapeshifter/pathUtils";
 import { flattenOriginalProject, isOriginalShapeShifterProject } from "@/lib/shapeshifter/project";
 import type {
@@ -162,11 +163,26 @@ export function importEditorText(fileName: string, text: string): ImportSummary 
   }
 
   const isVectorDrawable = lowerName.endsWith(".xml") || text.includes("<vector");
-  const layers = isVectorDrawable
-    ? importLayersFromVectorDrawable(text)
-    : importLayersFromSvg(text, fileName.replace(/\.[^.]+$/, ""));
+  const vectorDrawable = isVectorDrawable ? importVectorDrawable(text) : null;
+  const layers = vectorDrawable?.layers ?? importLayersFromSvg(text, fileName.replace(/\.[^.]+$/, ""));
   if (!layers.length) throw new Error("No path data found in file");
   store.importLayers(layers);
+  if (vectorDrawable) {
+    store.updateVector({
+      name: fileName.replace(/\.[^.]+$/, "") || store.vector.name,
+      width: vectorDrawable.width,
+      height: vectorDrawable.height,
+      viewportWidth: vectorDrawable.viewportWidth,
+      viewportHeight: vectorDrawable.viewportHeight,
+      widthUnit: vectorDrawable.widthUnit,
+      heightUnit: vectorDrawable.heightUnit,
+      alpha: vectorDrawable.alpha,
+      tint: vectorDrawable.tint,
+      tintMode: vectorDrawable.tintMode,
+      autoMirrored: vectorDrawable.autoMirrored,
+      minSdk: vectorDrawable.minSdk,
+    });
+  }
   return {
     title: `Imported ${layers.length} layer(s)`,
     description: isVectorDrawable ? "Vector Drawable" : "SVG",

@@ -11,8 +11,87 @@ export interface LayerTransformValues {
   pivotY?: number;
 }
 
+/** SVG-compatible affine matrix: x'=a*x+c*y+e, y'=b*x+d*y+f. */
+export interface AffineMatrix {
+  a: number;
+  b: number;
+  c: number;
+  d: number;
+  e: number;
+  f: number;
+}
+
+export const IDENTITY_AFFINE: AffineMatrix = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+
 function finite(value: number | undefined, fallback: number): number {
   return Number.isFinite(value) ? Number(value) : fallback;
+}
+
+export function multiplyAffine(left: AffineMatrix, right: AffineMatrix): AffineMatrix {
+  return {
+    a: left.a * right.a + left.c * right.b,
+    b: left.b * right.a + left.d * right.b,
+    c: left.a * right.c + left.c * right.d,
+    d: left.b * right.c + left.d * right.d,
+    e: left.a * right.e + left.c * right.f + left.e,
+    f: left.b * right.e + left.d * right.f + left.f,
+  };
+}
+
+export function translateAffine(x: number, y: number): AffineMatrix {
+  return { a: 1, b: 0, c: 0, d: 1, e: x, f: y };
+}
+
+export function scaleAffine(x: number, y: number): AffineMatrix {
+  return { a: x, b: 0, c: 0, d: y, e: 0, f: 0 };
+}
+
+export function rotateAffine(degrees: number): AffineMatrix {
+  const radians = (degrees * Math.PI) / 180;
+  return { a: Math.cos(radians), b: Math.sin(radians), c: -Math.sin(radians), d: Math.cos(radians), e: 0, f: 0 };
+}
+
+/** Android group transform order: scale, rotate, then translate around its pivot. */
+export function layerTransformToMatrix(values: LayerTransformValues): AffineMatrix {
+  const tx = finite(values.translateX, 0);
+  const ty = finite(values.translateY, 0);
+  const rotation = finite(values.rotation, 0);
+  const sx = finite(values.scaleX, 1);
+  const sy = finite(values.scaleY, 1);
+  const px = finite(values.pivotX, 0);
+  const py = finite(values.pivotY, 0);
+  return [
+    translateAffine(tx, ty),
+    translateAffine(px, py),
+    rotateAffine(rotation),
+    scaleAffine(sx, sy),
+    translateAffine(-px, -py),
+  ].reduce(multiplyAffine, IDENTITY_AFFINE);
+}
+
+export function transformPointWithMatrix(point: Point, matrix: AffineMatrix): Point {
+  return {
+    x: matrix.a * point.x + matrix.c * point.y + matrix.e,
+    y: matrix.b * point.x + matrix.d * point.y + matrix.f,
+  };
+}
+
+export function inverseAffine(matrix: AffineMatrix): AffineMatrix | null {
+  const determinant = matrix.a * matrix.d - matrix.b * matrix.c;
+  if (Math.abs(determinant) < 1e-9) return null;
+  const inverse = 1 / determinant;
+  return {
+    a: matrix.d * inverse,
+    b: -matrix.b * inverse,
+    c: -matrix.c * inverse,
+    d: matrix.a * inverse,
+    e: (matrix.c * matrix.f - matrix.d * matrix.e) * inverse,
+    f: (matrix.b * matrix.e - matrix.a * matrix.f) * inverse,
+  };
+}
+
+export function matrixToSvg(matrix: AffineMatrix): string {
+  return `matrix(${matrix.a} ${matrix.b} ${matrix.c} ${matrix.d} ${matrix.e} ${matrix.f})`;
 }
 
 export function layerTransformToSvg(values: LayerTransformValues): string | undefined {
@@ -34,43 +113,15 @@ export function layerTransformToSvg(values: LayerTransformValues): string | unde
 }
 
 export function transformLayerPoint(point: Point, values: LayerTransformValues): Point {
-  const tx = finite(values.translateX, 0);
-  const ty = finite(values.translateY, 0);
-  const rotation = (finite(values.rotation, 0) * Math.PI) / 180;
-  const sx = finite(values.scaleX, 1);
-  const sy = finite(values.scaleY, 1);
-  const px = finite(values.pivotX, 0);
-  const py = finite(values.pivotY, 0);
-  const scaledX = (point.x - px) * sx;
-  const scaledY = (point.y - py) * sy;
-  const cos = Math.cos(rotation);
-  const sin = Math.sin(rotation);
-  return {
-    x: scaledX * cos - scaledY * sin + px + tx,
-    y: scaledX * sin + scaledY * cos + py + ty,
-  };
+  return transformPointWithMatrix(point, layerTransformToMatrix(values));
 }
 
 export function inverseTransformLayerPoint(
   point: Point,
   values: LayerTransformValues,
 ): Point | null {
-  const tx = finite(values.translateX, 0);
-  const ty = finite(values.translateY, 0);
-  const rotation = (-finite(values.rotation, 0) * Math.PI) / 180;
-  const sx = finite(values.scaleX, 1);
-  const sy = finite(values.scaleY, 1);
-  const px = finite(values.pivotX, 0);
-  const py = finite(values.pivotY, 0);
-  if (Math.abs(sx) < 1e-9 || Math.abs(sy) < 1e-9) return null;
-  const translatedX = point.x - tx - px;
-  const translatedY = point.y - ty - py;
-  const cos = Math.cos(rotation);
-  const sin = Math.sin(rotation);
-  return {
-    x: (translatedX * cos - translatedY * sin) / sx + px,
-    y: (translatedX * sin + translatedY * cos) / sy + py,
-  };
+  const inverse = inverseAffine(layerTransformToMatrix(values));
+  return inverse ? transformPointWithMatrix(point, inverse) : null;
 }
 
 export function transformLayerRect(rect: SceneRect, values: LayerTransformValues): SceneRect {

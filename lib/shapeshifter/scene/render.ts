@@ -1,7 +1,8 @@
 import type { AnimationState, Layer } from "../types";
-import { pathToString } from "../pathUtils";
-import { colorAtTime, numberAtTime, pathDAtTime } from "../playheadResolve";
+import { evaluateAndroidScene } from "./evaluate";
+import type { AffineMatrix } from "./layerTransform";
 
+/** Render-ready paths resolved from the shared Android scene evaluator. */
 export interface WorldLayerDraw {
   id: string | number;
   d: string;
@@ -12,6 +13,13 @@ export interface WorldLayerDraw {
   strokeWidth: number;
   fillGradient: Layer["fillGradient"];
   fillType: Layer["fillType"];
+  strokeLinecap: NonNullable<Layer["strokeLinecap"]>;
+  strokeLinejoin: NonNullable<Layer["strokeLinejoin"]>;
+  strokeMiterLimit: number;
+  strokeDasharray?: string;
+  trimPathStart: number;
+  trimPathEnd: number;
+  trimPathOffset: number;
   translateX: number;
   translateY: number;
   rotation: number;
@@ -19,78 +27,45 @@ export interface WorldLayerDraw {
   scaleY: number;
   pivotX: number;
   pivotY: number;
+  worldMatrix: AffineMatrix;
+  clipNodeIds: Array<string | number>;
+  isClipPath: boolean;
+  parentId: string | number | null;
 }
 
-/** Resolve one owner document into render-ready values at the current playhead. */
+/** Resolve one owner document into a path draw list at the current playhead. */
 export function resolveWorldLayerDraws(
   layers: Layer[],
   animation: AnimationState,
   progress: number,
   usePlayhead: boolean,
 ): WorldLayerDraw[] {
-  const duration = Math.max(1, animation.duration);
-  const currentMs = progress * duration;
-  return layers
-    .filter(
-      (layer) =>
-        layer.visible !== false &&
-        (layer.type === "path" ||
-          layer.type === "clipPath" ||
-          Boolean(layer.from) ||
-          Boolean(layer.pathData)),
-    )
-    .map((layer) => {
-      const fillColor = usePlayhead
-        ? colorAtTime(
-            layer,
-            animation.blocks,
-            "fillColor",
-            currentMs,
-            duration,
-            layer.fillColor || "",
-          )
-        : layer.fillColor;
-      return {
-        id: layer.id,
-        d: usePlayhead
-          ? pathDAtTime(layer, animation.blocks, currentMs, duration, progress)
-          : pathToString(layer.from || layer.pathData),
-        fill: fillColor && fillColor !== "none" && fillColor !== "" ? fillColor : null,
-        stroke: layer.strokeColor && layer.strokeColor !== "" ? layer.strokeColor : null,
-        fillOpacity: usePlayhead
-          ? numberAtTime(layer, animation.blocks, "fillAlpha", currentMs, duration, 1)
-          : (layer.fillAlpha ?? 1),
-        strokeOpacity: usePlayhead
-          ? numberAtTime(layer, animation.blocks, "strokeAlpha", currentMs, duration, 1)
-          : (layer.strokeAlpha ?? 1),
-        strokeWidth: Number(layer.strokeWidth) || 0,
-        fillGradient: layer.fillGradient,
-        fillType: layer.fillType,
-        translateX: usePlayhead
-          ? numberAtTime(layer, animation.blocks, "translateX", currentMs, duration)
-          : Number(layer.translateX) || 0,
-        translateY: usePlayhead
-          ? numberAtTime(layer, animation.blocks, "translateY", currentMs, duration)
-          : Number(layer.translateY) || 0,
-        rotation: usePlayhead
-          ? numberAtTime(layer, animation.blocks, "rotation", currentMs, duration)
-          : Number(layer.rotation) || 0,
-        scaleX: usePlayhead
-          ? numberAtTime(layer, animation.blocks, "scaleX", currentMs, duration, 1)
-          : Number.isFinite(layer.scaleX)
-            ? Number(layer.scaleX)
-            : 1,
-        scaleY: usePlayhead
-          ? numberAtTime(layer, animation.blocks, "scaleY", currentMs, duration, 1)
-          : Number.isFinite(layer.scaleY)
-            ? Number(layer.scaleY)
-            : 1,
-        pivotX: usePlayhead
-          ? numberAtTime(layer, animation.blocks, "pivotX", currentMs, duration)
-          : Number(layer.pivotX) || 0,
-        pivotY: usePlayhead
-          ? numberAtTime(layer, animation.blocks, "pivotY", currentMs, duration)
-          : Number(layer.pivotY) || 0,
-      };
-    });
+  return evaluateAndroidScene(layers, animation, progress, usePlayhead).nodes.flatMap((node) => {
+    if (!node.visible || (node.type !== "path" && node.type !== "clipPath")) return [];
+    return [
+      {
+        id: node.id,
+        d: node.d,
+        fill: node.fill,
+        stroke: node.stroke,
+        fillOpacity: node.fillOpacity,
+        strokeOpacity: node.strokeOpacity,
+        strokeWidth: node.strokeWidth,
+        fillGradient: node.fillGradient,
+        fillType: node.fillType,
+        strokeLinecap: node.strokeLinecap ?? "butt",
+        strokeLinejoin: node.strokeLinejoin ?? "miter",
+        strokeMiterLimit: node.strokeMiterLimit,
+        strokeDasharray: node.strokeDasharray,
+        trimPathStart: node.trimPathStart,
+        trimPathEnd: node.trimPathEnd,
+        trimPathOffset: node.trimPathOffset,
+        ...node.transform,
+        worldMatrix: node.worldMatrix,
+        clipNodeIds: node.clipNodeIds,
+        isClipPath: node.type === "clipPath",
+        parentId: node.parentId,
+      },
+    ];
+  });
 }

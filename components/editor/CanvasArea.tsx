@@ -18,6 +18,7 @@ import { useWorldSceneModel } from "./canvas/useWorldSceneModel";
 import { useWorldMarquee } from "./canvas/useWorldMarquee";
 import { useWorldLasso } from "./canvas/useWorldLasso";
 import { useWorldPointEditing } from "./canvas/useWorldPointEditing";
+import { evaluateAndroidScene } from "@/lib/shapeshifter/scene/evaluate";
 import { useWorldLayerTransform } from "./canvas/useWorldLayerTransform";
 import { useWorldFrameResize } from "./canvas/useWorldFrameResize";
 import { useWorldPan } from "./canvas/useWorldPan";
@@ -72,6 +73,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     setWorldViewport,
     fitWorldToFrames,
     bringFrameIntoView,
+    bringLayerIntoView,
     selectLayer,
     selectLayerRefs,
     selectedLayerIds,
@@ -120,9 +122,17 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     selectedLayerRefs,
     selectionKind,
     editingSide,
+    progress,
+    animation,
+    rootAnimation,
   });
   const editLayerTx = editLayerTranslation.x;
   const editLayerTy = editLayerTranslation.y;
+  const editWorldMatrix = useMemo(() => {
+    if (!editLayer) return null;
+    const scene = evaluateAndroidScene(layers, animation, progress, true);
+    return scene.nodesById.get(String(editLayer.id))?.worldMatrix ?? null;
+  }, [animation, editLayer, layers, progress]);
 
   // Dynamic paint bucket cursor tinted with current selected color (for CSS cursor)
   const paintBucketCursor = React.useMemo(() => {
@@ -194,6 +204,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     path: editPath,
     ownerOrigin: editOrigin,
     layerTranslation: editLayerTranslation,
+    worldMatrix: editWorldMatrix,
     layerId: selectedLayerId,
     editingSide,
     hitRadius: Math.max(anchorR * 2.8, worldPerPx * 10),
@@ -397,6 +408,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     snapToGrid,
     snapStep: editSnap,
     editOrigin,
+    editWorldMatrix,
     editPathPresent: Boolean(editPath),
     layers,
     selectedLayerId,
@@ -479,8 +491,9 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
         selectOwnedLayer(layerHit);
         useEditorStore.getState().clearSelection?.();
         setToolMode("direct");
-        // Zoom the artboard into view so 24×24 anchors are actually grabbable
-        bringFrameIntoView(layerHit.frameId, { animate: true });
+        // Enter the vector at a restrained, useful scale instead of framing the
+        // whole artboard or reusing a stale selection viewport.
+        bringLayerIntoView(layerHit.frameId, layerHit.layerId, { animate: true, fit: true });
         return;
       }
       const hit = hitArtboard(p);
@@ -499,6 +512,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       selectLayer,
       selectedFrameId,
       bringFrameIntoView,
+      bringLayerIntoView,
       toolMode,
       finishPen,
       setToolMode,
@@ -737,6 +751,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       <WorldBezierHandles
                         path={editPath}
                         origin={editOrigin}
+                        worldMatrix={editWorldMatrix}
                         worldPerPixel={worldPerPx}
                       />
                     )}
@@ -750,6 +765,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                           activeSubpath={penActiveSubpathRef.current}
                           preview={penPreview}
                           origin={editOrigin}
+                          worldMatrix={editWorldMatrix}
                           snapStep={editSnap}
                           worldPerPixel={worldPerPx}
                           anchorRadius={anchorR}
@@ -759,6 +775,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       <WorldPaintPreview
                         path={editPath}
                         origin={editOrigin}
+                        worldMatrix={editWorldMatrix}
                         frameBounds={paintPreviewFrameBounds}
                         color={currentFillColor}
                         fillAlpha={editLayer?.fillAlpha ?? 1}
@@ -770,6 +787,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                         path={editPath}
                         origin={editOrigin}
                         translation={{ x: editLayerTx, y: editLayerTy }}
+                        worldMatrix={editWorldMatrix}
                         selectedPoints={selectedPoints}
                         anchorRadius={anchorR}
                       />

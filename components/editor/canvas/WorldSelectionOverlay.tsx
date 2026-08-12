@@ -25,8 +25,16 @@ export interface LayerResizeSession {
 
 export interface LayerRotateSession {
   center: Point;
+  ownerOrigin: Point;
   startAngle: number;
-  baseRotations: Array<{ id: string | number; rotation: number }>;
+  baseTransforms: Array<{
+    id: string | number;
+    rotation: number;
+    translateX: number;
+    translateY: number;
+    pivotX: number;
+    pivotY: number;
+  }>;
   moved: boolean;
 }
 
@@ -219,9 +227,14 @@ function WorldSelectionOverlayComponent({
       {
         center,
         startAngle: (Math.atan2(pointer.y - center.y, pointer.x - center.x) * 180) / Math.PI,
-        baseRotations: selection.items.map(({ layer }) => ({
+        ownerOrigin: activeOrigin,
+        baseTransforms: selection.items.map(({ layer }) => ({
           id: layer.id,
           rotation: Number(layer.rotation) || 0,
+          translateX: Number(layer.translateX) || 0,
+          translateY: Number(layer.translateY) || 0,
+          pivotX: Number(layer.pivotX) || 0,
+          pivotY: Number(layer.pivotY) || 0,
         })),
         moved: false,
       },

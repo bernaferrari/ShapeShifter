@@ -84,10 +84,17 @@ export function useWorldCamera({
     if (!frames.length || !previous) return;
     if (previous.frameIdsSignature !== frameIdsSignature) {
       onFitFrames();
-    } else if (selectedFrameId !== previous.selectedFrameId) {
+    } else if (selectedFrameId !== previous.selectedFrameId && selectionKind !== "layer") {
       onBringFrameIntoView(selectedFrameId, { animate: true });
     }
-  }, [frameIdsSignature, frames.length, onBringFrameIntoView, onFitFrames, selectedFrameId]);
+  }, [
+    frameIdsSignature,
+    frames.length,
+    onBringFrameIntoView,
+    onFitFrames,
+    selectedFrameId,
+    selectionKind,
+  ]);
 
   useEffect(() => {
     const element = svgRef.current;

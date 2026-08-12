@@ -16,6 +16,9 @@ interface WorldSceneModelOptions {
   selectedLayerRefs: LayerSelectionRef[];
   selectionKind: "none" | "frame" | "layer";
   editingSide: "from" | "to";
+  progress: number;
+  animation: import("@/lib/shapeshifter/types").AnimationState;
+  rootAnimation: import("@/lib/shapeshifter/types").AnimationState;
 }
 
 export function useWorldSceneModel({
@@ -29,6 +32,9 @@ export function useWorldSceneModel({
   selectedLayerRefs,
   selectionKind,
   editingSide,
+  progress,
+  animation,
+  rootAnimation,
 }: WorldSceneModelOptions) {
   const editFrame = frames.find((frame) => frame.id === selectedFrameId);
   const editLayer = layers.find((layer) => String(layer.id) === String(selectedLayerId));
@@ -62,14 +68,20 @@ export function useWorldSceneModel({
         ownerId: PAGE_ROOT_ID,
         origin: { x: 0, y: 0 },
         layers: selectedFrameId === PAGE_ROOT_ID ? layers : rootLayers,
+        animation: selectedFrameId === PAGE_ROOT_ID ? animation : rootAnimation,
+        progress,
+        usePlayhead: true,
       },
       ...frames.map((frame) => ({
         ownerId: frame.id,
         origin: { x: frame.x || 0, y: frame.y || 0 },
         layers: frame.id === selectedFrameId ? layers : (frame.layers ?? []),
+        animation: frame.id === selectedFrameId ? animation : frame.animation,
+        progress,
+        usePlayhead: true,
       })),
     ],
-    [frames, layers, rootLayers, selectedFrameId],
+    [animation, frames, layers, progress, rootAnimation, rootLayers, selectedFrameId],
   );
   const selectedLayerRefKeys = useMemo(
     () =>

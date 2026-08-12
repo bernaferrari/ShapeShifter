@@ -4,12 +4,19 @@ import { useCallback, useRef } from "react";
 import { snapValueToStep } from "@/lib/shapeshifter/camera";
 import { updateCommandPoint } from "@/lib/shapeshifter/pathUtils";
 import type { PathData, Point, Selection } from "@/lib/shapeshifter/types";
+import {
+  inverseAffine,
+  transformPointWithMatrix,
+  type AffineMatrix,
+} from "@/lib/shapeshifter/scene/layerTransform";
 import { useEditorStore, type EditorState } from "@/lib/store/editorStore";
 
 interface WorldPointEditingOptions {
   path: PathData | null;
   ownerOrigin: Point | null;
   layerTranslation: Point;
+  /** Full evaluated owner-to-world matrix. Supersedes translation-only editing. */
+  worldMatrix?: AffineMatrix | null;
   layerId: string | number;
   editingSide: "from" | "to";
   hitRadius: number;
@@ -21,6 +28,7 @@ export function useWorldPointEditing({
   path,
   ownerOrigin,
   layerTranslation,
+  worldMatrix,
   layerId,
   editingSide,
   hitRadius,
@@ -42,8 +50,11 @@ export function useWorldPointEditing({
             pointIndex++
           ) {
             const candidate = commands[commandIndex].points[pointIndex];
-            const worldX = ownerOrigin.x + layerTranslation.x + candidate.x;
-            const worldY = ownerOrigin.y + layerTranslation.y + candidate.y;
+            const transformed = worldMatrix
+              ? transformPointWithMatrix(candidate, worldMatrix)
+              : { x: layerTranslation.x + candidate.x, y: layerTranslation.y + candidate.y };
+            const worldX = ownerOrigin.x + transformed.x;
+            const worldY = ownerOrigin.y + transformed.y;
             if (Math.hypot(point.x - worldX, point.y - worldY) <= hitRadius) {
               return {
                 layerId,
@@ -58,7 +69,7 @@ export function useWorldPointEditing({
       }
       return null;
     },
-    [editingSide, hitRadius, layerId, layerTranslation.x, layerTranslation.y, ownerOrigin, path],
+    [editingSide, hitRadius, layerId, layerTranslation.x, layerTranslation.y, ownerOrigin, path, worldMatrix],
   );
 
   const start = useCallback((selection: Selection) => {
@@ -71,10 +82,17 @@ export function useWorldPointEditing({
     (point: Point, bypassSnap: boolean) => {
       const selection = dragRef.current;
       if (!selection || !path || !ownerOrigin) return false;
-      const raw = {
-        x: point.x - ownerOrigin.x - layerTranslation.x,
-        y: point.y - ownerOrigin.y - layerTranslation.y,
-      };
+      const ownerPoint = { x: point.x - ownerOrigin.x, y: point.y - ownerOrigin.y };
+      const inverse = worldMatrix ? inverseAffine(worldMatrix) : null;
+      const raw = worldMatrix
+        ? inverse
+          ? transformPointWithMatrix(ownerPoint, inverse)
+          : null
+        : {
+            x: ownerPoint.x - layerTranslation.x,
+            y: ownerPoint.y - layerTranslation.y,
+          };
+      if (!raw) return false;
       const local =
         snapStep != null && !bypassSnap
           ? { x: snapValueToStep(raw.x, snapStep), y: snapValueToStep(raw.y, snapStep) }
@@ -98,7 +116,7 @@ export function useWorldPointEditing({
         );
       return true;
     },
-    [editingSide, layerTranslation.x, layerTranslation.y, ownerOrigin, path, snapStep],
+    [editingSide, layerTranslation.x, layerTranslation.y, ownerOrigin, path, snapStep, worldMatrix],
   );
 
   const finish = useCallback(() => {

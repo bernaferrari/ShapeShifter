@@ -1,4 +1,5 @@
 import { dominantColor, linearVector, normalizeStops } from "./gradients";
+import { svgToAndroidColor } from "./mathUtils";
 import { parsePath, pathToString } from "./pathUtils";
 import type { AnimationState, Gradient, Layer, TimelineBlock, VectorMetadata } from "./types";
 
@@ -85,7 +86,7 @@ function uniqueLayerNames(layers: Layer[]): Map<string, string> {
   const used = new Set<string>();
   const names = new Map<string, string>();
   for (const layer of layers) {
-    const base = androidResourceName(layer.name || `layer_${String(layer.id)}`);
+    const base = androidResourceName(layer.androidName || layer.name || `layer_${String(layer.id)}`);
     let candidate = base;
     let suffix = 2;
     while (used.has(candidate)) candidate = `${base}_${suffix++}`;
@@ -97,25 +98,27 @@ function uniqueLayerNames(layers: Layer[]): Map<string, string> {
 
 function androidColor(color: string | undefined, fallback = "#00000000"): string {
   if (!color || color === "none" || color === "transparent") return fallback;
-  return color;
+  if (color.startsWith("@") || color.startsWith("?")) return color;
+  return svgToAndroidColor(color) ?? fallback;
+}
+
+function gradientStopColor(color: string, opacity: number): string {
+  const android = androidColor(color);
+  if (!android.startsWith("#")) return android;
+  const hex = android.slice(1);
+  const sourceAlpha = hex.length === 8 ? parseInt(hex.slice(0, 2), 16) : 255;
+  const rgb = hex.length === 8 ? hex.slice(2) : hex;
+  const alpha = Math.round(Math.max(0, Math.min(1, opacity)) * sourceAlpha)
+    .toString(16)
+    .padStart(2, "0");
+  return `#${alpha}${rgb}`;
 }
 
 function gradientXml(gradient: Gradient, width: number, height: number, alpha: number): string {
   const stops = normalizeStops(gradient.stops);
   const items = stops
     .map((stop) => {
-      const stopAlpha = Math.round((stop.opacity ?? 1) * alpha * 255)
-        .toString(16)
-        .padStart(2, "0");
-      const color = stop.color.replace(/^#/, "");
-      const expanded =
-        color.length === 3
-          ? color
-              .split("")
-              .map((digit) => digit + digit)
-              .join("")
-          : color.slice(0, 6);
-      return `          <item android:offset="${number(stop.offset)}" android:color="#${stopAlpha}${expanded}" />`;
+      return `          <item android:offset="${number(stop.offset)}" android:color="${gradientStopColor(stop.color, (stop.opacity ?? 1) * alpha)}" />`;
     })
     .join("\n");
   if (gradient.type === "radial") {
@@ -150,7 +153,13 @@ function transformAttributes(layer: Layer): string {
     .join("");
 }
 
-function pathElement(layer: Layer, name: string, vector: VectorMetadata, indent: string): string {
+function pathElement(
+  layer: Layer,
+  name: string,
+  vector: VectorMetadata,
+  indent: string,
+  inheritedAlpha = 1,
+): string {
   const tag = layer.type === "clipPath" ? "clip-path" : "path";
   const pathData = pathToString(layer.pathData ?? layer.from);
   if (tag === "clip-path") {
@@ -161,9 +170,9 @@ function pathElement(layer: Layer, name: string, vector: VectorMetadata, indent:
     `android:name="${xml(name)}"`,
     `android:pathData="${xml(pathData)}"`,
     !gradient ? `android:fillColor="${xml(androidColor(layer.fillColor))}"` : "",
-    !gradient ? `android:fillAlpha="${number(layer.fillAlpha ?? 1)}"` : "",
+    !gradient ? `android:fillAlpha="${number((layer.fillAlpha ?? 1) * inheritedAlpha)}"` : "",
     `android:strokeColor="${xml(androidColor(layer.strokeColor))}"`,
-    `android:strokeAlpha="${number(layer.strokeAlpha ?? 1)}"`,
+    `android:strokeAlpha="${number((layer.strokeAlpha ?? 1) * inheritedAlpha)}"`,
     `android:strokeWidth="${number(layer.strokeWidth ?? 0)}"`,
     `android:strokeLineCap="${layer.strokeLinecap ?? "butt"}"`,
     `android:strokeLineJoin="${layer.strokeLinejoin ?? "miter"}"`,
@@ -176,7 +185,7 @@ function pathElement(layer: Layer, name: string, vector: VectorMetadata, indent:
     .filter(Boolean)
     .join(`\n${indent}    `);
   if (!gradient) return `${indent}<path\n${indent}    ${attributes} />`;
-  return `${indent}<path\n${indent}    ${attributes}>\n${indent}  ${gradientXml(gradient, vector.width, vector.height, layer.fillAlpha ?? 1)}\n${indent}</path>`;
+  return `${indent}<path\n${indent}    ${attributes}>\n${indent}  ${gradientXml(gradient, vector.width, vector.height, (layer.fillAlpha ?? 1) * inheritedAlpha)}\n${indent}</path>`;
 }
 
 function hasTransform(layer: Layer): boolean {
@@ -191,7 +200,7 @@ function hasTransform(layer: Layer): boolean {
   );
 }
 
-function interpolatorResource(value?: string): string {
+function platformInterpolator(value?: string): string | null {
   switch (value) {
     case "FAST_OUT_LINEAR_IN":
       return "@android:interpolator/fast_out_linear_in";
@@ -202,8 +211,17 @@ function interpolatorResource(value?: string): string {
     case "LINEAR":
       return "@android:anim/linear_interpolator";
     default:
-      return "@android:interpolator/fast_out_slow_in";
+      return null;
   }
+}
+
+function customBezier(value: string | undefined): [number, number, number, number] | null {
+  if (!value) return null;
+  const values = value.match(/[-+]?(?:\d*\.)?\d+/g)?.map(Number) ?? [];
+  if (values.length < 4 || values.slice(0, 4).some((item) => !Number.isFinite(item))) return null;
+  const [x1, y1, x2, y2] = values;
+  if (x1 < 0 || x1 > 1 || x2 < 0 || x2 > 1) return null;
+  return [x1, y1, x2, y2];
 }
 
 function pathSignature(value: string | number): string | null {
@@ -219,7 +237,11 @@ function pathSignature(value: string | number): string | null {
   }
 }
 
-function objectAnimator(block: TimelineBlock, propertyName: string): string | null {
+function objectAnimator(
+  block: TimelineBlock,
+  propertyName: string,
+  interpolator: string,
+): string | null {
   const valueType =
     propertyName === "pathData"
       ? "pathType"
@@ -231,14 +253,18 @@ function objectAnimator(block: TimelineBlock, propertyName: string): string | nu
     pathSignature(block.fromValue) !== pathSignature(block.toValue)
   )
     return null;
+  const value = (raw: string | number) =>
+    propertyName === "fillColor" || propertyName === "strokeColor"
+      ? androidColor(String(raw))
+      : String(raw);
   return `  <objectAnimator
       android:startOffset="${Math.max(0, Math.round(block.startTime))}"
       android:duration="${Math.max(1, Math.round(block.endTime - block.startTime))}"
       android:propertyName="${propertyName}"
-      android:valueFrom="${xml(block.fromValue)}"
-      android:valueTo="${xml(block.toValue)}"
+      android:valueFrom="${xml(value(block.fromValue))}"
+      android:valueTo="${xml(value(block.toValue))}"
       android:valueType="${valueType}"
-      android:interpolator="${interpolatorResource(block.interpolator)}" />`;
+      android:interpolator="${interpolator}" />`;
 }
 
 export function compileAndroidArtboard(input: AndroidArtboardInput): AndroidExportBundle {
@@ -267,6 +293,17 @@ export function compileAndroidArtboard(input: AndroidArtboardInput): AndroidExpo
   };
   const layers = allLayers.filter((layer) => isExportable(layer));
   const byId = new Map(layers.map((layer) => [String(layer.id), layer]));
+  const alphaMemo = new Map<string, number>();
+  const effectiveAlpha = (layer: Layer, visiting = new Set<string>()): number => {
+    const id = String(layer.id);
+    const cached = alphaMemo.get(id);
+    if (cached != null) return cached;
+    const own = Math.max(0, Math.min(1, layer.alpha ?? 1));
+    const parent = layer.parentId != null ? byId.get(String(layer.parentId)) : undefined;
+    const value = !parent || visiting.has(id) ? own : own * effectiveAlpha(parent, new Set(visiting).add(id));
+    alphaMemo.set(id, value);
+    return value;
+  };
   const names = uniqueLayerNames(layers);
   const transformAnimated = new Set(
     input.animation.blocks
@@ -289,9 +326,9 @@ export function compileAndroidArtboard(input: AndroidArtboardInput): AndroidExpo
       return `${indent}<group android:name="${xml(name)}"${transformAttributes(layer)}>\n${body}\n${indent}</group>`;
     }
     if (!hasTransform(layer) && !transformAnimated.has(String(layer.id))) {
-      return pathElement(layer, name, input.vector, indent);
+      return pathElement(layer, name, input.vector, indent, effectiveAlpha(layer));
     }
-    const element = pathElement(layer, name, input.vector, `${indent}  `);
+    const element = pathElement(layer, name, input.vector, `${indent}  `, effectiveAlpha(layer));
     return `${indent}<group android:name="${xml(`${name}_transform`)}"${transformAttributes(layer)}>\n${element}\n${indent}</group>`;
   };
 
@@ -299,11 +336,14 @@ export function compileAndroidArtboard(input: AndroidArtboardInput): AndroidExpo
   const body = (children.get(null) ?? []).map((layer) => render(layer, 1)).join("\n");
   const vectorXml = `<vector xmlns:android="http://schemas.android.com/apk/res/android"${hasGradient ? `\n    xmlns:aapt="http://schemas.android.com/aapt"` : ""}
     android:name="${resourceName}"
-    android:width="${number(input.vector.width)}dp"
-    android:height="${number(input.vector.height)}dp"
-    android:viewportWidth="${number(input.vector.width)}"
-    android:viewportHeight="${number(input.vector.height)}"
-    android:alpha="${number(input.vector.alpha ?? 1)}">
+    android:width="${number(input.vector.width)}${xml(input.vector.widthUnit ?? "dp")}"
+    android:height="${number(input.vector.height)}${xml(input.vector.heightUnit ?? "dp")}"
+    android:viewportWidth="${number(input.vector.viewportWidth ?? input.vector.width)}"
+    android:viewportHeight="${number(input.vector.viewportHeight ?? input.vector.height)}"
+    android:alpha="${number(input.vector.alpha ?? 1)}"${input.vector.tint ? `
+    android:tint="${xml(androidColor(input.vector.tint))}"` : ""}${input.vector.tintMode ? `
+    android:tintMode="${xml(input.vector.tintMode)}"` : ""}${input.vector.autoMirrored ? `
+    android:autoMirrored="true"` : ""}>
 ${body}
 </vector>\n`;
   const files: AndroidAssetFile[] = [
@@ -389,6 +429,30 @@ ${body}
     tracks.set(key, [...(tracks.get(key) ?? []), entry]);
   }
   const targets: Array<{ name: string; animator: string }> = [];
+  const customInterpolators = new Map<string, string>();
+  const resolveInterpolator = (value: string | undefined): string => {
+    const platform = platformInterpolator(value);
+    if (platform) return platform;
+    if (value?.startsWith("@")) return value;
+    const bezier = customBezier(value);
+    if (!bezier) {
+      diagnostics.push({
+        severity: "warning",
+        code: "INTERPOLATOR_FALLBACK",
+        message: `Interpolator ${value || "FAST_OUT_SLOW_IN"} cannot be emitted exactly; Android fast_out_slow_in was used.`,
+      });
+      return "@android:interpolator/fast_out_slow_in";
+    }
+    const existing = customInterpolators.get(value!);
+    if (existing) return `@interpolator/${existing}`;
+    const name = androidResourceName(`${resourceName}_easing_${customInterpolators.size + 1}`);
+    customInterpolators.set(value!, name);
+    files.push({
+      path: `res/interpolator/${name}.xml`,
+      content: `<pathInterpolator xmlns:android="http://schemas.android.com/apk/res/android" android:controlX1="${number(bezier[0])}" android:controlY1="${number(bezier[1])}" android:controlX2="${number(bezier[2])}" android:controlY2="${number(bezier[3])}" />\n`,
+    });
+    return `@interpolator/${name}`;
+  };
   for (const entries of tracks.values()) {
     const first = entries[0]!;
     const layer = byId.get(String(first.block.layerId))!;
@@ -403,7 +467,11 @@ ${body}
     const animators = [...entries]
       .sort((a, b) => a.block.startTime - b.block.startTime)
       .flatMap((entry) => {
-        const rendered = objectAnimator(entry.block, entry.propertyName);
+        const rendered = objectAnimator(
+          entry.block,
+          entry.propertyName,
+          resolveInterpolator(entry.block.interpolator),
+        );
         if (rendered) return [rendered];
         diagnostics.push({
           severity: "error",

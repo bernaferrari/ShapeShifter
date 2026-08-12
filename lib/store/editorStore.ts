@@ -225,6 +225,11 @@ export interface EditorState {
   setWorldViewport: (v: Partial<Viewport>) => void;
   fitWorldToFrames: (frameIds?: string[]) => void;
   bringFrameIntoView: (frameId: string, options?: { animate?: boolean }) => void;
+  bringLayerIntoView: (
+    ownerId: string,
+    layerId: string | number,
+    options?: { animate?: boolean; fit?: boolean },
+  ) => void;
 
   // Detail/path camera shared by all action-mode canvases.
   detailViewport: Viewport;
@@ -351,6 +356,9 @@ export interface EditorState {
     patch: Partial<{ startTime: number; endTime: number; interpolator: string }>,
     options?: { recordHistory?: boolean },
   ) => void;
+  removeTimelineBlocks: (blockIds: string[]) => void;
+  removeTimelineProperty: (layerId: string | number, propertyName: string) => void;
+  removeTimelineKeyframe: (blockId: string, edge: "start" | "end") => void;
   clearBlockSelection: () => void;
   toggleLayerCollapsed: (layerId: string | number) => void;
   setTimelineZoom: (zoom: number) => void;
@@ -629,9 +637,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           selection,
           selectedPoints: newSelected.length > 0 ? newSelected : [selection],
           selectedSubPaths: [],
+          selectedBlockIds: [],
         };
       }
-      return { selection, selectedPoints: [selection], selectedSubPaths: [] };
+      return { selection, selectedPoints: [selection], selectedSubPaths: [], selectedBlockIds: [] };
     });
   },
   selectSubPath: (selection, addToMulti = false) => {
@@ -663,6 +672,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           selection: null,
           selectedPoints: [],
           selectedSubPaths: selectedSubPaths.length > 0 ? selectedSubPaths : [selection],
+          selectedBlockIds: [],
         };
       }
       return {
@@ -671,11 +681,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         selection: null,
         selectedPoints: [],
         selectedSubPaths: [selection],
+        selectedBlockIds: [],
       };
     });
   },
   selectMultiplePoints: (points: Selection[]) =>
-    set({ selectedPoints: points, selection: points[0] || null, selectedSubPaths: [] }),
+    set({
+      selectedPoints: points,
+      selection: points[0] || null,
+      selectedSubPaths: [],
+      selectedBlockIds: [],
+    }),
   selectMultipleSubPaths: (subPaths: SubPathSelection[]) =>
     set({
       selectedSubPaths: subPaths,
@@ -683,6 +699,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       editingSide: subPaths[0]?.side ?? get().editingSide,
       selection: null,
       selectedPoints: [],
+      selectedBlockIds: [],
     }),
   clearSelection: () => set({ selection: null, selectedPoints: [], selectedSubPaths: [] }),
 

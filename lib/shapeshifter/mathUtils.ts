@@ -420,10 +420,27 @@ export function toAndroidString(dict: RGBA): string {
 export function svgToAndroidColor(color: string): string | undefined {
   if (color === "none") return undefined;
 
-  // Handle #RGB, #RRGGBB, #ARGB, #AARRGGBB directly
+  // Editor/SVG hex is #RGB, #RGBA, #RRGGBB or #RRGGBBAA (alpha last),
+  // unlike Android's #ARGB / #AARRGGBB. Convert explicitly before using
+  // the Android serializer so translucent authoring colors round-trip.
   if (color.startsWith("#")) {
-    const parsed = parseAndroidColor(color);
-    if (parsed) return toAndroidString(parsed);
+    const hex = color.slice(1);
+    if (/^[\da-f]+$/i.test(hex) && [3, 4, 6, 8].includes(hex.length)) {
+      const expanded =
+        hex.length <= 4
+          ? hex
+              .split("")
+              .map((digit) => digit + digit)
+              .join("")
+          : hex;
+      const hasAlpha = expanded.length === 8;
+      return toAndroidString({
+        r: parseInt(expanded.slice(0, 2), 16),
+        g: parseInt(expanded.slice(2, 4), 16),
+        b: parseInt(expanded.slice(4, 6), 16),
+        a: hasAlpha ? parseInt(expanded.slice(6, 8), 16) : 255,
+      });
+    }
   }
 
   // Handle rgb()/rgba()

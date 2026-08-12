@@ -79,7 +79,17 @@ export function useEditorKeyboardShortcuts() {
 
       if (event.key === "Delete" || event.key === "Backspace") {
         event.preventDefault();
-        if (store.selectedPoints.length > 0 || store.selection) store.deleteSelectedPoint();
+        const keyframeTarget =
+          event.target instanceof HTMLElement
+            ? event.target.closest<HTMLElement>("[data-timeline-keyframe-block-id]")
+            : null;
+        const keyframeBlockId = keyframeTarget?.dataset.timelineKeyframeBlockId;
+        const keyframeEdge = keyframeTarget?.dataset.timelineKeyframeEdge;
+        if (keyframeBlockId && (keyframeEdge === "start" || keyframeEdge === "end")) {
+          store.removeTimelineKeyframe(keyframeBlockId, keyframeEdge);
+        } else if (store.selectedBlockIds.length > 0) {
+          store.removeTimelineBlocks(store.selectedBlockIds);
+        } else if (store.selectedPoints.length > 0 || store.selection) store.deleteSelectedPoint();
         else if (store.selectedSubPaths.length > 0) store.deleteSelectedSubPath();
         else if (store.selectionKind === "layer") store.deleteSelectedLayers();
         return;

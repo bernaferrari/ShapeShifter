@@ -26,7 +26,7 @@ import {
   exportSvgSpritesheet,
   type ExportOptions,
 } from "@/lib/shapeshifter/exporter";
-import { compileAndroidArtboard, type AndroidDiagnostic } from "@/lib/shapeshifter/androidCompiler";
+import { compileAndroidArtboard } from "@/lib/shapeshifter/androidCompiler";
 import { createZip } from "@/lib/shapeshifter/zip";
 
 interface ExportDialogProps {
@@ -134,7 +134,6 @@ export function ExportDialog({ children }: ExportDialogProps) {
     try {
       let blob: Blob | null = null;
       let filename = "";
-      let androidDiagnostics: AndroidDiagnostic[] = [];
 
       const baseName = (selectedFrame?.name || currentLayer?.name || vector.name || "export")
         .replace(/\s+/g, "-")
@@ -168,9 +167,13 @@ export function ExportDialog({ children }: ExportDialogProps) {
 
         case "lottie":
           const lottieContent = exportLottieDocument(
-            allVisibleLayers,
-            vector.name || currentLayer!.name,
-            options.duration,
+            selectedFrame?.layers ?? allVisibleLayers,
+            selectedFrame?.name || vector.name || currentLayer!.name,
+            {
+              animation: selectedFrame?.animation ?? animation,
+              vector: selectedFrame?.vector ?? vector,
+              duration: (selectedFrame?.animation ?? animation).duration / 1000,
+            },
           );
           blob = new Blob([JSON.stringify(lottieContent, null, 2)], { type: "application/json" });
           filename = `${baseName}.json`;
@@ -184,7 +187,6 @@ export function ExportDialog({ children }: ExportDialogProps) {
             animation: selectedFrame?.animation ?? animation,
             hiddenLayerIds: selectedFrame?.hiddenLayerIds ?? hiddenLayerIds,
           });
-          androidDiagnostics = vectorBundle.diagnostics;
           blob = new Blob(
             [vectorBundle.files.find((file) => file.path.endsWith("_vector.xml"))?.content ?? ""],
             {
@@ -202,7 +204,15 @@ export function ExportDialog({ children }: ExportDialogProps) {
             animation: selectedFrame?.animation ?? animation,
             hiddenLayerIds: selectedFrame?.hiddenLayerIds ?? hiddenLayerIds,
           });
-          androidDiagnostics = androidBundle.diagnostics;
+          const blockingDiagnostics = androidBundle.diagnostics.filter(
+            (diagnostic) => diagnostic.severity === "error",
+          );
+          if (blockingDiagnostics.length > 0) {
+            toast.error("Android export needs attention", {
+              description: blockingDiagnostics[0]!.message,
+            });
+            return;
+          }
           const report = androidBundle.diagnostics
             .map(
               (diagnostic) =>
@@ -268,11 +278,7 @@ export function ExportDialog({ children }: ExportDialogProps) {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        toast.success(`Exported ${format.toUpperCase()}`, {
-          description: androidDiagnostics.some((diagnostic) => diagnostic.severity === "error")
-            ? `${filename} — review Android export diagnostics`
-            : filename,
-        });
+        toast.success(`Exported ${format.toUpperCase()}`, { description: filename });
         setOpen(false);
       }
     } catch (error) {

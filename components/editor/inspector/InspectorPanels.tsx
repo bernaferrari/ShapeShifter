@@ -73,7 +73,7 @@ export function LayerTransformSection({
   const positionY = bounds?.y ?? layer.translateY ?? 0;
   const blocks = useEditorStore((state) => state.animation.blocks);
   const addTimelineBlock = useEditorStore((state) => state.addTimelineBlock);
-  const selectBlocks = useEditorStore((state) => state.selectBlocks);
+  const removeTimelineProperty = useEditorStore((state) => state.removeTimelineProperty);
   const [scaleLinked, setScaleLinked] = React.useState(
     () => !scaleX.mixed && !scaleY.mixed && Math.abs(scaleX.value - scaleY.value) < 1e-6,
   );
@@ -105,10 +105,10 @@ export function LayerTransformSection({
     const label = propertyLabel(propertyName);
     return {
       active,
-      label: active ? `Select ${label} animation` : `Animate ${label}`,
+      label: active ? `Remove ${label} animation` : `Animate ${label}`,
       onClick: () =>
         active
-          ? selectBlocks(matches.map((block) => block.id))
+          ? removeTimelineProperty(layer.id, propertyName)
           : addTimelineBlock(layer.id, propertyName),
     };
   };
@@ -351,6 +351,7 @@ export function MotionPanel({
 }) {
   const blocks = useEditorStore((state) => state.animation.blocks);
   const addTimelineBlock = useEditorStore((state) => state.addTimelineBlock);
+  const removeTimelineProperty = useEditorStore((state) => state.removeTimelineProperty);
   const selectBlocks = useEditorStore((state) => state.selectBlocks);
   const layerBlocks = blocks.filter((block) => String(block.layerId) === String(layer.id));
   const propertyNames = Array.from(
@@ -402,30 +403,50 @@ export function MotionPanel({
             const matches = layerBlocks.filter((block) => block.propertyName === propertyName);
             const active = matches.length > 0;
             return (
-              <button
+              <div
                 key={propertyName}
-                type="button"
-                onClick={() =>
-                  active
-                    ? selectBlocks(matches.map((block) => block.id))
-                    : addTimelineBlock(layer.id, propertyName)
-                }
                 className={cn(
-                  "group flex h-7 w-full items-center gap-2 rounded-[4px] px-2 text-left text-[11px] hover:bg-muted",
+                  "group flex h-7 w-full items-center rounded-[4px] hover:bg-muted",
                   active ? "text-foreground" : "text-muted-foreground",
                 )}
               >
-                <span
-                  className={cn(
-                    "size-2 rotate-45 rounded-[1px] border",
-                    active ? "border-primary bg-primary" : "border-muted-foreground/40",
-                  )}
-                />
-                <span className="flex-1">{propertyLabel(propertyName)}</span>
-                <span className="text-[10px] opacity-60 transition-opacity group-hover:opacity-100">
-                  {active ? "Edit" : "Animate"}
-                </span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    active
+                      ? selectBlocks(matches.map((block) => block.id))
+                      : addTimelineBlock(layer.id, propertyName)
+                  }
+                  className="flex h-full min-w-0 flex-1 items-center gap-2 px-2 text-left text-[11px]"
+                  aria-label={
+                    active
+                      ? `Edit ${propertyLabel(propertyName)} animation`
+                      : `Animate ${propertyLabel(propertyName)}`
+                  }
+                >
+                  <span
+                    className={cn(
+                      "size-2 rotate-45 rounded-[1px] border",
+                      active ? "border-primary bg-primary" : "border-muted-foreground/40",
+                    )}
+                  />
+                  <span className="flex-1">{propertyLabel(propertyName)}</span>
+                  <span className="text-[10px] opacity-60 transition-opacity group-hover:opacity-100">
+                    {active ? "Edit" : "Animate"}
+                  </span>
+                </button>
+                {active && (
+                  <button
+                    type="button"
+                    onClick={() => removeTimelineProperty(layer.id, propertyName)}
+                    className="grid size-7 shrink-0 place-items-center rounded-[4px] text-muted-foreground opacity-60 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
+                    aria-label={`Remove ${propertyLabel(propertyName)} animation`}
+                    title={`Remove ${propertyLabel(propertyName)} animation`}
+                  >
+                    <Trash2 className="size-3" />
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>

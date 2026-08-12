@@ -1,5 +1,6 @@
 import { ensureStableCommandIds, parsePath } from "../pathUtils";
 import type { FillType, Layer, StrokeLineCap, StrokeLineJoin } from "../types";
+import { androidToCssHexColor } from "../mathUtils";
 
 export interface VectorDrawableImportResult {
   layers: Layer[];
@@ -7,10 +8,33 @@ export interface VectorDrawableImportResult {
   viewportHeight: number;
   width: number;
   height: number;
+  widthUnit?: string;
+  heightUnit?: string;
+  alpha: number;
+  tint?: string;
+  tintMode?: string;
+  autoMirrored?: boolean;
+  minSdk: number;
 }
 
 function vdAttr(el: Element, name: string, fallback = ""): string {
   return el.getAttribute(`android:${name}`) ?? el.getAttribute(name) ?? fallback;
+}
+
+function editorColor(value: string): string {
+  if (!value || value.startsWith("@") || value.startsWith("?")) return value;
+  return androidToCssHexColor(value);
+}
+
+function numberAttribute(value: string, fallback: number) {
+  const result = Number(value);
+  return Number.isFinite(result) ? result : fallback;
+}
+
+function dimensionAttribute(value: string, fallback: number): { value: number; unit?: string } {
+  const match = value.trim().match(/^([-+]?(?:\d*\.)?\d+)([a-zA-Z]+)?$/);
+  if (!match) return { value: fallback };
+  return { value: numberAttribute(match[1], fallback), unit: match[2] };
 }
 
 function parseVdGroup(groupEl: Element, parentId: string | null, counter: { n: number }): Layer[] {
@@ -22,19 +46,20 @@ function parseVdGroup(groupEl: Element, parentId: string | null, counter: { n: n
   layers.push({
     id: groupId,
     name,
+    androidName: name,
     type: "group",
     from: emptyPath,
     to: emptyPath,
     visible: true,
     locked: false,
     parentId,
-    rotation: Number(vdAttr(groupEl, "rotation", "0")),
-    scaleX: Number(vdAttr(groupEl, "scaleX", "1")),
-    scaleY: Number(vdAttr(groupEl, "scaleY", "1")),
-    pivotX: Number(vdAttr(groupEl, "pivotX", "0")),
-    pivotY: Number(vdAttr(groupEl, "pivotY", "0")),
-    translateX: Number(vdAttr(groupEl, "translateX", "0")),
-    translateY: Number(vdAttr(groupEl, "translateY", "0")),
+    rotation: numberAttribute(vdAttr(groupEl, "rotation", "0"), 0),
+    scaleX: numberAttribute(vdAttr(groupEl, "scaleX", "1"), 1),
+    scaleY: numberAttribute(vdAttr(groupEl, "scaleY", "1"), 1),
+    pivotX: numberAttribute(vdAttr(groupEl, "pivotX", "0"), 0),
+    pivotY: numberAttribute(vdAttr(groupEl, "pivotY", "0"), 0),
+    translateX: numberAttribute(vdAttr(groupEl, "translateX", "0"), 0),
+    translateY: numberAttribute(vdAttr(groupEl, "translateY", "0"), 0),
   } satisfies Layer);
 
   for (const child of Array.from(groupEl.children)) {
@@ -58,9 +83,11 @@ function parseVdPath(el: Element, parentId: string | null, counter: { n: number 
   if (!pathData.trim()) return null;
   let parsed = parsePath(pathData);
   parsed = ensureStableCommandIds(parsed);
+  const name = vdAttr(el, "name", `path_${counter.n}`);
   return {
     id: `vd_${Date.now()}_p${counter.n++}`,
-    name: vdAttr(el, "name", `path_${counter.n}`),
+    name,
+    androidName: name,
     type: "path",
     from: parsed,
     to: parsed,
@@ -68,17 +95,17 @@ function parseVdPath(el: Element, parentId: string | null, counter: { n: number 
     visible: true,
     locked: false,
     parentId,
-    fillColor: vdAttr(el, "fillColor"),
-    fillAlpha: Number(vdAttr(el, "fillAlpha", "1")),
-    strokeColor: vdAttr(el, "strokeColor"),
-    strokeAlpha: Number(vdAttr(el, "strokeAlpha", "1")),
-    strokeWidth: Number(vdAttr(el, "strokeWidth", "0")),
+    fillColor: editorColor(vdAttr(el, "fillColor")),
+    fillAlpha: numberAttribute(vdAttr(el, "fillAlpha", "1"), 1),
+    strokeColor: editorColor(vdAttr(el, "strokeColor")),
+    strokeAlpha: numberAttribute(vdAttr(el, "strokeAlpha", "1"), 1),
+    strokeWidth: numberAttribute(vdAttr(el, "strokeWidth", "0"), 0),
     strokeLinecap: vdAttr(el, "strokeLineCap", "butt") as StrokeLineCap,
     strokeLinejoin: vdAttr(el, "strokeLineJoin", "miter") as StrokeLineJoin,
-    strokeMiterLimit: Number(vdAttr(el, "strokeMiterLimit", "4")),
-    trimPathStart: Number(vdAttr(el, "trimPathStart", "0")),
-    trimPathEnd: Number(vdAttr(el, "trimPathEnd", "1")),
-    trimPathOffset: Number(vdAttr(el, "trimPathOffset", "0")),
+    strokeMiterLimit: numberAttribute(vdAttr(el, "strokeMiterLimit", "4"), 4),
+    trimPathStart: numberAttribute(vdAttr(el, "trimPathStart", "0"), 0),
+    trimPathEnd: numberAttribute(vdAttr(el, "trimPathEnd", "1"), 1),
+    trimPathOffset: numberAttribute(vdAttr(el, "trimPathOffset", "0"), 0),
     fillType: (vdAttr(el, "fillType") === "evenOdd" ? "evenOdd" : "nonZero") as FillType,
   } satisfies Layer;
 }
@@ -92,9 +119,11 @@ function parseVdClipPath(
   if (!pathData.trim()) return null;
   let parsed = parsePath(pathData);
   parsed = ensureStableCommandIds(parsed);
+  const name = vdAttr(el, "name", `clip_${counter.n}`);
   return {
     id: `vd_${Date.now()}_cp${counter.n++}`,
-    name: vdAttr(el, "name", `clip_${counter.n}`),
+    name,
+    androidName: name,
     type: "clipPath",
     from: parsed,
     to: parsed,
@@ -106,8 +135,25 @@ function parseVdClipPath(
 }
 
 export function importLayersFromVectorDrawable(xmlText: string): Layer[] {
+  return importVectorDrawable(xmlText).layers;
+}
+
+/** Parse one Android VectorDrawable into editable layers plus root metadata. */
+export function importVectorDrawable(xmlText: string): VectorDrawableImportResult {
   const doc = new DOMParser().parseFromString(xmlText, "application/xml");
+  if (doc.querySelector("parsererror")) {
+    return {
+      layers: [], viewportWidth: 24, viewportHeight: 24, width: 24, height: 24,
+      alpha: 1, minSdk: 21,
+    };
+  }
   const root = doc.documentElement;
+  if (root.tagName.toLowerCase().replace(/.*:/, "") !== "vector") {
+    return {
+      layers: [], viewportWidth: 24, viewportHeight: 24, width: 24, height: 24,
+      alpha: 1, minSdk: 21,
+    };
+  }
   const counter = { n: 0 };
   const layers: Layer[] = [];
 
@@ -134,7 +180,8 @@ export function importLayersFromVectorDrawable(xmlText: string): Layer[] {
     }
   }
 
-  return layers;
+  const metadata = extractVectorDrawableMetadata(xmlText);
+  return { layers, ...metadata };
 }
 
 /** Extract viewport metadata from a VectorDrawable root element. */
@@ -143,13 +190,29 @@ export function extractVectorDrawableMetadata(xmlText: string): {
   viewportHeight: number;
   width: number;
   height: number;
+  alpha: number;
+  widthUnit?: string;
+  heightUnit?: string;
+  tint?: string;
+  tintMode?: string;
+  autoMirrored?: boolean;
+  minSdk: number;
 } {
   const doc = new DOMParser().parseFromString(xmlText, "application/xml");
   const root = doc.documentElement;
+  const width = dimensionAttribute(vdAttr(root, "width", "24dp"), 24);
+  const height = dimensionAttribute(vdAttr(root, "height", "24dp"), 24);
   return {
-    viewportWidth: Number(vdAttr(root, "viewportWidth", "24")),
-    viewportHeight: Number(vdAttr(root, "viewportHeight", "24")),
-    width: parseInt(vdAttr(root, "width", "24"), 10),
-    height: parseInt(vdAttr(root, "height", "24"), 10),
+    viewportWidth: numberAttribute(vdAttr(root, "viewportWidth", "24"), 24),
+    viewportHeight: numberAttribute(vdAttr(root, "viewportHeight", "24"), 24),
+    width: width.value,
+    height: height.value,
+    widthUnit: width.unit,
+    heightUnit: height.unit,
+    alpha: numberAttribute(vdAttr(root, "alpha", "1"), 1),
+    tint: editorColor(vdAttr(root, "tint")) || undefined,
+    tintMode: vdAttr(root, "tintMode") || undefined,
+    autoMirrored: vdAttr(root, "autoMirrored", "false") === "true",
+    minSdk: xmlText.includes("<aapt:attr") || xmlText.includes("fillType=\"evenOdd\"") ? 24 : 21,
   };
 }

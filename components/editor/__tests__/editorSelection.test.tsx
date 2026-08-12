@@ -4,6 +4,7 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Inspector } from "../Inspector";
 import { LayersPanel } from "../LayersPanel";
+import { useEditorKeyboardShortcuts } from "../hooks/useEditorKeyboardShortcuts";
 import { useEditorStore } from "@/lib/store/editorStore";
 import {
   buttonWithText,
@@ -88,5 +89,48 @@ describe("editor selection contracts", () => {
     expect(block).toBeDefined();
     expect(state.selectedBlockIds).toEqual([block!.id]);
     expect(state.timelineCollapsed).toBe(false);
+  });
+
+  it("removes an active transform animation from its keyframe control", () => {
+    const layer = useEditorStore.getState().layers[0]!;
+    useEditorStore.getState().addTimelineBlock(layer.id, "rotation");
+    useEditorStore.getState().selectLayer(layer.id);
+    rendered = renderEditorComponent(<Inspector />);
+
+    const removeRotation = rendered.container.querySelector(
+      '[aria-label="Remove Rotation animation"]',
+    );
+    expect(removeRotation).toBeInstanceOf(HTMLButtonElement);
+    click(removeRotation!);
+
+    expect(
+      useEditorStore
+        .getState()
+        .animation.blocks.some(
+          (candidate) =>
+            String(candidate.layerId) === String(layer.id) && candidate.propertyName === "rotation",
+        ),
+    ).toBe(false);
+  });
+
+  it("deletes selected timeline blocks before considering the selected layer", () => {
+    function KeyboardHarness() {
+      useEditorKeyboardShortcuts();
+      return null;
+    }
+    const state = useEditorStore.getState();
+    const block = state.animation.blocks[0]!;
+    const layerCount = state.layers.length;
+    state.selectBlocks([block.id]);
+    rendered = renderEditorComponent(<KeyboardHarness />);
+
+    React.act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true }));
+    });
+
+    expect(useEditorStore.getState().animation.blocks.some((item) => item.id === block.id)).toBe(
+      false,
+    );
+    expect(useEditorStore.getState().layers).toHaveLength(layerCount);
   });
 });

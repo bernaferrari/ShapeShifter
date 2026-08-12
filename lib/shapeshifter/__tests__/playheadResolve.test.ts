@@ -131,9 +131,9 @@ describe("numberAtTime", () => {
     expect(numberAtTime(layer, blocks, "translateX", 0, 1000)).toBeCloseTo(0, 5);
     expect(numberAtTime(layer, blocks, "translateX", 250, 1000)).toBeCloseTo(25, 5);
 
-    // Exact boundary between A and B: blocksFor sorts by startTime and the loop
-    // returns on the first matching block (ms <= endTime), so block A "wins" the boundary.
-    expect(numberAtTime(layer, blocks, "translateX", 500, 1000)).toBeCloseTo(50, 5);
+    // At a shared boundary the later-starting animator wins, matching the
+    // deterministic overlap rule used by the Android scene evaluator.
+    expect(numberAtTime(layer, blocks, "translateX", 500, 1000)).toBeCloseTo(200, 5);
 
     // Within block B range (strictly past the boundary)
     expect(numberAtTime(layer, blocks, "translateX", 750, 1000)).toBeCloseTo(300, 5);
@@ -227,7 +227,7 @@ describe("colorAtTime", () => {
     expect(colorAtTime(layer, [block], "fillColor", 900, 1000, "#fallback")).toBe("#00ff00");
   });
 
-  it("picks fromValue before the block's midpoint and toValue after — no smooth interpolation", () => {
+  it("interpolates color channels continuously through the animator", () => {
     const layer = makeLayer();
     const block: TimelineBlock = {
       id: "c1",
@@ -238,15 +238,10 @@ describe("colorAtTime", () => {
       startTime: 0,
       endTime: 1000,
     };
-    // mid = 500. Just before midpoint -> fromValue.
-    expect(colorAtTime(layer, [block], "fillColor", 499, 1000, "#fallback")).toBe("#ff0000");
-    // Just after midpoint -> toValue.
-    expect(colorAtTime(layer, [block], "fillColor", 501, 1000, "#fallback")).toBe("#00ff00");
-    // Exactly at midpoint: ms < mid is false, so toValue.
-    expect(colorAtTime(layer, [block], "fillColor", 500, 1000, "#fallback")).toBe("#00ff00");
-    // Confirm it's NOT an intermediate/blended color at any point inside the range.
-    const atQuarter = colorAtTime(layer, [block], "fillColor", 250, 1000, "#fallback");
-    expect(["#ff0000", "#00ff00"]).toContain(atQuarter);
+    expect(colorAtTime(layer, [block], "fillColor", 499, 1000, "#fallback")).toBe("#807f00");
+    expect(colorAtTime(layer, [block], "fillColor", 501, 1000, "#fallback")).toBe("#7f8000");
+    expect(colorAtTime(layer, [block], "fillColor", 500, 1000, "#fallback")).toBe("#808000");
+    expect(colorAtTime(layer, [block], "fillColor", 250, 1000, "#fallback")).toBe("#bf4000");
   });
 });
 

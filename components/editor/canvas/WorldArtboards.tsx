@@ -2,7 +2,7 @@ import React, { useCallback, useMemo } from "react";
 import type { CanvasFrame } from "@/lib/store/defaultWorkspace";
 import { gradientDomId, gradientToSvg } from "@/lib/shapeshifter/gradients";
 import { getPathDataBounds, parsePath, pathToString } from "@/lib/shapeshifter/pathUtils";
-import { layerTransformToSvg } from "@/lib/shapeshifter/scene/layerTransform";
+import { matrixToSvg } from "@/lib/shapeshifter/scene/layerTransform";
 import { resolveWorldLayerDraws, type WorldLayerDraw } from "@/lib/shapeshifter/scene/render";
 import { PAGE_ROOT_ID, type LayerSelectionRef } from "@/lib/shapeshifter/scene/owners";
 import type { AnimationState, Layer, PathData } from "@/lib/shapeshifter/types";
@@ -54,17 +54,26 @@ function boundsFromPathD(d: string) {
 function LayerDraw({
   draw,
   ownerId,
-  defaultStrokeWidth,
   hoverBounds,
 }: {
   draw: WorldLayerDraw;
   ownerId: string;
-  defaultStrokeWidth: number;
   hoverBounds?: ReturnType<typeof boundsFromPathD>;
 }) {
   const gradId = draw.fillGradient ? `${gradientDomId(ownerId)}-${draw.id}` : null;
-  return (
-    <g transform={layerTransformToSvg(draw)}>
+  const trimStart = ((draw.trimPathStart + draw.trimPathOffset) % 1 + 1) % 1;
+  const trimEnd = ((draw.trimPathEnd + draw.trimPathOffset) % 1 + 1) % 1;
+  const trimLength = trimEnd >= trimStart ? trimEnd - trimStart : 1 - trimStart + trimEnd;
+  const strokeTrim =
+    draw.stroke && (draw.trimPathStart !== 0 || draw.trimPathEnd !== 1 || draw.trimPathOffset !== 0)
+      ? {
+          pathLength: 1,
+          strokeDasharray: `${Math.max(0, trimLength)} ${Math.max(0, 1 - trimLength)}`,
+          strokeDashoffset: -trimStart,
+        }
+      : undefined;
+  const content = (
+    <g transform={matrixToSvg(draw.worldMatrix)}>
       {draw.fillGradient && gradId && (
         <defs
           dangerouslySetInnerHTML={{
@@ -78,10 +87,14 @@ function LayerDraw({
           fill={gradId ? `url(#${gradId})` : (draw.fill ?? "none")}
           fillOpacity={gradId ? 1 : draw.fillOpacity}
           fillRule={draw.fillType === "evenOdd" ? "evenodd" : "nonzero"}
-          stroke={draw.stroke ?? (draw.fill || draw.fillGradient ? "none" : "#111111")}
+          stroke={draw.stroke ?? "none"}
           strokeOpacity={draw.strokeOpacity}
-          strokeWidth={draw.strokeWidth || defaultStrokeWidth}
-          vectorEffect="non-scaling-stroke"
+          strokeWidth={draw.strokeWidth}
+          strokeLinecap={draw.strokeLinecap}
+          strokeLinejoin={draw.strokeLinejoin}
+          strokeMiterlimit={draw.strokeMiterLimit}
+          strokeDasharray={draw.strokeDasharray}
+          {...strokeTrim}
           pointerEvents="none"
         />
       )}
@@ -95,11 +108,36 @@ function LayerDraw({
           stroke="#0d99ff"
           strokeWidth={1}
           strokeOpacity={0.55}
-          vectorEffect="non-scaling-stroke"
           pointerEvents="none"
         />
       )}
     </g>
+  );
+  return draw.clipNodeIds.reduceRight<React.ReactNode>(
+    (nested, clipNodeId) => (
+      <g key={`${ownerId}:${draw.id}:clip:${String(clipNodeId)}`} clipPath={`url(#${clipDomId(ownerId, clipNodeId)})`}>
+        {nested}
+      </g>
+    ),
+    content,
+  );
+}
+
+function clipDomId(ownerId: string, id: string | number) {
+  return `android-clip-${ownerId}-${String(id).replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+}
+
+function ClipDefinitions({ ownerId, draws }: { ownerId: string; draws: WorldLayerDraw[] }) {
+  const clips = draws.filter((draw) => draw.isClipPath && draw.d);
+  if (!clips.length) return null;
+  return (
+    <defs>
+      {clips.map((clip) => (
+        <clipPath key={String(clip.id)} id={clipDomId(ownerId, clip.id)}>
+          <path d={clip.d} transform={matrixToSvg(clip.worldMatrix)} />
+        </clipPath>
+      ))}
+    </defs>
   );
 }
 
@@ -261,6 +299,7 @@ export function WorldArtboards({
                   : `url(#frame-clip-${frame.id})`
               }
             >
+              <ClipDefinitions ownerId={frame.id} draws={draws} />
               {onionD && !isPlaying && progress < 0.001 && (
                 <path
                   d={onionD}
@@ -273,7 +312,7 @@ export function WorldArtboards({
                   pointerEvents="none"
                 />
               )}
-              {draws.map((draw) => {
+              {draws.filter((draw) => !draw.isClipPath).map((draw) => {
                 const key = `${frame.id}:${String(draw.id)}`;
                 const layerSelected =
                   hasCanvasSelection && selectionKind === "layer" && selectedLayerRefKeys.has(key);
@@ -285,7 +324,6 @@ export function WorldArtboards({
                     key={String(draw.id)}
                     draw={draw}
                     ownerId={frame.id}
-                    defaultStrokeWidth={Math.max(0.8, Math.min(2.2, bounds.w / 24))}
                     hoverBounds={hoverBounds}
                   />
                 );
@@ -305,10 +343,12 @@ export function WorldArtboards({
           </g>
         );
       })}
+      <ClipDefinitions ownerId={PAGE_ROOT_ID} draws={pageDraws} />
       {pageDraws
         .filter(
           (draw) =>
-            !isLayerDragging || !selectedLayerRefKeys.has(`${PAGE_ROOT_ID}:${String(draw.id)}`),
+            !draw.isClipPath &&
+            (!isLayerDragging || !selectedLayerRefKeys.has(`${PAGE_ROOT_ID}:${String(draw.id)}`)),
         )
         .map((draw) => {
           const key = `${PAGE_ROOT_ID}:${String(draw.id)}`;
@@ -319,7 +359,6 @@ export function WorldArtboards({
               key={`root-${draw.id}`}
               draw={draw}
               ownerId={PAGE_ROOT_ID}
-              defaultStrokeWidth={worldPerPx}
               hoverBounds={hovered && draw.d ? boundsFromPathD(draw.d) : null}
             />
           );

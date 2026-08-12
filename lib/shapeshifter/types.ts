@@ -113,9 +113,21 @@ export interface AnimationState {
 export interface VectorMetadata {
   id: string | number;
   name: string;
+  /** Intrinsic Android drawable width. Existing documents use this as their editor size. */
   width: number;
+  /** Intrinsic Android drawable height. Existing documents use this as their editor size. */
   height: number;
+  /** Android viewport coordinates can intentionally differ from intrinsic dp dimensions. */
+  viewportWidth?: number;
+  viewportHeight?: number;
+  widthUnit?: "dp" | "px" | "sp" | string;
+  heightUnit?: "dp" | "px" | "sp" | string;
   alpha: number;
+  tint?: string;
+  tintMode?: string;
+  autoMirrored?: boolean;
+  /** Minimum Android API implied by imported drawable capabilities. */
+  minSdk?: number;
 }
 
 /**
@@ -124,6 +136,8 @@ export interface VectorMetadata {
 export interface Layer extends PathStyle {
   id: number | string;
   name: string;
+  /** Stable Android target name, separate from the editor-facing display label. */
+  androidName?: string;
   type: LayerType;
   /** Start geometry. Always present. */
   from: PathData;
@@ -237,7 +251,13 @@ export interface Node {
   transform: NodeTransform;
   style: PathStyle;
   alpha: number;
-  geometryVersionId?: GeometryVersionId; // for path nodes
+  /** Editable/base path geometry for path and clip-path nodes. */
+  geometryVersionId?: GeometryVersionId;
+  /** Preserved legacy endpoint geometry; these prevent a project round trip from erasing morphs. */
+  fromGeometryVersionId?: GeometryVersionId;
+  toGeometryVersionId?: GeometryVersionId;
+  /** Android's target name. Kept stable independently from the display name. */
+  androidName?: string;
 }
 
 /** Frame = positioned container on the infinite canvas (evolution of CanvasFrame). */
@@ -249,6 +269,14 @@ export interface Frame {
   width: number;
   height: number;
   alpha: number;
+  viewportWidth?: number;
+  viewportHeight?: number;
+  widthUnit?: string;
+  heightUnit?: string;
+  tint?: string;
+  tintMode?: string;
+  autoMirrored?: boolean;
+  minSdk?: number;
   childrenNodeIds: NodeId[];
   clipIds: string[];
 }
@@ -258,6 +286,14 @@ export interface PageMetadata {
   width: number;
   height: number;
   alpha: number;
+  viewportWidth?: number;
+  viewportHeight?: number;
+  widthUnit?: string;
+  heightUnit?: string;
+  tint?: string;
+  tintMode?: string;
+  autoMirrored?: boolean;
+  minSdk?: number;
 }
 
 /** Unified animation primitive. */
@@ -272,8 +308,11 @@ export interface Keyframe {
   id: KeyframeId;
   time: number;
   value: AnimationValue;
-  interpolator?: InterpolatorName;
+  /** Named Android interpolator or a lossless custom cubic/path value. */
+  interpolator?: string;
   morphMappingId?: MorphMappingId; // only for geometry tracks
+  /** Immutable path geometry when this is a pathData keyframe. */
+  geometryVersionId?: GeometryVersionId;
   /** Temporary migration marker so disjoint v1 timeline blocks round-trip losslessly. */
   legacyBlockId?: string;
 }

@@ -2,6 +2,10 @@
 
 import { useCallback, useRef, type RefObject } from "react";
 import type { Point } from "@/lib/shapeshifter/types";
+import {
+  recordTranslationAtProgress,
+  type NumericLayerProperty,
+} from "@/lib/shapeshifter/motion/recordTranslation";
 import { useEditorStore, type EditorState } from "@/lib/store/editorStore";
 import type { LayerResizeSession, LayerRotateSession } from "./WorldSelectionOverlay";
 import {
@@ -96,11 +100,38 @@ export function useWorldLayerTransform({
   );
 
   const finish = useCallback(() => {
-    const session = resizeRef.current ?? rotateRef.current;
+    const resize = resizeRef.current;
+    const rotation = rotateRef.current;
+    const session = resize ?? rotation;
     resizeRef.current = null;
     rotateRef.current = null;
     if (!session) return false;
-    if (session.moved) syncActiveOwner({ includeAnimation: true });
+    if (session.moved) {
+      const state = useEditorStore.getState();
+      // Match object moves: a direct manipulation away from the base frame
+      // records AVD-native values instead of mutating every moment in time.
+      if (state.progress > 0.0001) {
+        const properties: NumericLayerProperty[] = resize
+          ? ["translateX", "translateY", "scaleX", "scaleY"]
+          : ["translateX", "translateY", "rotation"];
+        const selectedIds =
+          state.selectedLayerIds.length > 0
+            ? state.selectedLayerIds
+            : state.selectedLayerId != null
+              ? [state.selectedLayerId]
+              : [];
+        const recorded = recordTranslationAtProgress(
+          state.layers,
+          state.animation,
+          selectedIds,
+          state.progress,
+          Date.now(),
+          properties,
+        );
+        useEditorStore.setState(recorded);
+      }
+      syncActiveOwner({ includeAnimation: true });
+    }
     return true;
   }, [syncActiveOwner]);
 

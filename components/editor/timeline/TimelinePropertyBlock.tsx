@@ -240,6 +240,8 @@ export function TimelinePropertyBlock({
           <button
             key={edge}
             type="button"
+            data-timeline-keyframe-block-id={block.id}
+            data-timeline-keyframe-edge={edge}
             className="pointer-events-auto absolute top-1/2 z-10 flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center p-0"
             style={{ left: `${edge === "start" ? startPct : endPct}%` }}
             title={`Keyframe @ ${milliseconds}ms`}
@@ -252,6 +254,11 @@ export function TimelinePropertyBlock({
               event.stopPropagation();
               useEditorStore.getState().selectBlocks([block.id]);
               jumpTo(milliseconds);
+            }}
+            onDoubleClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              useEditorStore.getState().removeTimelineKeyframe(block.id, edge);
             }}
           >
             <TimelineKeyframeDiamond active={selected} />

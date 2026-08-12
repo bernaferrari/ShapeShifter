@@ -6,9 +6,9 @@ import type {
   AnimationValue,
   DocumentV2,
   Frame,
-  InterpolatorName,
   Keyframe,
   Layer,
+  MorphMapping,
   Node,
   NodeTransform,
   PathStyle,
@@ -118,17 +118,38 @@ function normalizeAnimationValue(
   return pathToString(parsePath(value));
 }
 
-function asInterpolator(value?: string): InterpolatorName | undefined {
-  if (
-    value === "FAST_OUT_SLOW_IN" ||
-    value === "FAST_OUT_LINEAR_IN" ||
-    value === "LINEAR_OUT_SLOW_IN" ||
-    value === "ACCELERATE_DECELERATE" ||
-    value === "LINEAR"
-  ) {
-    return value;
-  }
-  return undefined;
+function addGeometryVersion(
+  document: DocumentV2,
+  id: string,
+  pathData: Layer["from"],
+): string {
+  document.geometryVersions[id] = {
+    id,
+    pathData,
+    sourceHash: pathToString(pathData),
+    createdAt: 0,
+  };
+  return id;
+}
+
+function addMorphMapping(
+  document: DocumentV2,
+  id: string,
+  fromGeometryId: string,
+  toGeometryId: string,
+): string {
+  const mapping: MorphMapping = {
+    id,
+    fromGeometryId,
+    toGeometryId,
+    // Legacy documents only persist aligned paths. Preserve that fact rather than
+    // pretending the correspondence can be reconstructed from display geometry.
+    alignments: { kind: "legacy-aligned-endpoints" },
+    polePositions: [],
+    createdAt: 0,
+  };
+  document.morphMappings[id] = mapping;
+  return id;
 }
 
 function addOwner(
@@ -145,18 +166,21 @@ function addOwner(
 
   for (const { layer, parentId } of flat) {
     const nodeId = scopedId("node", ownerId, layer.id);
-    const geometryVersionId =
-      layer.type === "path" || layer.type === "clipPath"
-        ? scopedId("geometry", ownerId, layer.id)
-        : undefined;
+    const isPath = layer.type === "path" || layer.type === "clipPath";
+    const geometryVersionId = isPath
+      ? scopedId("geometry", ownerId, `${String(layer.id)}:base`)
+      : undefined;
+    const fromGeometryVersionId = isPath
+      ? scopedId("geometry", ownerId, `${String(layer.id)}:from`)
+      : undefined;
+    const toGeometryVersionId = isPath && layer.to
+      ? scopedId("geometry", ownerId, `${String(layer.id)}:to`)
+      : undefined;
     if (geometryVersionId) {
       const pathData = layer.pathData ?? layer.from;
-      document.geometryVersions[geometryVersionId] = {
-        id: geometryVersionId,
-        pathData,
-        sourceHash: pathToString(pathData),
-        createdAt: 0,
-      };
+      addGeometryVersion(document, geometryVersionId, pathData);
+      addGeometryVersion(document, fromGeometryVersionId!, layer.from);
+      if (toGeometryVersionId && layer.to) addGeometryVersion(document, toGeometryVersionId, layer.to);
     }
     const childrenIds = flat
       .filter((entry) => String(entry.parentId) === String(layer.id))
@@ -181,8 +205,19 @@ function addOwner(
       style: layerStyle(layer),
       alpha: layer.alpha ?? 1,
       geometryVersionId,
+      fromGeometryVersionId,
+      toGeometryVersionId,
+      androidName: layer.androidName ?? layer.name,
     };
     document.nodes[nodeId] = node;
+    if (fromGeometryVersionId && toGeometryVersionId) {
+      addMorphMapping(
+        document,
+        scopedId("mapping", ownerId, `${String(layer.id)}:endpoints`),
+        fromGeometryVersionId,
+        toGeometryVersionId,
+      );
+    }
     if (parentId == null) rootIds.push(nodeId);
   }
 
@@ -216,17 +251,45 @@ function addOwner(
     )) {
       const fromId = scopedId("keyframe", ownerId, `${block.id}:from`);
       const toId = scopedId("keyframe", ownerId, `${block.id}:to`);
+      const fromGeometryId =
+        valueType === "path" && typeof block.fromValue === "string"
+          ? addGeometryVersion(
+              document,
+              scopedId("geometry", ownerId, `${block.id}:from`),
+              parsePath(block.fromValue),
+            )
+          : undefined;
+      const toGeometryId =
+        valueType === "path" && typeof block.toValue === "string"
+          ? addGeometryVersion(
+              document,
+              scopedId("geometry", ownerId, `${block.id}:to`),
+              parsePath(block.toValue),
+            )
+          : undefined;
+      const mappingId =
+        fromGeometryId && toGeometryId
+          ? addMorphMapping(
+              document,
+              scopedId("mapping", ownerId, `track:${block.id}`),
+              fromGeometryId,
+              toGeometryId,
+            )
+          : undefined;
       document.keyframes[fromId] = {
         id: fromId,
         time: block.startTime,
         value: normalizeAnimationValue(block.fromValue, valueType),
-        interpolator: asInterpolator(block.interpolator),
+        interpolator: block.interpolator,
+        geometryVersionId: fromGeometryId,
+        morphMappingId: mappingId,
         legacyBlockId: block.id,
       };
       document.keyframes[toId] = {
         id: toId,
         time: block.endTime,
         value: normalizeAnimationValue(block.toValue, valueType),
+        geometryVersionId: toGeometryId,
         legacyBlockId: block.id,
       };
       track.keyframeIds.push(fromId, toId);
@@ -250,6 +313,14 @@ export function createDocumentV2FromLegacy(snapshot: LegacyDocumentSnapshot): Do
       width: snapshot.rootVector.width,
       height: snapshot.rootVector.height,
       alpha: snapshot.rootVector.alpha,
+      viewportWidth: snapshot.rootVector.viewportWidth,
+      viewportHeight: snapshot.rootVector.viewportHeight,
+      widthUnit: snapshot.rootVector.widthUnit,
+      heightUnit: snapshot.rootVector.heightUnit,
+      tint: snapshot.rootVector.tint,
+      tintMode: snapshot.rootVector.tintMode,
+      autoMirrored: snapshot.rootVector.autoMirrored,
+      minSdk: snapshot.rootVector.minSdk,
     },
     rootNodeIds: [],
     rootClipIds: [],
@@ -282,6 +353,14 @@ export function createDocumentV2FromLegacy(snapshot: LegacyDocumentSnapshot): Do
       width: source.vector.width,
       height: source.vector.height,
       alpha: source.vector.alpha,
+      viewportWidth: source.vector.viewportWidth,
+      viewportHeight: source.vector.viewportHeight,
+      widthUnit: source.vector.widthUnit,
+      heightUnit: source.vector.heightUnit,
+      tint: source.vector.tint,
+      tintMode: source.vector.tintMode,
+      autoMirrored: source.vector.autoMirrored,
+      minSdk: source.vector.minSdk,
       childrenNodeIds: addOwner(
         document,
         source.id,
@@ -319,12 +398,20 @@ function ownerLayers(document: DocumentV2, rootIds: string[]): Layer[] {
     const geometry = node.geometryVersionId
       ? document.geometryVersions[node.geometryVersionId]
       : undefined;
+    const fromGeometry = node.fromGeometryVersionId
+      ? document.geometryVersions[node.fromGeometryVersionId]
+      : geometry;
+    const toGeometry = node.toGeometryVersionId
+      ? document.geometryVersions[node.toGeometryVersionId]
+      : undefined;
     const empty = parsePath("");
     return {
       id: localId(node.id),
       name: node.name,
+      androidName: node.androidName,
       type: node.type === "boolean" || node.type === "componentInstance" ? "group" : node.type,
-      from: geometry?.pathData ?? empty,
+      from: fromGeometry?.pathData ?? geometry?.pathData ?? empty,
+      to: toGeometry?.pathData,
       pathData: geometry?.pathData,
       visible: node.visible,
       locked: node.locked,
@@ -392,6 +479,14 @@ export function legacySnapshotFromDocumentV2(document: DocumentV2): LegacyDocume
           width: frame.width,
           height: frame.height,
           alpha: frame.alpha,
+          viewportWidth: frame.viewportWidth,
+          viewportHeight: frame.viewportHeight,
+          widthUnit: frame.widthUnit,
+          heightUnit: frame.heightUnit,
+          tint: frame.tint,
+          tintMode: frame.tintMode,
+          autoMirrored: frame.autoMirrored,
+          minSdk: frame.minSdk,
         },
         animation: clipAnimation(document, frame.clipIds[0], `${frame.id}-motion`),
         hiddenLayerIds: ownerLayers(document, frame.childrenNodeIds)
@@ -442,6 +537,16 @@ export function validateDocumentV2(document: DocumentV2): string[] {
     }
     if (node.geometryVersionId && !document.geometryVersions[node.geometryVersionId])
       issues.push(`Node ${node.id} references missing geometry ${node.geometryVersionId}.`);
+    if (node.fromGeometryVersionId && !document.geometryVersions[node.fromGeometryVersionId])
+      issues.push(`Node ${node.id} references missing start geometry ${node.fromGeometryVersionId}.`);
+    if (node.toGeometryVersionId && !document.geometryVersions[node.toGeometryVersionId])
+      issues.push(`Node ${node.id} references missing end geometry ${node.toGeometryVersionId}.`);
+  }
+  for (const mapping of Object.values(document.morphMappings)) {
+    if (!document.geometryVersions[mapping.fromGeometryId])
+      issues.push(`Morph mapping ${mapping.id} references missing start geometry ${mapping.fromGeometryId}.`);
+    if (!document.geometryVersions[mapping.toGeometryId])
+      issues.push(`Morph mapping ${mapping.id} references missing end geometry ${mapping.toGeometryId}.`);
   }
   for (const clip of Object.values(document.clips)) {
     for (const trackId of clip.trackIds)
@@ -460,6 +565,10 @@ export function validateDocumentV2(document: DocumentV2): string[] {
       }
       if (keyframe.time < previous)
         issues.push(`Track ${track.id} keyframes are not ordered by time.`);
+      if (keyframe.geometryVersionId && !document.geometryVersions[keyframe.geometryVersionId])
+        issues.push(`Keyframe ${keyframe.id} references missing geometry ${keyframe.geometryVersionId}.`);
+      if (keyframe.morphMappingId && !document.morphMappings[keyframe.morphMappingId])
+        issues.push(`Keyframe ${keyframe.id} references missing morph mapping ${keyframe.morphMappingId}.`);
       previous = keyframe.time;
     }
   }

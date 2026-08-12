@@ -83,6 +83,7 @@ export function LayersPanel({
   const reparentOwnedLayer = useEditorStore((state) => state.reparentOwnedLayer);
   const moveSelectedLayersToFrame = useEditorStore((state) => state.moveSelectedLayersToFrame);
   const moveSelectedLayersToRoot = useEditorStore((state) => state.moveSelectedLayersToRoot);
+  const bringLayerIntoView = useEditorStore((state) => state.bringLayerIntoView);
 
   const [collapsedOwners, setCollapsedOwners] = React.useState<Set<string>>(() => new Set());
   const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(() => new Set());
@@ -174,6 +175,7 @@ export function LayersPanel({
         : [...selectedLayerRefs, { ownerId, layerId }]
       : [{ ownerId, layerId }];
     selectLayerRefs(next);
+    if (!additive) bringLayerIntoView(ownerId, layerId, { animate: true, fit: false });
   };
 
   const selectFrameRow = (frameId: string, additive: boolean) => {

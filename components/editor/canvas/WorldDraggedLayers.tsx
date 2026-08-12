@@ -1,6 +1,6 @@
 import React from "react";
 import { gradientDomId, gradientToSvg } from "@/lib/shapeshifter/gradients";
-import { layerTransformToSvg } from "@/lib/shapeshifter/scene/layerTransform";
+import { matrixToSvg } from "@/lib/shapeshifter/scene/layerTransform";
 import type { WorldLayerDraw } from "@/lib/shapeshifter/scene/render";
 
 export interface DraggedWorldLayerDraw extends WorldLayerDraw {
@@ -24,7 +24,7 @@ export function WorldDraggedLayers({
         transform={`translate(${draw.origin.x} ${draw.origin.y})`}
         pointerEvents="none"
       >
-        <g transform={layerTransformToSvg(draw)}>
+        <g transform={matrixToSvg(draw.worldMatrix)}>
           {draw.fillGradient && gradId && (
             <defs
               dangerouslySetInnerHTML={{
@@ -37,10 +37,13 @@ export function WorldDraggedLayers({
             fill={gradId ? `url(#${gradId})` : (draw.fill ?? "none")}
             fillOpacity={gradId ? 1 : draw.fillOpacity}
             fillRule={draw.fillType === "evenOdd" ? "evenodd" : "nonzero"}
-            stroke={draw.stroke ?? (draw.fill || draw.fillGradient ? "none" : "#111111")}
+            stroke={draw.stroke ?? "none"}
             strokeOpacity={draw.strokeOpacity}
             strokeWidth={draw.strokeWidth || worldPerPx}
-            vectorEffect="non-scaling-stroke"
+            strokeLinecap={draw.strokeLinecap}
+            strokeLinejoin={draw.strokeLinejoin}
+            strokeMiterlimit={draw.strokeMiterLimit}
+            strokeDasharray={draw.strokeDasharray}
           />
         </g>
       </g>

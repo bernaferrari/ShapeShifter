@@ -1,6 +1,7 @@
-import type { Layer } from "../types";
-import { getPathDataBounds } from "../pathUtils";
-import { transformLayerRect } from "./layerTransform";
+import { flattenPathData } from "../pathUtils";
+import type { AnimationState, Layer } from "../types";
+import { evaluateAndroidScene } from "./evaluate";
+import { transformPointWithMatrix } from "./layerTransform";
 
 export interface SceneRect {
   x: number;
@@ -13,6 +14,9 @@ export interface SceneOwner {
   ownerId: string;
   origin: { x: number; y: number };
   layers: Layer[];
+  animation?: AnimationState;
+  progress?: number;
+  usePlayhead?: boolean;
 }
 
 export interface OwnedLayerRef {
@@ -26,24 +30,29 @@ export interface OwnedLayerBounds extends OwnedLayerRef {
 
 export function getOwnedLayerBounds(owner: SceneOwner): OwnedLayerBounds[] {
   const result: OwnedLayerBounds[] = [];
-  for (const layer of owner.layers) {
-    if (layer.visible === false || layer.locked || layer.type === "group") continue;
-    const path = layer.pathData ?? layer.from;
-    if (!path) continue;
-    const bounds = getPathDataBounds(path);
-    if (!bounds) continue;
-    const transformed = transformLayerRect(
-      { x: bounds.x, y: bounds.y, w: bounds.w, h: bounds.h },
-      layer,
+  const animation = owner.animation ?? { id: "static", name: "Static", duration: 1, blocks: [] };
+  const scene = evaluateAndroidScene(owner.layers, animation, owner.progress ?? 0, owner.usePlayhead ?? false);
+  for (const node of scene.nodes) {
+    if (!node.visible || node.locked || node.type !== "path" || !node.path) continue;
+    const points = flattenPathData(node.path, 0.05)
+      .flatMap((subPath) => subPath.points)
+      .map((point) => transformPointWithMatrix(point, node.worldMatrix));
+    if (!points.length) continue;
+    const xs = points.map((point) => point.x);
+    const ys = points.map((point) => point.y);
+    const maxScale = Math.max(
+      Math.hypot(node.worldMatrix.a, node.worldMatrix.b),
+      Math.hypot(node.worldMatrix.c, node.worldMatrix.d),
     );
+    const strokeInset = node.stroke && node.strokeWidth > 0 ? (node.strokeWidth * maxScale) / 2 : 0;
     result.push({
       ownerId: owner.ownerId,
-      layerId: layer.id,
+      layerId: node.id,
       bounds: {
-        x: owner.origin.x + transformed.x,
-        y: owner.origin.y + transformed.y,
-        w: transformed.w,
-        h: transformed.h,
+        x: owner.origin.x + Math.min(...xs) - strokeInset,
+        y: owner.origin.y + Math.min(...ys) - strokeInset,
+        w: Math.max(0.01, Math.max(...xs) - Math.min(...xs) + strokeInset * 2),
+        h: Math.max(0.01, Math.max(...ys) - Math.min(...ys) + strokeInset * 2),
       },
     });
   }

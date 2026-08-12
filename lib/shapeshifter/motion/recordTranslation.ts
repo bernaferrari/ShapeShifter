@@ -5,6 +5,31 @@ export interface TranslationRecordResult {
   animation: AnimationState;
 }
 
+export type NumericLayerProperty =
+  | "translateX"
+  | "translateY"
+  | "rotation"
+  | "scaleX"
+  | "scaleY"
+  | "pivotX"
+  | "pivotY"
+  | "fillAlpha"
+  | "strokeAlpha"
+  | "strokeWidth"
+  | "trimPathStart"
+  | "trimPathEnd"
+  | "trimPathOffset"
+  | "alpha";
+
+const numericFallback: Partial<Record<NumericLayerProperty, number>> = {
+  scaleX: 1,
+  scaleY: 1,
+  fillAlpha: 1,
+  strokeAlpha: 1,
+  trimPathEnd: 1,
+  alpha: 1,
+};
+
 /**
  * Record the selected layers' current position at a normalized playhead.
  * Pure so every scene owner can use identical key insertion/split semantics.
@@ -15,6 +40,7 @@ export function recordTranslationAtProgress(
   selectedIds: Array<string | number>,
   progress: number,
   idSeed = Date.now(),
+  properties: NumericLayerProperty[] = ["translateX", "translateY"],
 ): TranslationRecordResult {
   const selected = new Set(selectedIds.map(String));
   const targets = layers.filter((layer) => selected.has(String(layer.id)));
@@ -30,7 +56,7 @@ export function recordTranslationAtProgress(
   const upsertKey = (
     blocks: TimelineBlock[],
     layer: Layer,
-    propertyName: "translateX" | "translateY",
+    propertyName: NumericLayerProperty,
     value: number,
   ): TimelineBlock[] => {
     const segments = blocks
@@ -129,8 +155,12 @@ export function recordTranslationAtProgress(
 
   let blocks = animation.blocks;
   for (const layer of targets) {
-    blocks = upsertKey(blocks, layer, "translateX", layer.translateX ?? 0);
-    blocks = upsertKey(blocks, layer, "translateY", layer.translateY ?? 0);
+    for (const propertyName of properties) {
+      const raw = (layer as unknown as Record<string, unknown>)[propertyName];
+      const fallback = numericFallback[propertyName] ?? 0;
+      const value = typeof raw === "number" && Number.isFinite(raw) ? raw : fallback;
+      blocks = upsertKey(blocks, layer, propertyName, value);
+    }
   }
   return {
     animation: { ...animation, blocks },

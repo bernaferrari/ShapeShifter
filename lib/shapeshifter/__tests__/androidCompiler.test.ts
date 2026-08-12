@@ -107,4 +107,49 @@ describe("Android artboard compiler", () => {
       true,
     );
   });
+
+  it("keeps Android root metadata, target names, colors, and custom cubic easing", () => {
+    const source = input();
+    source.vector = {
+      ...source.vector,
+      width: 32,
+      height: 20,
+      widthUnit: "px",
+      viewportWidth: 48,
+      viewportHeight: 30,
+      tint: "#33669980",
+      tintMode: "src_in",
+      autoMirrored: true,
+    };
+    source.layers[1] = {
+      ...source.layers[1]!,
+      androidName: "favorite_heart",
+      fillColor: "#ff000080",
+    };
+    source.animation.blocks[1] = {
+      ...source.animation.blocks[1]!,
+      interpolator: "cubic-bezier(0.2, 0, 0.8, 1)",
+    };
+
+    const bundle = compileAndroidArtboard(source);
+    const vector = bundle.files.find((file) => file.path.endsWith("_vector.xml"))?.content ?? "";
+    const animator = bundle.files.find((file) => file.path.includes("fillcolor"))?.content ?? "";
+    expect(vector).toContain('android:width="32px"');
+    expect(vector).toContain('android:viewportWidth="48"');
+    expect(vector).toContain('android:tint="#80336699"');
+    expect(vector).toContain('android:autoMirrored="true"');
+    expect(vector).toContain('android:name="favorite_heart"');
+    expect(vector).toContain('android:fillColor="#80ff0000"');
+    expect(animator).toContain('android:valueFrom="#ff3366"');
+    expect(bundle.files.some((file) => file.path.startsWith("res/interpolator/"))).toBe(true);
+  });
+
+  it("bakes inherited static alpha into Android path appearance", () => {
+    const source = input();
+    source.layers[0] = { ...source.layers[0]!, alpha: 0.5 };
+    source.layers[1] = { ...source.layers[1]!, fillAlpha: 0.5, strokeAlpha: 0.8 };
+    const vector = compileAndroidArtboard(source).files[0]!.content;
+    expect(vector).toContain('android:fillAlpha="0.25"');
+    expect(vector).toContain('android:strokeAlpha="0.4"');
+  });
 });

@@ -2,6 +2,11 @@
 
 import React from "react";
 import { snapValueToStep } from "@/lib/shapeshifter/camera";
+import {
+  inverseAffine,
+  transformPointWithMatrix,
+  type AffineMatrix,
+} from "@/lib/shapeshifter/scene/layerTransform";
 import type { Layer, Point, Selection } from "@/lib/shapeshifter/types";
 import { useEditorStore, type EditorState, type LayerSelectionRef } from "@/lib/store/editorStore";
 
@@ -19,6 +24,7 @@ interface WorldPointerRouterOptions {
   snapToGrid: boolean;
   snapStep: number;
   editOrigin: Point | null;
+  editWorldMatrix?: AffineMatrix | null;
   editPathPresent: boolean;
   layers: Layer[];
   selectedLayerId: string | number;
@@ -109,6 +115,7 @@ function releasePointer(svg: SVGSVGElement | null, pointerId: number) {
 export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
   const handlePointerDown = React.useCallback(
     (event: React.PointerEvent) => {
+      if (!event.isPrimary || (event.button !== 0 && event.button !== 1)) return;
       const point = options.worldPointFromEvent(event.clientX, event.clientY);
       if (event.button === 1 || options.spacePanActive) {
         if (options.spacePanActive) {
@@ -119,10 +126,17 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
       }
       if (!point) return;
 
-      const rawLocal = {
+      const ownerPoint = {
         x: point.x - (options.editOrigin?.x ?? 0),
         y: point.y - (options.editOrigin?.y ?? 0),
       };
+      const inverse = options.editWorldMatrix ? inverseAffine(options.editWorldMatrix) : null;
+      const rawLocal = options.editWorldMatrix
+        ? inverse
+          ? transformPointWithMatrix(ownerPoint, inverse)
+          : null
+        : ownerPoint;
+      if (!rawLocal) return;
       const bypassSnap = event.metaKey || event.ctrlKey;
       const snappedLocal =
         options.snapToGrid && !bypassSnap
@@ -160,8 +174,8 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
         useEditorStore
           .getState()
           .addPointOnPath(
-            rawLocal.x - (Number(layer.translateX) || 0),
-            rawLocal.y - (Number(layer.translateY) || 0),
+            rawLocal.x,
+            rawLocal.y,
           );
         return;
       }
@@ -252,10 +266,14 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
       if (options.penDragRef.current && options.editOrigin) {
         const point = options.worldPointFromEvent(event.clientX, event.clientY);
         if (point) {
-          options.penPointerDrag({
-            x: point.x - options.editOrigin.x,
-            y: point.y - options.editOrigin.y,
-          });
+          const ownerPoint = { x: point.x - options.editOrigin.x, y: point.y - options.editOrigin.y };
+          const inverse = options.editWorldMatrix ? inverseAffine(options.editWorldMatrix) : null;
+          const local = options.editWorldMatrix
+            ? inverse
+              ? transformPointWithMatrix(ownerPoint, inverse)
+              : null
+            : ownerPoint;
+          if (local) options.penPointerDrag(local);
         }
         return;
       }
