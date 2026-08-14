@@ -16,13 +16,13 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 11
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          # Read engines.node (currently 24.x) from package.json so local
+          # tooling and CI share one Node-version policy.
+          node-version-file: package.json
           cache: "pnpm"
 
       - name: Install dependencies
