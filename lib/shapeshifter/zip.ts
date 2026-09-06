@@ -84,3 +84,30 @@ export function createZip(entries: ZipEntry[]): Uint8Array {
   endView.setUint32(16, localOffset, true);
   return concat([...localChunks, centralDirectory, end]);
 }
+
+const decoder = new TextDecoder();
+
+/** Read an uncompressed ZIP produced by `createZip` (store method only). */
+export function parseZip(bytes: Uint8Array): ZipEntry[] {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const entries: ZipEntry[] = [];
+  let offset = 0;
+  while (offset + 30 <= bytes.length && view.getUint32(offset, true) === 0x04034b50) {
+    const method = view.getUint16(offset + 8, true);
+    const compressed = view.getUint32(offset + 18, true);
+    const nameLength = view.getUint16(offset + 26, true);
+    const extraLength = view.getUint16(offset + 28, true);
+    const name = decoder.decode(bytes.subarray(offset + 30, offset + 30 + nameLength));
+    const dataStart = offset + 30 + nameLength + extraLength;
+    const data = bytes.subarray(dataStart, dataStart + compressed);
+    if (method !== 0) {
+      throw new Error(
+        `ZIP entry ${name} is compressed; only uncompressed ShapeShifter exports can be imported`,
+      );
+    }
+    entries.push({ path: name, content: decoder.decode(data) });
+    offset = dataStart + compressed;
+  }
+  if (!entries.length) throw new Error("No ZIP entries found");
+  return entries;
+}

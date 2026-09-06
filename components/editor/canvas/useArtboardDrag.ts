@@ -50,7 +50,8 @@ export function useArtboardDrag({
                 y: snapValueToStep(total.y, 1),
               }
             : total,
-        applyDelta: (delta) => useEditorStore.getState().moveFrames(ids, delta.x, delta.y),
+        applyDelta: (delta) =>
+          useEditorStore.getState().moveFrames(ids, delta.x, delta.y, { recordHistory: false }),
         commit: clear,
         rollback: () => useEditorStore.getState().cancelLastHistoryTransaction(),
         cancelled: clear,

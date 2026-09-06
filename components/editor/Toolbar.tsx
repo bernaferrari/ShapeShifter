@@ -62,7 +62,7 @@ interface ToolbarProps {
   canRedo: boolean;
 }
 
-/** Quiet, neutral chrome — Figma-grade. The bar recedes; the canvas is the hero.
+/** Quiet, neutral chrome. The bar recedes; the canvas is the hero.
  *  Dense path/boolean actions are collapsed into a single contextual "Edit" menu
  *  instead of a wall of always-visible buttons. */
 export function Toolbar({
@@ -93,7 +93,6 @@ export function Toolbar({
   const extractSelectedSubPathToNewLayer = useEditorStore(
     (state) => state.extractSelectedSubPathToNewLayer,
   );
-  const booleanCombine = useEditorStore((state) => state.booleanCombine);
   const resetProject = useEditorStore((state) => state.resetProject);
   const vector = useEditorStore((state) => state.vector);
   const isRepeating = useEditorStore((state) => state.isRepeating);
@@ -101,7 +100,12 @@ export function Toolbar({
   const toggleRepeating = useEditorStore((state) => state.toggleRepeating);
   const toggleSlowMotion = useEditorStore((state) => state.toggleSlowMotion);
 
+  const previewPrepareForMorph = useEditorStore((state) => state.previewPrepareForMorph);
   const handleAutoFix = () => {
+    if (previewPrepareForMorph()) {
+      toast.message("Review the morph in the inspector, then Apply or Cancel");
+      return;
+    }
     if (autoFixSelectedLayer()) {
       toast.success("Paths made compatible");
     }
@@ -247,12 +251,12 @@ export function Toolbar({
             <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
               Combine with next layer
             </DropdownMenuLabel>
-            <DropdownMenuItem onClick={() => booleanCombine("union")}>Union</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => booleanCombine("subtract")}>Subtract</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => booleanCombine("intersect")}>
-              Intersect
+            <DropdownMenuItem disabled>
+              Union (unavailable — no curve Boolean kernel)
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => booleanCombine("exclude")}>Exclude</DropdownMenuItem>
+            <DropdownMenuItem disabled>Subtract (unavailable)</DropdownMenuItem>
+            <DropdownMenuItem disabled>Intersect (unavailable)</DropdownMenuItem>
+            <DropdownMenuItem disabled>Exclude (unavailable)</DropdownMenuItem>
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>

@@ -1,9 +1,20 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { PAGE_ROOT_ID, useEditorStore } from "../editorStore";
+import { computeDetailViewport } from "../../shapeshifter/camera";
 import { parsePath, pathToString } from "../../shapeshifter/pathUtils";
+import { commitDocumentV2 } from "../documentRuntime";
 import { DEMO_INFOS } from "../../shapeshifter/demoProjects";
-import type { Selection, Layer } from "../../shapeshifter/types";
+import type { Selection, Layer, DocumentV2 } from "../../shapeshifter/types";
+import type { EditorState } from "../editorStore";
 import type { LegacyDocumentSnapshot } from "../../shapeshifter/documentModel";
+
+// Destructive Boolean commands are compiled off in production (BOOLEAN_OPERATIONS_ENABLED,
+// see the androidTrust P0 suite). Mock the gate open — spreading the real module — so these
+// tests can exercise the store action's operand/lock/morph invariants behind it.
+vi.mock("../../shapeshifter/pathUtils", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, BOOLEAN_OPERATIONS_ENABLED: true };
+});
 
 // Helper: get a fresh store state by resetting
 function freshStore() {
@@ -51,6 +62,28 @@ function getLayerCommandIds(layers: Layer[]): string[] {
 }
 
 describe("editorStore", () => {
+  // Geometry versions are parsed from id-less path strings on every commit
+  // (parsePath mints fresh ULIDs), so equality is asserted modulo the
+  // regenerated command ids — everything else must match exactly.
+  function canonicalize(documentV2: DocumentV2): string {
+    return JSON.stringify({
+      ...documentV2,
+      geometryVersions: Object.fromEntries(
+        Object.entries(documentV2.geometryVersions).map(([id, version]) => [
+          id,
+          {
+            ...version,
+            pathData: {
+              subPaths: version.pathData.subPaths.map((subPath) => ({
+                commands: subPath.commands.map(({ type, points }) => ({ type, points })),
+              })),
+            },
+          },
+        ]),
+      ),
+    });
+  }
+
   beforeEach(() => {
     freshStore();
   });
@@ -116,6 +149,29 @@ describe("editorStore", () => {
       expect(restored.y).toBe(before.y);
     });
 
+    it("preserves pan and zoom across undo and redo", () => {
+      getStore().setWorldViewport({ x: -37, y: 11, w: 500, h: 400, scale: 2 });
+      const worldBefore = getStore().worldViewport;
+      getStore().pushHistory();
+      getStore().moveFrame(getStore().selectedFrameId, 25, -10);
+      getStore().setDetailViewport((current) => ({
+        ...current,
+        x: current.x + 3,
+        y: current.y - 4,
+      }));
+      const detailBefore = getStore().detailViewport;
+
+      getStore().undo();
+
+      expect(getStore().worldViewport).toEqual(worldBefore);
+      expect(getStore().detailViewport).toEqual(detailBefore);
+
+      getStore().redo();
+
+      expect(getStore().worldViewport).toEqual(worldBefore);
+      expect(getStore().detailViewport).toEqual(detailBefore);
+    });
+
     it("keeps detail canvas zoom and viewport in one shared store camera", () => {
       const before = getStore().detailViewport;
 
@@ -171,6 +227,28 @@ describe("editorStore", () => {
       getStore().selectLayer(getStore().layers[0]!.id);
       expect(getStore().selectedFrameIds).toEqual([]);
       expect(getStore().selectionKind).toBe("layer");
+    });
+
+    it("fits the detail viewport when selecting a layer in another artboard", () => {
+      const firstFrameId = getStore().selectedFrameId;
+      getStore().addFrame();
+      getStore().updateVector({
+        width: 24,
+        height: 12,
+        viewportWidth: 120,
+        viewportHeight: 60,
+      });
+      const secondFrame = getStore().frames.find(
+        (frame) => frame.id === getStore().selectedFrameId,
+      )!;
+
+      getStore().selectFrame(firstFrameId);
+      getStore().setDetailViewport({ x: -500, y: -500, w: 20, h: 20, scale: 1 });
+      getStore().selectLayerRefs([{ ownerId: secondFrame.id, layerId: secondFrame.layers[0]!.id }]);
+
+      expect(getStore().selectedFrameId).toBe(secondFrame.id);
+      expect(getStore().vector).toEqual(secondFrame.vector);
+      expect(getStore().detailViewport).toEqual(computeDetailViewport(secondFrame.vector));
     });
 
     it("restores frame selection through undo", () => {
@@ -334,6 +412,105 @@ describe("editorStore", () => {
       expect(getStore().frames.find((frame) => frame.id === second.id)!.layers).toHaveLength(
         second.layers.length + 1,
       );
+    });
+
+    it("Alt-duplicated layers keep their animation tracks with remapped ids", () => {
+      const layer = getStore().layers[0]!;
+      const extraBlock = {
+        id: "dup-alpha",
+        layerId: layer.id,
+        propertyName: "alpha",
+        type: "number" as const,
+        fromValue: 0,
+        toValue: 1,
+        startTime: 0,
+        endTime: 400,
+      };
+      useEditorStore.setState((state) => ({
+        animation: { ...state.animation, blocks: [...state.animation.blocks, extraBlock] },
+        layers: state.layers.map((candidate) =>
+          candidate.id === layer.id ? { ...candidate, timeline: [extraBlock] } : candidate,
+        ),
+      }));
+      const blocksBefore = getStore().animation.blocks;
+
+      getStore().duplicateSelectedLayersOffset(2, 3);
+
+      const cloneId = getStore().selectedLayerIds[0];
+      expect(cloneId).toBeDefined();
+      const newBlocks = getStore().animation.blocks.slice(blocksBefore.length);
+      // Every carried track targets the clone, never the original layer.
+      const expectedCount = blocksBefore.filter(
+        (block) => String(block.layerId) === String(layer.id),
+      ).length;
+      expect(newBlocks).toHaveLength(expectedCount);
+      expect(newBlocks.length).toBeGreaterThan(0);
+      expect(newBlocks.every((block) => String(block.layerId) === String(cloneId))).toBe(true);
+      const beforeIds = new Set(blocksBefore.map((block) => block.id));
+      expect(newBlocks.every((block) => !beforeIds.has(block.id))).toBe(true);
+      // The clone's per-layer timeline mirrors its own remapped blocks.
+      const clone = getStore().layers.find(
+        (candidate) => String(candidate.id) === String(cloneId),
+      )!;
+      expect(clone.timeline!.map((block) => block.id).sort()).toEqual(
+        newBlocks.map((block) => block.id).sort(),
+      );
+      // Original layer keeps its own track.
+      const original = getStore().layers.find((candidate) => candidate.id === layer.id)!;
+      expect(original.timeline!.map((block) => block.id)).toContain(extraBlock.id);
+      expect(beforeIds.has(extraBlock.id)).toBe(true);
+      expect(
+        getStore().animation.blocks.filter((block) => block.id === extraBlock.id),
+      ).toHaveLength(1);
+    });
+
+    it("Alt-duplicating a group carries descendant animation tracks without stale ids", () => {
+      const first = getStore().layers[0]!;
+      const second = getStore().layers[1]!;
+      getStore().selectLayers([first.id, second.id]);
+      getStore().groupSelectedLayers();
+      const groupId = getStore().selectedLayerId;
+      const childBlock = {
+        id: "group-child-rot",
+        layerId: second.id,
+        propertyName: "rotation",
+        type: "number" as const,
+        fromValue: 0,
+        toValue: 90,
+        startTime: 0,
+        endTime: 500,
+      };
+      useEditorStore.setState((state) => ({
+        animation: { ...state.animation, blocks: [...state.animation.blocks, childBlock] },
+        layers: state.layers.map((candidate) =>
+          candidate.id === second.id ? { ...candidate, timeline: [childBlock] } : candidate,
+        ),
+      }));
+      const blocksBefore = getStore().animation.blocks;
+
+      getStore().duplicateSelectedLayersOffset(0, 0);
+
+      const subtreeIds = new Set([groupId, first.id, second.id].map(String));
+      const expectedCount = blocksBefore.filter((block) =>
+        subtreeIds.has(String(block.layerId)),
+      ).length;
+      const newBlocks = getStore().animation.blocks.slice(blocksBefore.length);
+      expect(newBlocks).toHaveLength(expectedCount);
+      // No clone track points at an original layer id.
+      expect(newBlocks.every((block) => !subtreeIds.has(String(block.layerId)))).toBe(true);
+      const clonedGroup = getStore().layers.find(
+        (candidate) => candidate.type === "group" && !subtreeIds.has(String(candidate.id)),
+      )!;
+      expect(clonedGroup).toBeDefined();
+      const clonedChild = getStore().layers.find(
+        (candidate) => String(candidate.parentId) === String(clonedGroup.id),
+      )!;
+      expect(clonedChild).toBeDefined();
+      const childBlocks = newBlocks.filter(
+        (block) => String(block.layerId) === String(clonedChild.id),
+      );
+      expect(childBlocks).toHaveLength(1);
+      expect(clonedChild.timeline!.map((block) => block.id)).toEqual([childBlocks[0]!.id]);
     });
 
     it("records position motion tracks for every selected owner", () => {
@@ -588,6 +765,164 @@ describe("editorStore", () => {
       expect(getStore().selectedFrameId).toBe(source.id);
       expect(getStore().rootLayers).toHaveLength(0);
       expect(getStore().frames[0].layers).toContainEqual(expect.objectContaining({ id: layer.id }));
+    });
+  });
+
+  describe("documentV2 freshness", () => {
+    /**
+     * Track-block geometry versions are parsed from id-less path strings on every
+     * commit (parsePath mints fresh ULIDs), so equality is asserted modulo the
+     * regenerated command ids — everything else must match exactly.
+     */
+    function canonicalize(documentV2: DocumentV2): string {
+      return JSON.stringify({
+        ...documentV2,
+        geometryVersions: Object.fromEntries(
+          Object.entries(documentV2.geometryVersions).map(([id, version]) => [
+            id,
+            {
+              ...version,
+              pathData: {
+                subPaths: version.pathData.subPaths.map((subPath) => ({
+                  commands: subPath.commands.map(({ type, points }) => ({ type, points })),
+                })),
+              },
+            },
+          ]),
+        ),
+      });
+    }
+    it("commits live projection into documentV2 after burst writes settle, even mid-gesture without history", async () => {
+      const layer = getStore().layers[0];
+      const beforeHistory = getStore().history.length;
+
+      // In-flight gesture write: no history entry, plain projection update.
+      useEditorStore.setState({
+        layers: getStore().layers.map((candidate) =>
+          candidate.id === layer.id
+            ? { ...candidate, translateX: (candidate.translateX ?? 0) + 9 }
+            : candidate,
+        ),
+      });
+
+      // The coalesced rebuild lands at the microtask boundary — before any
+      // React render or subsequent input event.
+      await Promise.resolve();
+
+      expect(getStore().history).toHaveLength(beforeHistory);
+      const node =
+        getStore().documentV2.nodes[
+          `node:${encodeURIComponent(getStore().selectedFrameId)}:${encodeURIComponent(String(layer.id))}`
+        ]!;
+      expect(node.transform.translateX).toBe(9);
+    });
+
+    it("keeps documentV2 equal to a fresh commit of the flushed workspace after pushHistory", async () => {
+      useEditorStore.setState({
+        layers: getStore().layers.map((candidate) => ({
+          ...candidate,
+          name: `${candidate.name}!`,
+        })),
+      });
+
+      await Promise.resolve();
+
+      getStore().pushHistory();
+
+      const state = getStore();
+      expect(canonicalize(state.documentV2)).toBe(canonicalize(commitDocumentV2(state)));
+    });
+
+    it("commits geometry through a magic-tool write", async () => {
+      const layer = getStore().layers[0];
+      getStore().selectLayer(layer.id);
+      const node = () => {
+        const state = getStore();
+        const nodeId = `node:${encodeURIComponent(state.selectedFrameId)}:${encodeURIComponent(
+          String(layer.id),
+        )}`;
+        return state.documentV2.geometryVersions[
+          state.documentV2.nodes[nodeId]!.geometryVersionId!
+        ]!.sourceHash;
+      };
+      const before = node();
+
+      getStore().reverseSelectedLayer();
+      await Promise.resolve();
+
+      expect(node()).not.toBe(before);
+    });
+
+    it("coalesces burst writes into one documentV2 rebuild at the microtask boundary", async () => {
+      const layer = getStore().layers[0];
+      const before = getStore().documentV2;
+      let commitCount = 0;
+      const unsubscribe = useEditorStore.subscribe((state, prevState) => {
+        if (state.documentV2 !== prevState.documentV2) commitCount++;
+      });
+
+      for (let tick = 1; tick <= 5; tick++) {
+        useEditorStore.setState({
+          layers: getStore().layers.map((candidate) =>
+            candidate.id === layer.id
+              ? { ...candidate, translateX: (candidate.translateX ?? 0) + 1 }
+              : candidate,
+          ),
+        });
+      }
+
+      // The rebuild is deferred: nothing has landed synchronously.
+      expect(commitCount).toBe(0);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(commitCount).toBe(1);
+      expect(getStore().documentV2).not.toBe(before);
+      const node =
+        getStore().documentV2.nodes[
+          `node:${encodeURIComponent(getStore().selectedFrameId)}:${encodeURIComponent(String(layer.id))}`
+        ]!;
+      expect(node.transform.translateX).toBe(5);
+      unsubscribe();
+    });
+
+    it("forwards zustand's replace argument instead of silently merging", () => {
+      const baseline = useEditorStore.getState();
+      try {
+        // A one-key replacement: with correct forwarding every other key vanishes;
+        // the old merge shim kept them, lying about the API.
+        useEditorStore.setState({ selectedLayerId: 999 } as unknown as EditorState, true);
+        expect(getStore().selectedLayerId).toBe(999);
+        expect(getStore().layers).toBeUndefined();
+      } finally {
+        useEditorStore.setState(baseline, true);
+      }
+      expect(getStore().layers).toEqual(baseline.layers);
+    });
+
+    it("a patch carrying documentV2 supersedes a pending coalesced commit", async () => {
+      const layer = getStore().layers[0];
+      const replacement = structuredClone(getStore().documentV2);
+      let commitCount = 0;
+      const unsubscribe = useEditorStore.subscribe((state, prevState) => {
+        if (state.documentV2 !== prevState.documentV2) commitCount++;
+      });
+
+      useEditorStore.setState({
+        layers: getStore().layers.map((candidate) =>
+          candidate.id === layer.id
+            ? { ...candidate, translateX: (candidate.translateX ?? 0) + 3 }
+            : candidate,
+        ),
+      });
+      useEditorStore.setState({ documentV2: replacement });
+
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(commitCount).toBe(1);
+      expect(getStore().documentV2).toBe(replacement);
+      unsubscribe();
     });
   });
 
@@ -957,6 +1292,98 @@ describe("editorStore", () => {
       expect(getStore().layers.length).toBe(originalCount + 1);
     });
 
+    it("restores the page-root projection through undo and redo", () => {
+      const sourceFrame = structuredClone(getStore().frames[0]!);
+      const rootLayer = {
+        ...structuredClone(sourceFrame.layers[0]!),
+        id: "root-history-layer",
+        name: "Hidden page-root layer",
+        visible: true,
+      };
+      const rootVector = {
+        id: "page",
+        name: "Document page",
+        width: 360,
+        height: 180,
+        alpha: 0.65,
+        viewportWidth: 720,
+        viewportHeight: 360,
+        widthUnit: "dp",
+        heightUnit: "dp",
+        tint: "#336699",
+        tintMode: "src_in",
+        autoMirrored: true,
+        minSdk: 24,
+      };
+      const rootAnimation = {
+        id: "page-history-motion",
+        name: "Page history motion",
+        duration: 1700,
+        blocks: [],
+      };
+      const snapshot: LegacyDocumentSnapshot = {
+        id: "root-history-document",
+        name: "Root history document",
+        frames: [
+          {
+            ...sourceFrame,
+            id: "frame-history",
+            name: "Frame projection",
+            vector: {
+              ...sourceFrame.vector,
+              id: "frame-history",
+              name: "Frame projection",
+              width: 23,
+              height: 17,
+              alpha: 0.4,
+            },
+            animation: {
+              ...sourceFrame.animation,
+              id: "frame-history-motion",
+              name: "Frame history motion",
+              duration: 700,
+              blocks: [],
+            },
+            hiddenLayerIds: [String(sourceFrame.layers[0]!.id)],
+          },
+        ],
+        rootLayers: [rootLayer],
+        rootVector,
+        rootAnimation,
+        rootHiddenLayerIds: [String(rootLayer.id)],
+      };
+
+      getStore().loadDocument(snapshot);
+      getStore().selectRootLayer(rootLayer.id);
+      getStore().setAnimationDuration(2200);
+
+      getStore().undo();
+
+      expect(getStore().selectedFrameId).toBe(PAGE_ROOT_ID);
+      expect(getStore().vector).toEqual(rootVector);
+      expect(getStore().animation).toMatchObject({
+        name: rootAnimation.name,
+        duration: rootAnimation.duration,
+        blocks: rootAnimation.blocks,
+      });
+      expect(getStore().hiddenLayerIds).toEqual([String(rootLayer.id)]);
+      expect(getStore().detailViewport.w).toBeGreaterThanOrEqual(rootVector.viewportWidth!);
+      expect(getStore().detailViewport.h).toBeGreaterThanOrEqual(rootVector.viewportHeight!);
+
+      getStore().redo();
+
+      expect(getStore().selectedFrameId).toBe(PAGE_ROOT_ID);
+      expect(getStore().vector).toEqual(rootVector);
+      expect(getStore().animation).toMatchObject({
+        name: rootAnimation.name,
+        duration: 2200,
+        blocks: rootAnimation.blocks,
+      });
+      expect(getStore().hiddenLayerIds).toEqual([String(rootLayer.id)]);
+      expect(getStore().detailViewport.w).toBeGreaterThanOrEqual(rootVector.viewportWidth!);
+      expect(getStore().detailViewport.h).toBeGreaterThanOrEqual(rootVector.viewportHeight!);
+    });
+
     it("new mutation clears redo stack", () => {
       getStore().addLayer();
       getStore().undo();
@@ -978,6 +1405,25 @@ describe("editorStore", () => {
       expect(getStore().layers[0].translateX ?? 0).toBe(beforeX);
       expect(getStore().history).toHaveLength(beforeHistory);
       expect(getStore().canRedo).toBe(false);
+    });
+
+    it("preserves the redo branch when a history-backed gesture is cancelled", () => {
+      const layer = getStore().layers[0];
+      getStore().selectLayer(layer.id);
+      const startX = layer.translateX ?? 0;
+      getStore().translateSelectedLayer(20, 0);
+      getStore().undo();
+      expect(getStore().canRedo).toBe(true);
+      expect(getStore().layers[0].translateX ?? 0).toBe(startX);
+
+      getStore().pushHistory();
+      getStore().translateSelectedLayer(5, 0, { recordHistory: false });
+      getStore().cancelLastHistoryTransaction();
+
+      expect(getStore().layers[0].translateX ?? 0).toBe(startX);
+      expect(getStore().canRedo).toBe(true);
+      getStore().redo();
+      expect(getStore().layers[0].translateX ?? 0).toBeCloseTo(startX + 20);
     });
 
     it("can duplicate inside an existing gesture transaction", () => {
@@ -1011,6 +1457,85 @@ describe("editorStore", () => {
         getStore().pushHistory();
       }
       expect(getStore().history.length).toBeLessThanOrEqual(100);
+    });
+
+    it("undo and redo preserve the overflow entry for cancelLastHistoryTransaction", () => {
+      for (let i = 0; i < 105; i++) {
+        getStore().pushHistory();
+      }
+      const overflow = getStore().historyOverflow;
+      expect(overflow).not.toBeNull();
+
+      getStore().undo();
+      expect(getStore().historyOverflow).toBe(overflow);
+      getStore().redo();
+      expect(getStore().historyOverflow).toBe(overflow);
+
+      const depthBefore = getStore().history.length;
+      getStore().cancelLastHistoryTransaction();
+      // The cancelled push pops off and the displaced oldest entry is restored
+      // at the front — navigation depth is not permanently shrunk.
+      expect(getStore().history.length).toBe(depthBefore);
+      expect(getStore().history[0]).toBe(overflow);
+      expect(getStore().historyOverflow).toBeNull();
+    });
+
+    it("resetProject carries a fresh documentV2 in the same write", () => {
+      useEditorStore.setState({
+        layers: getStore().layers.map((candidate) => ({
+          ...candidate,
+          name: "Mutated before reset",
+        })),
+      });
+
+      const state = getStore();
+      state.resetProject();
+
+      const fresh = getStore();
+      // Same-task readers see the reset projection committed, not the previous
+      // document; a later flush must be a no-op.
+      expect(canonicalize(fresh.documentV2)).toBe(canonicalize(commitDocumentV2(fresh)));
+    });
+
+    it("updateVector on the page root keeps documentV2 fresh in-task, including omitted fields", async () => {
+      const rootLayer = structuredClone(getStore().frames[0]!.layers[0]!);
+      const snapshot: LegacyDocumentSnapshot = {
+        id: "page-vector-fresh",
+        name: "Page vector fresh",
+        frames: [],
+        rootLayers: [rootLayer],
+        rootVector: {
+          id: "page",
+          name: "Original page",
+          width: 48,
+          height: 32,
+          alpha: 1,
+          tint: "#112233",
+          widthUnit: "dp",
+          heightUnit: "dp",
+        },
+        rootAnimation: { id: "page-anim", name: "Page anim", duration: 1000, blocks: [] },
+        rootHiddenLayerIds: [],
+      };
+      getStore().loadDocument(snapshot);
+      getStore().selectRootLayer(rootLayer.id);
+
+      // Patch only the name: every other page field must survive from live
+      // state, not from a stale documentV2.page spread.
+      getStore().updateVector({ name: "Renamed page" });
+
+      let fresh = getStore();
+      expect(fresh.documentV2.page.name).toBe("Renamed page");
+      expect(fresh.vector.name).toBe("Renamed page");
+      expect(fresh.documentV2.page.width).toBe(48);
+      expect(fresh.documentV2.page.tint).toBe("#112233");
+      expect(fresh.documentV2.page.widthUnit).toBe("dp");
+      expect(canonicalize(fresh.documentV2)).toBe(canonicalize(commitDocumentV2(fresh)));
+
+      await Promise.resolve();
+      await Promise.resolve();
+      fresh = getStore();
+      expect(canonicalize(fresh.documentV2)).toBe(canonicalize(commitDocumentV2(fresh)));
     });
   });
 
@@ -1355,6 +1880,126 @@ describe("editorStore", () => {
         expect(result).toBe(false);
       });
     });
+
+    describe("booleanCombine", () => {
+      it("does not consume or delete locked operands", () => {
+        const [first, second] = getStore().layers;
+        useEditorStore.setState({
+          layers: getStore().layers.map((layer) =>
+            layer.id === second.id ? { ...layer, locked: true } : layer,
+          ),
+        });
+        getStore().selectLayers([first.id, second.id]);
+        const before = getStore().layers.map((layer) => pathToString(layer.from));
+
+        getStore().booleanCombine("union");
+
+        expect(getStore().layers).toHaveLength(2);
+        expect(getStore().layers.map((layer) => pathToString(layer.from))).toEqual(before);
+      });
+
+      it("keeps a morphable result morphable instead of collapsing to a static shape", () => {
+        const [a, b] = getStore().layers;
+        getStore().selectLayers([a.id, b.id]);
+
+        getStore().booleanCombine("union");
+
+        const result = getStore().layers.find((layer) => layer.id === a.id)!;
+        const to = result.to;
+        expect(to).toBeDefined();
+        // `to` is an independent clone of the combined geometry, never an alias of `from`.
+        expect(to).not.toBe(result.from);
+        if (!to) return;
+        expect(to.subPaths.length).toBe(result.from.subPaths.length);
+        expect(getStore().layers.some((layer) => layer.id === b.id)).toBe(false);
+      });
+
+      it("leaves a static layer static instead of inventing an end state", () => {
+        const [a] = getStore().layers;
+        useEditorStore.setState({
+          layers: [
+            { ...getStore().layers[0], to: undefined },
+            { ...getStore().layers[1], id: "static-partner" },
+          ],
+        });
+        getStore().selectLayers([a.id, "static-partner"]);
+
+        getStore().booleanCombine("intersect");
+
+        const result = getStore().layers.find((layer) => layer.id === a.id)!;
+        expect(result.to).toBeUndefined();
+      });
+
+      it("refuses to run with fewer than two explicit selections instead of picking a hidden partner", () => {
+        getStore().selectLayer(getStore().layers[0].id);
+        const before = getStore().layers.map((layer) => pathToString(layer.from));
+
+        getStore().booleanCombine("union");
+
+        expect(getStore().layers).toHaveLength(2);
+        expect(getStore().layers.map((layer) => pathToString(layer.from))).toEqual(before);
+        expect(getStore().selectedLayerIds).toHaveLength(1);
+      });
+
+      it("prunes both operands' animation blocks and their selection", () => {
+        const [a, b] = getStore().layers;
+        const doomedBlockId = `block-${String(b.id)}`;
+        useEditorStore.setState((state) => ({
+          animation: {
+            ...state.animation,
+            blocks: [
+              ...state.animation.blocks,
+              {
+                id: doomedBlockId,
+                layerId: b.id,
+                propertyName: "pathData",
+                fromValue: pathToString(b.from),
+                toValue: pathToString(b.from),
+                startTime: 0,
+                endTime: 500,
+                interpolator: "FAST_OUT_SLOW_IN" as const,
+                type: "path" as const,
+              },
+            ],
+          },
+          selectedBlockIds: [doomedBlockId],
+        }));
+        // A block on an untouched third layer must survive the boolean op.
+        useEditorStore.setState({
+          layers: [
+            ...getStore().layers,
+            { ...getStore().layers[0], id: "bystander-layer", name: "Bystander" },
+          ],
+        });
+        useEditorStore.setState((state) => ({
+          animation: {
+            ...state.animation,
+            blocks: [
+              ...state.animation.blocks,
+              {
+                id: "block-survives",
+                layerId: "bystander-layer",
+                propertyName: "translateX",
+                fromValue: 0,
+                toValue: 10,
+                startTime: 0,
+                endTime: 500,
+                interpolator: "FAST_OUT_SLOW_IN" as const,
+                type: "number" as const,
+              },
+            ],
+          },
+        }));
+        getStore().selectLayers([a.id, b.id]);
+
+        getStore().booleanCombine("union");
+
+        const blockIds = getStore().animation.blocks.map((block) => block.id);
+        expect(blockIds).not.toContain(doomedBlockId);
+        expect(blockIds).toContain("block-survives");
+        expect(getStore().selectedBlockIds).not.toContain(doomedBlockId);
+      });
+    });
   });
 
   // ─── translateSelectedPoints (batch) ─────────────────────────────────
@@ -1454,6 +2099,52 @@ describe("editorStore", () => {
       expect(getStore().animation.blocks.length).toBe(before);
     });
 
+    it("addTimelineBlock seeds numeric defaults for layers missing transform fields", () => {
+      // Imported SVG layers carry no transform fields at all — the block must
+      // still be number-typed with the property's semantic default, never a
+      // bogus color-typed empty-string block.
+      const layer = getStore().layers[0];
+      const stripped = { ...layer };
+      delete (stripped as Partial<Layer>).translateX;
+      delete (stripped as Partial<Layer>).scaleX;
+      useEditorStore.setState({
+        layers: [stripped, ...getStore().layers.filter((candidate) => candidate.id !== layer.id)],
+      });
+
+      getStore().addTimelineBlock(layer.id, "translateY");
+      let block = getStore().animation.blocks.at(-1)!;
+      expect(block.type).toBe("number");
+      expect(block.fromValue).toBe(0);
+      expect(block.toValue).toBe(0);
+
+      getStore().addTimelineBlock(layer.id, "scaleY");
+      block = getStore().animation.blocks.at(-1)!;
+      expect(block.type).toBe("number");
+      expect(block.fromValue).toBe(1);
+      expect(block.toValue).toBe(1);
+    });
+
+    it("addTimelineBlock prefers the layer value when numeric and keeps color tracks colored", () => {
+      const layer = getStore().layers[0];
+      useEditorStore.setState({
+        layers: getStore().layers.map((candidate) =>
+          candidate.id === layer.id
+            ? { ...candidate, translateX: 12.5, fillColor: "#ff0000" }
+            : candidate,
+        ),
+      });
+
+      getStore().addTimelineBlock(layer.id, "translateX");
+      const translate = getStore().animation.blocks.at(-1)!;
+      expect(translate.type).toBe("number");
+      expect(translate.fromValue).toBe(12.5);
+
+      getStore().addTimelineBlock(layer.id, "fillColor");
+      const fill = getStore().animation.blocks.at(-1)!;
+      expect(fill.type).toBe("color");
+      expect(fill.fromValue).toBe("#ff0000");
+    });
+
     it("addTimelineBlock sets expanded=true on layer", () => {
       const layer = getStore().layers[0];
       getStore().toggleLayerExpanded(layer.id); // set to true
@@ -1471,11 +2162,9 @@ describe("editorStore", () => {
       const block = getStore().animation.blocks.at(-1)!;
       expect(block.startTime).toBe(100);
       expect(block.endTime).toBe(500);
-      const cachedBlock = getStore().layers[0].timeline?.find(
-        (candidate) => candidate.id === blockId,
-      );
-      expect(cachedBlock?.startTime).toBe(100);
-      expect(cachedBlock?.endTime).toBe(500);
+      expect(
+        getStore().animation.blocks.find((candidate) => candidate.id === blockId)?.startTime,
+      ).toBe(100);
     });
 
     it("updateTimelineBlock is undoable by default", () => {
@@ -1836,6 +2525,310 @@ describe("editorStore", () => {
       getStore().cutLayers(allIds);
       expect(getStore().layers.length).toBe(before);
     });
+
+    it("copyLayers captures a group's whole subtree, not just the top-level layer", () => {
+      const first = getStore().layers[0]!;
+      const second = getStore().layers[1]!;
+      getStore().selectLayers([first.id, second.id]);
+      getStore().groupSelectedLayers();
+      const groupId = getStore().selectedLayerId;
+
+      getStore().copyLayers([groupId]);
+
+      const copiedIds = getStore().clipboard!.layers.map((layer) => String(layer.id));
+      expect(copiedIds).toHaveLength(3);
+      expect(new Set(copiedIds)).toEqual(new Set([groupId, first.id, second.id].map(String)));
+    });
+
+    it("cutLayers removes the group's descendants along with the group", () => {
+      const first = getStore().layers[0]!;
+      const second = getStore().layers[1]!;
+      getStore().selectLayers([first.id, second.id]);
+      getStore().groupSelectedLayers();
+      const groupId = getStore().selectedLayerId;
+      const beforeCount = getStore().layers.length;
+
+      getStore().cutLayers([groupId]);
+
+      const remainingIds = new Set(getStore().layers.map((layer) => String(layer.id)));
+      for (const id of [groupId, first.id, second.id]) {
+        expect(remainingIds.has(String(id))).toBe(false);
+      }
+      expect(getStore().layers.length).toBe(beforeCount - 3);
+    });
+
+    it("cutLayers prunes the cut subtree's TimelineBlocks and their selection", () => {
+      const first = getStore().layers[0]!;
+      const second = getStore().layers[1]!;
+      const block = {
+        id: "cut-alpha",
+        layerId: first.id,
+        propertyName: "alpha",
+        type: "number" as const,
+        fromValue: 0,
+        toValue: 1,
+        startTime: 0,
+        endTime: 400,
+      };
+      useEditorStore.setState((state) => ({
+        animation: { ...state.animation, blocks: [...state.animation.blocks, block] },
+        layers: state.layers.map((candidate) =>
+          candidate.id === first.id ? { ...candidate, timeline: [block] } : candidate,
+        ),
+        selectedBlockIds: [block.id],
+      }));
+      getStore().addLayer("path"); // survives the cut — must keep its blocks
+      getStore().selectLayers([
+        getStore().layers[0]!.id,
+        getStore().layers[1]!.id,
+      ]);
+      getStore().groupSelectedLayers();
+      const groupId = getStore().selectedLayerId;
+
+      getStore().cutLayers([groupId]);
+
+      expect(getStore().animation.blocks.some((b) => b.id === "cut-alpha")).toBe(false);
+      expect(
+        getStore().animation.blocks.some((b) =>
+          [first.id, second.id].some((id) => String(b.layerId) === String(id)),
+        ),
+      ).toBe(false);
+      // A surviving layer's blocks stay untouched.
+      const survivor = getStore().layers.find((layer) => layer.type !== "group")!;
+      expect(survivor).toBeDefined();
+      expect(getStore().selectedBlockIds).not.toContain("cut-alpha");
+    });
+
+    it("pasteLayers re-parents pasted children to their pasted group", () => {
+      const first = getStore().layers[0]!;
+      const second = getStore().layers[1]!;
+      getStore().selectLayers([first.id, second.id]);
+      getStore().groupSelectedLayers();
+      const groupId = getStore().selectedLayerId;
+      getStore().copyLayers([groupId]);
+      getStore().deleteSelectedLayers();
+
+      getStore().pasteLayers();
+
+      const pastedGroup = getStore().layers.find(
+        (layer) => layer.type === "group" && layer.name.endsWith(" copy"),
+      )!;
+      expect(pastedGroup).toBeDefined();
+      const pastedChildren = getStore().layers.filter(
+        (layer) => String(layer.parentId) === String(pastedGroup.id),
+      );
+      expect(pastedChildren).toHaveLength(2);
+      // No pasted layer points at an original (deleted) id.
+      expect(pastedChildren.every((child) => child.parentId !== groupId)).toBe(true);
+    });
+
+    it("pasteLayers carries animation tracks with remapped ids into frame.animation", () => {
+      const layer = getStore().layers[0]!;
+      const block = {
+        id: "paste-alpha",
+        layerId: layer.id,
+        propertyName: "alpha",
+        type: "number" as const,
+        fromValue: 0,
+        toValue: 1,
+        startTime: 0,
+        endTime: 400,
+      };
+      // Start from a known block set: the default workspace ships its own
+      // authored demo tracks, and this test asserts exact paste deltas.
+      useEditorStore.setState((state) => ({
+        animation: { ...state.animation, blocks: [block] },
+        layers: state.layers.map((candidate) =>
+          candidate.id === layer.id ? { ...candidate, timeline: [block] } : candidate,
+        ),
+      }));
+      getStore().copyLayers([layer.id]);
+      getStore().deleteSelectedLayers();
+      const blocksBefore = getStore().animation.blocks;
+
+      getStore().pasteLayers();
+
+      const pasted = getStore().layers.at(-1)!;
+      const newBlocks = getStore().animation.blocks.slice(blocksBefore.length);
+      expect(newBlocks).toHaveLength(1);
+      expect(String(newBlocks[0]!.layerId)).toBe(String(pasted.id));
+      expect(newBlocks[0]!.id).not.toBe(block.id);
+      // The pasted layer's timeline mirrors its own remapped block.
+      expect(pasted.timeline!.map((candidate) => candidate.id)).toEqual([newBlocks[0]!.id]);
+    });
+
+    it("pasteLayers animates the pasted layer even when its mirror was stale at copy time", () => {
+      const layer = getStore().layers[0]!;
+      const block = {
+        id: "hydrate-alpha",
+        layerId: layer.id,
+        propertyName: "alpha",
+        type: "number" as const,
+        fromValue: 0,
+        toValue: 1,
+        startTime: 0,
+        endTime: 400,
+      };
+      // Authoring path: block lands in animation.blocks only — layer.timeline
+      // is left stale (empty), exactly as live edits leave it.
+      useEditorStore.setState((state) => ({
+        animation: { ...state.animation, blocks: [block] },
+      }));
+      expect(layer.timeline ?? []).toHaveLength(0);
+
+      getStore().copyLayers([layer.id]);
+      // The original is gone before paste; only the copy-time block snapshot
+      // can survive.
+      getStore().deleteSelectedLayers();
+      const blocksBefore = getStore().animation.blocks;
+
+      getStore().pasteLayers();
+
+      const pasted = getStore().layers.at(-1)!;
+      const newBlocks = getStore().animation.blocks.slice(blocksBefore.length);
+      expect(newBlocks).toHaveLength(1);
+      expect(String(newBlocks[0]!.layerId)).toBe(String(pasted.id));
+      expect(newBlocks[0]!.id).not.toBe(block.id);
+      // Authored values survive the snapshot round-trip, not just identities.
+      expect(newBlocks[0]!.toValue).toBe(block.toValue);
+      expect(newBlocks[0]!.endTime).toBe(block.endTime);
+      expect(getStore().animation.duration).toBeGreaterThanOrEqual(block.endTime);
+      // The pasted layer's timeline mirrors its own remapped block.
+      expect(pasted.timeline!.map((candidate) => candidate.id)).toEqual([newBlocks[0]!.id]);
+    });
+
+    it("pasteLayers rebuilds tracks from the copied animation.blocks, ignoring a diverged mirror", () => {
+      const layer = getStore().layers[0]!;
+      const authoredBlock = {
+        id: "authored-alpha",
+        layerId: layer.id,
+        propertyName: "alpha",
+        type: "number" as const,
+        fromValue: 0,
+        toValue: 1,
+        startTime: 0,
+        endTime: 300,
+      };
+      useEditorStore.setState((state) => ({
+        animation: { ...state.animation, blocks: [authoredBlock] },
+        // Mirror holds a superseded block the authoring pass replaced.
+        layers: state.layers.map((candidate) =>
+          candidate.id === layer.id
+            ? {
+                ...candidate,
+                timeline: [
+                  { ...authoredBlock, id: "ghost-alpha", toValue: 0.25, endTime: 100 },
+                ],
+              }
+            : candidate,
+        ),
+      }));
+
+      getStore().copyLayers([layer.id]);
+      getStore().deleteSelectedLayers();
+      const blocksBefore = getStore().animation.blocks;
+
+      getStore().pasteLayers();
+
+      const pasted = getStore().layers.at(-1)!;
+      const newBlocks = getStore().animation.blocks.slice(blocksBefore.length);
+      expect(newBlocks).toHaveLength(1);
+      expect(String(newBlocks[0]!.layerId)).toBe(String(pasted.id));
+      // The authored snapshot won; the ghost mirror entry did not leak through.
+      expect(newBlocks[0]!.toValue).toBe(authoredBlock.toValue);
+      expect(pasted.timeline!.map((candidate) => candidate.toValue)).toEqual([1]);
+    });
+
+    it("pasteLayers carries a copied group's children animation tracks too", () => {
+      const first = getStore().layers[0]!;
+      const second = getStore().layers[1]!;
+      const childBlock = (id: string, layerId: string | number, toValue: number) => ({
+        id,
+        layerId,
+        propertyName: "alpha",
+        type: "number" as const,
+        fromValue: 0,
+        toValue,
+        startTime: 0,
+        endTime: 300,
+      });
+      useEditorStore.setState((state) => ({
+        animation: {
+          ...state.animation,
+          // Start from a known block set: the default workspace ships its own
+          // authored demo tracks, and this test asserts exact paste deltas.
+          blocks: [
+            childBlock("group-child-a", first.id, 1),
+            childBlock("group-child-b", second.id, 0.5),
+          ],
+        },
+      }));
+      getStore().selectLayers([first.id, second.id]);
+      getStore().groupSelectedLayers();
+      const groupId = getStore().selectedLayerId;
+
+      getStore().copyLayers([groupId]);
+      getStore().deleteSelectedLayers();
+      const blocksBefore = getStore().animation.blocks;
+
+      getStore().pasteLayers();
+
+      const newBlocks = getStore().animation.blocks.slice(blocksBefore.length);
+      expect(newBlocks).toHaveLength(2);
+      const pastedChildren = getStore().layers.filter(
+        (layer) => layer.parentId != null && layer.type !== "group",
+      );
+      expect(pastedChildren).toHaveLength(2);
+      const pastedIds = new Set(pastedChildren.map((child) => String(child.id)));
+      for (const block of newBlocks) {
+        expect(pastedIds.has(String(block.layerId))).toBe(true);
+      }
+    });
+
+    it("copyLayers reads a selected subtree from a non-active artboard", () => {
+      const other = getStore().frames[1];
+      expect(other).toBeDefined();
+      const layer = other.layers[0]!;
+      const block = {
+        id: "cross-board-alpha",
+        layerId: layer.id,
+        propertyName: "alpha",
+        type: "number" as const,
+        fromValue: 0,
+        toValue: 1,
+        startTime: 0,
+        endTime: 400,
+      };
+      useEditorStore.setState((state) => ({
+        frames: state.frames.map((frame) =>
+          frame.id === other.id
+            ? { ...frame, animation: { ...frame.animation, blocks: [block] } }
+            : frame,
+        ),
+        selectedLayerRefs: [{ ownerId: other.id, layerId: layer.id }],
+      }));
+
+      getStore().copyLayers([layer.id]);
+
+      expect(getStore().clipboard!.layers.map((item) => String(item.id))).toContain(String(layer.id));
+      expect(getStore().clipboard!.blocks?.some((item) => item.id === block.id)).toBe(true);
+    });
+
+    it("pasteLayers scales the paste offset by the current zoom", () => {
+      getStore().setDetailViewport({ x: -500, y: -500, w: 100, h: 100, scale: 4 });
+      const layer = getStore().layers[0]!;
+      const originalX = layer.translateX ?? 0;
+      const originalY = layer.translateY ?? 0;
+      getStore().copyLayers([layer.id]);
+
+      getStore().pasteLayers();
+
+      const pasted = getStore().layers.at(-1)!;
+      expect(pasted.id).not.toBe(layer.id);
+      // 8 screen px at 4x zoom = 2 world units.
+      expect(pasted.translateX).toBeCloseTo(originalX + 2);
+      expect(pasted.translateY).toBeCloseTo(originalY + 2);
+    });
   });
 
   // ─── setLayers / importLayers / loadProject ──────────────────────────
@@ -2067,6 +3060,30 @@ describe("editorStore", () => {
       getStore().undo();
 
       expect(getStore().animation.duration).toBe(originalDuration);
+    });
+
+    it("updateVector records an undoable history entry", () => {
+      const originalWidth = getStore().vector.width;
+      getStore().updateVector({ width: 96, name: "Resized" });
+
+      getStore().undo();
+
+      expect(getStore().vector.width).toBe(originalWidth);
+      expect(getStore().vector.name).not.toBe("Resized");
+    });
+
+    it("updateVector refits the detail viewport only when the artboard size changes", () => {
+      getStore().setDetailViewport((current) => ({ ...current, x: 42, y: -7 }));
+      const pannedBeforeRename = getStore().detailViewport;
+
+      getStore().updateVector({ name: "Renamed" });
+
+      expect(getStore().detailViewport).toEqual(pannedBeforeRename);
+
+      getStore().setDetailViewport((current) => ({ ...current, x: 11 }));
+      getStore().updateVector({ width: getStore().vector.width + 24 });
+
+      expect(getStore().detailViewport.x).not.toBe(11);
     });
   });
 

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { memo, useMemo } from "react";
-import { getPathDataBounds } from "@/lib/shapeshifter/pathUtils";
+import { getAccuratePathBounds } from "@/lib/shapeshifter/pathUtils";
 import type { Layer, PathData, Point } from "@/lib/shapeshifter/types";
 import type { SceneRect } from "@/lib/shapeshifter/scene/selection";
 import { transformLayerRect } from "@/lib/shapeshifter/scene/layerTransform";
@@ -89,7 +89,7 @@ function WorldSelectionOverlayComponent({
     const selected = new Set(activeLayerIds.map(String));
     for (const layer of activeLayers) {
       if (!selected.has(String(layer.id)) || layer.type === "group") continue;
-      const bounds = getPathDataBounds((layer.pathData ?? layer.from) as PathData);
+      const bounds = getAccuratePathBounds((layer.pathData ?? layer.from) as PathData);
       if (!bounds) continue;
       const translate = {
         x: Number(layer.translateX) || 0,

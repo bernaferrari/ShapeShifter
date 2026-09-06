@@ -69,7 +69,16 @@ export function useWorldPointEditing({
       }
       return null;
     },
-    [editingSide, hitRadius, layerId, layerTranslation.x, layerTranslation.y, ownerOrigin, path, worldMatrix],
+    [
+      editingSide,
+      hitRadius,
+      layerId,
+      layerTranslation.x,
+      layerTranslation.y,
+      ownerOrigin,
+      path,
+      worldMatrix,
+    ],
   );
 
   const start = useCallback((selection: Selection) => {

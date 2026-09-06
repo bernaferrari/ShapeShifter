@@ -1,3 +1,5 @@
+import { vectorCoordinateSize } from "./vectorSpace";
+
 /**
  * ShapeShifter - Camera & Viewport Utilities (1el / 649p / k4mv under 75dt Phase 2)
  *
@@ -32,11 +34,10 @@ export interface Rect {
  * zoom instead of each shape owning an isolated camera.
  */
 export function computeDetailViewport(
-  vector: { width?: number; height?: number },
+  vector: { width?: number; height?: number; viewportWidth?: number; viewportHeight?: number },
   scale = 1,
 ): Viewport {
-  const width = Math.max(1, vector.width || 24);
-  const height = Math.max(1, vector.height || 24);
+  const { width, height } = vectorCoordinateSize(vector);
   const baseSize = Math.max(width, height);
   const baseViewSize = Math.max(24, baseSize * 1.55);
   const clampedScale = Math.max(0.25, Math.min(8, scale));

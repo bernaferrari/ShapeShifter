@@ -36,12 +36,12 @@ playhead state for every consumer.
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
+| Purpose     | Command                                                                                                                                                                                                          | Expected |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
 | Scene tests | `pnpm test -- lib/shapeshifter/__tests__/sceneRender.test.ts lib/shapeshifter/__tests__/sceneHitTest.test.ts lib/shapeshifter/__tests__/sceneSelection.test.ts lib/shapeshifter/__tests__/androidParity.test.ts` | all pass |
-| Full suite | `pnpm test` | all pass |
-| Typecheck | `pnpm typecheck` | exit 0 |
-| Build | `pnpm build` | exit 0 |
+| Full suite  | `pnpm test`                                                                                                                                                                                                      | all pass |
+| Typecheck   | `pnpm typecheck`                                                                                                                                                                                                 | exit 0   |
+| Build       | `pnpm build`                                                                                                                                                                                                     | exit 0   |
 
 ## Scope
 
@@ -135,4 +135,3 @@ same canonical traversal used by preview.
 This evaluator is the semantic center of the product. Future preview, export,
 thumbnail, onion skin, smart guide, and selection work must consume it rather than
 reimplementing document traversal.
-

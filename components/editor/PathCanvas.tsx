@@ -1,8 +1,13 @@
 "use client";
 
 import React, { useMemo, useRef } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { useEditorStore } from "@/lib/store/editorStore";
-import { parsePath, pathToString, getInterpolatedPath } from "@/lib/shapeshifter/pathUtils";
+import {
+  parsePath,
+  pathToString,
+  interpolatedPathIfCompatible,
+} from "@/lib/shapeshifter/pathUtils";
 import type { PathData } from "@/lib/shapeshifter/types";
 import { gradientToSvg } from "@/lib/shapeshifter/gradients";
 import { getPreviewLayers } from "./canvas/pathCanvasPreview";
@@ -20,6 +25,11 @@ import {
   getSubPathBounds,
 } from "./canvas/pathCanvasGeometry";
 import { usePathCanvasEditing } from "./canvas/usePathCanvasEditing";
+import { vectorCoordinateSize } from "@/lib/shapeshifter/vectorSpace";
+// Shared immutable fallback so every memo/hook below stays unconditional (rules of
+// hooks): PathCanvas must never early-return between hook calls, even when the
+// selected layer disappears mid-mount (e.g. Delete in action mode).
+const emptyPathData: PathData = { subPaths: [] };
 
 interface PathCanvasProps {
   resetKey?: number;
@@ -54,9 +64,33 @@ export const PathCanvas = React.memo(function PathCanvas({
     fitDetailToVector,
     toolMode,
     isActionMode,
-  } = useEditorStore();
+  } = useEditorStore(
+    useShallow((state) => ({
+      layers: state.layers,
+      animation: state.animation,
+      vector: state.vector,
+      selectedLayerId: state.selectedLayerId,
+      editingSide: state.editingSide,
+      selection: state.selection,
+      selectedPoints: state.selectedPoints,
+      selectedSubPaths: state.selectedSubPaths,
+      progress: state.progress,
+      snapToGrid: state.snapToGrid,
+      pushHistory: state.pushHistory,
+      zoom: state.zoom,
+      detailViewport: state.detailViewport,
+      setDetailViewport: state.setDetailViewport,
+      fitDetailToVector: state.fitDetailToVector,
+      toolMode: state.toolMode,
+      isActionMode: state.isActionMode,
+    })),
+  );
 
-  const currentFillColor = layers.find((l) => l.id === selectedLayerId)?.fillColor || "#111111";
+  const currentLayer = useMemo(
+    () => layers.find((l) => l.id === selectedLayerId) ?? null,
+    [layers, selectedLayerId],
+  );
+  const currentFillColor = currentLayer?.fillColor || "#111111";
 
   const {
     view: viewBox,
@@ -101,8 +135,7 @@ export const PathCanvas = React.memo(function PathCanvas({
   });
 
   const artboard = useMemo(() => {
-    const artboardWidth = Math.max(1, vector.width || 24);
-    const artboardHeight = Math.max(1, vector.height || 24);
+    const { width: artboardWidth, height: artboardHeight } = vectorCoordinateSize(vector);
     const baseSize = Math.max(artboardWidth, artboardHeight);
     return {
       x: 0,
@@ -115,30 +148,37 @@ export const PathCanvas = React.memo(function PathCanvas({
       gridMinor: baseSize <= 32 ? 1 : Math.max(4, Math.round(baseSize / 48)),
       gridMajor: baseSize <= 32 ? 4 : Math.max(16, Math.round(baseSize / 12)),
     };
-  }, [vector.height, vector.width]);
-
-  const currentLayer = layers.find((l) => l.id === selectedLayerId);
-  if (!currentLayer) return null;
+  }, [vector.height, vector.viewportHeight, vector.viewportWidth, vector.width]);
 
   const isEditingThisSide = side === editingSide;
-  const targetPathData = side === "to" ? (currentLayer.to ?? currentLayer.from) : currentLayer.from;
-
+  const targetPathData = (
+    currentLayer
+      ? side === "to"
+        ? (currentLayer.to ?? currentLayer.from)
+        : currentLayer.from
+      : emptyPathData
+  ) as PathData;
   // Memoized display path (zero friction polish 19u): avoids repeated getInterpolatedPath work
   // on non-progress re-renders of preview canvas (e.g. selection changes elsewhere) while
   // preserving exact prior behavior + deps pattern used by all other memos in this file.
   const displayPath = useMemo(() => {
+    if (!currentLayer) return "";
     if (side === "preview") {
       // Real interpolation using the new engine
-      return getInterpolatedPath(currentLayer.from, currentLayer.to ?? currentLayer.from, progress);
+      return interpolatedPathIfCompatible(
+        currentLayer.from,
+        currentLayer.to ?? currentLayer.from,
+        progress,
+      );
     }
     return pathToString(targetPathData);
-  }, [side, currentLayer.from, currentLayer.to, progress, targetPathData]);
+  }, [side, currentLayer, targetPathData, progress]);
   const fallbackStroke = side === "to" ? "var(--destructive)" : "var(--primary)";
-  const hasExplicitStroke = Boolean(currentLayer.strokeColor);
-  const hasExplicitFill = Boolean(currentLayer.fillColor);
+  const hasExplicitStroke = Boolean(currentLayer?.strokeColor);
+  const hasExplicitFill = Boolean(currentLayer?.fillColor);
   const strokeWidth =
     hasExplicitStroke || !hasExplicitFill
-      ? currentLayer.strokeWidth && currentLayer.strokeWidth > 0
+      ? currentLayer?.strokeWidth && currentLayer.strokeWidth > 0
         ? currentLayer.strokeWidth
         : 2.2
       : 0;
@@ -154,7 +194,8 @@ export const PathCanvas = React.memo(function PathCanvas({
       ),
     [targetPathData],
   );
-  const segmentPathData = side === "preview" ? currentLayer.from : targetPathData;
+  const segmentPathData =
+    side === "preview" ? (currentLayer?.from ?? emptyPathData) : targetPathData;
   const segmentTargets = useMemo(() => getSegmentTargets(segmentPathData), [segmentPathData]);
   const ruler = useMemo(() => getRulerModel(viewBox), [viewBox]);
   const previewLayers = useMemo(
@@ -181,12 +222,13 @@ export const PathCanvas = React.memo(function PathCanvas({
   );
   const selectedSubPathBounds = useMemo(() => {
     if (selectedLayerSubPathSelections.length === 0) return null;
-    const pathData = side === "preview" ? currentLayer.from : targetPathData;
+    const pathData = side === "preview" ? currentLayer?.from : targetPathData;
+    if (!pathData) return null;
     return getSubPathBounds(
       pathData,
       selectedLayerSubPathSelections.map((item) => item.subPathIndex),
     );
-  }, [currentLayer.from, selectedLayerSubPathSelections, side, targetPathData]);
+  }, [currentLayer, selectedLayerSubPathSelections, side, targetPathData]);
   const selectedLayerBounds = useMemo(
     () => (side === "preview" ? getPathBounds(parsePath(selectedPreviewPath)) : selectedPathBounds),
     [selectedPathBounds, selectedPreviewPath, side],
@@ -322,7 +364,7 @@ export const PathCanvas = React.memo(function PathCanvas({
         <clipPath id={`${gridId}-artboard-clip`}>
           <rect x={artboard.x} y={artboard.y} width={artboard.width} height={artboard.height} />
         </clipPath>
-        {currentLayer.fillGradient && (
+        {currentLayer?.fillGradient && (
           <g
             dangerouslySetInnerHTML={{
               __html: gradientToSvg(
@@ -478,7 +520,7 @@ export const PathCanvas = React.memo(function PathCanvas({
       ) : (
         <g clipPath={`url(#${gridId}-artboard-clip)`}>
           {/* Subtle body/silhouette treatment for the main path (inspired by reference image arrow) */}
-          {side === "from" && (
+          {side === "from" && currentLayer && (
             <path
               d={displayPath}
               fill="none"
@@ -492,34 +534,36 @@ export const PathCanvas = React.memo(function PathCanvas({
               pointerEvents="none"
             />
           )}
-          <path
-            d={displayPath}
-            className={
-              side === "from"
-                ? "drop-shadow-sm"
-                : "opacity-85 drop-shadow-sm [stroke-dasharray:4_3]"
-            }
-            fill={
-              currentLayer.fillGradient
-                ? `url(#${gridId}-fill-grad)`
-                : currentLayer.fillColor || "none"
-            }
-            fillOpacity={currentLayer.fillGradient ? 1 : (currentLayer.fillAlpha ?? 1)}
-            stroke={currentLayer.strokeColor || fallbackStroke}
-            strokeOpacity={currentLayer.strokeAlpha ?? 1}
-            strokeWidth={strokeWidth}
-            strokeLinecap={currentLayer.strokeLinecap ?? "butt"}
-            strokeLinejoin={currentLayer.strokeLinejoin ?? "miter"}
-            strokeMiterlimit={currentLayer.strokeMiterLimit ?? 4}
-            strokeDasharray={
-              currentLayer.strokeDasharray && currentLayer.strokeDasharray !== "none"
-                ? currentLayer.strokeDasharray
-                : side === "to"
-                  ? "4 3"
-                  : undefined
-            }
-            fillRule={currentLayer.fillType === "evenOdd" ? "evenodd" : "nonzero"}
-          />
+          {currentLayer && (
+            <path
+              d={displayPath}
+              className={
+                side === "from"
+                  ? "drop-shadow-sm"
+                  : "opacity-85 drop-shadow-sm [stroke-dasharray:4_3]"
+              }
+              fill={
+                currentLayer.fillGradient
+                  ? `url(#${gridId}-fill-grad)`
+                  : currentLayer.fillColor || "none"
+              }
+              fillOpacity={currentLayer.fillGradient ? 1 : (currentLayer.fillAlpha ?? 1)}
+              stroke={currentLayer.strokeColor || fallbackStroke}
+              strokeOpacity={currentLayer.strokeAlpha ?? 1}
+              strokeWidth={strokeWidth}
+              strokeLinecap={currentLayer.strokeLinecap ?? "butt"}
+              strokeLinejoin={currentLayer.strokeLinejoin ?? "miter"}
+              strokeMiterlimit={currentLayer.strokeMiterLimit ?? 4}
+              strokeDasharray={
+                currentLayer.strokeDasharray && currentLayer.strokeDasharray !== "none"
+                  ? currentLayer.strokeDasharray
+                  : side === "to"
+                    ? "4 3"
+                    : undefined
+              }
+              fillRule={currentLayer.fillType === "evenOdd" ? "evenodd" : "nonzero"}
+            />
+          )}
         </g>
       )}
 
@@ -536,7 +580,7 @@ export const PathCanvas = React.memo(function PathCanvas({
             onPointerDown={handlePreviewPathPointerDown}
             onDoubleClick={(event) => handlePreviewPathDoubleClick(event, selectedLayerId)}
           />
-          {currentLayer.from.subPaths.map((subPath, subPathIndex) => {
+          {(currentLayer?.from.subPaths ?? []).map((subPath, subPathIndex) => {
             const d = pathToString({ subPaths: [subPath] });
             return (
               <path
@@ -574,7 +618,7 @@ export const PathCanvas = React.memo(function PathCanvas({
       {side === "preview" && !isActionMode && selectedLayerSubPathSelections.length > 0 && (
         <g transform={selectedPreviewTransform} clipPath={overlayClipPath} pointerEvents="none">
           {selectedLayerSubPathSelections.map((item) => {
-            const subPath = currentLayer.from.subPaths[item.subPathIndex];
+            const subPath = currentLayer?.from.subPaths[item.subPathIndex];
             if (!subPath) return null;
             const subPathPath: PathData = { subPaths: [subPath] };
             const bounds = getPathBounds(subPathPath);
@@ -773,10 +817,19 @@ export const PathCanvas = React.memo(function PathCanvas({
             side === "preview" || editingSide === "from" ? hlayer.from : hlayer.to || hlayer.from;
           const previewD = pathToString(targetP);
           if (!previewD) return null;
+          // The canvas renders this layer through its evaluated worldMatrix
+          // (see getPreviewLayers), so the overlay must carry the same
+          // transform or it draws offset from the visible art.
+          const worldMatrix =
+            side === "preview"
+              ? previewLayers.find((candidate) => String(candidate.layer.id) === String(hid))
+                  ?.transform
+              : undefined;
           const sw = Math.max(viewBox.w * 0.0018, 0.08);
           return (
             <path
               d={previewD}
+              transform={worldMatrix}
               fill={fillC}
               fillOpacity={fillA}
               stroke="#0d99ff"

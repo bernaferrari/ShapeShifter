@@ -34,12 +34,12 @@ the Android resources they ship.
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
+| Purpose      | Command                                                                                                                                                                                                              | Expected |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
 | Motion tests | `pnpm test -- lib/shapeshifter/__tests__/playheadResolve.test.ts lib/shapeshifter/__tests__/sceneRender.test.ts lib/shapeshifter/__tests__/androidCompiler.test.ts lib/shapeshifter/__tests__/androidParity.test.ts` | all pass |
-| Full suite | `pnpm test` | all pass |
-| Typecheck | `pnpm typecheck` | exit 0 |
-| Build | `pnpm build` | exit 0 |
+| Full suite   | `pnpm test`                                                                                                                                                                                                          | all pass |
+| Typecheck    | `pnpm typecheck`                                                                                                                                                                                                     | exit 0   |
+| Build        | `pnpm build`                                                                                                                                                                                                         | exit 0   |
 
 ## Scope
 
@@ -146,4 +146,3 @@ easing progress.
 The evaluator and compiler must share property metadata: valid target kinds, value
 type, default value, range, Android name, minimum SDK, and interpolation rules.
 Avoid parallel switch statements that can drift.
-

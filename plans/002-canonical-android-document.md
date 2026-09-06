@@ -35,12 +35,12 @@ values, and easing before any broader rendering work is trustworthy.
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
+| Purpose     | Command                                                                                                                                                  | Expected |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
 | Model tests | `pnpm test -- lib/shapeshifter/__tests__/documentModel.test.ts lib/shapeshifter/__tests__/androidParity.test.ts lib/store/__tests__/editorStore.test.ts` | all pass |
-| Full suite | `pnpm test` | all pass |
-| Typecheck | `pnpm typecheck` | exit 0 |
-| Lint | `pnpm lint` | exit 0 |
+| Full suite  | `pnpm test`                                                                                                                                              | all pass |
+| Typecheck   | `pnpm typecheck`                                                                                                                                         | exit 0   |
+| Lint        | `pnpm lint`                                                                                                                                              | exit 0   |
 
 ## Scope
 
@@ -148,4 +148,3 @@ produce the expected canonical document.
 DocumentV2 should become runtime truth rather than another adapter. Do not introduce
 a fourth representation. Keep stable node/geometry IDs because AVD targets,
 selection, undo, and morph mappings depend on them.
-

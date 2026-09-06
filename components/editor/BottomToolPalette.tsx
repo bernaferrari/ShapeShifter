@@ -13,8 +13,7 @@ import type { ToolMode } from "@/lib/shapeshifter/toolModes";
  * Initially a clean, modern bar that drives toolMode.
  *
  * This is the start of PR-01 foundation work under ShapeShifter-v6j (P0).
- * Over time this will grow real gestures (Bend will become a first-class curvature tool,
- * Cut will be a real knife, etc.).
+ * Knife is currently "add point on path" — not a cut primitive.
  */
 
 interface ToolDef {
@@ -58,7 +57,7 @@ const TOOLS: ToolDef[] = [
   },
   {
     mode: "knife",
-    label: "Knife",
+    label: "Add point",
     icon: <Scissors className="h-4 w-4" />,
     shortcut: "K",
   },

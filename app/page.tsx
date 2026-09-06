@@ -25,6 +25,7 @@ import {
   useEditorKeyboardShortcuts,
 } from "@/components/editor/hooks/useEditorKeyboardShortcuts";
 import { useEditorPlayback } from "@/components/editor/hooks/useEditorPlayback";
+import { useDocumentAutosave } from "@/components/editor/hooks/useDocumentAutosave";
 import { useProjectImport } from "@/components/editor/project/useProjectImport";
 import { useProjectExport } from "@/components/editor/project/useProjectExport";
 import { EditorCommandPalette, EditorHelpDialog } from "@/components/editor/EditorDialogs";
@@ -35,6 +36,7 @@ const NARROW_BREAKPOINT = 1100;
 
 export default function ShapeShifter2026() {
   useEditorKeyboardShortcuts();
+  useDocumentAutosave();
   const playbackActive = useEditorPlayback();
   const {
     inputRef: fileInputRef,
@@ -317,7 +319,7 @@ export default function ShapeShifter2026() {
       <input
         type="file"
         ref={fileInputRef}
-        accept=".svg,.xml,.json,.shapeshifter"
+        accept=".svg,.xml,.json,.shapeshifter,.zip"
         multiple
         className="hidden"
         onChange={(e) => {

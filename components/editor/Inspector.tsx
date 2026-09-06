@@ -40,9 +40,10 @@ import {
   MotionPanel,
   type InspectorTab,
 } from "./inspector/InspectorPanels";
+import { MorphPrepareSection } from "./inspector/MorphPrepareSection";
 
 /* ------------------------------------------------------------------ */
-/* Field primitives — a small, consistent Figma-grade control system  */
+/* Field primitives — a small, consistent control system. */
 /* ------------------------------------------------------------------ */
 
 /* ------------------------------------------------------------------ */
@@ -68,7 +69,7 @@ export function Inspector() {
   const animation = useEditorStore((state) => state.animation);
   const selectedPoints = useEditorStore((state) => state.selectedPoints);
   const selectPoint = useEditorStore((state) => state.selectPoint);
-  const booleanCombine = useEditorStore((state) => state.booleanCombine);
+
   const toggleLayerLock = useEditorStore((state) => state.toggleLayerLock);
   const selectionKind = useEditorStore((state) => state.selectionKind);
   const frames = useEditorStore((state) => state.frames);
@@ -328,11 +329,14 @@ export function Inspector() {
       </div>
 
       {activeTab === "motion" ? (
-        <MotionPanel
-          layer={currentLayer}
-          selectionCount={multiCount}
-          onEditMorph={startActionMode}
-        />
+        <>
+          <MorphPrepareSection />
+          <MotionPanel
+            layer={currentLayer}
+            selectionCount={multiCount}
+            onEditMorph={startActionMode}
+          />
+        </>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <LayerTransformSection
@@ -530,18 +534,16 @@ export function Inspector() {
                   return (
                     <Section title="Combine" defaultOpen={false}>
                       <p className="text-[10px] leading-relaxed text-muted-foreground">
-                        Boolean with the layer below ({layers[idx + 1]?.name}).
+                        Boolean commands are disabled until a curve-capable kernel is available.
                       </p>
                       <div className="grid grid-cols-2 gap-1">
                         {ops.map(({ op, label, icon }) => (
                           <button
                             key={op}
                             type="button"
-                            onClick={() => {
-                              booleanCombine(op);
-                              toast.success(label);
-                            }}
-                            className="flex h-8 items-center justify-center gap-1.5 rounded-md border border-border bg-background text-[11px] text-foreground transition-colors hover:border-foreground/20 hover:bg-muted"
+                            disabled
+                            title="Boolean operations are disabled until a curve-capable kernel lands"
+                            className="flex h-8 items-center justify-center gap-1.5 rounded-md border border-border bg-background text-[11px] text-muted-foreground opacity-60"
                           >
                             <span className="text-muted-foreground">{icon}</span>
                             {label}

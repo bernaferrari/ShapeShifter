@@ -118,11 +118,7 @@ function normalizeAnimationValue(
   return pathToString(parsePath(value));
 }
 
-function addGeometryVersion(
-  document: DocumentV2,
-  id: string,
-  pathData: Layer["from"],
-): string {
+function addGeometryVersion(document: DocumentV2, id: string, pathData: Layer["from"]): string {
   document.geometryVersions[id] = {
     id,
     pathData,
@@ -173,14 +169,14 @@ function addOwner(
     const fromGeometryVersionId = isPath
       ? scopedId("geometry", ownerId, `${String(layer.id)}:from`)
       : undefined;
-    const toGeometryVersionId = isPath && layer.to
-      ? scopedId("geometry", ownerId, `${String(layer.id)}:to`)
-      : undefined;
+    const toGeometryVersionId =
+      isPath && layer.to ? scopedId("geometry", ownerId, `${String(layer.id)}:to`) : undefined;
     if (geometryVersionId) {
       const pathData = layer.pathData ?? layer.from;
       addGeometryVersion(document, geometryVersionId, pathData);
       addGeometryVersion(document, fromGeometryVersionId!, layer.from);
-      if (toGeometryVersionId && layer.to) addGeometryVersion(document, toGeometryVersionId, layer.to);
+      if (toGeometryVersionId && layer.to)
+        addGeometryVersion(document, toGeometryVersionId, layer.to);
     }
     const childrenIds = flat
       .filter((entry) => String(entry.parentId) === String(layer.id))
@@ -210,7 +206,14 @@ function addOwner(
       androidName: layer.androidName ?? layer.name,
     };
     document.nodes[nodeId] = node;
-    if (fromGeometryVersionId && toGeometryVersionId) {
+    if (layer.morphMapping) {
+      document.morphMappings[layer.morphMapping.id] = {
+        ...layer.morphMapping,
+        fromGeometryId: fromGeometryVersionId ?? layer.morphMapping.fromGeometryId,
+        toGeometryId: toGeometryVersionId ?? layer.morphMapping.toGeometryId,
+      };
+      node.morphMappingId = layer.morphMapping.id;
+    } else if (fromGeometryVersionId && toGeometryVersionId) {
       addMorphMapping(
         document,
         scopedId("mapping", ownerId, `${String(layer.id)}:endpoints`),
@@ -419,6 +422,9 @@ function ownerLayers(document: DocumentV2, rootIds: string[]): Layer[] {
       alpha: node.alpha,
       ...node.style,
       ...node.transform,
+      ...(node.morphMappingId && document.morphMappings[node.morphMappingId]
+        ? { morphMapping: document.morphMappings[node.morphMappingId] }
+        : {}),
     } satisfies Layer;
   });
 }
@@ -509,68 +515,479 @@ export function legacySnapshotFromDocumentV2(document: DocumentV2): LegacyDocume
   };
 }
 
-export function validateDocumentV2(document: DocumentV2): string[] {
+/**
+ * Report valid V2 constructs the legacy runtime cannot project and then recreate
+ * without changing their meaning. Callers must refuse these documents instead of
+ * silently flattening them into the legacy model.
+ */
+export function legacyProjectionIssues(document: DocumentV2): string[] {
   const issues: string[] = [];
-  for (const frameId of document.frameIds) {
-    const frame = document.frames[frameId];
-    if (!frame) {
-      issues.push(`Frame ${frameId} is missing.`);
+  if (Object.keys(document.components ?? {}).length > 0) issues.push("reusable components");
+  if (Object.values(document.nodes).some((node) => node.type === "boolean"))
+    issues.push("boolean nodes");
+  if (Object.values(document.nodes).some((node) => node.type === "componentInstance"))
+    issues.push("component instances");
+  if (
+    document.rootClipIds.length > 1 ||
+    Object.values(document.frames).some((frame) => frame.clipIds.length > 1)
+  )
+    issues.push("multiple animation clips per owner");
+
+  for (const track of Object.values(document.tracks)) {
+    const keyframes = track.keyframeIds
+      .map((keyframeId) => document.keyframes[keyframeId])
+      .filter((keyframe): keyframe is Keyframe => Boolean(keyframe));
+    const hasNativeKeyframeMapping = keyframes.some((keyframe) => {
+      if (!keyframe.morphMappingId) return false;
+      const mapping = document.morphMappings[keyframe.morphMappingId];
+      // The legacy adapter recreates its own endpoint mapping for a paired
+      // legacy morph block. Any richer per-keyframe mapping would be erased.
+      return !keyframe.legacyBlockId || mapping?.alignments.kind !== "legacy-aligned-endpoints";
+    });
+    if (hasNativeKeyframeMapping) {
+      issues.push(`keyframe morph mappings on track ${track.id}`);
       continue;
     }
-    for (const nodeId of frame.childrenNodeIds)
-      if (!document.nodes[nodeId])
-        issues.push(`Frame ${frameId} references missing node ${nodeId}.`);
-    for (const clipId of frame.clipIds)
-      if (!document.clips[clipId])
-        issues.push(`Frame ${frameId} references missing clip ${clipId}.`);
-  }
-  for (const rootId of document.rootNodeIds)
-    if (!document.nodes[rootId]) issues.push(`Page references missing node ${rootId}.`);
-  for (const node of Object.values(document.nodes)) {
-    if (node.parentId && !document.nodes[node.parentId])
-      issues.push(`Node ${node.id} references missing parent ${node.parentId}.`);
-    for (const childId of node.childrenIds ?? []) {
-      const child = document.nodes[childId];
-      if (!child) issues.push(`Node ${node.id} references missing child ${childId}.`);
-      else if (child.parentId !== node.id)
-        issues.push(`Node ${childId} does not point back to parent ${node.id}.`);
+    const withoutLegacyBlockId = keyframes.filter((keyframe) => !keyframe.legacyBlockId);
+    if (withoutLegacyBlockId.length > 0 && keyframes.length !== 2) {
+      issues.push(`native keyframe sequence on track ${track.id}`);
+      continue;
     }
-    if (node.geometryVersionId && !document.geometryVersions[node.geometryVersionId])
-      issues.push(`Node ${node.id} references missing geometry ${node.geometryVersionId}.`);
-    if (node.fromGeometryVersionId && !document.geometryVersions[node.fromGeometryVersionId])
-      issues.push(`Node ${node.id} references missing start geometry ${node.fromGeometryVersionId}.`);
-    if (node.toGeometryVersionId && !document.geometryVersions[node.toGeometryVersionId])
-      issues.push(`Node ${node.id} references missing end geometry ${node.toGeometryVersionId}.`);
+    const blocks = new Map<string, number>();
+    for (const keyframe of keyframes) {
+      if (!keyframe.legacyBlockId) continue;
+      blocks.set(keyframe.legacyBlockId, (blocks.get(keyframe.legacyBlockId) ?? 0) + 1);
+    }
+    if ([...blocks.values()].some((count) => count !== 2))
+      issues.push(`non-pair legacy keyframes on track ${track.id}`);
   }
-  for (const mapping of Object.values(document.morphMappings)) {
-    if (!document.geometryVersions[mapping.fromGeometryId])
-      issues.push(`Morph mapping ${mapping.id} references missing start geometry ${mapping.fromGeometryId}.`);
-    if (!document.geometryVersions[mapping.toGeometryId])
-      issues.push(`Morph mapping ${mapping.id} references missing end geometry ${mapping.toGeometryId}.`);
+  return issues;
+}
+
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isPathDataRecord(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.subPaths) &&
+    value.subPaths.every(
+      (subPath) =>
+        isRecord(subPath) &&
+        Array.isArray(subPath.commands) &&
+        subPath.commands.every(
+          (command) =>
+            isRecord(command) &&
+            typeof command.id === "string" &&
+            typeof command.type === "string" &&
+            Array.isArray(command.points) &&
+            command.points.every(
+              (point) => isRecord(point) && isFiniteNumber(point.x) && isFiniteNumber(point.y),
+            ),
+        ),
+    )
+  );
+}
+
+function isPageRecord(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.name === "string" &&
+    isFiniteNumber(value.width) &&
+    isFiniteNumber(value.height) &&
+    isFiniteNumber(value.alpha)
+  );
+}
+
+function isFrameRecord(value: unknown): value is Frame {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    isFiniteNumber(value.x) &&
+    isFiniteNumber(value.y) &&
+    isFiniteNumber(value.width) &&
+    isFiniteNumber(value.height) &&
+    isFiniteNumber(value.alpha) &&
+    isStringArray(value.childrenNodeIds) &&
+    isStringArray(value.clipIds)
+  );
+}
+
+function isNodeRecord(value: unknown): value is Node {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.name !== "string" ||
+    !["group", "path", "clipPath", "boolean", "componentInstance"].includes(String(value.type)) ||
+    typeof value.visible !== "boolean" ||
+    typeof value.locked !== "boolean" ||
+    !isFiniteNumber(value.alpha) ||
+    !isRecord(value.style) ||
+    !isRecord(value.transform)
+  ) {
+    return false;
   }
-  for (const clip of Object.values(document.clips)) {
-    for (const trackId of clip.trackIds)
-      if (!document.tracks[trackId])
-        issues.push(`Clip ${clip.id} references missing track ${trackId}.`);
+
+  const transform = value.transform;
+  return (
+    isFiniteNumber(transform.translateX) &&
+    isFiniteNumber(transform.translateY) &&
+    isFiniteNumber(transform.scaleX) &&
+    isFiniteNumber(transform.scaleY) &&
+    isFiniteNumber(transform.rotation) &&
+    isFiniteNumber(transform.pivotX) &&
+    isFiniteNumber(transform.pivotY) &&
+    (value.parentId === undefined || typeof value.parentId === "string") &&
+    (value.childrenIds === undefined || isStringArray(value.childrenIds)) &&
+    (value.geometryVersionId === undefined || typeof value.geometryVersionId === "string") &&
+    (value.fromGeometryVersionId === undefined ||
+      typeof value.fromGeometryVersionId === "string") &&
+    (value.toGeometryVersionId === undefined || typeof value.toGeometryVersionId === "string") &&
+    (value.morphMappingId === undefined || typeof value.morphMappingId === "string")
+  );
+}
+
+function isGeometryRecord(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    isPathDataRecord(value.pathData) &&
+    isFiniteNumber(value.createdAt)
+  );
+}
+
+function isMappingRecord(value: unknown): value is MorphMapping {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    isRecord(value.alignments) &&
+    Array.isArray(value.polePositions) &&
+    value.polePositions.every(
+      (point) => isRecord(point) && isFiniteNumber(point.x) && isFiniteNumber(point.y),
+    ) &&
+    isFiniteNumber(value.createdAt) &&
+    (value.fromGeometryId === undefined || typeof value.fromGeometryId === "string") &&
+    (value.toGeometryId === undefined || typeof value.toGeometryId === "string")
+  );
+}
+
+function isClipRecord(value: unknown): value is AnimationClip {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    isFiniteNumber(value.duration) &&
+    (value.frameId === null || typeof value.frameId === "string") &&
+    isStringArray(value.trackIds)
+  );
+}
+
+function isTrackRecord(value: unknown): value is Track {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    isRecord(value.target) &&
+    typeof value.target.nodeId === "string" &&
+    ANIMATABLE_PROPERTIES.has(value.target.property as AnimatableProperty) &&
+    (value.valueType === "number" || value.valueType === "color" || value.valueType === "path") &&
+    isStringArray(value.keyframeIds)
+  );
+}
+
+function isKeyframeRecord(value: unknown): value is Keyframe {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    isFiniteNumber(value.time) &&
+    (typeof value.value === "string" || isFiniteNumber(value.value)) &&
+    (value.interpolator === undefined || typeof value.interpolator === "string") &&
+    (value.geometryVersionId === undefined || typeof value.geometryVersionId === "string") &&
+    (value.morphMappingId === undefined || typeof value.morphMappingId === "string")
+  );
+}
+
+interface DocumentOwner {
+  /** Stable internal identity. The display label alone is not enough for frames. */
+  key: string;
+  label: string;
+  frameId: string | null;
+}
+
+/**
+ * A V2 document is a collection of graphs, not a bag of independently useful
+ * records. The legacy projection starts from page/frame roots, so accepting an
+ * unowned record here would quietly discard authored data during import. Keep
+ * immutable geometry and mapping history permissive, but require every mutable
+ * scene and timeline record to be reachable from exactly one owner.
+ */
+function validateDocumentOwnership(document: DocumentV2, issues: string[]): void {
+  const pageOwner: DocumentOwner = { key: "page", label: "the page", frameId: null };
+  const nodeOwners = new Map<string, DocumentOwner>();
+  const clipOwners = new Map<string, DocumentOwner>();
+  const trackOwners = new Map<string, DocumentOwner>();
+  const keyframeOwners = new Map<string, DocumentOwner>();
+
+  const duplicateOwnerIssue = (
+    kind: "Node" | "Clip" | "Track" | "Keyframe",
+    id: string,
+    previous: DocumentOwner,
+    next: DocumentOwner,
+  ) => {
+    if (previous.key === next.key)
+      issues.push(`${kind} ${id} is reachable more than once from ${next.label}.`);
+    else issues.push(`${kind} ${id} is reachable from both ${previous.label} and ${next.label}.`);
+  };
+
+  const visitNode = (nodeId: string, owner: DocumentOwner, isOwnerRoot: boolean) => {
+    const node = document.nodes[nodeId];
+    if (!isNodeRecord(node)) return;
+
+    const previousOwner = nodeOwners.get(nodeId);
+    if (previousOwner) {
+      duplicateOwnerIssue("Node", nodeId, previousOwner, owner);
+      return;
+    }
+    nodeOwners.set(nodeId, owner);
+
+    if (isOwnerRoot && node.parentId !== undefined)
+      issues.push(`Root node ${nodeId} for ${owner.label} must not have a parent.`);
+    for (const childId of node.childrenIds ?? []) visitNode(childId, owner, false);
+  };
+
+  for (const nodeId of document.rootNodeIds) visitNode(nodeId, pageOwner, true);
+  for (const frameId of document.frameIds) {
+    const frame = document.frames[frameId];
+    if (!isFrameRecord(frame)) continue;
+    const owner: DocumentOwner = {
+      key: `frame:${frameId}`,
+      label: `frame ${frameId}`,
+      frameId,
+    };
+    for (const nodeId of frame.childrenNodeIds) visitNode(nodeId, owner, true);
   }
-  for (const track of Object.values(document.tracks)) {
-    if (!document.nodes[track.target.nodeId])
-      issues.push(`Track ${track.id} references missing node ${track.target.nodeId}.`);
-    let previous = -Infinity;
-    for (const keyframeId of track.keyframeIds) {
-      const keyframe = document.keyframes[keyframeId];
-      if (!keyframe) {
-        issues.push(`Track ${track.id} references missing keyframe ${keyframeId}.`);
+  for (const nodeId of Object.keys(document.nodes)) {
+    if (!nodeOwners.has(nodeId))
+      issues.push(`Node ${nodeId} is not reachable from page or frame roots.`);
+  }
+
+  const visitKeyframe = (keyframeId: string, owner: DocumentOwner) => {
+    const keyframe = document.keyframes[keyframeId];
+    if (!isKeyframeRecord(keyframe)) return;
+
+    const previousOwner = keyframeOwners.get(keyframeId);
+    if (previousOwner) {
+      duplicateOwnerIssue("Keyframe", keyframeId, previousOwner, owner);
+      return;
+    }
+    keyframeOwners.set(keyframeId, owner);
+  };
+
+  const visitTrack = (trackId: string, owner: DocumentOwner) => {
+    const track = document.tracks[trackId];
+    if (!isTrackRecord(track)) return;
+
+    const previousOwner = trackOwners.get(trackId);
+    if (previousOwner) {
+      duplicateOwnerIssue("Track", trackId, previousOwner, owner);
+      return;
+    }
+    trackOwners.set(trackId, owner);
+
+    const targetOwner = nodeOwners.get(track.target.nodeId);
+    if (!targetOwner) issues.push(`Track ${trackId} targets a node outside ${owner.label}.`);
+    else if (targetOwner.key !== owner.key)
+      issues.push(
+        `Track ${trackId} targets a node owned by ${targetOwner.label}, not ${owner.label}.`,
+      );
+
+    for (const keyframeId of track.keyframeIds) visitKeyframe(keyframeId, owner);
+  };
+
+  const visitClip = (clipId: string, owner: DocumentOwner) => {
+    const clip = document.clips[clipId];
+    if (!isClipRecord(clip)) return;
+
+    const previousOwner = clipOwners.get(clipId);
+    if (previousOwner) {
+      duplicateOwnerIssue("Clip", clipId, previousOwner, owner);
+      return;
+    }
+    clipOwners.set(clipId, owner);
+
+    if (clip.frameId !== owner.frameId)
+      issues.push(
+        `Clip ${clipId} has frameId ${String(clip.frameId)} but is owned by ${owner.label}.`,
+      );
+    for (const trackId of clip.trackIds) visitTrack(trackId, owner);
+  };
+
+  for (const clipId of document.rootClipIds) visitClip(clipId, pageOwner);
+  for (const frameId of document.frameIds) {
+    const frame = document.frames[frameId];
+    if (!isFrameRecord(frame)) continue;
+    const owner: DocumentOwner = {
+      key: `frame:${frameId}`,
+      label: `frame ${frameId}`,
+      frameId,
+    };
+    for (const clipId of frame.clipIds) visitClip(clipId, owner);
+  }
+  for (const clipId of Object.keys(document.clips)) {
+    if (!clipOwners.has(clipId))
+      issues.push(`Clip ${clipId} is not reachable from page or frame clip lists.`);
+  }
+  for (const trackId of Object.keys(document.tracks)) {
+    if (!trackOwners.has(trackId))
+      issues.push(`Track ${trackId} is not reachable from an animation clip.`);
+  }
+  for (const keyframeId of Object.keys(document.keyframes)) {
+    if (!keyframeOwners.has(keyframeId))
+      issues.push(`Keyframe ${keyframeId} is not reachable from an animation track.`);
+  }
+}
+
+/**
+ * Verify a persisted document before attempting the legacy projection. This accepts
+ * unknown input deliberately: import data is untrusted, and validation itself must
+ * never become the reason a recoverable project cannot be opened.
+ */
+export function validateDocumentV2(document: unknown): string[] {
+  const issues: string[] = [];
+  try {
+    if (!isRecord(document)) return ["Document v2 must be an object."];
+    if (document.version !== 2) issues.push("Document version must be 2.");
+    if (typeof document.id !== "string") issues.push("Document id is missing.");
+    if (typeof document.name !== "string") issues.push("Document name is missing.");
+    if (!isStringArray(document.frameIds)) issues.push("Document frameIds must be an array.");
+
+    const recordFields = [
+      "frames",
+      "nodes",
+      "geometryVersions",
+      "morphMappings",
+      "clips",
+      "tracks",
+      "keyframes",
+    ] as const;
+    for (const field of recordFields) {
+      if (!isRecord(document[field])) issues.push(`Document ${field} must be an object.`);
+    }
+    if (!isPageRecord(document.page)) issues.push("Document page is malformed.");
+    if (!isStringArray(document.rootNodeIds)) issues.push("Document rootNodeIds must be an array.");
+    if (!isStringArray(document.rootClipIds)) issues.push("Document rootClipIds must be an array.");
+    if (issues.length > 0) return issues;
+
+    const candidate = document as unknown as DocumentV2;
+    for (const frameId of candidate.frameIds) {
+      const frame = candidate.frames[frameId];
+      if (!isFrameRecord(frame)) {
+        issues.push(`Frame ${frameId} is missing or malformed.`);
         continue;
       }
-      if (keyframe.time < previous)
-        issues.push(`Track ${track.id} keyframes are not ordered by time.`);
-      if (keyframe.geometryVersionId && !document.geometryVersions[keyframe.geometryVersionId])
-        issues.push(`Keyframe ${keyframe.id} references missing geometry ${keyframe.geometryVersionId}.`);
-      if (keyframe.morphMappingId && !document.morphMappings[keyframe.morphMappingId])
-        issues.push(`Keyframe ${keyframe.id} references missing morph mapping ${keyframe.morphMappingId}.`);
-      previous = keyframe.time;
+      for (const nodeId of frame.childrenNodeIds)
+        if (!candidate.nodes[nodeId])
+          issues.push(`Frame ${frameId} references missing node ${nodeId}.`);
+      for (const clipId of frame.clipIds)
+        if (!candidate.clips[clipId])
+          issues.push(`Frame ${frameId} references missing clip ${clipId}.`);
     }
+    for (const rootId of candidate.rootNodeIds)
+      if (!candidate.nodes[rootId]) issues.push(`Page references missing node ${rootId}.`);
+    for (const clipId of candidate.rootClipIds)
+      if (!candidate.clips[clipId]) issues.push(`Page references missing clip ${clipId}.`);
+
+    for (const [nodeId, node] of Object.entries(candidate.nodes)) {
+      if (!isNodeRecord(node)) {
+        issues.push(`Node ${nodeId} is malformed.`);
+        continue;
+      }
+      if (node.parentId && !candidate.nodes[node.parentId])
+        issues.push(`Node ${node.id} references missing parent ${node.parentId}.`);
+      for (const childId of node.childrenIds ?? []) {
+        const child = candidate.nodes[childId];
+        if (!child) issues.push(`Node ${node.id} references missing child ${childId}.`);
+        else if (!isNodeRecord(child) || child.parentId !== node.id)
+          issues.push(`Node ${childId} does not point back to parent ${node.id}.`);
+      }
+      if (node.geometryVersionId && !candidate.geometryVersions[node.geometryVersionId])
+        issues.push(`Node ${node.id} references missing geometry ${node.geometryVersionId}.`);
+      if (node.fromGeometryVersionId && !candidate.geometryVersions[node.fromGeometryVersionId])
+        issues.push(
+          `Node ${node.id} references missing start geometry ${node.fromGeometryVersionId}.`,
+        );
+      if (node.toGeometryVersionId && !candidate.geometryVersions[node.toGeometryVersionId])
+        issues.push(`Node ${node.id} references missing end geometry ${node.toGeometryVersionId}.`);
+    }
+    for (const [geometryId, geometry] of Object.entries(candidate.geometryVersions)) {
+      if (!isGeometryRecord(geometry)) issues.push(`Geometry ${geometryId} is malformed.`);
+    }
+    for (const [mappingId, mapping] of Object.entries(candidate.morphMappings)) {
+      if (!isMappingRecord(mapping)) {
+        issues.push(`Morph mapping ${mappingId} is malformed.`);
+        continue;
+      }
+      if (mapping.fromGeometryId && !candidate.geometryVersions[mapping.fromGeometryId])
+        issues.push(
+          `Morph mapping ${mapping.id} references missing start geometry ${mapping.fromGeometryId}.`,
+        );
+      if (mapping.toGeometryId && !candidate.geometryVersions[mapping.toGeometryId])
+        issues.push(
+          `Morph mapping ${mapping.id} references missing end geometry ${mapping.toGeometryId}.`,
+        );
+    }
+    for (const [clipId, clip] of Object.entries(candidate.clips)) {
+      if (!isClipRecord(clip)) {
+        issues.push(`Clip ${clipId} is malformed.`);
+        continue;
+      }
+      for (const trackId of clip.trackIds)
+        if (!candidate.tracks[trackId])
+          issues.push(`Clip ${clip.id} references missing track ${trackId}.`);
+    }
+    for (const [trackId, track] of Object.entries(candidate.tracks)) {
+      if (!isTrackRecord(track)) {
+        issues.push(`Track ${trackId} is malformed.`);
+        continue;
+      }
+      if (!candidate.nodes[track.target.nodeId])
+        issues.push(`Track ${track.id} references missing node ${track.target.nodeId}.`);
+      let previous = -Infinity;
+      for (const keyframeId of track.keyframeIds) {
+        const keyframe = candidate.keyframes[keyframeId];
+        if (!isKeyframeRecord(keyframe)) {
+          issues.push(`Track ${track.id} references missing or malformed keyframe ${keyframeId}.`);
+          continue;
+        }
+        if (keyframe.time < previous)
+          issues.push(`Track ${track.id} keyframes are not ordered by time.`);
+        if (keyframe.geometryVersionId && !candidate.geometryVersions[keyframe.geometryVersionId])
+          issues.push(
+            `Keyframe ${keyframe.id} references missing geometry ${keyframe.geometryVersionId}.`,
+          );
+        if (keyframe.morphMappingId && !candidate.morphMappings[keyframe.morphMappingId])
+          issues.push(
+            `Keyframe ${keyframe.id} references missing morph mapping ${keyframe.morphMappingId}.`,
+          );
+        previous = keyframe.time;
+      }
+    }
+    validateDocumentOwnership(candidate, issues);
+  } catch {
+    // A proxy or an unexpectedly-shaped object should surface as an invalid document,
+    // never as an import-time exception that blocks legacy recovery.
+    issues.push("Document v2 could not be validated safely.");
   }
   return issues;
 }

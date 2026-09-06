@@ -1,6 +1,8 @@
 # ShapeShifter
 
-ShapeShifter is a browser-based editor for **Android VectorDrawable** and **AnimatedVectorDrawable** assets. It is designed for building, editing, previewing, and exporting Android vector motion—not as a general-purpose Figma replacement.
+ShapeShifter is the visual IDE and compiler for **Android VectorDrawable** and **AnimatedVectorDrawable** assets. Import SVG or VectorDrawable, animate it in a visual workflow, and export Android resource bundles with diagnostics. It is not a general-purpose Figma replacement.
+
+This repository is a rewrite of Alex Lockwood’s original [ShapeShifter](https://shapeshifter.design) and is licensed under Apache-2.0. See `LICENSE` and `NOTICE`.
 
 Author paths directly, organize them into Android-style groups and clip paths, animate supported properties on a timeline, and export production-oriented Android resources. SVG and Lottie exports are available when an asset also needs to travel outside Android.
 
@@ -25,20 +27,20 @@ Author paths directly, organize them into Android-style groups and clip paths, a
 
 ### Import and export
 
-| Format | Direction | Notes |
-| --- | --- | --- |
-| Android VectorDrawable XML | Import / export | Preserves groups, paths, clip paths, styling, viewport, dimensions, and supported root metadata. |
-| Android AnimatedVectorDrawable | Export | Produces drawable, animator, and interpolator resources in a ZIP. Invalid path morphs block export instead of silently degrading it. |
-| ShapeShifter project JSON | Import / export | Lossless project backup, including morph endpoints and Android metadata. |
-| SVG | Import / export | Static SVG, animated SVG, CSS keyframes, and spritesheets. |
-| Lottie JSON | Export | Visible layers, parent groups, shape morph endpoints, and transform/opacity/color timeline tracks. |
-| PDF | Export | Static document export. |
+| Format                         | Direction       | Notes                                                                                                                                |
+| ------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Android VectorDrawable XML     | Import / export | Preserves groups, paths, clip paths, styling, viewport, dimensions, and supported root metadata.                                     |
+| Android AnimatedVectorDrawable | Export          | Produces drawable, animator, and interpolator resources in a ZIP. Invalid path morphs block export instead of silently degrading it. |
+| ShapeShifter project JSON      | Import / export | Project backup, including morph endpoints and Android metadata.                                                                      |
+| SVG                            | Import / export | Static SVG, animated SVG, CSS keyframes, and spritesheets.                                                                           |
+| Lottie JSON                    | Export          | Visible layers, parent groups, shape morph endpoints, and transform/opacity/color timeline tracks.                                   |
+| PDF                            | Export          | Static document export.                                                                                                              |
 
 Android export diagnostics are surfaced before download. Treat them as part of the asset-authoring workflow: they identify unsupported properties, hidden targets, incompatible path morphs, and Android API implications.
 
 ## Quick start
 
-Requires Node.js 20+ and pnpm 9+.
+Requires Node.js 24 and pnpm 11.21.
 
 ```bash
 pnpm install --frozen-lockfile
@@ -69,15 +71,15 @@ ShapeShifter aims to be explicit about target constraints.
 
 ## Development commands
 
-| Command | Purpose |
-| --- | --- |
-| `pnpm dev` | Start the Next.js development server with Turbopack. |
-| `pnpm build` | Create a production build. |
-| `pnpm start` | Serve the production build. |
-| `pnpm typecheck` | Run TypeScript type checking. |
-| `pnpm lint` | Run Oxlint. |
-| `pnpm test` | Run the Vitest suite. |
-| `pnpm format` | Format the repository with Oxfmt. |
+| Command          | Purpose                                              |
+| ---------------- | ---------------------------------------------------- |
+| `pnpm dev`       | Start the Next.js development server with Turbopack. |
+| `pnpm build`     | Create a production build.                           |
+| `pnpm start`     | Serve the production build.                          |
+| `pnpm typecheck` | Run TypeScript type checking.                        |
+| `pnpm lint`      | Run Oxlint.                                          |
+| `pnpm test`      | Run the Vitest suite.                                |
+| `pnpm format`    | Format the repository with Oxfmt.                    |
 
 Before submitting a change, run:
 
@@ -87,15 +89,15 @@ pnpm typecheck && pnpm test && pnpm lint && pnpm build
 
 ## Project structure
 
-| Path | Contents |
-| --- | --- |
-| `app/` | Next.js application shell and editor page. |
-| `components/editor/` | Canvas, timeline, inspector, layers, import, and export UI. |
-| `lib/shapeshifter/` | Path geometry, Android scene evaluation, document model, animation, importers, and exporters. |
-| `lib/shapeshifter/androidCompiler.ts` | Android VectorDrawable and AnimatedVectorDrawable resource compiler plus diagnostics. |
-| `lib/shapeshifter/scene/` | Shared evaluated scene graph used by rendering, selection, and hit testing. |
-| `lib/store/` | Zustand editor state, history, and active-artboard synchronization. |
-| `plans/` | Android-first implementation plans and acceptance criteria. |
+| Path                                  | Contents                                                                                      |
+| ------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `app/`                                | Next.js application shell and editor page.                                                    |
+| `components/editor/`                  | Canvas, timeline, inspector, layers, import, and export UI.                                   |
+| `lib/shapeshifter/`                   | Path geometry, Android scene evaluation, document model, animation, importers, and exporters. |
+| `lib/shapeshifter/androidCompiler.ts` | Android VectorDrawable and AnimatedVectorDrawable resource compiler plus diagnostics.         |
+| `lib/shapeshifter/scene/`             | Shared evaluated scene graph used by rendering, selection, and hit testing.                   |
+| `lib/store/`                          | Zustand editor state, history, and active-artboard synchronization.                           |
+| `plans/`                              | Android-first implementation plans and acceptance criteria.                                   |
 
 ## Quality bar
 

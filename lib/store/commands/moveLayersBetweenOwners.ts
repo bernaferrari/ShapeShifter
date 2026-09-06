@@ -9,6 +9,7 @@ import { PAGE_ROOT_ID } from "../../shapeshifter/scene/owners";
 
 export interface RootOwnerDocument {
   layers: Layer[];
+  vector: VectorMetadata;
   animation: AnimationState;
   hiddenLayerIds: string[];
 }
@@ -30,22 +31,14 @@ export interface MoveLayersBetweenOwnersResult {
   primaryId: string | number;
 }
 
-const pageVector = (): VectorMetadata => ({
-  id: PAGE_ROOT_ID,
-  name: "Page",
-  width: 1,
-  height: 1,
-  alpha: 1,
-});
-
 function rootAsFrame(root: RootOwnerDocument): CanvasFrame {
   return {
     id: PAGE_ROOT_ID,
-    name: "Page",
+    name: root.vector.name,
     x: 0,
     y: 0,
     layers: root.layers,
-    vector: pageVector(),
+    vector: structuredClone(root.vector),
     animation: root.animation,
     hiddenLayerIds: root.hiddenLayerIds,
   };
@@ -169,6 +162,7 @@ export function moveLayersBetweenOwners({
     frames: nextFrames,
     root: {
       layers: structuredClone(nextRootFrame.layers),
+      vector: structuredClone(nextRootFrame.vector),
       animation: structuredClone(nextRootFrame.animation),
       hiddenLayerIds: [...nextRootFrame.hiddenLayerIds],
     },

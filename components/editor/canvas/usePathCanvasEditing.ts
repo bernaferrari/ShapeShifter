@@ -34,7 +34,8 @@ interface PathCanvasEditingOptions {
   view: Viewport;
   pointFromClient: PointFromClient;
   pointerDownPositionRef: RefObject<Point | null>;
-  currentLayer: Layer;
+  /** Selected layer, if it still exists. Null after deletion mid-gesture. */
+  currentLayer: Layer | null;
   selectedLayerId: string | number;
   editingSide: "from" | "to";
   selectedPoints: Selection[];
@@ -453,7 +454,7 @@ export function usePathCanvasEditing({
       const store = useEditorStore.getState();
       store.pushHistory();
       const center = getBoundsCenter(selectedLayerBounds);
-      const baseRotation = currentLayer.rotation ?? 0;
+      const baseRotation = currentLayer?.rotation ?? 0;
       const toLocal = makeWorldToLocal(selectedPreviewTransform);
       const startPoint = pointFromClient(event.clientX, event.clientY);
       const startAngle = startPoint ? getAngle(center, toLocal(startPoint)) : 0;
@@ -477,7 +478,7 @@ export function usePathCanvasEditing({
     },
     [
       beginWindowDrag,
-      currentLayer.rotation,
+      currentLayer?.rotation,
       isActionMode,
       pointFromClient,
       selectedLayerBounds,

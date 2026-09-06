@@ -469,18 +469,39 @@ export function createVectorPathActions(
       if (layerIndex === -1) return;
       const layer = layers[layerIndex];
       if (layer.locked) return;
-      const targetPath = editingSide === "from" ? layer.from : endOf(layer);
-      const updatedPath = splitCommandInHalf(
-        targetPath,
+
+      if (!layer.to) {
+        // Static layer: only the single (from) geometry gains a command.
+        const updatedFrom = splitCommandInHalf(
+          layer.from,
+          selection.subPathIndex,
+          selection.commandIndex,
+        );
+        const newLayers = [...layers];
+        newLayers[layerIndex] = { ...layer, from: updatedFrom, pathData: updatedFrom };
+        get().pushHistory();
+        set({ layers: newLayers });
+        return;
+      }
+
+      // Structural op: keep from/to command counts equal by splitting BOTH sides at
+      // the same (subIdx, cmdIdx) — the same discipline as addPointOnPath — so the
+      // morph stays interpolatable instead of silently desyncing until Auto Fix.
+      const activePath = editingSide === "from" ? layer.from : layer.to;
+      const otherPath = editingSide === "from" ? layer.to : layer.from;
+      const splitActive = splitCommandInHalf(
+        activePath,
         selection.subPathIndex,
         selection.commandIndex,
       );
+      const splitOther =
+        otherPath && otherPath.subPaths[selection.subPathIndex]?.commands[selection.commandIndex]
+          ? splitCommandInHalf(otherPath, selection.subPathIndex, selection.commandIndex)
+          : otherPath;
+      const from = editingSide === "from" ? splitActive : (splitOther ?? splitActive);
+      const to = editingSide === "from" ? splitOther : splitActive;
       const newLayers = [...layers];
-      if (editingSide === "from") {
-        newLayers[layerIndex] = { ...layer, from: updatedPath, pathData: updatedPath };
-      } else {
-        newLayers[layerIndex] = { ...layer, to: updatedPath };
-      }
+      newLayers[layerIndex] = { ...layer, from, to, pathData: from };
       get().pushHistory();
       set({ layers: newLayers });
     },
@@ -491,18 +512,30 @@ export function createVectorPathActions(
       const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
       if (layerIndex === -1) return;
       const layer = layers[layerIndex];
-      const targetPath = editingSide === "from" ? layer.from : endOf(layer);
-      const updatedPath = setCommandAsFirst(
-        targetPath,
-        selection.subPathIndex,
-        selection.commandIndex,
-      );
-      const newLayers = [...layers];
-      if (editingSide === "from") {
-        newLayers[layerIndex] = { ...layer, from: updatedPath, pathData: updatedPath };
-      } else {
-        newLayers[layerIndex] = { ...layer, to: updatedPath };
+      if (!layer.to) {
+        // Static layer: rotate its single (from) geometry.
+        const updatedFrom = setCommandAsFirst(
+          layer.from,
+          selection.subPathIndex,
+          selection.commandIndex,
+        );
+        const newLayers = [...layers];
+        newLayers[layerIndex] = { ...layer, from: updatedFrom, pathData: updatedFrom };
+        get().pushHistory();
+        set({ layers: newLayers });
+        return;
       }
+
+      // Structural op: rotate BOTH sides at the same (subIdx, cmdIdx). Rotating only
+      // the active side keeps the command count but scrambles from/to point
+      // correspondence, corrupting the morph. setCommandAsFirst no-ops on a side
+      // whose subpath lacks the index instead of corrupting a desynced pair.
+      const activePath = editingSide === "from" ? layer.from : layer.to!;
+      const otherPath = editingSide === "from" ? layer.to! : layer.from;
+      const from = setCommandAsFirst(activePath, selection.subPathIndex, selection.commandIndex);
+      const to = setCommandAsFirst(otherPath, selection.subPathIndex, selection.commandIndex);
+      const newLayers = [...layers];
+      newLayers[layerIndex] = { ...layer, from, to, pathData: from };
       get().pushHistory();
       set({ layers: newLayers });
     },

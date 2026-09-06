@@ -51,6 +51,18 @@ describe("world camera utilities", () => {
     expect(zoomed.w).toBeCloseTo(viewport.w / 2);
   });
 
+  it("fits imported Android geometry in viewport rather than intrinsic units", () => {
+    const viewport = computeDetailViewport({
+      width: 24,
+      height: 24,
+      viewportWidth: 48,
+      viewportHeight: 48,
+    });
+
+    expect(viewport.x + viewport.w).toBeGreaterThanOrEqual(48);
+    expect(viewport.y + viewport.h).toBeGreaterThanOrEqual(48);
+  });
+
   it("derives an adaptive pixel grid from on-screen density", () => {
     // Moderate zoom: one world unit ~ 10 screen px → whole-pixel grid, majors at 4.
     const close = computeGridSpec(10);

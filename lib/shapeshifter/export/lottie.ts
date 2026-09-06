@@ -1,11 +1,32 @@
 import { dominantColor } from "../gradients";
+import { arcToBeziers } from "../geometry";
 import { INTERPOLATOR_CURVES } from "../interpolators";
+import { numberAtTime } from "../playheadResolve";
+import { createLayerTreeModel } from "../scene/layerHierarchy";
 import type { AnimationState, Layer, PathData, TimelineBlock, VectorMetadata } from "../types";
+import { vectorCoordinateSize } from "../vectorSpace";
 
+const LOTTIE_CANVAS_SIZE = 512;
+
+/** Map viewport-space path data into the fixed Lottie composition without distortion. */
+function lottieProjection(
+  vector?: Pick<Partial<VectorMetadata>, "width" | "height" | "viewportWidth" | "viewportHeight">,
+) {
+  const viewport = vectorCoordinateSize(vector ?? {});
+  const scale = Math.min(LOTTIE_CANVAS_SIZE / viewport.width, LOTTIE_CANVAS_SIZE / viewport.height);
+  return {
+    width: LOTTIE_CANVAS_SIZE,
+    height: LOTTIE_CANVAS_SIZE,
+    scale,
+    offsetX: (LOTTIE_CANVAS_SIZE - viewport.width * scale) / 2,
+    offsetY: (LOTTIE_CANVAS_SIZE - viewport.height * scale) / 2,
+  };
+}
 /**
  * Lottie export with proper Bézier in/out tangent handles.
  * Correctly distinguishes vertices (endpoints) from control points (tangents).
- * Supports cubic bezier, quadratic (converted to cubic), and line segments.
+ * Supports cubic bezier, quadratic (converted to cubic), elliptical arcs
+ * (converted to cubic via arcToBeziers), and line segments.
  */
 function hexToLottieRgba(hex: string, alpha = 1): [number, number, number, number] {
   const m = hex.match(/^#?([0-9a-f]{3,8})$/i);
@@ -25,89 +46,169 @@ export function exportLottie(
   name: string,
   duration = 1.2,
   layer?: Layer,
+  vector?: Pick<Partial<VectorMetadata>, "width" | "height" | "viewportWidth" | "viewportHeight">,
 ) {
-  const w = 512;
-  const h = 512;
+  const projection = lottieProjection(vector);
+  const w = projection.width;
+  const h = projection.height;
   const fr = 30;
   const op = Math.round(duration * fr);
-  const sx = w / 24;
-  const sy = h / 24;
+  const sx = projection.scale;
+  const sy = projection.scale;
 
-  const extractShape = (path: PathData) => {
-    const verts: number[][] = [];
-    const inT: number[][] = [];
-    const outT: number[][] = [];
-    let closed = false;
+  const extractContours = (path: PathData) => {
+    // One Lottie shape per subpath: concatenating contours would connect
+    // disjoint outlines (donut rings, glyph counters) into a single polyline.
+    const contours: { v: number[][]; i: number[][]; o: number[][]; c: boolean }[] = [];
 
     for (const sp of path.subPaths) {
+      const verts: number[][] = [];
+      const inT: number[][] = [];
+      const outT: number[][] = [];
+      let closed = false;
+      let current: { x: number; y: number } | undefined;
+
+      const vertexAt = (p: { x: number; y: number }) => {
+        current = p;
+        verts.push([p.x * sx, p.y * sy]);
+        inT.push([0, 0]);
+        outT.push([0, 0]);
+      };
+      const curveTo = (
+        cp1: { x: number; y: number },
+        cp2: { x: number; y: number },
+        end: { x: number; y: number },
+      ) => {
+        if (!current) return;
+        const prevIdx = verts.length - 1;
+        const prev = verts[prevIdx];
+        outT[prevIdx] = [cp1.x * sx - prev[0], cp1.y * sy - prev[1]];
+        vertexAt(end);
+        inT[inT.length - 1] = [cp2.x * sx - end.x * sx, cp2.y * sy - end.y * sy];
+      };
+
       for (const cmd of sp.commands) {
         if (cmd.type === "M" && cmd.points.length > 0) {
-          const p = cmd.points[0];
-          verts.push([p.x * sx, p.y * sy]);
-          inT.push([0, 0]);
-          outT.push([0, 0]);
+          if (verts.length > 0) {
+            contours.push({ v: verts, i: inT, o: outT, c: closed });
+            verts.length = 0;
+            inT.length = 0;
+            outT.length = 0;
+            closed = false;
+          }
+          vertexAt(cmd.points[0]);
         } else if (cmd.type === "L" && cmd.points.length > 0) {
-          const p = cmd.points[cmd.points.length - 1];
-          verts.push([p.x * sx, p.y * sy]);
-          inT.push([0, 0]);
-          outT.push([0, 0]);
+          vertexAt(cmd.points[cmd.points.length - 1]);
+        } else if (cmd.type === "A" && cmd.points.length > 0) {
+          // Arcs are preserved by parsePath to avoid silent data loss;
+          // convert to cubic segments so the geometry survives export.
+          if (cmd.arcParams && current) {
+            const end = cmd.points[cmd.points.length - 1];
+            for (const bez of arcToBeziers(
+              current.x,
+              current.y,
+              cmd.arcParams.rx,
+              cmd.arcParams.ry,
+              cmd.arcParams.xRotation,
+              cmd.arcParams.largeArc,
+              cmd.arcParams.sweep,
+              end.x,
+              end.y,
+            )) {
+              curveTo(bez.cp1, bez.cp2, bez.to);
+            }
+          }
         } else if (cmd.type === "C" && cmd.points.length === 3) {
           const [cp1, cp2, end] = cmd.points;
-          const prevIdx = verts.length - 1;
-          if (prevIdx >= 0) {
-            const prev = verts[prevIdx];
-            outT[prevIdx] = [cp1.x * sx - prev[0], cp1.y * sy - prev[1]];
-          }
-          verts.push([end.x * sx, end.y * sy]);
-          inT.push([cp2.x * sx - end.x * sx, cp2.y * sy - end.y * sy]);
-          outT.push([0, 0]);
+          curveTo(cp1, cp2, end);
         } else if (cmd.type === "Q" && cmd.points.length === 2) {
           // Convert quadratic to cubic tangents
           const [cp, end] = cmd.points;
-          const prevIdx = verts.length - 1;
-          if (prevIdx >= 0) {
-            const prev = verts[prevIdx];
-            const cp1x = prev[0] + (2 / 3) * (cp.x * sx - prev[0]);
-            const cp1y = prev[1] + (2 / 3) * (cp.y * sy - prev[1]);
-            outT[prevIdx] = [cp1x - prev[0], cp1y - prev[1]];
-          }
+          if (!current) continue;
+          const prev = verts[verts.length - 1];
+          const cp1x = prev[0] + (2 / 3) * (cp.x * sx - prev[0]);
+          const cp1y = prev[1] + (2 / 3) * (cp.y * sy - prev[1]);
           const ex = end.x * sx;
           const ey = end.y * sy;
-          verts.push([ex, ey]);
-          inT.push([(2 / 3) * (cp.x * sx - ex), (2 / 3) * (cp.y * sy - ey)]);
-          outT.push([0, 0]);
+          outT[outT.length - 1] = [cp1x - prev[0], cp1y - prev[1]];
+          vertexAt(end);
+          inT[inT.length - 1] = [(2 / 3) * (cp.x * sx - ex), (2 / 3) * (cp.y * sy - ey)];
         } else if (cmd.type === "Z") {
           closed = true;
         }
       }
+      if (verts.length > 0) {
+        contours.push({ v: verts, i: inT, o: outT, c: closed });
+      }
     }
 
-    if (verts.length === 0) {
-      verts.push([140, 140], [200, 140], [200, 200], [140, 200]);
-      inT.push([0, 0], [0, 0], [0, 0], [0, 0]);
-      outT.push([0, 0], [0, 0], [0, 0], [0, 0]);
-      closed = true;
-    }
-
-    return { v: verts, i: inT, o: outT, c: closed };
+    return contours;
   };
 
-  const fromShape = extractShape(fromPath);
-  const toShape = extractShape(toPath);
+  const fallbackContour = () => ({
+    v: [
+      [140, 140],
+      [200, 140],
+      [200, 200],
+      [140, 200],
+    ],
+    i: [
+      [0, 0],
+      [0, 0],
+      [0, 0],
+      [0, 0],
+    ],
+    o: [
+      [0, 0],
+      [0, 0],
+      [0, 0],
+      [0, 0],
+    ],
+    c: true,
+  });
+  const fromContours = extractContours(fromPath);
+  const toContours = extractContours(toPath);
+  const fromShape = fromContours[0] ?? fallbackContour();
+  const toShape = toContours[0] ?? fallbackContour();
 
-  // Pad shorter shape for compatibility
-  while (fromShape.v.length < toShape.v.length) {
-    const last = fromShape.v[fromShape.v.length - 1];
-    fromShape.v.push([...last]);
-    fromShape.i.push([0, 0]);
-    fromShape.o.push([0, 0]);
-  }
-  while (toShape.v.length < fromShape.v.length) {
-    const last = toShape.v[toShape.v.length - 1];
-    toShape.v.push([...last]);
-    toShape.i.push([0, 0]);
-    toShape.o.push([0, 0]);
-  }
+  // Every contour pair must have equal vertex counts in both keyframes —
+  // Lottie morphs interpolate v/i/o arrays element-wise, so mismatched
+  // lengths are invalid (players reject or garble the shape). The fallback
+  // contour covers a missing target subpath; a present-but-different-length
+  // target is padded by duplicating its last vertex.
+  const padPair = (a: { v: number[][]; i: number[][]; o: number[][] }, b: typeof a) => {
+    while (a.v.length < b.v.length) {
+      const last = a.v[a.v.length - 1];
+      a.v.push([...last]);
+      a.i.push([0, 0]);
+      a.o.push([0, 0]);
+    }
+    while (b.v.length < a.v.length) {
+      const last = b.v[b.v.length - 1];
+      b.v.push([...last]);
+      b.i.push([0, 0]);
+      b.o.push([0, 0]);
+    }
+  };
+  padPair(fromShape, toShape);
+
+  // Additional contours are exported as extra animated shapes so every
+  // subpath stays a separate closed/open outline in the composition.
+  const extraShapes = fromContours.slice(1).map((contour, index) => {
+    const toContour = toContours[index + 1] ?? fallbackContour();
+    padPair(contour, toContour);
+    return {
+      ty: "sh",
+      nm: `Path ${index + 2}`,
+      ks: {
+        a: 1,
+        k: [
+          { t: 0, s: [contour] },
+          { t: op, s: [toContour] },
+        ],
+      },
+    };
+  });
 
   return {
     v: "5.9.0",
@@ -127,7 +228,7 @@ export function exportLottie(
         nm: "Morph Shape",
         sr: 1,
         ks: {
-          p: { a: 0, k: [w / 2, h / 2] },
+          p: { a: 0, k: [projection.offsetX, projection.offsetY] },
           r: { a: 0, k: 0 },
           s: { a: 0, k: [100, 100] },
           o: { a: 0, k: 100 },
@@ -148,6 +249,7 @@ export function exportLottie(
                   ],
                 },
               },
+              ...extraShapes,
               ...(layer?.strokeColor
                 ? [
                     {
@@ -221,34 +323,48 @@ export function exportLottie(
 }
 
 function flattenLottieLayers(layers: Layer[]): Layer[] {
-  const result: Layer[] = [];
-  const seen = new Set<string | number>();
+  const tree = createLayerTreeModel(layers);
 
-  const visit = (layer: Layer, parentVisible = true) => {
-    if (!parentVisible) return;
-    if (layer.visible === false) return;
-    if (layer.type !== "clipPath" && layer.from && !seen.has(layer.id)) {
-      seen.add(layer.id);
-      result.push(layer);
+  // Documents are commonly stored as a flat layer list. Looking only at
+  // `children` treats a flat child of a hidden group as a visible root, which
+  // both leaks hidden artwork and loses the parent relationship in Lottie.
+  // Normalize each item through the shared hierarchy model instead.
+  return tree.allLayers.flatMap((layer) => {
+    const ancestors = tree.ancestorsOf(layer.id);
+    if (layer.type === "clipPath") {
+      // Lottie mattes need a separate track-matte layer pair this exporter
+      // does not build; say so instead of silently unclipping the artwork.
+      console.warn(
+        `[lottie] Clip path "${layer.name}" was skipped: Lottie export does not support clipping, so clipped artwork exports unclipped.`,
+      );
+      return [];
     }
-    layer.children?.forEach((child) => visit(child, true));
-  };
+    if (
+      !layer.from ||
+      layer.visible === false ||
+      ancestors.some((ancestor) => ancestor.visible === false)
+    ) {
+      return [];
+    }
 
-  layers.forEach((layer) => visit(layer));
-  return result;
+    const parent = ancestors[0];
+    return [{ ...layer, parentId: parent?.id ?? null }];
+  });
 }
 
 export interface LottieDocumentOptions {
   /** Source timeline in milliseconds. Omit to export static layer transforms. */
   animation?: AnimationState;
-  /** Retained for callers that need provenance; Lottie uses its own pixel canvas. */
+  /** Source viewport; path data is fit into Lottie's pixel canvas without distortion. */
   vector?: VectorMetadata;
   /** Output duration in seconds. Defaults to the source animation duration. */
   duration?: number;
 }
 
 function lottieBezier(interpolator?: string) {
-  const named = interpolator ? INTERPOLATOR_CURVES[interpolator as keyof typeof INTERPOLATOR_CURVES] : undefined;
+  const named = interpolator
+    ? INTERPOLATOR_CURVES[interpolator as keyof typeof INTERPOLATOR_CURVES]
+    : undefined;
   const values = named ?? interpolator?.match(/[-+]?(?:\d*\.)?\d+/g)?.map(Number);
   if (!values || values.length < 4) return undefined;
   const [x1, y1, x2, y2] = values;
@@ -257,7 +373,11 @@ function lottieBezier(interpolator?: string) {
   return { o: { x: [x1], y: [y1] }, i: { x: [x2], y: [y2] } };
 }
 
-function blocksFor(animation: AnimationState | undefined, layerId: string | number, property: string) {
+function blocksFor(
+  animation: AnimationState | undefined,
+  layerId: string | number,
+  property: string,
+) {
   return (animation?.blocks ?? [])
     .filter((block) => String(block.layerId) === String(layerId) && block.propertyName === property)
     .sort((a, b) => a.startTime - b.startTime || a.endTime - b.endTime);
@@ -289,6 +409,66 @@ function numberAnimation(
       },
     ],
   } as any;
+}
+
+/**
+ * Lottie scale is a single 2D property, while the editor authors X and Y as
+ * separate tracks. Merge them onto one timeline: each keyframe timestamp
+ * samples both axes (a block animates its own axis; the other holds its
+ * static value), so playback never snaps an axis to an unauthored keyframe.
+ */
+function scaleAnimation(
+  xBlocks: TimelineBlock[],
+  yBlocks: TimelineBlock[],
+  initialXPercent: number,
+  initialYPercent: number,
+): { a: 0 | 1; k: [number, number] | Array<Record<string, unknown>> } {
+  if (!xBlocks.length && !yBlocks.length) return { a: 0, k: [initialXPercent, initialYPercent] };
+
+  // numberAtTime filters blocks by layer id, so the synthetic layer must
+  // carry the same id as the scale tracks being sampled. Scale layers have
+  // no authored percent field to sample; the synthetic identity carries the
+  // static percentages as the sampling base.
+  const baseLayer = {
+    id: (xBlocks[0] ?? yBlocks[0]).layerId,
+    scaleX: initialXPercent / 100,
+    scaleY: initialYPercent / 100,
+  } as unknown as Layer;
+  const blocks = [...xBlocks, ...yBlocks];
+  const durationMs = Math.max(...blocks.map((block) => block.endTime), 1);
+
+  const timestamps = new Set<number>([0]);
+  for (const block of blocks) {
+    timestamps.add(block.startTime);
+    timestamps.add(block.endTime);
+  }
+
+  // Animated Lottie properties use {t, s, e} keyframe objects; s holds the
+  // sampled 2D value at each timestamp and the easing comes from whichever
+  // block starts at that time.
+  const times = [...timestamps].sort((a, b) => a - b);
+  const samples = times.map(
+    (ms) =>
+      [
+        numberAtTime(baseLayer, xBlocks, "scaleX", ms, durationMs, initialXPercent / 100) * 100,
+        numberAtTime(baseLayer, yBlocks, "scaleY", ms, durationMs, initialYPercent / 100) * 100,
+      ] as [number, number],
+  );
+  const easingAt = (ms: number) =>
+    lottieBezier(blocks.find((block) => block.startTime === ms)?.interpolator);
+
+  return {
+    a: 1,
+    k: [
+      ...times.slice(0, -1).map((t, index) => ({
+        t,
+        s: [samples[index]],
+        e: [samples[index + 1]],
+        ...easingAt(t),
+      })),
+      { t: times.at(-1)!, s: [samples.at(-1)!] },
+    ],
+  };
 }
 
 function colorAnimation(
@@ -328,7 +508,9 @@ export function exportLottieDocument(
   const duration =
     typeof options === "number"
       ? options
-      : options.duration ?? Math.max(0.001, (sourceAnimation?.duration ?? 1200) / 1000);
+      : (options.duration ?? Math.max(0.001, (sourceAnimation?.duration ?? 1200) / 1000));
+  const sourceVector = typeof options === "number" ? undefined : options.vector;
+  const projection = lottieProjection(sourceVector);
   const exportableLayers = flattenLottieLayers(layers);
   const emptyPath: PathData = { subPaths: [{ commands: [] }] };
 
@@ -342,9 +524,10 @@ export function exportLottieDocument(
     name,
     duration,
     exportableLayers[0],
+    sourceVector,
   );
-  const sx = base.w / 24;
-  const sy = base.h / 24;
+  const sx = projection.scale;
+  const sy = projection.scale;
   const millisecondsToFrame = base.op / Math.max(1, sourceAnimation?.duration ?? duration * 1000);
   const indices = new Map(exportableLayers.map((layer, index) => [String(layer.id), index + 1]));
 
@@ -354,9 +537,15 @@ export function exportLottieDocument(
     layers: exportableLayers.map((layer, index) => {
       const parentIndex = layer.parentId == null ? undefined : indices.get(String(layer.parentId));
       const isGroup = layer.type === "group" || layer.type === "vector";
-      const single = exportLottie(layer.from, layer.to ?? layer.from, layer.name, duration, layer)
-        .layers[0];
-      const rootOffset = parentIndex == null ? [base.w / 2, base.h / 2] : [0, 0];
+      const single = exportLottie(
+        layer.from,
+        layer.to ?? layer.from,
+        layer.name,
+        duration,
+        layer,
+        sourceVector,
+      ).layers[0];
+      const rootOffset = parentIndex == null ? [projection.offsetX, projection.offsetY] : [0, 0];
       const translateX = layer.translateX ?? 0;
       const translateY = layer.translateY ?? 0;
       const translateXBlocks = blocksFor(sourceAnimation, layer.id, "translateX");
@@ -375,8 +564,14 @@ export function exportLottieDocument(
                         c: colorAnimation(
                           blocksFor(sourceAnimation, layer.id, "fillColor"),
                           layer.fillColor ?? "#00000000",
-                          layer.fillAlpha ?? 1,
+                          1,
                           millisecondsToFrame,
+                        ),
+                        o: numberAnimation(
+                          blocksFor(sourceAnimation, layer.id, "fillAlpha"),
+                          (layer.fillAlpha ?? 1) * 100,
+                          millisecondsToFrame,
+                          (value) => value * 100,
                         ),
                       };
                     }
@@ -386,8 +581,14 @@ export function exportLottieDocument(
                         c: colorAnimation(
                           blocksFor(sourceAnimation, layer.id, "strokeColor"),
                           layer.strokeColor ?? "#00000000",
-                          layer.strokeAlpha ?? 1,
+                          1,
                           millisecondsToFrame,
+                        ),
+                        o: numberAnimation(
+                          blocksFor(sourceAnimation, layer.id, "strokeAlpha"),
+                          (layer.strokeAlpha ?? 1) * 100,
+                          millisecondsToFrame,
+                          (value) => value * 100,
                         ),
                       };
                     }
@@ -408,18 +609,39 @@ export function exportLottieDocument(
             ...(translateXBlocks.length || translateYBlocks.length
               ? {
                   s: true,
-                  x: numberAnimation(translateXBlocks, rootOffset[0] + translateX * sx, millisecondsToFrame, (value) => rootOffset[0] + value * sx),
-                  y: numberAnimation(translateYBlocks, rootOffset[1] + translateY * sy, millisecondsToFrame, (value) => rootOffset[1] + value * sy),
+                  x: numberAnimation(
+                    translateXBlocks,
+                    rootOffset[0] + translateX * sx,
+                    millisecondsToFrame,
+                    (value) => rootOffset[0] + value * sx,
+                  ),
+                  y: numberAnimation(
+                    translateYBlocks,
+                    rootOffset[1] + translateY * sy,
+                    millisecondsToFrame,
+                    (value) => rootOffset[1] + value * sy,
+                  ),
                 }
               : { k: [rootOffset[0] + translateX * sx, rootOffset[1] + translateY * sy] }),
           },
           a: { a: 0, k: [(layer.pivotX ?? 0) * sx, (layer.pivotY ?? 0) * sy] },
-          r: numberAnimation(blocksFor(sourceAnimation, layer.id, "rotation"), layer.rotation ?? 0, millisecondsToFrame),
-          s: {
-            a: 0,
-            k: [(layer.scaleX ?? 1) * 100, (layer.scaleY ?? 1) * 100],
-          },
-          o: numberAnimation(blocksFor(sourceAnimation, layer.id, "alpha"), (layer.alpha ?? 1) * 100, millisecondsToFrame, (value) => value * 100),
+          r: numberAnimation(
+            blocksFor(sourceAnimation, layer.id, "rotation"),
+            layer.rotation ?? 0,
+            millisecondsToFrame,
+          ),
+          s: scaleAnimation(
+            blocksFor(sourceAnimation, layer.id, "scaleX"),
+            blocksFor(sourceAnimation, layer.id, "scaleY"),
+            (layer.scaleX ?? 1) * 100,
+            (layer.scaleY ?? 1) * 100,
+          ),
+          o: numberAnimation(
+            blocksFor(sourceAnimation, layer.id, "alpha"),
+            (layer.alpha ?? 1) * 100,
+            millisecondsToFrame,
+            (value) => value * 100,
+          ),
         },
       };
     }),

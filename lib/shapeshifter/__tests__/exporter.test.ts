@@ -10,6 +10,7 @@ import {
   exportAnimatedSVG,
   exportCSSKeyframes,
   exportStaticSVG,
+  exportStaticSVGWithDiagnostics,
   exportSvgSpritesheet,
   exportVectorDrawable,
   exportAnimatedVectorDrawable,
@@ -261,7 +262,7 @@ describe("exportStaticSVG", () => {
     expect(pathMatches).toHaveLength(1);
   });
 
-  it("filters out group layers", () => {
+  it("omits empty group layers", () => {
     const group = makeLayer({ id: 4, name: "group", type: "group" });
     const svg = exportStaticSVG([layer1, group]);
     expect(svg).not.toContain('id="group"');
@@ -299,6 +300,192 @@ describe("exportStaticSVG", () => {
     const weirdName = makeLayer({ id: 7, name: 'layer<"test">' });
     const svg = exportStaticSVG([weirdName]);
     expect(svg).toContain('id="layer_test_"');
+  });
+
+  it("keeps root and nested clip paths scoped to their sibling lists", () => {
+    const rootClip = makeLayer({
+      id: "root-clip",
+      name: "Root clip",
+      type: "clipPath",
+      from: makePath("M 0 0 L 20 0 L 20 20 L 0 20 Z"),
+    });
+    const nestedGroup = makeLayer({ id: "nested-group", name: "Nested group", type: "group" });
+    const nestedClip = makeLayer({
+      id: "nested-clip",
+      name: "Nested clip",
+      type: "clipPath",
+      parentId: nestedGroup.id,
+      from: makePath("M 2 2 L 8 2 L 8 8 L 2 8 Z"),
+    });
+    const svg = exportStaticSVG([
+      rootClip,
+      makeLayer({ id: "root-first", name: "Root first" }),
+      nestedGroup,
+      nestedClip,
+      makeLayer({ id: "nested-art", name: "Nested art", parentId: nestedGroup.id }),
+      makeLayer({ id: "root-after", name: "Root after" }),
+    ]);
+    const rootReference = 'clip-path="url(#ss-clip-root-clip)"';
+    const nestedReference = 'clip-path="url(#ss-clip-nested-clip)"';
+
+    expect(svg).toContain('<clipPath id="ss-clip-root-clip"');
+    expect(svg).toContain('<clipPath id="ss-clip-nested-clip"');
+    expect(svg.split(rootReference)).toHaveLength(4);
+    expect(svg.split(nestedReference)).toHaveLength(2);
+    expect(svg.indexOf(nestedReference)).toBeLessThan(svg.indexOf('id="Root_after"'));
+    expect(svg.slice(svg.indexOf('id="Root_after"'))).not.toContain(nestedReference);
+  });
+
+  it("preserves transformed clip geometry in the SVG definition", () => {
+    const clip = makeLayer({
+      id: "transformed-clip",
+      name: "Transformed clip",
+      type: "clipPath",
+      from: makePath("M 0 0 L 10 0 L 10 10 L 0 10 Z"),
+      translateX: 4,
+      translateY: -2,
+      rotation: 90,
+      scaleX: 2,
+      scaleY: 0.5,
+      pivotX: 3,
+      pivotY: 5,
+    });
+    const svg = exportStaticSVG([clip, makeLayer({ id: "clipped-art", name: "Clipped art" })]);
+
+    expect(svg).toContain(
+      '<clipPath id="ss-clip-transformed-clip"><path d="M0 0 L10 0 L10 10 L0 10 Z" transform="translate(4 -2) translate(3 5) rotate(90) scale(2 0.5) translate(-3 -5)"',
+    );
+    expect(svg).toContain('clip-path="url(#ss-clip-transformed-clip)"');
+  });
+
+  it("bakes inherited group alpha into child fill and stroke opacity", () => {
+    const outer = makeLayer({ id: "outer-alpha", name: "Outer alpha", type: "group", alpha: 0.5 });
+    const inner = makeLayer({
+      id: "inner-alpha",
+      name: "Inner alpha",
+      type: "group",
+      parentId: outer.id,
+      alpha: 0.5,
+    });
+    const svg = exportStaticSVG([
+      outer,
+      inner,
+      makeLayer({
+        id: "alpha-leaf",
+        name: "Alpha leaf",
+        parentId: inner.id,
+        alpha: 0.8,
+        fillColor: "#ff0000",
+        fillAlpha: 0.5,
+        strokeColor: "#0000ff",
+        strokeAlpha: 0.25,
+        strokeWidth: 2,
+      }),
+    ]);
+
+    expect(svg).toMatch(
+      /<path id="Alpha_leaf"[^>]*fill-opacity="0.1"[^>]*stroke-opacity="0.05"[^>]*\/>/,
+    );
+  });
+
+  it("composites root VectorDrawable alpha around the complete static scene", () => {
+    const result = exportStaticSVGWithDiagnostics(
+      [makeLayer({ id: "root-alpha", name: "Root alpha", fillAlpha: 0.5 })],
+      { rootVector: { alpha: 0.4 } },
+    );
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.svg).toContain('<g opacity="0.4">');
+    // The root opacity must stay outside the path so overlapping translucent
+    // children composite before the VectorDrawable root alpha is applied.
+    expect(result.svg).toMatch(/<path id="Root_alpha"[^>]*fill-opacity="0.5"[^>]*\/>/);
+  });
+
+  it("applies default src_in root tint through an alpha mask", () => {
+    const result = exportStaticSVGWithDiagnostics(
+      [makeLayer({ id: "root-tint", name: "Root tint", fillColor: "#e11d48" })],
+      {
+        viewBoxWidth: 24,
+        viewBoxHeight: 24,
+        rootVector: { alpha: 0.6, tint: "#123456" },
+      },
+    );
+
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        severity: "warning",
+        code: "ROOT_TINT_MASK_NOT_REIMPORTABLE",
+      }),
+    );
+    expect(result.svg).toContain(
+      '<mask id="ss-root-tint-mask" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="24" height="24" mask-type="alpha">',
+    );
+    expect(result.svg).toContain(
+      '<rect x="0" y="0" width="24" height="24" fill="#123456" mask="url(#ss-root-tint-mask)" />',
+    );
+    expect(result.svg).toContain('<g opacity="0.6">');
+  });
+
+  it("reports and omits root tint modes without a faithful static SVG equivalent", () => {
+    const result = exportStaticSVGWithDiagnostics(
+      [makeLayer({ id: "multiply-tint", name: "Multiply tint", fillColor: "#e11d48" })],
+      { rootVector: { alpha: 1, tint: "#123456", tintMode: "multiply" } },
+    );
+
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        severity: "warning",
+        code: "ROOT_TINT_MODE_UNSUPPORTED",
+      }),
+    );
+    expect(result.svg).not.toContain("ss-root-tint-mask");
+    expect(result.svg).not.toContain('fill="#123456"');
+    expect(result.svg).toContain('fill="#e11d48"');
+  });
+
+  it("reports unresolved Android resource tints instead of substituting a color", () => {
+    const result = exportStaticSVGWithDiagnostics([layer1], {
+      rootVector: { alpha: 1, tint: "@color/brand" },
+    });
+
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        severity: "warning",
+        code: "ROOT_TINT_UNRESOLVED",
+      }),
+    );
+    expect(result.svg).not.toContain("ss-root-tint-mask");
+  });
+
+  it("disambiguates duplicate layer names into unique SVG DOM ids", () => {
+    const group = makeLayer({ id: "duplicate-group", name: "Duplicate name", type: "group" });
+    const svg = exportStaticSVG([
+      makeLayer({ id: "duplicate-root", name: "Duplicate name" }),
+      group,
+      makeLayer({ id: "duplicate-child", name: "Duplicate name", parentId: group.id }),
+    ]);
+
+    const ids = [...svg.matchAll(/\sid="(Duplicate_name(?:_\d+)?)"/g)].map((match) => match[1]);
+    expect(ids).toEqual(["Duplicate_name", "Duplicate_name_2", "Duplicate_name_3"]);
+  });
+
+  it("does not render visible descendants of a hidden parent group", () => {
+    const hiddenGroup = makeLayer({
+      id: "hidden-parent",
+      name: "Hidden parent",
+      type: "group",
+      visible: false,
+    });
+    const svg = exportStaticSVG([
+      hiddenGroup,
+      makeLayer({ id: "hidden-descendant", name: "Hidden descendant", parentId: hiddenGroup.id }),
+      makeLayer({ id: "visible-sibling", name: "Visible sibling" }),
+    ]);
+
+    expect(svg).not.toContain('id="Hidden_parent"');
+    expect(svg).not.toContain('id="Hidden_descendant"');
+    expect(svg).toContain('id="Visible_sibling"');
+    expect(svg.match(/<path /g)).toHaveLength(1);
   });
 });
 
@@ -427,7 +614,7 @@ describe("exportVectorDrawable", () => {
   it("uses transparent fill when no fillColor specified", () => {
     const noFill = makeLayer({ id: 2, name: "nofill", fillColor: "" });
     const vd = exportVectorDrawable(noFill);
-    expect(vd).toContain('android:fillColor="@android:color/transparent"');
+    expect(vd).toContain('android:fillColor="#00000000"');
   });
 
   it("includes trim path attributes", () => {
@@ -453,7 +640,7 @@ describe("exportVectorDrawable", () => {
   it("sanitizes layer name for android:name", () => {
     const weirdName = makeLayer({ id: 5, name: "my icon.v2" });
     const vd = exportVectorDrawable(weirdName);
-    expect(vd).toContain('android:name="my_icon.v2"');
+    expect(vd).toContain('android:name="my_icon_v2"');
   });
 
   it("escapes XML in path data if special chars present", () => {
@@ -468,53 +655,56 @@ describe("exportVectorDrawable", () => {
 describe("exportAnimatedVectorDrawable", () => {
   const layer = makeLayer({ id: 1, name: "animated_icon" });
 
-  it("produces <animated-vector> root element", () => {
-    const avd = exportAnimatedVectorDrawable(layer);
+  const bundle = (duration?: number) =>
+    exportAnimatedVectorDrawable(layer, duration === undefined ? {} : { duration });
+  const avdXml = (duration?: number) =>
+    bundle(duration).files.find((file) => file.path.endsWith("_animated.xml"))?.content ?? "";
+  const animatorXml = (duration?: number) =>
+    bundle(duration).files.find((file) => file.path.startsWith("res/animator/"))?.content ?? "";
+
+  it("returns a canonical resource bundle with an AVD root", () => {
+    const avd = avdXml();
     expect(avd).toContain("<animated-vector");
     expect(avd).toContain("</animated-vector>");
   });
 
   it("references a vector drawable", () => {
-    const avd = exportAnimatedVectorDrawable(layer);
+    const avd = avdXml();
     expect(avd).toContain("@drawable/animated_icon_vector");
   });
 
   it("contains an <objectAnimator> for path morphing", () => {
-    const avd = exportAnimatedVectorDrawable(layer);
-    expect(avd).toContain("<objectAnimator");
-    expect(avd).toContain('android:propertyName="pathData"');
-    expect(avd).toContain('android:valueType="pathType"');
+    const animator = animatorXml();
+    expect(animator).toContain("<objectAnimator");
+    expect(animator).toContain('android:propertyName="pathData"');
+    expect(animator).toContain('android:valueType="pathType"');
   });
 
   it("sets duration from options (in milliseconds)", () => {
-    const avd = exportAnimatedVectorDrawable(layer, { duration: 2.0 });
-    expect(avd).toContain('android:duration="2000"');
+    expect(animatorXml(2)).toContain('android:duration="2000"');
   });
 
   it("uses default duration of 1200ms", () => {
-    const avd = exportAnimatedVectorDrawable(layer);
-    expect(avd).toContain('android:duration="1200"');
+    expect(animatorXml()).toContain('android:duration="1200"');
   });
 
   it("includes from and to path data in animator", () => {
-    const avd = exportAnimatedVectorDrawable(layer);
+    const animator = animatorXml();
     const fromD = pathToString(layer.from);
     const toD = pathToString(layer.to!);
-    expect(avd).toContain(`android:valueFrom="${fromD}"`);
-    expect(avd).toContain(`android:valueTo="${toD}"`);
+    expect(animator).toContain(`android:valueFrom="${fromD}"`);
+    expect(animator).toContain(`android:valueTo="${toD}"`);
   });
 
-  it("also includes the static vector drawable definition", () => {
-    const avd = exportAnimatedVectorDrawable(layer);
-    expect(avd).toContain("<vector");
-    expect(avd).toContain("</vector>");
-    // Should contain the static VD as a comment block
-    expect(avd).toContain("<!-- animated_icon_vector.xml -->");
+  it("returns separate canonical resources instead of concatenating fake XML", () => {
+    const files = bundle().files;
+    expect(files.some((file) => file.path.endsWith("_vector.xml"))).toBe(true);
+    expect(files.some((file) => file.path.endsWith("_animated.xml"))).toBe(true);
+    expect(files.some((file) => file.path.startsWith("res/animator/"))).toBe(true);
   });
 
   it("references the animator file", () => {
-    const avd = exportAnimatedVectorDrawable(layer);
-    expect(avd).toContain("@animator/animated_icon_morph");
+    expect(avdXml()).toContain("@animator/animated_icon_animated_icon_pathdata");
   });
 });
 
@@ -563,7 +753,18 @@ describe("exportLottie", () => {
     expect(ks.r).toBeDefined();
     expect(ks.s).toBeDefined();
     expect(ks.o).toBeDefined();
-    expect(ks.p.k).toEqual([256, 256]); // w/2, h/2
+    // Path coordinates are already scaled into the composition; a second
+    // centered layer position would push normal 0..24 Android paths off-canvas.
+    expect(ks.p.k).toEqual([0, 0]);
+  });
+
+  it("maps the default 24-unit viewport directly into the Lottie canvas", () => {
+    const lottie = exportLottie(from, to, "test");
+    const shape = lottie.layers[0].shapes[0].it.find((item: { ty: string }) => item.ty === "sh")!;
+    const vertices = shape.ks!.k[0].s[0].v;
+
+    expect(vertices[0]).toEqual([0, 0]);
+    expect(vertices[2]).toEqual([512, 512]);
   });
 
   it("layer has a shape group with path animation", () => {
@@ -624,6 +825,45 @@ describe("exportLottie", () => {
     expect(fromVerts.length).toBe(toVerts.length);
   });
 
+  it("converts preserved arc commands to cubic vertices instead of dropping them", () => {
+    const withArc = makePath("M 0 0 A 5 5 0 0 1 10 10");
+    const lottie = exportLottie(withArc, withArc, "arc");
+    const shapeGroup = lottie.layers[0].shapes[0];
+    const pathItem = shapeGroup.it.find((item: { ty: string }) => item.ty === "sh")!;
+    const verts = pathItem.ks!.k[0].s[0].v;
+    // The M vertex plus at least one arc endpoint must survive.
+    expect(verts.length).toBeGreaterThan(1);
+    const lastVert = verts[verts.length - 1];
+    const s = 512 / 24; // default 24-unit viewport maps into the 512px canvas
+    expect(lastVert[0]).toBeCloseTo(10 * s);
+    expect(lastVert[1]).toBeCloseTo(10 * s);
+    // Arc-to-bezier conversion produces non-zero tangent handles.
+    const inTangents = pathItem.ks!.k[0].s[0].i;
+    expect(inTangents.slice(1).some((t: number[]) => t[0] !== 0 || t[1] !== 0)).toBe(true);
+  });
+
+  it("exports each subpath as a separate contour instead of one merged polyline", () => {
+    const twoRings = makePath("M 0 0 L 4 0 L 4 4 Z M 10 10 L 14 10 L 14 14 Z");
+    const lottie = exportLottie(twoRings, twoRings, "rings");
+    const shapeItems = lottie.layers[0].shapes[0].it.filter(
+      (item: { ty: string }) => item.ty === "sh",
+    );
+    expect(shapeItems).toHaveLength(2);
+    const s = 512 / 24; // default 24-unit viewport maps into the 512px canvas
+    const [first, second] = shapeItems.map(
+      (item: { ks: { k: Array<{ s: Array<{ c: boolean; v: number[][] }> }> } }) =>
+        item.ks.k[0].s[0],
+    );
+    // First ring: closed triangle starting at the origin.
+    expect(first.c).toBe(true);
+    expect(first.v[0]).toEqual([0, 0]);
+    // Second ring keeps its own start point and closed flag rather than
+    // being welded onto the first contour.
+    expect(second.c).toBe(true);
+    expect(second.v[0]).toEqual([10 * s, 10 * s]);
+    expect(second.v.length).toBe(3);
+  });
+
   it("uses default duration of 1.2s when not specified", () => {
     const lottie = exportLottie(from, to, "test");
     expect(lottie.op).toBe(36); // 1.2 * 30 = 36
@@ -649,9 +889,40 @@ describe("exportLottie", () => {
     expect(lottie.op).toBe(60);
     expect(lottie.layers).toHaveLength(2);
     expect(lottie.layers.map((layer: any) => layer.nm)).toEqual(["One", "Two"]);
-    expect(lottie.layers[0].ks.p.k[0]).toBeGreaterThan(256);
+    expect(lottie.layers[0].ks.p.k[0]).toBeCloseTo((2 * 512) / 24);
     expect(lottie.layers[1].ks.r.k).toBe(15);
     expect(lottie.layers[1].ks.o.k).toBe(50);
+  });
+
+  it("uses the source viewport for document scale and centers only letterboxing", () => {
+    const lottie = exportLottieDocument(
+      [
+        makeLayer({
+          id: "wide",
+          name: "Wide",
+          from: makePath("M 0 0 L 48 0 L 48 24 L 0 24 Z"),
+          to: makePath("M 0 0 L 48 0 L 48 24 L 0 24 Z"),
+        }),
+      ],
+      "wide-document",
+      {
+        vector: {
+          id: "wide-vector",
+          name: "Wide",
+          width: 24,
+          height: 24,
+          viewportWidth: 48,
+          viewportHeight: 24,
+          alpha: 1,
+        },
+      },
+    );
+    const layer = lottie.layers[0]!;
+    const shape = layer.shapes[0].it.find((item: { ty: string }) => item.ty === "sh")!;
+    const vertices = shape.ks!.k[0].s[0].v;
+
+    expect(layer.ks.p.k).toEqual([0, 128]);
+    expect(vertices[2]).toEqual([512, 256]);
   });
 
   it("exports group parenting plus AVD-style transform and color timeline tracks", () => {
@@ -701,6 +972,27 @@ describe("exportLottie", () => {
     expect(child.ks.p.x.a).toBe(1);
     const fill = child.shapes[0].it.find((item: { ty: string }) => item.ty === "fl")!;
     expect(fill.c.a).toBe(1);
+  });
+
+  it("reconstructs flat group links and suppresses descendants of hidden groups", () => {
+    const lottie = exportLottieDocument(
+      [
+        makeLayer({ id: "hidden-child", name: "Hidden child", parentId: "hidden-group" }),
+        makeLayer({ id: "visible-child", name: "Visible child", parentId: "visible-group" }),
+        {
+          ...makeLayer({ id: "hidden-group", name: "Hidden group", visible: false }),
+          type: "group",
+        },
+        { ...makeLayer({ id: "visible-group", name: "Visible group" }), type: "group" },
+      ],
+      "flat-hierarchy",
+    );
+
+    expect(lottie.layers.map((layer: any) => layer.nm)).toEqual(["Visible child", "Visible group"]);
+    const child = lottie.layers.find((layer: any) => layer.nm === "Visible child")!;
+    const group = lottie.layers.find((layer: any) => layer.nm === "Visible group")!;
+    expect(child.parent).toBe(group.ind);
+    expect(lottie.layers.some((layer: any) => layer.nm.startsWith("Hidden"))).toBe(false);
   });
 });
 
@@ -916,16 +1208,17 @@ describe("exporter edge cases", () => {
     expect(frames).toHaveLength(2);
   });
 
-  it("exportVectorDrawable without stroke produces no strokeColor attribute", () => {
+  it("exportVectorDrawable without stroke uses a transparent Android stroke", () => {
     const noStroke = makeLayer({ id: 1, name: "nostroke", strokeColor: "" });
     const vd = exportVectorDrawable(noStroke);
-    expect(vd).not.toContain("android:strokeColor");
+    expect(vd).toContain('android:strokeColor="#00000000"');
   });
 
   it("exportAnimatedVectorDrawable with custom duration rounds correctly", () => {
     const layer = makeLayer({ id: 1, name: "test" });
-    const avd = exportAnimatedVectorDrawable(layer, { duration: 0.5 });
-    expect(avd).toContain('android:duration="500"');
+    const bundle = exportAnimatedVectorDrawable(layer, { duration: 0.5 });
+    const animator = bundle.files.find((file) => file.path.startsWith("res/animator/"))?.content;
+    expect(animator).toContain('android:duration="500"');
   });
 
   it("exportLottie shape keyframes have matching vertex structure", () => {
@@ -980,10 +1273,10 @@ describe("exporter edge cases", () => {
   });
 
   it("safeName handles leading digits", () => {
-    // safeName prefixes leading digits with underscore
+    // Android resource names must start with a letter.
     const leadingDigit = makeLayer({ id: 1, name: "123layer" });
     const vd = exportVectorDrawable(leadingDigit);
-    expect(vd).toContain('android:name="_123layer"');
+    expect(vd).toContain('android:name="asset_123layer"');
   });
 
   it("safeName replaces non-word characters with underscores", () => {
@@ -1025,7 +1318,7 @@ describe("kus 24t export fidelity", () => {
     };
     const svg = exportStaticSVG([group, clip] as any);
     expect(svg).toContain('<g id="group1" transform="translate(3 0) rotate(45)"');
-    expect(svg).toContain('<clipPath id="clip1"');
+    expect(svg).toContain('<clipPath id="ss-clip-cp"');
     expect(svg).toContain(pathToString(child.from));
   });
 
@@ -1074,6 +1367,30 @@ describe("kus 24t export fidelity", () => {
     expect(pdf).toContain("%PDF-1.4");
     expect(pdf).toContain("%%EOF");
     expect(pdf).toContain("/Page");
+  });
+
+  it("exportPDF writes xref offsets that match actual object byte positions", () => {
+    const layer = makeLayer({ strokeColor: "#ff0000", fillColor: "#00ff00" });
+    const pdf = exportPDF([layer]);
+    const startxref = Number(pdf.match(/startxref\n(\d+)/)?.[1]);
+    expect(startxref).toBeGreaterThan(0);
+    // startxref must point exactly at the "xref" keyword.
+    expect(pdf.slice(startxref, startxref + 4)).toBe("xref");
+    // Each xref entry (except the free head) must point at its "N 0 obj".
+    const entries = (pdf.slice(startxref).match(/^(\d{10}) 00000 n$/gm) ?? []).map((entry) =>
+      Number(entry.slice(0, 10)),
+    );
+    for (let objNum = 1; objNum <= entries.length; objNum++) {
+      const offset = entries[objNum - 1];
+      expect(pdf.slice(offset)).toMatch(new RegExp(`^${objNum} 0 obj`));
+    }
+    // Offsets depend on content length and MediaBox; a different path/size
+    // must shift them rather than reuse stale values.
+    const bigger = exportPDF([makeLayer({ strokeColor: "#ff0000", fillColor: "#00ff00" })], {
+      width: 1024,
+      height: 1024,
+    });
+    expect(bigger.match(/startxref\n(\d+)/)?.[1]).not.toBe(pdf.match(/startxref\n(\d+)/)?.[1]);
   });
 
   it("static/VD etc prefer pathData over from for tool edit roundtrips (knife/boolean/paint)", () => {

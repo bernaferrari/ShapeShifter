@@ -1,5 +1,5 @@
 import { ensureStableCommandIds, parsePath } from "../pathUtils";
-import type { FillType, Layer, StrokeLineCap, StrokeLineJoin } from "../types";
+import type { FillType, Gradient, Layer, StrokeLineCap, StrokeLineJoin } from "../types";
 import { androidToCssHexColor } from "../mathUtils";
 
 export interface VectorDrawableImportResult {
@@ -37,7 +37,13 @@ function dimensionAttribute(value: string, fallback: number): { value: number; u
   return { value: numberAttribute(match[1], fallback), unit: match[2] };
 }
 
-function parseVdGroup(groupEl: Element, parentId: string | null, counter: { n: number }): Layer[] {
+function parseVdGroup(
+  groupEl: Element,
+  parentId: string | null,
+  counter: { n: number },
+  viewportWidth = 24,
+  viewportHeight = 24,
+): Layer[] {
   const layers: Layer[] = [];
   const groupId = `vd_${Date.now()}_g${counter.n++}`;
   const name = vdAttr(groupEl, "name", `group_${counter.n}`);
@@ -65,25 +71,80 @@ function parseVdGroup(groupEl: Element, parentId: string | null, counter: { n: n
   for (const child of Array.from(groupEl.children)) {
     const tag = child.tagName.toLowerCase().replace(/.*:/, "");
     if (tag === "path") {
-      const l = parseVdPath(child, groupId, counter);
+      const l = parseVdPath(child, groupId, counter, viewportWidth, viewportHeight);
       if (l) layers.push(l);
     } else if (tag === "clip-path") {
       const l = parseVdClipPath(child, groupId, counter);
       if (l) layers.push(l);
     } else if (tag === "group") {
-      layers.push(...parseVdGroup(child, groupId, counter));
+      layers.push(...parseVdGroup(child, groupId, counter, viewportWidth, viewportHeight));
     }
   }
 
   return layers;
 }
 
-function parseVdPath(el: Element, parentId: string | null, counter: { n: number }): Layer | null {
+function localName(el: Element): string {
+  return el.tagName.toLowerCase().replace(/.*:/, "");
+}
+
+function parseAaptGradient(
+  el: Element,
+  viewportWidth: number,
+  viewportHeight: number,
+): Gradient | undefined {
+  const gradientEl = Array.from(el.getElementsByTagName("*")).find(
+    (candidate) => localName(candidate) === "gradient",
+  );
+  if (!gradientEl) return undefined;
+  const stops = Array.from(gradientEl.children)
+    .filter((child) => localName(child) === "item")
+    .map((item) => ({
+      offset: numberAttribute(vdAttr(item, "offset", "0"), 0),
+      color: editorColor(vdAttr(item, "color")) || "#000000",
+      opacity: 1,
+    }));
+  if (stops.length < 2) return undefined;
+  const type = vdAttr(gradientEl, "type", "linear") === "radial" ? "radial" : "linear";
+  const width = viewportWidth || 1;
+  const height = viewportHeight || 1;
+  if (type === "radial") {
+    return {
+      type: "radial",
+      coordinateSpace: "userSpace",
+      cx: numberAttribute(vdAttr(gradientEl, "centerX", String(width / 2)), width / 2),
+      cy: numberAttribute(vdAttr(gradientEl, "centerY", String(height / 2)), height / 2),
+      r: numberAttribute(
+        vdAttr(gradientEl, "gradientRadius", String(Math.max(width, height) / 2)),
+        Math.max(width, height) / 2,
+      ),
+      stops,
+    };
+  }
+  return {
+    type: "linear",
+    coordinateSpace: "userSpace",
+    x1: numberAttribute(vdAttr(gradientEl, "startX", "0"), 0),
+    y1: numberAttribute(vdAttr(gradientEl, "startY", "0"), 0),
+    x2: numberAttribute(vdAttr(gradientEl, "endX", "1"), 1),
+    y2: numberAttribute(vdAttr(gradientEl, "endY", "0"), 0),
+    stops,
+  };
+}
+
+function parseVdPath(
+  el: Element,
+  parentId: string | null,
+  counter: { n: number },
+  viewportWidth = 24,
+  viewportHeight = 24,
+): Layer | null {
   const pathData = vdAttr(el, "pathData");
   if (!pathData.trim()) return null;
   let parsed = parsePath(pathData);
   parsed = ensureStableCommandIds(parsed);
   const name = vdAttr(el, "name", `path_${counter.n}`);
+  const fillGradient = parseAaptGradient(el, viewportWidth, viewportHeight);
   return {
     id: `vd_${Date.now()}_p${counter.n++}`,
     name,
@@ -95,7 +156,8 @@ function parseVdPath(el: Element, parentId: string | null, counter: { n: number 
     visible: true,
     locked: false,
     parentId,
-    fillColor: editorColor(vdAttr(el, "fillColor")),
+    fillColor: fillGradient ? undefined : editorColor(vdAttr(el, "fillColor")),
+    fillGradient,
     fillAlpha: numberAttribute(vdAttr(el, "fillAlpha", "1"), 1),
     strokeColor: editorColor(vdAttr(el, "strokeColor")),
     strokeAlpha: numberAttribute(vdAttr(el, "strokeAlpha", "1"), 1),
@@ -131,6 +193,7 @@ function parseVdClipPath(
     visible: true,
     locked: false,
     parentId,
+    fillType: (vdAttr(el, "fillType") === "evenOdd" ? "evenOdd" : "nonZero") as FillType,
   } satisfies Layer;
 }
 
@@ -143,27 +206,40 @@ export function importVectorDrawable(xmlText: string): VectorDrawableImportResul
   const doc = new DOMParser().parseFromString(xmlText, "application/xml");
   if (doc.querySelector("parsererror")) {
     return {
-      layers: [], viewportWidth: 24, viewportHeight: 24, width: 24, height: 24,
-      alpha: 1, minSdk: 21,
+      layers: [],
+      viewportWidth: 24,
+      viewportHeight: 24,
+      width: 24,
+      height: 24,
+      alpha: 1,
+      minSdk: 21,
     };
   }
   const root = doc.documentElement;
   if (root.tagName.toLowerCase().replace(/.*:/, "") !== "vector") {
     return {
-      layers: [], viewportWidth: 24, viewportHeight: 24, width: 24, height: 24,
-      alpha: 1, minSdk: 21,
+      layers: [],
+      viewportWidth: 24,
+      viewportHeight: 24,
+      width: 24,
+      height: 24,
+      alpha: 1,
+      minSdk: 21,
     };
   }
   const counter = { n: 0 };
   const layers: Layer[] = [];
+  const metadata = extractVectorDrawableMetadata(xmlText);
 
   // Walk direct children of <vector> (groups, paths, clip-paths)
   for (const child of Array.from(root.children)) {
     const tag = child.tagName.toLowerCase().replace(/.*:/, "");
     if (tag === "group") {
-      layers.push(...parseVdGroup(child, null, counter));
+      layers.push(
+        ...parseVdGroup(child, null, counter, metadata.viewportWidth, metadata.viewportHeight),
+      );
     } else if (tag === "path") {
-      const l = parseVdPath(child, null, counter);
+      const l = parseVdPath(child, null, counter, metadata.viewportWidth, metadata.viewportHeight);
       if (l) layers.push(l);
     } else if (tag === "clip-path") {
       const l = parseVdClipPath(child, null, counter);
@@ -175,12 +251,11 @@ export function importVectorDrawable(xmlText: string): VectorDrawableImportResul
   if (layers.length === 0) {
     const paths = Array.from(doc.querySelectorAll("path"));
     for (const el of paths) {
-      const l = parseVdPath(el, null, counter);
+      const l = parseVdPath(el, null, counter, metadata.viewportWidth, metadata.viewportHeight);
       if (l) layers.push(l);
     }
   }
 
-  const metadata = extractVectorDrawableMetadata(xmlText);
   return { layers, ...metadata };
 }
 
@@ -213,6 +288,6 @@ export function extractVectorDrawableMetadata(xmlText: string): {
     tint: editorColor(vdAttr(root, "tint")) || undefined,
     tintMode: vdAttr(root, "tintMode") || undefined,
     autoMirrored: vdAttr(root, "autoMirrored", "false") === "true",
-    minSdk: xmlText.includes("<aapt:attr") || xmlText.includes("fillType=\"evenOdd\"") ? 24 : 21,
+    minSdk: xmlText.includes("<aapt:attr") || xmlText.includes('fillType="evenOdd"') ? 24 : 21,
   };
 }

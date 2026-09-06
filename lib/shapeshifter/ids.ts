@@ -1,10 +1,10 @@
 /**
  * ShapeShifter 2026 - Stable Identity System (ShapeShifter-k7zp / sogt Phase 1)
  *
- * Production-grade, zero-dependency, monotonic ULID generator.
+ * Zero-dependency, monotonic ULID generator.
  * Replaces the fragile timestamp+counter pattern (`cmd_${Date.now()}_${n}`) that
- * produced non-unique, non-sortable, clock-sensitive IDs — fatal for selection,
- * history, undo, collab, and the entire v2 document model.
+ * produced non-unique, non-sortable, clock-sensitive IDs that complicate selection,
+ * history, undo, collaboration, and the v2 document model.
  *
  * ULID properties (RFC-aligned):
  * - 26 characters, Crockford Base32 (alphabet avoids I L O U for human clarity)
@@ -21,8 +21,8 @@
  * the parallel migration period. No data shape changes in this slice.
  *
  * Design decisions (recorded in bead k7zp):
- * - No runtime dependencies (no 'ulid' or 'uuid' packages) → smaller bundle, auditable,
- *   no supply-chain risk. Suitable for SpaceX-grade reliability expectations.
+ * - No runtime dependencies (no 'ulid' or 'uuid' packages) → smaller bundle and
+ *   fewer external runtime dependencies.
  * - Monotonic factory lives in module scope (process-local). Tests can reset it.
  * - Crypto randomness preferred (Web Crypto in browser + Node 16+). Graceful fallback.
  * - Migration helper `ensureStableCommandIds` provided as pure function for importers

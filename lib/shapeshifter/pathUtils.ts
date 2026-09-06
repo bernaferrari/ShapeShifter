@@ -4,15 +4,13 @@
  * Focused on morphing compatibility.
  */
 
-import type { Command, CommandType, PathData, Point, SubPath } from "./types";
+import type { Command, CommandType, MorphMapping, PathData, Point, SubPath } from "./types";
 import { arePointsEqual } from "./mathUtils";
 import { getPoleOfInaccessibility, isSubPathClockwise, arcToBeziers } from "./geometry";
 import { generateId } from "./ids";
 import { align, MATCH, MISMATCH, type NWAlignment } from "./path/alignment";
 import { clonePathDataForSplit, splitCommandInHalf } from "./path/pathEditing";
-
-export { align, INDEL, MATCH, MISMATCH } from "./path/alignment";
-export type { NWAlignment } from "./path/alignment";
+import { getPathDataBounds, parsePath, pathToString } from "./path/pathDataIO";
 
 // Hardened round for export fidelity (kus/24t/yrl symmetry): never emit NaN/Inf in d= strings.
 // Bad coords from prior edits, import edge arcs, or math drift now safely drop to 0 (matching importer recovery).
@@ -160,6 +158,16 @@ export function getInterpolatedPath(from: PathData, to: PathData, t: number): st
   }
 
   return result.trim();
+}
+
+/** Preview/export helper: never lerp a pair Android pathType would reject. */
+export function interpolatedPathIfCompatible(from: PathData, to: PathData, t: number): string {
+  try {
+    if (!areAndroidPathsMorphCompatible(from, to)) return pathToString(from);
+    return getInterpolatedPath(from, to, t);
+  } catch {
+    return pathToString(from);
+  }
 }
 
 /**
@@ -337,9 +345,13 @@ export function setCommandAsFirst(pathData: PathData, subIdx: number, cmdIdx: nu
   const firstCmd = cmds[0];
   if (firstCmd.type !== "M") return newData; // safety
 
-  // Check if closed (last is Z or ends near start)
+  // Check if closed (last is Z or the drawing endpoint coincides with the M point).
   const last = cmds[cmds.length - 1];
-  const isClosed = last.type === "Z" || (last.points.length > 0 && firstCmd.points.length > 0);
+  const isClosed =
+    last.type === "Z" ||
+    (firstCmd.points.length > 0 &&
+      last.points.length > 0 &&
+      arePointsEqual(firstCmd.points[0], last.points.at(-1)!));
 
   if (!isClosed) return newData;
 
@@ -374,6 +386,27 @@ export function setCommandAsFirst(pathData: PathData, subIdx: number, cmdIdx: nu
  * number of commands in each corresponding subpath. This is the minimum
  * requirement for getInterpolatedPath to produce a valid morph.
  */
+export function androidPathMorphSignature(path: PathData): string {
+  return normalizePathData(path)
+    .subPaths.map((subPath) =>
+      subPath.commands.map((command) => `${command.type}:${command.points.length}`).join(","),
+    )
+    .join("|");
+}
+
+export function areAndroidPathsMorphCompatible(
+  a: PathData | string,
+  b: PathData | string,
+): boolean {
+  try {
+    const first = typeof a === "string" ? parsePath(a) : a;
+    const second = typeof b === "string" ? parsePath(b) : b;
+    return androidPathMorphSignature(first) === androidPathMorphSignature(second);
+  } catch {
+    return false;
+  }
+}
+
 export function arePathsStructurallyCompatible(a: PathData, b: PathData): boolean {
   if (a.subPaths.length !== b.subPaths.length) return false;
   for (let i = 0; i < a.subPaths.length; i++) {
@@ -392,11 +425,10 @@ export function arePathsStructurallyCompatible(a: PathData, b: PathData): boolea
 }
 
 /**
- * Makes two paths structurally compatible for morphing using high-fidelity
- * Needleman-Wunsch alignment + reverse/shift search + gap-streak splits.
- * Ported from the original Angular AutoAwesome + NeedlemanWunsch (the secret sauce
- * for great morphs). Current version approximates some advanced Path ops but is
- * a massive leap over naive equalizers. All previous tests + new NW behavior expected.
+ * Makes two paths structurally compatible for morphing using heuristic
+ * Needleman-Wunsch alignment, reverse/shift search, and gap-streak splits.
+ * Some advanced path operations remain approximations, so callers should treat
+ * the result as an editable starting point rather than a geometric guarantee.
  */
 function createCollapsingSubPath(targetSubPath: SubPath, pole: Point): SubPath {
   return {
@@ -481,17 +513,10 @@ function convertCommandType(cmd: Command, start: Point, targetType: CommandType)
 }
 
 /**
- * Makes two paths structurally compatible for morphing using high-fidelity
- * Needleman-Wunsch alignment + reverse/shift search + gap-streak splits.
- * Ported from the original Angular AutoAwesome + NeedlemanWunsch (the secret sauce
- * for great morphs). Current version approximates some advanced Path ops but is
- * a massive leap over naive equalizers. All previous tests + new NW behavior expected.
- */
-/**
- * New v2 capability (preserves all the magic from the original autoFix).
  * Given two geometries, returns normalized versions + a MorphMapping that
- * can be used by the renderer for high-quality interpolation.
- * This is the bridge that lets us keep the excellent NW + pole logic while moving to a better model.
+ * can be used by the renderer for interpolation. The mapping carries the
+ * subpath poles used for pairing, and remains best-effort/editable rather
+ * than representing an exact correspondence proof.
  */
 export function prepareForMorph(
   from: PathData,
@@ -499,19 +524,46 @@ export function prepareForMorph(
 ): {
   from: PathData;
   to: PathData;
-  mapping: any; // Will be replaced by real MorphMapping interface once v2 types land
+  mapping: MorphMapping;
 } {
   const [a, b] = autoFixPathPair(from, to);
-  // For now, the mapping is implicit in the aligned output.
-  // Future: serialize the alignments, poles, permutations into a proper MorphMapping object.
   return {
     from: a,
     to: b,
-    mapping: { version: 1, note: "placeholder - real mapping coming with v2 types" },
+    mapping: {
+      id: generateId(),
+      alignments: {
+        kind: "prepared",
+        fromSignature: androidPathMorphSignature(a),
+        toSignature: androidPathMorphSignature(b),
+        compatible: areAndroidPathsMorphCompatible(a, b),
+      } as const,
+      polePositions: a.subPaths.map((sp) => getPoleOfInaccessibility(sp)),
+      createdAt: Date.now(),
+    },
   };
 }
 
-// Original kept for backward compat during migration
+/** Numeric morph quality for fixtures — not a visual screenshot, but real shipped geometry. */
+export function scoreMorphQuality(from: PathData, to: PathData) {
+  const prepared = prepareForMorph(from, to);
+  const mid = parsePath(getInterpolatedPath(prepared.from, prepared.to, 0.5));
+  const startBounds = getPathDataBounds(prepared.from);
+  const midBounds = getPathDataBounds(mid);
+  const endBounds = getPathDataBounds(prepared.to);
+  const area = (bounds: { w: number; h: number } | null) => (bounds ? bounds.w * bounds.h : 0);
+  return {
+    compatible:
+      prepared.mapping.alignments.kind === "prepared" && prepared.mapping.alignments.compatible,
+    mapping: prepared.mapping,
+    areaJump: Math.abs(area(midBounds) - (area(startBounds) + area(endBounds)) / 2),
+    centroidJump: Math.hypot(
+      (midBounds?.x ?? 0) - (startBounds?.x ?? 0),
+      (midBounds?.y ?? 0) - (startBounds?.y ?? 0),
+    ),
+  };
+}
+
 export function autoFixPathPair(from: PathData, to: PathData): [PathData, PathData] {
   let a = normalizePathData(clonePathDataForSplit(from));
   let b = normalizePathData(clonePathDataForSplit(to));
@@ -706,7 +758,17 @@ function applyAlignmentSplits(
 
   const alSide = which === "a" ? alignment.from : alignment.to;
 
-  // Identify gap streaks
+  // Identify gap streaks (columns where this side has no command) and map
+  // each streak back to the command index of the next aligned column — i.e.
+  // the drawable segment that faces the missing counterparts and should be
+  // subdivided. Alignment columns and commands are different sequences once
+  // either side has gaps, so indices must never cross between them.
+  const posOfObj: Record<number, number> = {};
+  let cmdPos = 0;
+  for (let i = 0; i < alSide.length; i++) {
+    if (alSide[i].obj) posOfObj[i] = cmdPos++;
+  }
+
   const gapGroups: Array<{ start: number }> = [];
   let inGap = false;
   let gapStart = 0;
@@ -725,10 +787,14 @@ function applyAlignmentSplits(
   // Apply splits from the end (indices shift)
   for (let g = gapGroups.length - 1; g >= 0; g--) {
     const group = gapGroups[g];
-    // approximate insertion point from alignment position
-    const insertAt = Math.max(1, Math.min(cmds.length - 1, Math.floor(group.start / 2)));
-    if (insertAt >= cmds.length) continue;
-    // perform one split (full would do fractional multi-splits per streak length)
+    // First aligned column after the streak → its drawable-command position.
+    let col = group.start;
+    while (col < alSide.length && !alSide[col].obj) col++;
+    const splitAt = posOfObj[col];
+    // Trailing gap: nothing follows to subdivide.
+    if (splitAt === undefined || splitAt < 1) continue;
+    const insertAt = Math.min(splitAt, cmds.length - 1);
+    if (insertAt < 1) continue;
     const afterSplit = splitCommandInHalf({ subPaths: [{ commands: cmds }] } as any, 0, insertAt);
     cmds = afterSplit.subPaths[0]?.commands || cmds;
   }
@@ -736,15 +802,26 @@ function applyAlignmentSplits(
   return result;
 }
 
+/**
+ * Post-alignment fallback: pad the shorter side until command counts match.
+ * Alignment-driven splits already handled addressable gaps; what remains here
+ * resolves leftovers (e.g. trailing gaps, which have no following segment to
+ * face) by repeatedly halving the last drawable command. That clusters the
+ * inserted vertices on the final segment — a deliberate best-effort
+ * heuristic, acceptable because it only fires for residue the aligner could
+ * not pair.
+ */
 function equalizeSubpathCommands(target: PathData, ref: PathData, subIdx: number): PathData {
   let result = clonePathDataForSplit(target);
-  const tCmds = result.subPaths[subIdx].commands;
-  const rCmds = ref.subPaths[subIdx].commands;
+  const refCount = ref.subPaths[subIdx]?.commands.length ?? 0;
 
-  while (tCmds.length < rCmds.length) {
+  while (result.subPaths[subIdx].commands.length < refCount) {
+    const cmds = result.subPaths[subIdx].commands;
+    // Round-robin over drawable commands, walking backwards so repeated
+    // insertions spread across segments rather than stacking at the end.
     let idx = -1;
-    for (let i = tCmds.length - 1; i >= 0; i--) {
-      if (tCmds[i].type !== "M" && tCmds[i].type !== "Z") {
+    for (let i = cmds.length - 1; i >= 0; i--) {
+      if (cmds[i].type !== "M" && cmds[i].type !== "Z") {
         idx = i;
         break;
       }
@@ -901,7 +978,12 @@ export function normalizePathData(pathData: PathData): PathData {
   };
 }
 
-export { booleanCombine, isPointInFillRegion, pathToPolygons } from "./path/booleanOperations";
+export {
+  booleanCombine,
+  BOOLEAN_OPERATIONS_ENABLED,
+  isPointInFillRegion,
+  pathToPolygons,
+} from "./path/booleanOperations";
 export type { BooleanOp } from "./path/booleanOperations";
 export {
   simplifyPath,

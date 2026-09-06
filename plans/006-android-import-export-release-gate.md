@@ -35,13 +35,13 @@ files can still be reported as successful despite errors.
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
+| Purpose       | Command                                                                                                                                                                                     | Expected |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
 | Android tests | `pnpm test -- lib/shapeshifter/__tests__/importers.test.ts lib/shapeshifter/__tests__/androidCompiler.test.ts lib/shapeshifter/__tests__/androidParity.test.ts components/editor/__tests__` | all pass |
-| Full suite | `pnpm test` | all pass |
-| Typecheck | `pnpm typecheck` | exit 0 |
-| Lint | `pnpm lint` | exit 0 |
-| Build | `pnpm build` | exit 0 |
+| Full suite    | `pnpm test`                                                                                                                                                                                 | all pass |
+| Typecheck     | `pnpm typecheck`                                                                                                                                                                            | exit 0   |
+| Lint          | `pnpm lint`                                                                                                                                                                                 | exit 0   |
+| Build         | `pnpm build`                                                                                                                                                                                | exit 0   |
 
 ## Scope
 
@@ -164,4 +164,3 @@ Do not market unsupported exporters as fidelity-equivalent.
 Pin the independent Android validation environment and update it deliberately.
 Whenever Android adds a supported property or compatibility behavior, update the
 capability table, fixtures, importer, evaluator, and compiler in one change.
-

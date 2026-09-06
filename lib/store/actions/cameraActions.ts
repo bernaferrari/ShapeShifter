@@ -10,6 +10,7 @@ import { getOwnedLayerBounds } from "../../shapeshifter/scene/selection";
 import type { VectorMetadata } from "../../shapeshifter/types";
 import type { CanvasFrame } from "../defaultWorkspace";
 import type { EditorState } from "../editorStore";
+import { vectorCoordinateRect } from "../../shapeshifter/vectorSpace";
 
 type CameraActionKey =
   | "setWorldViewport"
@@ -27,8 +28,7 @@ export function getFrameRect(frame: CanvasFrame) {
   return {
     x: frame.x || 0,
     y: frame.y || 0,
-    w: frame.vector?.width || 48,
-    h: frame.vector?.height || 48,
+    ...vectorCoordinateRect(frame.vector, 48),
   };
 }
 
@@ -37,7 +37,7 @@ export function computeFramesViewport(frames: CanvasFrame[]): Viewport {
 }
 
 export function computeVectorViewport(vector: VectorMetadata, scale = 1): Viewport {
-  return computeDetailViewport({ width: vector.width, height: vector.height }, scale);
+  return computeDetailViewport(vector, scale);
 }
 
 function animateViewport(

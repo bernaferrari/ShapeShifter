@@ -554,6 +554,20 @@ describe("importLayersFromVectorDrawable", () => {
       expect(layer.trimPathOffset).toBe(0);
       expect(layer.fillType).toBe("nonZero");
     });
+
+    it("preserves clip-path fillType", () => {
+      const layers = importLayersFromVectorDrawable(`
+        <vector xmlns:android="http://schemas.android.com/apk/res/android"
+            android:width="24dp" android:height="24dp"
+            android:viewportWidth="24" android:viewportHeight="24">
+          <clip-path android:name="window" android:fillType="evenOdd"
+              android:pathData="M0 0 L20 0 L20 20 L0 20 Z" />
+        </vector>
+      `);
+
+      expect(layers).toHaveLength(1);
+      expect(layers[0]).toMatchObject({ type: "clipPath", fillType: "evenOdd" });
+    });
   });
 
   describe("non-namespaced attributes", () => {
@@ -1003,9 +1017,7 @@ describe("import fidelity: nested groups, userSpaceOnUse gradients, non-conforma
     expect(layers.every((l) => l.parentId == null)).toBe(true);
   });
 
-  it("converts userSpaceOnUse linear gradient to objectBoundingBox fractions via path bbox", () => {
-    // Path bbox x∈[0,10], y∈[0,10]. Gradient line (0,0)->(10,0) in user space
-    // maps to fractions (0,0)->(1,0) → angle 0.
+  it("retains userSpaceOnUse linear endpoints instead of collapsing them to a path angle", () => {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">
       <defs>
         <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="10" y2="0">
@@ -1020,7 +1032,29 @@ describe("import fidelity: nested groups, userSpaceOnUse gradients, non-conforma
     expect(p).toBeDefined();
     expect(p!.fillGradient).toBeDefined();
     expect(p!.fillGradient!.type).toBe("linear");
-    expect(p!.fillGradient!.angle).toBe(0);
+    expect(p!.fillGradient).toMatchObject({
+      coordinateSpace: "userSpace",
+      x1: 0,
+      y1: 0,
+      x2: 10,
+      y2: 0,
+    });
+    expect(exportStaticSVG([p!])).toContain('gradientUnits="userSpaceOnUse"');
+  });
+
+  it("bakes group and gradient transforms into retained user-space endpoints", () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+      <defs>
+        <linearGradient id="g" gradientUnits="userSpaceOnUse" gradientTransform="translate(1 0)"
+            x1="2" y1="0" x2="8" y2="0">
+          <stop offset="0" stop-color="#ff0000"/><stop offset="1" stop-color="#0000ff"/>
+        </linearGradient>
+      </defs>
+      <g transform="translate(3 0)"><path id="p" d="M0 0 L12 0 L12 12 Z" fill="url(#g)"/></g>
+    </svg>`;
+
+    const gradient = importLayersFromSvg(svg).find((layer) => layer.name === "p")!.fillGradient!;
+    expect(gradient).toMatchObject({ coordinateSpace: "userSpace", x1: 6, x2: 12 });
   });
 
   it("keeps objectBoundingBox gradients as fractions (no userSpace conversion)", () => {
@@ -1037,6 +1071,29 @@ describe("import fidelity: nested groups, userSpaceOnUse gradients, non-conforma
     const p = layers.find((l) => l.name === "p");
     expect(p!.fillGradient).toBeDefined();
     expect(p!.fillGradient!.angle).toBe(0);
+  });
+
+  it("retains exported clip definitions as sibling-scoped clip layers", () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+      <defs><clipPath id="window"><path d="M 0 0 L 8 0 L 8 8 L 0 8 Z" transform="translate(2 0)" /></clipPath></defs>
+      <g id="scope" transform="translate(1 0)" clip-path="url(#window)">
+        <path id="art" d="M 0 0 L 12 0 L 12 12 L 0 12 Z" fill="#ff0000" />
+      </g>
+    </svg>`;
+
+    const layers = importLayersFromSvg(svg);
+    const scope = layers.find((layer) => layer.name === "scope")!;
+    const clip = layers.find((layer) => layer.type === "clipPath")!;
+    const art = layers.find((layer) => layer.name === "art")!;
+
+    expect(clip.parentId).toBe(scope.id);
+    expect(art.parentId).toBe(scope.id);
+    // Parent (1) and definition (2) transforms both apply to the clip geometry.
+    expect(clip.from.subPaths[0]!.commands[0]!.points[0]!.x).toBe(3);
+
+    const roundTripped = exportStaticSVG(layers);
+    expect(roundTripped).toContain("<clipPath");
+    expect(roundTripped).toContain('clip-path="url(#ss-clip-');
   });
 
   it("flattens arcs to beziers under non-uniform scale (no surviving A command)", () => {

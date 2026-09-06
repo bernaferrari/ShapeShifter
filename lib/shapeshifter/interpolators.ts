@@ -116,32 +116,42 @@ const easingCache = new Map<string, (t: number) => number>();
  * Returns the eased value.
  */
 export function evaluateInterpolator(t: number, interpolator?: string): number {
-  if (!interpolator || interpolator === "LINEAR") return t;
   if (t <= 0) return 0;
   if (t >= 1) return 1;
+  // Android ObjectAnimator defaults to AccelerateDecelerateInterpolator. Keep
+  // absent XML attributes and the editor preview on the same timing curve.
+  const resolved = interpolator || "ACCELERATE_DECELERATE";
+  if (resolved === "LINEAR") return t;
+  // Android implements this named interpolator as a cosine, not a cubic-bezier.
+  if (resolved === "ACCELERATE_DECELERATE") {
+    // Cos(3π/2) lands infinitesimally below zero in JavaScript. Preserve the
+    // exact symmetry point so a midpoint color does not round one channel down.
+    if (t === 0.5) return 0.5;
+    return Math.cos((t + 1) * Math.PI) / 2 + 0.5;
+  }
 
-  let fn = easingCache.get(interpolator);
+  let fn = easingCache.get(resolved);
   if (!fn) {
-    const named = INTERPOLATOR_CURVES[interpolator as InterpolatorName];
+    const named = INTERPOLATOR_CURVES[resolved as InterpolatorName];
     if (named) {
       fn = cubicBezier(...named);
     } else {
       // Try parsing custom "cubic-bezier(x1, y1, x2, y2)" or "x1 y1 x2 y2"
-      const nums = interpolator.match(/[-+]?(?:\d*\.)?\d+/g)?.map(Number);
+      const nums = resolved.match(/[-+]?(?:\d*\.)?\d+/g)?.map(Number);
       if (nums && nums.length >= 4) {
         fn = cubicBezier(nums[0], nums[1], nums[2], nums[3]);
       } else {
         if (process.env.NODE_ENV !== "production") {
           // Cached below, so this fires once per distinct unresolvable name, not per frame.
           console.warn(
-            `[interpolators] Unknown interpolator "${interpolator}" — falling back to linear. ` +
+            `[interpolators] Unknown interpolator "${resolved}" — falling back to linear. ` +
               `Expected one of ${Object.keys(INTERPOLATOR_CURVES).join(", ")} or a "cubic-bezier(x1, y1, x2, y2)" string.`,
           );
         }
         fn = (v: number) => v;
       }
     }
-    easingCache.set(interpolator, fn);
+    easingCache.set(resolved, fn);
   }
 
   return fn(t);

@@ -1,0 +1,259 @@
+{
+  "version": 1,
+  "layers": {
+    "vectorLayer": {
+      "id": "selected-vector",
+      "name": "Selected artboard",
+      "type": "vector",
+      "width": 24,
+      "height": 24,
+      "alpha": 1,
+      "children": []
+    },
+    "hiddenLayerIds": []
+  },
+  "timeline": {
+    "animation": {
+      "id": "selected-motion",
+      "name": "Selected motion",
+      "duration": 400,
+      "blocks": []
+    }
+  },
+  "frames": [
+    {
+      "id": "frame-sun",
+      "name": "Sun",
+      "x": 120,
+      "y": -40,
+      "vector": {
+        "id": "frame-sun-vector",
+        "name": "Sun vector",
+        "width": 24,
+        "height": 18,
+        "viewportWidth": 48,
+        "viewportHeight": 36,
+        "widthUnit": "dp",
+        "heightUnit": "dp",
+        "alpha": 0.8,
+        "tint": "#ffcc00",
+        "tintMode": "src_in",
+        "autoMirrored": true,
+        "minSdk": 24
+      },
+      "animation": {
+        "id": "sun-motion",
+        "name": "Sun rise",
+        "duration": 700,
+        "blocks": [
+          {
+            "id": "sun-move",
+            "layerId": "sun-ray",
+            "propertyName": "translateY",
+            "fromValue": 8,
+            "toValue": 0,
+            "startTime": 100,
+            "endTime": 600,
+            "interpolator": "FAST_OUT_SLOW_IN",
+            "type": "number"
+          }
+        ]
+      },
+      "hiddenLayerIds": ["sun-hidden"],
+      "layers": [
+        {
+          "id": "sun-group",
+          "name": "Sun group",
+          "type": "group",
+          "from": "",
+          "pathData": "",
+          "visible": true,
+          "locked": false,
+          "rotation": 15,
+          "scaleX": 1.1,
+          "scaleY": 0.9,
+          "pivotX": 12,
+          "pivotY": 9,
+          "translateX": 2,
+          "translateY": -1
+        },
+        {
+          "id": "sun-ray",
+          "name": "Ray",
+          "type": "path",
+          "parentId": "sun-group",
+          "from": "M 12 1 L 13 8 L 11 8 Z",
+          "to": "M 12 0 L 14 9 L 10 9 Z",
+          "pathData": "M 12 1 L 13 8 L 11 8 Z",
+          "visible": true,
+          "locked": false,
+          "fillColor": "#ffcc00",
+          "fillAlpha": 0.75,
+          "strokeColor": "#6b4f00",
+          "strokeAlpha": 0.5,
+          "strokeWidth": 1.25,
+          "strokeLinecap": "round",
+          "strokeLinejoin": "bevel",
+          "strokeMiterLimit": 5,
+          "trimPathStart": 0.1,
+          "trimPathEnd": 0.9,
+          "trimPathOffset": 0.2,
+          "fillType": "evenOdd",
+          "strokeDasharray": "2 1",
+          "morphMapping": {
+            "id": "sun-ray-mapping",
+            "alignments": { "kind": "legacy-aligned-endpoints" },
+            "polePositions": [],
+            "createdAt": 0
+          }
+        },
+        {
+          "id": "sun-hidden",
+          "name": "Hidden ray",
+          "type": "path",
+          "parentId": "sun-group",
+          "from": "M 2 2 L 4 2 L 3 4 Z",
+          "pathData": "M 2 2 L 4 2 L 3 4 Z",
+          "visible": true,
+          "locked": true,
+          "fillColor": "#ffffff"
+        }
+      ]
+    },
+    {
+      "id": "frame-moon",
+      "name": "Moon",
+      "x": -16,
+      "y": 72,
+      "vector": {
+        "id": "frame-moon-vector",
+        "name": "Moon vector",
+        "width": 32,
+        "height": 32,
+        "viewportWidth": 64,
+        "viewportHeight": 64,
+        "alpha": 1,
+        "minSdk": 21
+      },
+      "animation": {
+        "id": "moon-motion",
+        "name": "Moon fade",
+        "duration": 500,
+        "blocks": [
+          {
+            "id": "moon-alpha",
+            "layerId": "moon-path",
+            "propertyName": "fillAlpha",
+            "fromValue": 0.2,
+            "toValue": 1,
+            "startTime": 0,
+            "endTime": 500,
+            "type": "number"
+          }
+        ]
+      },
+      "hiddenLayerIds": [],
+      "layers": [
+        {
+          "id": "moon-path",
+          "name": "Moon path",
+          "type": "path",
+          "from": "M 6 3 A 12 12 0 1 0 26 24 A 10 10 0 1 1 6 3 Z",
+          "pathData": "M 6 3 A 12 12 0 1 0 26 24 A 10 10 0 1 1 6 3 Z",
+          "visible": true,
+          "locked": false,
+          "fillColor": "#d9e6ff"
+        }
+      ]
+    }
+  ],
+  "pageRoot": {
+    "vector": {
+      "id": "page-vector",
+      "name": "Canvas illustration",
+      "width": 144,
+      "height": 88,
+      "viewportWidth": 288,
+      "viewportHeight": 176,
+      "widthUnit": "px",
+      "heightUnit": "px",
+      "alpha": 0.65,
+      "tint": "#1d4ed8",
+      "tintMode": "multiply",
+      "autoMirrored": true,
+      "minSdk": 26
+    },
+    "animation": {
+      "id": "page-motion",
+      "name": "Background drift",
+      "duration": 900,
+      "blocks": [
+        {
+          "id": "page-shift",
+          "layerId": "page-visible",
+          "propertyName": "translateX",
+          "fromValue": -4,
+          "toValue": 4,
+          "startTime": 0,
+          "endTime": 900,
+          "interpolator": "LINEAR",
+          "type": "number"
+        }
+      ]
+    },
+    "hiddenLayerIds": ["page-hidden"],
+    "layers": [
+      {
+        "id": "page-visible",
+        "name": "Page foreground",
+        "type": "path",
+        "from": "M 0 0 L 288 0 L 288 176 L 0 176 Z",
+        "pathData": "M 0 0 L 288 0 L 288 176 L 0 176 Z",
+        "visible": true,
+        "locked": false,
+        "fillColor": "#2563eb",
+        "fillGradient": {
+          "type": "linear",
+          "angle": 45,
+          "stops": [
+            { "offset": 0, "color": "#2563eb", "opacity": 1 },
+            { "offset": 1, "color": "#bfdbfe", "opacity": 0.4 }
+          ]
+        }
+      },
+      {
+        "id": "page-hidden",
+        "name": "Page hidden detail",
+        "type": "path",
+        "from": "M 20 20 L 40 20 L 30 40 Z",
+        "pathData": "M 20 20 L 40 20 L 30 40 Z",
+        "visible": true,
+        "locked": false,
+        "fillColor": "#ffffff"
+      }
+    ]
+  },
+  "documentV2": {
+    "id": "damaged-canonical-document",
+    "name": "Recovered multi-frame project",
+    "version": 2,
+    "frameIds": ["missing-frame"],
+    "frames": {},
+    "page": {
+      "name": "Damaged page",
+      "width": 24,
+      "height": 24,
+      "alpha": 1
+    },
+    "rootNodeIds": [],
+    "rootClipIds": [],
+    "nodes": {
+      "broken-node": null
+    },
+    "geometryVersions": {},
+    "morphMappings": {},
+    "clips": {},
+    "tracks": {},
+    "keyframes": {}
+  }
+}

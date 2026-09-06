@@ -21,8 +21,18 @@ export function normalizeStops(stops: GradientStop[]): GradientStop[] {
     .sort((a, b) => a.offset - b.offset);
 }
 
-/** A deterministic id for a layer's gradient `<defs>` entry. */
-export const gradientDomId = (layerId: string | number) => `ss-grad-${String(layerId)}`;
+/** Encode arbitrary stable data as a collision-resistant, XML-safe id fragment. */
+export function svgIdFragment(value: string | number): string {
+  const encoded = Array.from(String(value))
+    .map((character) =>
+      /^[A-Za-z0-9_-]$/.test(character) ? character : `_${character.codePointAt(0)!.toString(16)}_`,
+    )
+    .join("");
+  return encoded || "item";
+}
+
+/** A deterministic, XML-safe id for a layer's gradient `<defs>` entry. */
+export const gradientDomId = (layerId: string | number) => `ss-grad-${svgIdFragment(layerId)}`;
 
 /**
  * Seed a fresh gradient from a solid color when the user switches Solid→Gradient,
@@ -57,18 +67,62 @@ export function linearVector(angleDeg: number): { x1: number; y1: number; x2: nu
   };
 }
 
+const finite = (value: number | undefined): value is number => Number.isFinite(value);
+
+/** Whether a gradient is anchored in the document / Android viewport coordinate space. */
+export function gradientUsesUserSpace(gradient: Gradient): boolean {
+  return gradient.coordinateSpace === "userSpace";
+}
+
+/**
+ * Resolve a linear gradient to concrete endpoints. Exact imported endpoints take
+ * precedence over the legacy angle model, keeping Android's viewport-space data
+ * intact while leaving UI-created angle gradients unchanged.
+ */
+export function linearGradientCoordinates(
+  gradient: Pick<Gradient, "x1" | "y1" | "x2" | "y2" | "angle">,
+): { x1: number; y1: number; x2: number; y2: number } {
+  if (finite(gradient.x1) && finite(gradient.y1) && finite(gradient.x2) && finite(gradient.y2)) {
+    return { x1: gradient.x1, y1: gradient.y1, x2: gradient.x2, y2: gradient.y2 };
+  }
+  return linearVector(gradient.angle ?? 0);
+}
+
 const fmt = (n: number) => Number(n.toFixed(4)).toString();
+
+const SAFE_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+const SAFE_NAMED_COLOR = /^[a-z]+$/i;
+const SAFE_COLOR_FUNCTION =
+  /^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([-+\d.,%/\sA-Za-z]+\)$/;
+const SAFE_ID = /^[A-Za-z_][A-Za-z0-9_-]*$/;
+
+/** Allowlist a stop-color so imported markup cannot break out of SVG attributes. */
+export function sanitizeCssColor(color: string | undefined, fallback = "#000000"): string {
+  const value = (color ?? "").trim();
+  return SAFE_COLOR.test(value) || SAFE_NAMED_COLOR.test(value) || SAFE_COLOR_FUNCTION.test(value)
+    ? value
+    : fallback;
+}
+
+/** Allowlist a DOM id used inside generated gradient markup. */
+export function sanitizeSvgId(id: string, fallback = "ss-grad"): string {
+  return SAFE_ID.test(id) ? id : fallback;
+}
 
 /**
  * Render a gradient as an SVG `<linearGradient>`/`<radialGradient>` element string.
- * Uses `gradientUnits="objectBoundingBox"` so it maps to the path bounds directly.
+ * Existing gradients use `gradientUnits="objectBoundingBox"`. Imported Android
+ * gradients use `userSpaceOnUse`, preserving their VectorDrawable viewport
+ * endpoints for previews and SVG export.
  * `fillAlpha` (0..1) is multiplied into every stop's opacity.
  */
 export function gradientToSvg(gradient: Gradient, id: string, fillAlpha = 1): string {
+  const safeId = sanitizeSvgId(id);
+  const units = gradientUsesUserSpace(gradient) ? "userSpaceOnUse" : "objectBoundingBox";
   const stops = normalizeStops(gradient.stops)
     .map(
       (s) =>
-        `<stop offset="${fmt(s.offset)}" stop-color="${s.color}" stop-opacity="${fmt(
+        `<stop offset="${fmt(s.offset)}" stop-color="${sanitizeCssColor(s.color)}" stop-opacity="${fmt(
           (s.opacity ?? 1) * fillAlpha,
         )}" />`,
     )
@@ -78,13 +132,13 @@ export function gradientToSvg(gradient: Gradient, id: string, fillAlpha = 1): st
     const cx = gradient.cx ?? 0.5;
     const cy = gradient.cy ?? 0.5;
     const r = gradient.r ?? 0.5;
-    return `<radialGradient id="${id}" gradientUnits="objectBoundingBox" cx="${fmt(cx)}" cy="${fmt(
+    return `<radialGradient id="${safeId}" gradientUnits="${units}" cx="${fmt(cx)}" cy="${fmt(
       cy,
     )}" r="${fmt(r)}">${stops}</radialGradient>`;
   }
 
-  const v = linearVector(gradient.angle ?? 0);
-  return `<linearGradient id="${id}" gradientUnits="objectBoundingBox" x1="${fmt(v.x1)}" y1="${fmt(
+  const v = linearGradientCoordinates(gradient);
+  return `<linearGradient id="${safeId}" gradientUnits="${units}" x1="${fmt(v.x1)}" y1="${fmt(
     v.y1,
   )}" x2="${fmt(v.x2)}" y2="${fmt(v.y2)}">${stops}</linearGradient>`;
 }

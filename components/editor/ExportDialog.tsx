@@ -16,18 +16,15 @@ import { Slider } from "@/components/ui/slider";
 import { Download, Film, FileCode2, FileJson, FileImage, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editorStore";
+import { type ExportOptions } from "@/lib/shapeshifter/exporter";
 import {
-  exportAnimatedSVG,
-  exportCSSKeyframes,
-  exportLottieDocument,
-  exportPDF,
-  exportProjectJSON,
-  exportStaticSVG,
-  exportSvgSpritesheet,
-  type ExportOptions,
-} from "@/lib/shapeshifter/exporter";
-import { compileAndroidArtboard } from "@/lib/shapeshifter/androidCompiler";
-import { createZip } from "@/lib/shapeshifter/zip";
+  exportLiveDocument,
+  LIVE_EXPORT_SCOPE,
+  summarizeAndroidWarnings,
+  type LiveExportKind,
+} from "@/lib/store/exportDocument";
+import { vectorCoordinateSize } from "@/lib/shapeshifter/vectorSpace";
+import { CAPABILITY_MATRIX, type ExportFormatId } from "@/lib/shapeshifter/formatCapabilities";
 
 interface ExportDialogProps {
   children: React.ReactNode;
@@ -38,20 +35,20 @@ export function ExportDialog({ children }: ExportDialogProps) {
   const selectedLayerId = useEditorStore((state) => state.selectedLayerId);
   const vector = useEditorStore((state) => state.vector);
   const animation = useEditorStore((state) => state.animation);
-  const hiddenLayerIds = useEditorStore((state) => state.hiddenLayerIds);
   const frames = useEditorStore((state) => state.frames);
   const selectedFrameId = useEditorStore((state) => state.selectedFrameId);
   const currentLayer = layers.find((l) => l.id === selectedLayerId) || layers[0];
   const selectedFrame = frames.find((frame) => frame.id === selectedFrameId);
+  const viewportSize = vectorCoordinateSize(selectedFrame?.vector ?? vector);
   const androidAnimation = selectedFrame?.animation ?? animation;
   const androidTrackCount = new Set(
     androidAnimation.blocks.map((block) => `${String(block.layerId)}:${block.propertyName}`),
   ).size;
 
   const [open, setOpen] = useState(false);
-  const [format, setFormat] = useState<
-    "svg" | "css" | "lottie" | "vector" | "avd" | "spritesheet" | "json" | "pdf" | "static"
-  >("avd");
+  const storedFormat = useEditorStore((state) => state.preferredExportFormat);
+  const setPreferredExportFormat = useEditorStore((state) => state.setPreferredExportFormat);
+  const [format, setFormat] = useState(storedFormat);
   const [options, setOptions] = useState<ExportOptions>({
     duration: 1.4,
     fps: 60,
@@ -61,9 +58,24 @@ export function ExportDialog({ children }: ExportDialogProps) {
     strokeWidth: 2.8,
   });
 
+  // Per-format capability summary: N of M animated-track kinds fully supported.
+  const capabilityProfile = CAPABILITY_MATRIX[format as ExportFormatId] ?? null;
+  const capabilitySummary = (() => {
+    if (!capabilityProfile) return null;
+    const capabilities = Object.values(capabilityProfile.capabilities);
+    const supportedCount = capabilities.filter((c) => c.supported).length;
+    const notes = [
+      ...capabilities.filter((c) => !c.supported && c.note).map((c) => c.note),
+      ...capabilityProfile.notes,
+    ];
+    return {
+      text: `${supportedCount} of ${capabilities.length} animated-track kinds fully supported in this format.`,
+      notes,
+    };
+  })();
   const [isExporting, setIsExporting] = useState(false);
 
-  // Pro Figma-grade format config (smallest addition for visual scan + icons, consistent w/ 5xa polish)
+  // Compact format config for a quick visual scan.
   const formats = [
     {
       key: "avd" as const,
@@ -78,51 +90,51 @@ export function ExportDialog({ children }: ExportDialogProps) {
       icon: <FileText className="h-3.5 w-3.5" />,
     },
     {
+      key: "json" as const,
+      label: "Project",
+      hint: "Project backup",
+      icon: <FileJson className="h-3.5 w-3.5" />,
+    },
+    {
+      key: "static" as const,
+      label: "Static SVG",
+      hint: "Scene snapshot",
+      icon: <FileImage className="h-3.5 w-3.5" />,
+    },
+    {
       key: "svg" as const,
       label: "Animated SVG",
-      hint: "JS • best quality",
+      hint: "Selected layer morph",
       icon: <FileCode2 className="h-3.5 w-3.5" />,
     },
     {
       key: "css" as const,
       label: "CSS",
-      hint: "Pure keyframes",
+      hint: "Selected layer morph",
       icon: <FileCode2 className="h-3.5 w-3.5" />,
     },
     {
       key: "lottie" as const,
       label: "Lottie",
-      hint: "JSON for apps",
+      hint: "Experimental",
       icon: <FileJson className="h-3.5 w-3.5" />,
     },
     {
       key: "spritesheet" as const,
       label: "Spritesheet",
-      hint: "Frame SVG",
+      hint: "Experimental",
       icon: <FileImage className="h-3.5 w-3.5" />,
-    },
-    {
-      key: "json" as const,
-      label: "Project",
-      hint: "Full backup",
-      icon: <FileJson className="h-3.5 w-3.5" />,
     },
     {
       key: "pdf" as const,
       label: "PDF",
-      hint: "Print fidelity",
+      hint: "Experimental",
       icon: <FileText className="h-3.5 w-3.5" />,
-    },
-    {
-      key: "static" as const,
-      label: "Static SVG",
-      hint: "High-fidelity",
-      icon: <FileImage className="h-3.5 w-3.5" />,
     },
   ] as const;
 
   const handleExport = async () => {
-    if (!currentLayer && ["svg", "css", "lottie", "spritesheet"].includes(format)) {
+    if (!currentLayer && LIVE_EXPORT_SCOPE[format as LiveExportKind] === "selected-layer") {
       toast.error("No layer selected");
       return;
     }
@@ -134,139 +146,30 @@ export function ExportDialog({ children }: ExportDialogProps) {
     try {
       let blob: Blob | null = null;
       let filename = "";
-
-      const baseName = (selectedFrame?.name || currentLayer?.name || vector.name || "export")
-        .replace(/\s+/g, "-")
-        .toLowerCase();
-      const allVisibleLayers = layers.filter(
-        (layer) => layer.visible !== false && !hiddenLayerIds.includes(String(layer.id)),
+      let androidWarningSummary: ReturnType<typeof summarizeAndroidWarnings> = null;
+      let staticWarningDescription: string | null = null;
+      const exported = await exportLiveDocument(format as LiveExportKind, options);
+      const blockingDiagnostics = exported.androidDiagnostics.filter(
+        (diagnostic) => diagnostic.severity === "error",
       );
-
-      switch (format) {
-        case "svg":
-          const svgContent = exportAnimatedSVG(
-            currentLayer!.pathData ?? currentLayer!.from,
-            currentLayer!.to ?? currentLayer!.from,
-            currentLayer!.name,
-            options,
-          );
-          blob = new Blob([svgContent], { type: "image/svg+xml" });
-          filename = `${baseName}-morph.svg`;
-          break;
-
-        case "css":
-          const cssContent = exportCSSKeyframes(
-            currentLayer!.pathData ?? currentLayer!.from,
-            currentLayer!.to ?? currentLayer!.from,
-            currentLayer!.name,
-            options.duration,
-          );
-          blob = new Blob([cssContent], { type: "text/css" });
-          filename = `${baseName}-morph.css`;
-          break;
-
-        case "lottie":
-          const lottieContent = exportLottieDocument(
-            selectedFrame?.layers ?? allVisibleLayers,
-            selectedFrame?.name || vector.name || currentLayer!.name,
-            {
-              animation: selectedFrame?.animation ?? animation,
-              vector: selectedFrame?.vector ?? vector,
-              duration: (selectedFrame?.animation ?? animation).duration / 1000,
-            },
-          );
-          blob = new Blob([JSON.stringify(lottieContent, null, 2)], { type: "application/json" });
-          filename = `${baseName}.json`;
-          break;
-
-        case "vector":
-          const vectorBundle = compileAndroidArtboard({
-            name: selectedFrame?.name || vector.name,
-            layers: selectedFrame?.layers ?? layers,
-            vector: selectedFrame?.vector ?? vector,
-            animation: selectedFrame?.animation ?? animation,
-            hiddenLayerIds: selectedFrame?.hiddenLayerIds ?? hiddenLayerIds,
-          });
-          blob = new Blob(
-            [vectorBundle.files.find((file) => file.path.endsWith("_vector.xml"))?.content ?? ""],
-            {
-              type: "application/xml",
-            },
-          );
-          filename = `${vectorBundle.resourceName}_vector.xml`;
-          break;
-
-        case "avd":
-          const androidBundle = compileAndroidArtboard({
-            name: selectedFrame?.name || vector.name,
-            layers: selectedFrame?.layers ?? layers,
-            vector: selectedFrame?.vector ?? vector,
-            animation: selectedFrame?.animation ?? animation,
-            hiddenLayerIds: selectedFrame?.hiddenLayerIds ?? hiddenLayerIds,
-          });
-          const blockingDiagnostics = androidBundle.diagnostics.filter(
-            (diagnostic) => diagnostic.severity === "error",
-          );
-          if (blockingDiagnostics.length > 0) {
-            toast.error("Android export needs attention", {
-              description: blockingDiagnostics[0]!.message,
-            });
-            return;
-          }
-          const report = androidBundle.diagnostics
-            .map(
-              (diagnostic) =>
-                `[${diagnostic.severity.toUpperCase()}] ${diagnostic.code}: ${diagnostic.message}`,
-            )
-            .join("\n");
-          const zipBytes = createZip([
-            ...androidBundle.files,
-            {
-              path: "SHAPESHIFTER_EXPORT.txt",
-              content: report || "Android export completed without diagnostics.",
-            },
-          ]);
-          const zipBuffer = zipBytes.buffer.slice(
-            zipBytes.byteOffset,
-            zipBytes.byteOffset + zipBytes.byteLength,
-          ) as ArrayBuffer;
-          blob = new Blob([zipBuffer], { type: "application/zip" });
-          filename = `${androidBundle.resourceName}-android.zip`;
-          break;
-
-        case "spritesheet":
-          blob = new Blob([exportSvgSpritesheet(currentLayer!, options)], {
-            type: "image/svg+xml",
-          });
-          filename = `${baseName}-spritesheet.svg`;
-          break;
-
-        case "json":
-          const project = exportProjectJSON(layers, vector, animation, hiddenLayerIds, frames);
-          blob = new Blob([JSON.stringify(project, null, 2)], { type: "application/json" });
-          filename = `${vector.name || "shapeshifter"}.shapeshifter`;
-          break;
-
-        case "pdf":
-          // Full doc PDF for professional fidelity (all visible + edits + groups)
-          const pdfContent = exportPDF(
-            allVisibleLayers.length ? allVisibleLayers : layers,
-            options,
-          );
-          blob = new Blob([pdfContent], { type: "application/pdf" });
-          filename = `${baseName}.pdf`;
-          break;
-
-        case "static":
-          // High-fidelity static SVG export (groups, transforms, clips, pathData post-tool edits)
-          const staticContent = exportStaticSVG(
-            allVisibleLayers.length ? allVisibleLayers : layers,
-            options,
-          );
-          blob = new Blob([staticContent], { type: "image/svg+xml" });
-          filename = `${baseName}-static.svg`;
-          break;
+      if (format === "avd" && blockingDiagnostics.length > 0) {
+        toast.error("Android export needs attention", {
+          description: blockingDiagnostics[0]!.message,
+        });
+        return;
       }
+      androidWarningSummary = summarizeAndroidWarnings(exported.androidDiagnostics);
+      staticWarningDescription =
+        exported.staticDiagnostics.map((diagnostic) => diagnostic.message).join(" ") || null;
+      const payload =
+        exported.content instanceof Uint8Array
+          ? (exported.content.buffer.slice(
+              exported.content.byteOffset,
+              exported.content.byteOffset + exported.content.byteLength,
+            ) as ArrayBuffer)
+          : exported.content;
+      blob = new Blob([payload], { type: exported.mimeType });
+      filename = exported.filename;
 
       if (blob) {
         const url = URL.createObjectURL(blob);
@@ -278,7 +181,22 @@ export function ExportDialog({ children }: ExportDialogProps) {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        toast.success(`Exported ${format.toUpperCase()}`, { description: filename });
+        if (androidWarningSummary) {
+          const warningLabel = androidWarningSummary.count === 1 ? "warning" : "warnings";
+          toast.warning(
+            `Exported ${format.toUpperCase()} with ${androidWarningSummary.count} ${warningLabel}`,
+            {
+              description:
+                format === "avd"
+                  ? `${androidWarningSummary.description} Full details are in SHAPESHIFTER_EXPORT.txt.`
+                  : androidWarningSummary.description,
+            },
+          );
+        } else if (staticWarningDescription) {
+          toast.warning("Exported STATIC with warning", { description: staticWarningDescription });
+        } else {
+          toast.success(`Exported ${format.toUpperCase()}`, { description: filename });
+        }
         setOpen(false);
       }
     } catch (error) {
@@ -301,13 +219,13 @@ export function ExportDialog({ children }: ExportDialogProps) {
             Export Animation
           </DialogTitle>
           <DialogDescription>
-            Export the active artboard as production-ready Android resources or portable vector
-            formats. Android exports preserve the scene hierarchy and timeline tracks.
+            Android, Lottie, static SVG, and project backup use the flushed live artboard or
+            document. Animated SVG and CSS export only the selected layer's morph endpoints.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 py-4">
-          {/* Format Selection — Figma/Framer pro visual picker (icons + hints for instant scan) */}
+          {/* Format picker with icons and concise capability hints. */}
           <div>
             <Label className="text-xs font-medium tracking-widest">FORMAT</Label>
             <div className="mt-2 grid grid-cols-3 gap-2">
@@ -316,7 +234,10 @@ export function ExportDialog({ children }: ExportDialogProps) {
                   key={f.key}
                   variant={format === f.key ? "default" : "outline"}
                   size="sm"
-                  onClick={() => setFormat(f.key)}
+                  onClick={() => {
+                    setFormat(f.key);
+                    setPreferredExportFormat(f.key);
+                  }}
                   className="h-auto flex-col items-start gap-0.5 py-2 text-left font-normal"
                   aria-pressed={format === f.key}
                 >
@@ -332,6 +253,14 @@ export function ExportDialog({ children }: ExportDialogProps) {
             </div>
             <div className="text-[10px] text-muted-foreground mt-1.5 pl-0.5">
               {formats.find((f) => f.key === format)?.hint || "Production-ready export"}
+              {capabilitySummary && (
+                <div className="mt-1">
+                  {capabilitySummary.text}
+                  {capabilitySummary.notes.map((note) => (
+                    <div key={note}>{note}</div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -351,8 +280,7 @@ export function ExportDialog({ children }: ExportDialogProps) {
                   Viewport
                 </div>
                 <div className="mt-1 font-mono">
-                  {selectedFrame?.vector.width ?? vector.width} ×{" "}
-                  {selectedFrame?.vector.height ?? vector.height}
+                  {viewportSize.width} × {viewportSize.height}
                 </div>
               </div>
               <div>

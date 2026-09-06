@@ -20,6 +20,7 @@ export function isEditableTarget(target: EventTarget | null) {
 export function useEditorKeyboardShortcuts() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
       if (isEditableTarget(event.target)) return;
 
       const store = useEditorStore.getState();
@@ -36,7 +37,47 @@ export function useEditorKeyboardShortcuts() {
         return;
       }
 
-      if (!event.metaKey) {
+      const selectedIds =
+        store.selectedLayerIds.length > 0 ? store.selectedLayerIds : [store.selectedLayerId];
+      if (command && key === "c") {
+        event.preventDefault();
+        store.copyLayers?.(selectedIds);
+        return;
+      }
+      if (command && key === "v") {
+        event.preventDefault();
+        store.pasteLayers?.();
+        return;
+      }
+      if (command && key === "x") {
+        event.preventDefault();
+        store.cutLayers?.(selectedIds);
+        return;
+      }
+      if (command && !event.shiftKey && key === "d") {
+        event.preventDefault();
+        store.copyLayers?.(selectedIds);
+        store.pasteLayers?.();
+        return;
+      }
+      if (command && key === "w") {
+        event.preventDefault();
+        store.closeActionMode?.();
+        return;
+      }
+      if (command && key === "g") {
+        event.preventDefault();
+        if (event.shiftKey) store.ungroupSelectedLayer();
+        else store.groupSelectedLayers();
+        return;
+      }
+      if (command && event.shiftKey && key === "l") {
+        event.preventDefault();
+        store.toggleLayerLock(store.selectedLayerId);
+        return;
+      }
+
+      if (!command) {
         const toolByKey = {
           v: "select",
           a: "direct",
@@ -59,7 +100,7 @@ export function useEditorKeyboardShortcuts() {
         }
       }
 
-      if (event.shiftKey && !event.metaKey) {
+      if (event.shiftKey && !command) {
         if (key === "r") {
           event.preventDefault();
           store.reverseSelectedLayer();
@@ -95,7 +136,7 @@ export function useEditorKeyboardShortcuts() {
         return;
       }
 
-      if (key === "x" && !event.metaKey && !event.shiftKey) {
+      if (key === "x" && !command && !event.shiftKey) {
         event.preventDefault();
         store.splitSelectedCommand?.();
         return;
@@ -103,17 +144,6 @@ export function useEditorKeyboardShortcuts() {
       if (key === "f" && !command && !event.shiftKey && store.isActionMode) {
         event.preventDefault();
         store.setSelectedCommandAsFirst?.();
-        return;
-      }
-      if (command && key === "w") {
-        event.preventDefault();
-        store.closeActionMode?.();
-        return;
-      }
-      if (command && key === "g") {
-        event.preventDefault();
-        if (event.shiftKey) store.ungroupSelectedLayer();
-        else store.groupSelectedLayers();
         return;
       }
       if (event.key === "]" && !command) {
@@ -124,35 +154,6 @@ export function useEditorKeyboardShortcuts() {
       if (event.key === "[" && !command) {
         event.preventDefault();
         store.nudgeLayerZOrder(store.selectedLayerId, -1);
-        return;
-      }
-      if (command && event.shiftKey && key === "l") {
-        event.preventDefault();
-        store.toggleLayerLock(store.selectedLayerId);
-        return;
-      }
-
-      const selectedIds =
-        store.selectedLayerIds.length > 0 ? store.selectedLayerIds : [store.selectedLayerId];
-      if (command && key === "c") {
-        event.preventDefault();
-        store.copyLayers?.(selectedIds);
-        return;
-      }
-      if (command && key === "v") {
-        event.preventDefault();
-        store.pasteLayers?.();
-        return;
-      }
-      if (command && key === "x") {
-        event.preventDefault();
-        store.cutLayers?.(selectedIds);
-        return;
-      }
-      if (command && !event.shiftKey && key === "d") {
-        event.preventDefault();
-        store.copyLayers?.(selectedIds);
-        store.pasteLayers?.();
         return;
       }
 

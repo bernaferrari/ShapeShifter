@@ -12,7 +12,14 @@ import {
 import { isPointInFillRegion, parsePath } from "@/lib/shapeshifter/pathUtils";
 import type { PathData, Point } from "@/lib/shapeshifter/types";
 import { useEditorStore, type EditorState } from "@/lib/store/editorStore";
-import { getPathBounds, rectsIntersect } from "./pathCanvasGeometry";
+import { getPathBounds, rectsIntersect, type Bounds } from "./pathCanvasGeometry";
+import { evaluateAndroidScene } from "@/lib/shapeshifter/scene/evaluate";
+import {
+  IDENTITY_AFFINE,
+  inverseAffine,
+  transformPointWithMatrix,
+  type AffineMatrix,
+} from "@/lib/shapeshifter/scene/layerTransform";
 import { getPreviewLayers } from "./pathCanvasPreview";
 
 type PathCanvasSide = "from" | "to" | "preview";
@@ -43,6 +50,46 @@ interface MarqueeState {
 }
 
 const emptyPath = (): PathData => ({ subPaths: [] });
+
+/**
+ * The action/preview canvas renders every layer through its evaluated
+ * worldMatrix (see pathCanvasPreview), while raw store paths live in local
+ * layer space. Hit testing must therefore map pointer/marquee geometry into
+ * each candidate's local space (or bounds into world space) before comparing.
+ */
+function evaluatedWorldMatrices(state: EditorState): Map<string, AffineMatrix> {
+  const scene = evaluateAndroidScene(state.layers, state.animation, state.progress, true);
+  const matrices = new Map<string, AffineMatrix>();
+  for (const node of scene.nodes) matrices.set(String(node.id), node.worldMatrix);
+  return matrices;
+}
+
+function localPoint(matrix: AffineMatrix, point: Point): Point {
+  const inverse = matrix === IDENTITY_AFFINE ? IDENTITY_AFFINE : inverseAffine(matrix);
+  if (!inverse) return point;
+  return transformPointWithMatrix(point, inverse);
+}
+
+/** Conservative axis-aligned bound of a rect transformed by a matrix. */
+function transformRect(rect: Bounds, matrix: AffineMatrix): Bounds {
+  const corners = [
+    { x: rect.x, y: rect.y },
+    { x: rect.x + rect.width, y: rect.y },
+    { x: rect.x, y: rect.y + rect.height },
+    { x: rect.x + rect.width, y: rect.y + rect.height },
+  ].map((corner) => transformPointWithMatrix(corner, matrix));
+  const xs = corners.map((corner) => corner.x);
+  const ys = corners.map((corner) => corner.y);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  return {
+    x: minX,
+    y: minY,
+    width: Math.max(...xs) - minX,
+    height: Math.max(...ys) - minY,
+  };
+}
+
 const selectionKey = (selection: {
   layerId: string | number;
   side: "from" | "to";
@@ -52,18 +99,24 @@ const selectionKey = (selection: {
 }) =>
   `${String(selection.layerId)}:${selection.side}:${selection.subPathIndex}:${selection.commandIndex}:${selection.pointIndex}`;
 
-function commitMarquee(side: PathCanvasSide, start: Point, end: Point, additive: boolean) {
+function commitMarquee(getSide: () => PathCanvasSide, start: Point, end: Point, additive: boolean) {
+  const side = getSide();
   const state = useEditorStore.getState();
   const selectRect = getMarqueeRect(start, end);
   const isBoxGesture = selectRect.width > 0.2 || selectRect.height > 0.2;
 
   if (side === "preview" && !state.isActionMode) {
+    const matrices = evaluatedWorldMatrices(state);
     if (isBoxGesture) {
       const subPathHits = state.layers.flatMap((layer) => {
         if (layer.visible === false || layer.locked) return [];
+        const world = matrices.get(String(layer.id)) ?? IDENTITY_AFFINE;
+        // Map the marquee rect into the layer's local space so bounds
+        // comparisons use the same coordinates the path data lives in.
+        const localRect = transformRect(selectRect, inverseAffine(world) ?? world);
         return layer.from.subPaths.flatMap((subPath, subPathIndex) => {
           const bounds = getPathBounds({ subPaths: [subPath] });
-          return bounds && rectsIntersect(selectRect, bounds)
+          return bounds && rectsIntersect(localRect, bounds)
             ? [{ layerId: layer.id, side: "from" as const, subPathIndex }]
             : [];
         });
@@ -95,9 +148,13 @@ function commitMarquee(side: PathCanvasSide, start: Point, end: Point, additive:
       state.animation.duration,
       state.progress,
     );
-    const hitLayer = [...renderedLayers].reverse().find(({ d }) => {
+    const hitLayer = [...renderedLayers].reverse().find(({ layer, d }) => {
       const bounds = getPathBounds(parsePath(d));
-      return bounds ? rectsIntersect(selectRect, bounds) : false;
+      if (!bounds) return false;
+      return rectsIntersect(
+        selectRect,
+        transformRect(bounds, matrices.get(String(layer.id)) ?? IDENTITY_AFFINE),
+      );
     });
     if (!hitLayer) {
       if (!additive) state.clearSelection();
@@ -163,6 +220,12 @@ export function usePathCanvasGestures({
   const dispatcherRef = useRef<GestureDispatcher | null>(null);
   const lassoPointsRef = useRef<Point[]>([]);
   const lassoRafRef = useRef<number | null>(null);
+  // The dispatcher is constructed once, but `side` legitimately changes while
+  // PathCanvas stays mounted (CanvasArea swaps preview/from/to as playback
+  // toggles). Keep the latest value in a ref so commitMarquee reads the side
+  // that is live at commit time instead of the mount-time closure.
+  const sideRef = useRef<PathCanvasSide>(side);
+  sideRef.current = side;
   const paintPreviewRafRef = useRef<number | null>(null);
   const paintHitRef = useRef<{ layerId: string | number } | null>(null);
   const pointerDownPositionRef = useRef<Point | null>(null);
@@ -197,37 +260,39 @@ export function usePathCanvasGestures({
             setMarquee((previous) => (previous ? { ...previous, current } : null)),
           endMarquee: () => setMarquee(null),
           commitMarqueeSelection: (start, end, additive) =>
-            commitMarquee(side, start, end, additive),
+            commitMarquee(() => sideRef.current, start, end, additive),
         },
       );
     }
-    dispatcherRef.current.updateContext({ toolMode, editingSide, snapToGrid, zoom });
+    dispatcherRef.current.updateContext({
+      toolMode,
+      editingSide,
+      snapToGrid,
+      zoom,
+    });
     if (toolMode !== "paint" && paintHitRef.current) clearPaintPreview();
   }, [clearPaintPreview, editingSide, pushHistory, side, snapToGrid, toolMode, zoom]);
-
-  useEffect(
-    () => () => {
-      if (lassoRafRef.current) cancelAnimationFrame(lassoRafRef.current);
-      if (paintPreviewRafRef.current) cancelAnimationFrame(paintPreviewRafRef.current);
-    },
-    [],
-  );
 
   const computePaintHit = useCallback(
     (point: Point) => {
       const state = useEditorStore.getState();
       const testSide = side === "preview" ? "from" : state.editingSide;
+      // Only the preview canvas renders layers through their evaluated
+      // worldMatrix; detail canvases draw raw local paths untransformed.
+      const matrices = side === "preview" ? evaluatedWorldMatrices(state) : null;
       for (let index = state.layers.length - 1; index >= 0; index--) {
         const layer = state.layers[index];
         if (
-          !layer.visible ||
+          layer.visible === false ||
           layer.locked ||
           (layer.type !== "path" && layer.type !== "clipPath")
         ) {
           continue;
         }
         const path = testSide === "from" ? layer.from : (layer.to ?? layer.from);
-        if (isPointInFillRegion(point, path)) return layer.id;
+        // Map the pointer into local layer space before the fill-region test.
+        const world = matrices?.get(String(layer.id)) ?? IDENTITY_AFFINE;
+        if (isPointInFillRegion(localPoint(world, point), path)) return layer.id;
       }
       return null;
     },
@@ -280,6 +345,15 @@ export function usePathCanvasGestures({
       const point = pointFromClient(event.clientX, event.clientY);
       if (!point) return;
       const state = useEditorStore.getState();
+      // Paint must take precedence over the preview-canvas marquee gesture,
+      // otherwise the early return below swallows paint clicks entirely.
+      if (state.toolMode === "paint" && event.button === 0) {
+        const hitId = computePaintHit(point);
+        if (hitId != null) applyPaint(hitId);
+        else toast.info("No fill region under cursor");
+        capturePointer(event.pointerId);
+        return;
+      }
       if (side === "preview" && !isActionMode && event.button === 0) {
         dispatcherRef.current?.handlePointerDown(
           point,
@@ -301,12 +375,6 @@ export function usePathCanvasGestures({
           { type: "marquee" },
           { shift: event.shiftKey, alt: event.altKey, ctrl: event.ctrlKey },
         );
-        capturePointer(event.pointerId);
-      }
-      if (state.toolMode === "paint" && event.button === 0) {
-        const hitId = computePaintHit(point);
-        if (hitId != null) applyPaint(hitId);
-        else toast.info("No fill region under cursor");
         capturePointer(event.pointerId);
       }
     },
@@ -398,7 +466,10 @@ export function usePathCanvasGestures({
   const onPointerUp = useCallback(
     (event: ReactPointerEvent<Element>) => {
       endPan();
-      const point = pointFromClient(event.clientX, event.clientY) ?? { x: 0, y: 0 };
+      const point = pointFromClient(event.clientX, event.clientY) ?? {
+        x: 0,
+        y: 0,
+      };
       dispatcherRef.current?.handlePointerUp(point, {
         shift: event.shiftKey,
         alt: event.altKey,

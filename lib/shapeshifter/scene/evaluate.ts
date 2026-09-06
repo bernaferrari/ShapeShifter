@@ -85,7 +85,10 @@ function evaluateTransform(
   const value = (property: string, fallback: number) =>
     usePlayhead
       ? numberAtTime(layer, animation.blocks, property, ms, animation.duration, fallback)
-      : asNumber((layer as unknown as Record<string, unknown>)[property] as number | undefined, fallback);
+      : asNumber(
+          (layer as unknown as Record<string, unknown>)[property] as number | undefined,
+          fallback,
+        );
   return {
     translateX: value("translateX", 0),
     translateY: value("translateY", 0),
@@ -102,7 +105,35 @@ function evaluateTransform(
  * no React/store dependency so browser rendering, selection, and serialization
  * can share the same hierarchy and property semantics.
  */
+const evaluatedSceneCache = new WeakMap<
+  Layer[],
+  { animation: AnimationState; progress: number; usePlayhead: boolean; scene: EvaluatedScene }
+>();
+
 export function evaluateAndroidScene(
+  layers: Layer[],
+  animation: AnimationState,
+  progress: number,
+  usePlayhead = true,
+): EvaluatedScene {
+  const cached = evaluatedSceneCache.get(layers);
+  // Blocks are replaced immutably everywhere (no in-place mutation of a cached AnimationState),
+  // so comparing the animation object identity is a sufficient cache key — no per-call
+  // O(blocks) fingerprint string needed during 60fps playback.
+  if (
+    cached &&
+    cached.animation === animation &&
+    cached.progress === progress &&
+    cached.usePlayhead === usePlayhead
+  ) {
+    return cached.scene;
+  }
+  const scene = evaluateAndroidSceneUncached(layers, animation, progress, usePlayhead);
+  evaluatedSceneCache.set(layers, { animation, progress, usePlayhead, scene });
+  return scene;
+}
+
+function evaluateAndroidSceneUncached(
   layers: Layer[],
   animation: AnimationState,
   progress: number,
@@ -111,12 +142,36 @@ export function evaluateAndroidScene(
   const entries = collectLayerEntries(layers);
   const byId = new Map(entries.map((entry) => [String(entry.layer.id), entry]));
   const children = new Map<string | null, Array<string | number>>();
+  const cyclicIds = new Set<string>();
   for (const entry of entries) {
-    const parentId = entry.parentId != null && byId.has(String(entry.parentId)) ? entry.parentId : null;
+    let parentId =
+      entry.parentId != null && byId.has(String(entry.parentId)) ? entry.parentId : null;
+    // Deterministic cycle handling: walk the parent chain with a visited set.
+    // If the chain loops back on itself, this entry would never attach to roots
+    // and its whole subtree would vanish from the scene — promote it to a root.
+    if (parentId != null) {
+      const seen = new Set<string>([String(entry.layer.id)]);
+      let cursor: string | number | null | undefined = parentId;
+      while (cursor != null) {
+        const cursorKey: string = String(cursor);
+        if (seen.has(cursorKey)) {
+          cyclicIds.add(cursorKey);
+          parentId = null;
+          break;
+        }
+        seen.add(cursorKey);
+        cursor = byId.get(cursorKey)?.parentId ?? null;
+      }
+    }
     children.set(parentId == null ? null : String(parentId), [
       ...(children.get(parentId == null ? null : String(parentId)) ?? []),
       entry.layer.id,
     ]);
+  }
+  if (cyclicIds.size > 0 && process.env.NODE_ENV !== "production") {
+    console.warn(
+      `[evaluateAndroidScene] layer hierarchy cycle detected involving: ${[...cyclicIds].join(", ")}; promoting affected children to roots.`,
+    );
   }
   const roots = children.get(null) ?? [];
   const nodes: EvaluatedSceneNode[] = [];
@@ -137,9 +192,11 @@ export function evaluateAndroidScene(
     const transform = evaluateTransform(layer, animation, ms, usePlayhead);
     const worldMatrix = multiplyAffine(parentMatrix, layerTransformToMatrix(transform));
     const visible = parentVisible && layer.visible !== false;
-    const alpha = inheritedAlpha * (usePlayhead
-      ? numberAtTime(layer, animation.blocks, "alpha", ms, animation.duration, layer.alpha ?? 1)
-      : (layer.alpha ?? 1));
+    const alpha =
+      inheritedAlpha *
+      (usePlayhead
+        ? numberAtTime(layer, animation.blocks, "alpha", ms, animation.duration, layer.alpha ?? 1)
+        : (layer.alpha ?? 1));
     const type = layer.type === "vector" ? "group" : layer.type;
     const isPath = type === "path" || type === "clipPath";
     const d = isPath
@@ -156,15 +213,32 @@ export function evaluateAndroidScene(
       }
     }
     const fillColor = usePlayhead
-      ? colorAtTime(layer, animation.blocks, "fillColor", ms, animation.duration, layer.fillColor ?? "")
+      ? colorAtTime(
+          layer,
+          animation.blocks,
+          "fillColor",
+          ms,
+          animation.duration,
+          layer.fillColor ?? "",
+        )
       : layer.fillColor;
     const strokeColor = usePlayhead
-      ? colorAtTime(layer, animation.blocks, "strokeColor", ms, animation.duration, layer.strokeColor ?? "")
+      ? colorAtTime(
+          layer,
+          animation.blocks,
+          "strokeColor",
+          ms,
+          animation.duration,
+          layer.strokeColor ?? "",
+        )
       : layer.strokeColor;
     const value = (property: string, fallback: number) =>
       usePlayhead
         ? numberAtTime(layer, animation.blocks, property, ms, animation.duration, fallback)
-        : asNumber((layer as unknown as Record<string, unknown>)[property] as number | undefined, fallback);
+        : asNumber(
+            (layer as unknown as Record<string, unknown>)[property] as number | undefined,
+            fallback,
+          );
     const childIds = children.get(String(id)) ?? [];
     const node: EvaluatedSceneNode = {
       id: layer.id,

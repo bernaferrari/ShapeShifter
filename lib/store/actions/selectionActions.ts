@@ -1,4 +1,6 @@
 import { PAGE_ROOT_ID, type LayerSelectionRef } from "../../shapeshifter/scene/owners";
+import { computeDetailViewport } from "../../shapeshifter/camera";
+import { vectorFromPageMetadata } from "../../shapeshifter/vectorSpace";
 import type { EditorState } from "../editorStore";
 import { cloneLayers, saveActiveFrame, saveActiveRoot } from "../workspaceState";
 
@@ -117,6 +119,7 @@ export function createSelectionActions(
           : savedFrames.find((frame) => frame.id === primary.ownerId)?.layers;
       if (!ownerLayers?.some((layer) => String(layer.id) === String(primary.layerId))) return;
       const primaryFrame = savedFrames.find((frame) => frame.id === primary.ownerId);
+      const rootVector = vectorFromPageMetadata(state.documentV2.page, PAGE_ROOT_ID);
       set({
         frames: savedFrames,
         rootLayers: cloneLayers(savedRoot.layers),
@@ -126,13 +129,15 @@ export function createSelectionActions(
         layers: cloneLayers(ownerLayers),
         ...(primary.ownerId === PAGE_ROOT_ID
           ? {
-              vector: { id: PAGE_ROOT_ID, name: "Page", width: 1, height: 1, alpha: 1 },
+              vector: rootVector,
+              detailViewport: computeDetailViewport(rootVector),
               animation: structuredClone(savedRoot.animation),
               hiddenLayerIds: [...savedRoot.hiddenLayerIds],
             }
           : primaryFrame
             ? {
                 vector: structuredClone(primaryFrame.vector),
+                detailViewport: computeDetailViewport(primaryFrame.vector),
                 animation: structuredClone(primaryFrame.animation),
                 hiddenLayerIds: [...primaryFrame.hiddenLayerIds],
               }

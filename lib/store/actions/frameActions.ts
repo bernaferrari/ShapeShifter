@@ -11,6 +11,7 @@ import {
   saveActiveRoot,
 } from "../workspaceState";
 import type { EditorState, MoveLayerOptions } from "../editorStore";
+import { vectorCoordinateSize, vectorFromPageMetadata } from "../../shapeshifter/vectorSpace";
 
 type SetEditorState = (
   next: Partial<EditorState> | ((state: EditorState) => Partial<EditorState> | EditorState),
@@ -53,7 +54,10 @@ function buildOwnerMoveState(
   if (selectedIds.length === 0) return null;
   const result = moveLayersBetweenOwners({
     frames: saveActiveFrame(state),
-    root: saveActiveRoot(state),
+    root: {
+      ...saveActiveRoot(state),
+      vector: vectorFromPageMetadata(state.documentV2.page, PAGE_ROOT_ID),
+    },
     sourceOwnerId: state.selectedFrameId,
     targetOwnerId,
     selectedIds,
@@ -102,7 +106,8 @@ export function createFrameActions(
       const name = `Frame ${savedFrames.length + 1}`;
       const gap = 24;
       const rightEdge = savedFrames.reduce(
-        (max, frame) => Math.max(max, (frame.x ?? 0) + (frame.vector?.width ?? 48)),
+        (max, frame) =>
+          Math.max(max, (frame.x ?? 0) + vectorCoordinateSize(frame.vector, 48).width),
         0,
       );
       const topEdge = savedFrames.length
@@ -152,7 +157,7 @@ export function createFrameActions(
         ...activeFrame,
         id: `frame-${Date.now()}`,
         name: `${activeFrame.name} copy`,
-        x: activeFrame.x + (activeFrame.vector?.width ?? 48) + 24,
+        x: activeFrame.x + vectorCoordinateSize(activeFrame.vector, 48).width + 24,
         y: activeFrame.y,
         vector: {
           ...activeFrame.vector,
@@ -307,6 +312,7 @@ export function createFrameActions(
       const savedFrames = saveActiveFrame(state);
       const savedRoot = saveActiveRoot(state);
       if (!savedRoot.layers.some((layer) => String(layer.id) === String(id))) return;
+      const rootVector = vectorFromPageMetadata(state.documentV2.page, PAGE_ROOT_ID);
       set({
         frames: savedFrames,
         rootLayers: cloneLayers(savedRoot.layers),
@@ -315,7 +321,8 @@ export function createFrameActions(
         selectedFrameId: PAGE_ROOT_ID,
         selectedFrameIds: [],
         layers: cloneLayers(savedRoot.layers),
-        vector: { id: PAGE_ROOT_ID, name: "Page", width: 1, height: 1, alpha: 1 },
+        vector: rootVector,
+        detailViewport: vectorViewport(rootVector),
         animation: structuredClone(savedRoot.animation),
         hiddenLayerIds: [...savedRoot.hiddenLayerIds],
         selectedLayerId: id,
@@ -330,17 +337,24 @@ export function createFrameActions(
       });
     },
 
-    moveFrame: (id, dx, dy) => {
+    moveFrame: (id, dx, dy, options) => {
       if (dx === 0 && dy === 0) return;
-      set((state) => ({
-        frames: state.frames.map((frame) =>
+      const state = get();
+      // Frame x/y is document content (it round-trips through DocumentV2 and every
+      // export), so panel moves are undoable exactly like renameFrame/deleteFrame.
+      // Canvas drags push their own transaction at drag start and pass
+      // recordHistory:false per tick, mirroring translateSelectedLayer.
+      if (options?.recordHistory !== false) state.pushHistory();
+      set((current) => ({
+        frames: current.frames.map((frame) =>
           frame.id === id ? { ...frame, x: frame.x + dx, y: frame.y + dy } : frame,
         ),
       }));
     },
 
-    moveFrames: (ids, dx, dy) => {
+    moveFrames: (ids, dx, dy, options) => {
       if (!ids.length || (dx === 0 && dy === 0)) return;
+      if (options?.recordHistory !== false) get().pushHistory();
       const idSet = new Set(ids);
       set((state) => ({
         frames: state.frames.map((frame) =>

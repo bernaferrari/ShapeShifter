@@ -46,6 +46,14 @@ export type StrokeLineCap = "butt" | "square" | "round";
 export type StrokeLineJoin = "miter" | "round" | "bevel";
 export type FillType = "nonZero" | "evenOdd";
 export type GradientType = "linear" | "radial";
+/**
+ * The coordinate system used by a gradient's spatial values.
+ *
+ * Existing documents omit this value and therefore retain the original
+ * object-bounding-box behavior. Android VectorDrawable imports use
+ * `userSpace` because Android's gradient endpoints live in viewport space.
+ */
+export type GradientCoordinateSpace = "objectBoundingBox" | "userSpace";
 
 /** A single gradient color stop. `offset` is 0..1, `opacity` (0..1) defaults to 1. */
 export interface GradientStop {
@@ -57,19 +65,30 @@ export interface GradientStop {
 /**
  * Optional gradient fill for a path layer. When present on a Layer it takes
  * precedence over the solid `fillColor` for both rendering and export.
- * All spatial values are expressed in the path's bounding box (objectBoundingBox),
- * so a gradient maps correctly regardless of the layer's transform or frame.
+ * Existing gradients express their spatial values in the path's bounding box
+ * (`objectBoundingBox`). A `userSpace` gradient instead uses the artboard / Android
+ * viewport coordinate system, which preserves imported Android endpoints exactly.
  */
 export interface Gradient {
   type: GradientType;
   /** >= 2 stops, kept sorted by offset. */
   stops: GradientStop[];
+  /** Defaults to `objectBoundingBox` for backward compatibility. */
+  coordinateSpace?: GradientCoordinateSpace;
+  /**
+   * Linear-only exact endpoints. When all four are present they take precedence
+   * over `angle`; their units are determined by `coordinateSpace`.
+   */
+  x1?: number;
+  y1?: number;
+  x2?: number;
+  y2?: number;
   /** Linear only: direction in degrees. 0 = left→right, 90 = top→bottom. */
   angle?: number;
-  /** Radial only: center as a fraction of the bounds (default 0.5/0.5). */
+  /** Radial only: center in `coordinateSpace` units (default 0.5/0.5). */
   cx?: number;
   cy?: number;
-  /** Radial only: radius as a fraction of the bounds (default 0.5). */
+  /** Radial only: radius in `coordinateSpace` units (default 0.5). */
   r?: number;
 }
 
@@ -163,6 +182,8 @@ export interface Layer extends PathStyle {
   pivotY?: number;
   duration?: number; // per-layer duration override
   timeline?: TimelineBlock[];
+  /** Last inspectable prepare-for-morph correspondence for this layer. */
+  morphMapping?: MorphMapping;
 }
 
 /**
@@ -228,13 +249,21 @@ export interface GeometryVersion {
   createdAt: number;
 }
 
+export type MorphAlignment =
+  | {
+      kind: "prepared";
+      fromSignature: string;
+      toSignature: string;
+      compatible: boolean;
+    }
+  | { kind: "legacy-aligned-endpoints" };
+
 /** Explicit morph correspondence (output of prepareForMorph). */
 export interface MorphMapping {
   id: MorphMappingId;
-  fromGeometryId: GeometryVersionId;
-  toGeometryId: GeometryVersionId;
-  // Serialized result of NW + pole collapse, winding fixes, etc.
-  alignments: unknown;
+  fromGeometryId?: GeometryVersionId;
+  toGeometryId?: GeometryVersionId;
+  alignments: MorphAlignment;
   polePositions: Point[];
   createdAt: number;
 }
@@ -258,6 +287,8 @@ export interface Node {
   toGeometryVersionId?: GeometryVersionId;
   /** Android's target name. Kept stable independently from the display name. */
   androidName?: string;
+  /** Inspectable prepare-for-morph result for this path node. */
+  morphMappingId?: MorphMappingId;
 }
 
 /** Frame = positioned container on the infinite canvas (evolution of CanvasFrame). */

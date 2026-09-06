@@ -1,4 +1,5 @@
-import { autoFixPathPair } from "../../shapeshifter/pathUtils";
+import { createDocumentV2FromLegacy } from "../../shapeshifter/documentModel";
+import { prepareForMorph } from "../../shapeshifter/pathUtils";
 import { getDemoProject } from "../../shapeshifter/demoProjects";
 import { PAGE_ROOT_ID } from "../../shapeshifter/scene/owners";
 import type { AnimationState, Layer } from "../../shapeshifter/types";
@@ -13,6 +14,9 @@ import {
 
 type LayerDataActionKey =
   | "autoFixSelectedLayer"
+  | "previewPrepareForMorph"
+  | "commitMorphPreview"
+  | "cancelMorphPreview"
   | "loadSample"
   | "setLayers"
   | "importLayers"
@@ -32,21 +36,53 @@ export function createLayerDataActions(
   initialRootAnimation: AnimationState,
 ): Pick<EditorState, LayerDataActionKey> {
   return {
-    autoFixSelectedLayer: () => {
+    previewPrepareForMorph: () => {
       const { layers, selectedLayerId } = get();
-      const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
-      if (layerIndex === -1) return false;
-      const layer = layers[layerIndex];
-      if (layer.locked) return false;
-
-      if (!layer.to) return false; // static layer — nothing to auto-fix.
-      const [from, to] = autoFixPathPair(layer.from, layer.to);
-
-      const newLayers = [...layers];
-      newLayers[layerIndex] = { ...layer, from, to, pathData: from };
-      get().pushHistory();
-      set({ layers: newLayers });
+      const layer = layers.find((candidate) => String(candidate.id) === String(selectedLayerId));
+      if (!layer || layer.locked || !layer.to) return false;
+      const prepared = prepareForMorph(layer.from, layer.to);
+      set({
+        morphPreview: {
+          layerId: layer.id,
+          originalFrom: structuredClone(layer.from),
+          originalTo: structuredClone(layer.to),
+          preparedFrom: prepared.from,
+          preparedTo: prepared.to,
+          mapping: prepared.mapping,
+        },
+      });
       return true;
+    },
+
+    commitMorphPreview: () => {
+      const { layers, morphPreview } = get();
+      if (!morphPreview) return false;
+      const layerIndex = layers.findIndex(
+        (layer) => String(layer.id) === String(morphPreview.layerId),
+      );
+      if (layerIndex === -1) return false;
+      const layer = layers[layerIndex]!;
+      const next = [...layers];
+      next[layerIndex] = {
+        ...layer,
+        from: morphPreview.preparedFrom,
+        to: morphPreview.preparedTo,
+        pathData: morphPreview.preparedFrom,
+        morphMapping: morphPreview.mapping,
+      };
+      get().pushHistory();
+      set({ layers: next, morphPreview: null });
+      get().syncActiveOwner({ includeAnimation: true });
+      return true;
+    },
+
+    cancelMorphPreview: () => {
+      set({ morphPreview: null });
+    },
+
+    autoFixSelectedLayer: () => {
+      if (!get().previewPrepareForMorph()) return false;
+      return get().commitMorphPreview();
     },
 
     loadSample: (index: number) => {
@@ -101,7 +137,10 @@ export function createLayerDataActions(
     },
     loadDocument: (snapshot) => {
       get().pushHistory();
-      set(buildLoadedDocumentState(snapshot));
+      set({
+        ...buildLoadedDocumentState(snapshot),
+        documentV2: createDocumentV2FromLegacy(snapshot),
+      });
     },
     replaceSelectedLayerPaths: (paths) => {
       const { layers, selectedLayerId } = get();

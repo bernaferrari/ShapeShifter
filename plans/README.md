@@ -13,14 +13,14 @@ verification gates, and update the status below.
 
 ## Execution order and status
 
-| Plan | Title | Priority | Effort | Depends on | Status |
-|---|---|---:|---:|---|---|
-| 001 | Establish Android semantic parity fixtures | P0 | M | — | TODO |
-| 002 | Make Android projects lossless and canonical | P0 | L | 001 | TODO |
-| 003 | Build one Android-faithful evaluated scene | P0 | L | 001, 002 | TODO |
-| 004 | Make vector editing matrix- and curve-correct | P0 | L | 003 | TODO |
-| 005 | Make AVD playback match ObjectAnimator semantics | P0 | L | 002, 003 | TODO |
-| 006 | Harden Android import, validation, and export | P0 | L | 001–005 | TODO |
+| Plan | Title                                            | Priority | Effort | Depends on | Status                                                                                                      |
+| ---- | ------------------------------------------------ | -------: | -----: | ---------- | ----------------------------------------------------------------------------------------------------------- |
+| 001  | Establish Android semantic parity fixtures       |       P0 |      M | —          | SUPERSEDED — `androidParity.test.ts` + `fixtures/nested-clip.xml`; live tracker is `ShapeShifter-477y.2.1`  |
+| 002  | Make Android projects lossless and canonical     |       P0 |      L | 001        | SUPERSEDED — documentV2 adapter + `getLiveDocumentV2`; remaining runtime cutover is `ShapeShifter-477y.3.*` |
+| 003  | Build one Android-faithful evaluated scene       |       P0 |      L | 001, 002   | SUPERSEDED — `evaluateAndroidScene` is live and cached                                                      |
+| 004  | Make vector editing matrix- and curve-correct    |       P0 |      L | 003        | SUPERSEDED — world matrices + clip hit-tests landed; leftovers tracked in 477y                              |
+| 005  | Make AVD playback match ObjectAnimator semantics |       P0 |      L | 002, 003   | SUPERSEDED — `playheadResolve` + compiler interpolators                                                     |
+| 006  | Harden Android import, validation, and export    |       P0 |      L | 001–005    | SUPERSEDED — one compiler entry + aapt optional gate                                                        |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED | REJECTED
 
@@ -69,4 +69,3 @@ A release is Android-editor ready when all of the following are true:
 - Editable spatial motion paths as a primary feature: Android group X/Y properties are useful, but path-following authoring is secondary to exact ObjectAnimator property tracks.
 - Broad Lottie, PDF, animated SVG, and CSS parity: out of scope for the Android-first roadmap.
 - Full Figma vector-network semantics: Android ultimately requires serializable `pathData`; prioritize Android-compatible node sequences and morph compatibility.
-

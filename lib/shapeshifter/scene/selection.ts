@@ -1,4 +1,4 @@
-import { flattenPathData } from "../pathUtils";
+import { getAccuratePathBounds } from "../pathUtils";
 import type { AnimationState, Layer } from "../types";
 import { evaluateAndroidScene } from "./evaluate";
 import { transformPointWithMatrix } from "./layerTransform";
@@ -31,15 +31,26 @@ export interface OwnedLayerBounds extends OwnedLayerRef {
 export function getOwnedLayerBounds(owner: SceneOwner): OwnedLayerBounds[] {
   const result: OwnedLayerBounds[] = [];
   const animation = owner.animation ?? { id: "static", name: "Static", duration: 1, blocks: [] };
-  const scene = evaluateAndroidScene(owner.layers, animation, owner.progress ?? 0, owner.usePlayhead ?? false);
+  const scene = evaluateAndroidScene(
+    owner.layers,
+    animation,
+    owner.progress ?? 0,
+    owner.usePlayhead ?? false,
+  );
   for (const node of scene.nodes) {
     if (!node.visible || node.locked || node.type !== "path" || !node.path) continue;
-    const points = flattenPathData(node.path, 0.05)
-      .flatMap((subPath) => subPath.points)
-      .map((point) => transformPointWithMatrix(point, node.worldMatrix));
-    if (!points.length) continue;
-    const xs = points.map((point) => point.x);
-    const ys = points.map((point) => point.y);
+    const local = getAccuratePathBounds(node.path);
+    if (!local) continue;
+    // Transform the local AABB corners: an axis-aligned box under a rotated/skewed
+    // world matrix is only bounded by the transformed corners, not by any single edge.
+    const corners = [
+      { x: local.x, y: local.y },
+      { x: local.x + local.w, y: local.y },
+      { x: local.x + local.w, y: local.y + local.h },
+      { x: local.x, y: local.y + local.h },
+    ].map((point) => transformPointWithMatrix(point, node.worldMatrix));
+    const xs = corners.map((point) => point.x);
+    const ys = corners.map((point) => point.y);
     const maxScale = Math.max(
       Math.hypot(node.worldMatrix.a, node.worldMatrix.b),
       Math.hypot(node.worldMatrix.c, node.worldMatrix.d),
@@ -89,7 +100,12 @@ export function unionOwnedLayerBounds(
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
+  const ownerIdsWithSelection = new Set(refs.map((ref) => ref.ownerId));
   for (const owner of owners) {
+    // Evaluating an owner's scene is expensive (full tree walk + bounds); owners that
+    // cannot contribute a selected layer are skipped entirely rather than evaluated
+    // and filtered per node.
+    if (!ownerIdsWithSelection.has(owner.ownerId)) continue;
     for (const item of getOwnedLayerBounds(owner)) {
       if (!selected.has(`${item.ownerId}:${String(item.layerId)}`)) continue;
       minX = Math.min(minX, item.bounds.x);

@@ -4,7 +4,10 @@ import { parsePath, pathToString } from "../../shapeshifter/pathUtils";
 import type { Layer, LayerType } from "../../shapeshifter/types";
 import { createPathLayer } from "../defaultWorkspace";
 import type { EditorState } from "../editorStore";
+import { collectLayerSubtreeIds } from "../../shapeshifter/scene/layerHierarchy";
+import { PAGE_ROOT_ID } from "../../shapeshifter/scene/owners";
 import { saveActiveFrame, updateOwnedLayers } from "../workspaceState";
+import { commitDocumentV2 } from "../documentRuntime";
 
 type DocumentActionKey =
   | "addLayer"
@@ -59,6 +62,34 @@ function updateLayerById(
 function withoutTimelineBlocks(layers: Layer[], blockIds: Set<string>): Layer[] {
   return mapLayerTimelines(layers, (blocks) => blocks.filter((block) => !blockIds.has(block.id)));
 }
+/**
+ * Typed base value for a timeline track. Imported SVG/AVD layers may omit
+ * transform fields entirely, so numeric tracks must fall back to their Android
+ * semantics defaults instead of an empty string (which would mint a bogus
+ * color-typed block).
+ */
+function timelineBaseValue(layer: Layer, propertyName: string): number | string {
+  const raw = layer[propertyName as keyof Layer];
+  const numeric = typeof raw === "number" && Number.isFinite(raw) ? raw : undefined;
+  switch (propertyName) {
+    case "translateX":
+    case "translateY":
+    case "rotation":
+      return numeric ?? 0;
+    case "scaleX":
+    case "scaleY":
+      return numeric ?? 1;
+    case "alpha":
+      return numeric ?? 1;
+    case "trimPathStart":
+    case "trimPathOffset":
+      return numeric ?? 0;
+    case "trimPathEnd":
+      return numeric ?? 1;
+    default:
+      return typeof raw === "string" ? raw : "";
+  }
+}
 
 function replaceTimelineBlocks(
   layers: Layer[],
@@ -110,9 +141,11 @@ export function createDocumentActions(
     deleteLayer: (id) => {
       const state = get();
       if (state.layers.length === 1) return;
-      const layers = state.layers.filter((layer) => String(layer.id) !== String(id));
+      const removed = collectLayerSubtreeIds(state.layers, id);
+      if (removed.size >= state.layers.length) return;
+      const layers = state.layers.filter((layer) => !removed.has(String(layer.id)));
       const animationBlocks = state.animation.blocks.filter(
-        (block) => String(block.layerId) !== String(id),
+        (block) => !removed.has(String(block.layerId)),
       );
       const selectedLayerId =
         state.selectedLayerId === id ? (layers[0]?.id ?? 0) : state.selectedLayerId;
@@ -142,15 +175,40 @@ export function createDocumentActions(
     toggleOwnedLayerVisibility: (ownerId, id) => {
       const state = get();
       state.pushHistory();
-      set(
-        updateOwnedLayers(state, ownerId, (layers) =>
-          layers.map((layer) =>
-            String(layer.id) === String(id)
-              ? { ...layer, visible: layer.visible === false }
-              : layer,
-          ),
+      const owned = updateOwnedLayers(state, ownerId, (layers) =>
+        layers.map((layer) =>
+          String(layer.id) === String(id) ? { ...layer, visible: layer.visible === false } : layer,
         ),
       );
+      const ownerLayers =
+        ownerId === PAGE_ROOT_ID
+          ? owned.rootLayers
+          : (owned.frames.find((frame) => frame.id === ownerId)?.layers ?? owned.layers);
+      const nextVisible =
+        ownerLayers.find((layer) => String(layer.id) === String(id))?.visible !== false;
+      const idStr = String(id);
+      const syncHidden = (ids: string[]) =>
+        nextVisible
+          ? ids.filter((hidden) => hidden !== idStr)
+          : ids.includes(idStr)
+            ? ids
+            : [...ids, idStr];
+      set({
+        ...owned,
+        hiddenLayerIds:
+          ownerId === state.selectedFrameId
+            ? syncHidden(state.hiddenLayerIds)
+            : state.hiddenLayerIds,
+        frames: owned.frames.map((frame) =>
+          frame.id === ownerId
+            ? { ...frame, hiddenLayerIds: syncHidden(frame.hiddenLayerIds) }
+            : frame,
+        ),
+        rootHiddenLayerIds:
+          ownerId === PAGE_ROOT_ID
+            ? syncHidden(state.rootHiddenLayerIds)
+            : state.rootHiddenLayerIds,
+      });
     },
 
     toggleLayerExpanded: (id) =>
@@ -172,13 +230,10 @@ export function createDocumentActions(
       const state = get();
       const layer = state.layers.find((candidate) => candidate.id === layerId);
       if (!layer) return;
-      const candidate = layer[propertyName as keyof Layer];
       const value =
         propertyName === "pathData"
           ? pathToString(layer.pathData ?? layer.from)
-          : typeof candidate === "number" || typeof candidate === "string"
-            ? candidate
-            : "";
+          : timelineBaseValue(layer, propertyName);
       const block = {
         id: generateId(),
         layerId,
@@ -200,7 +255,6 @@ export function createDocumentActions(
         animation: { ...state.animation, blocks: [...state.animation.blocks, block] },
         layers: updateLayerById(state.layers, layerId, (candidateLayer) => ({
           ...candidateLayer,
-          timeline: [...(candidateLayer.timeline ?? []), block],
           expanded: true,
         })),
         selectedBlockIds: [block.id],
@@ -292,17 +346,48 @@ export function createDocumentActions(
       });
     },
 
-    updateVector: (patch) =>
+    updateVector: (patch, options?) => {
+      if (options?.recordHistory !== false) get().pushHistory();
       set((state) => {
         const vector = { ...state.vector, ...patch };
+        const isPageRoot = state.selectedFrameId === PAGE_ROOT_ID;
+        const { id: _vectorId, ...page } = vector;
+        // Refit the detail camera only when the artboard's coordinate size
+        // changes; metadata-only patches (rename, tint, ...) must not yank it.
+        const sizeChanged =
+          patch.width !== undefined ||
+          patch.height !== undefined ||
+          patch.viewportWidth !== undefined ||
+          patch.viewportHeight !== undefined;
         return {
           vector,
-          frames: saveActiveFrame({ ...state, vector }).map((frame) =>
-            frame.id === state.selectedFrameId ? { ...frame, name: vector.name, vector } : frame,
-          ),
-          detailViewport: computeDetailViewport(vector, state.detailViewport.scale),
+          frames: isPageRoot
+            ? state.frames
+            : saveActiveFrame({ ...state, vector }).map((frame) =>
+                frame.id === state.selectedFrameId
+                  ? { ...frame, name: vector.name, vector }
+                  : frame,
+              ),
+          // Page-owned vectors have no CanvasFrame to carry their metadata. Keep
+          // the canonical page metadata current so a live flush, history snapshot,
+          // or autosave cannot restore the previous VectorDrawable attributes.
+          // Merge over a fresh commit of the flushed workspace rather than the
+          // possibly-stale documentV2.page, so the write stays fresh in-task and
+          // supersedes (rather than cancels) any pending coalesced rebuild.
+          ...(isPageRoot
+            ? {
+                documentV2: {
+                  ...commitDocumentV2({ ...state, vector }),
+                  page,
+                },
+              }
+            : {}),
+          detailViewport: sizeChanged
+            ? computeDetailViewport(vector, state.detailViewport.scale)
+            : state.detailViewport,
         };
-      }),
+      });
+    },
 
     setAnimationDuration: (milliseconds, options) => {
       if (options?.recordHistory !== false) get().pushHistory();

@@ -22,23 +22,84 @@ export function getCommandStart(subPath: SubPath, cmdIdx: number): Point {
 }
 
 /**
- * Calculates the signed area term of an individual command using Green's Theorem.
- * Matches original ShapeShifter (y3 - y0) signed area scaling formula.
+ * Exact signed-area contribution of a command via Green's Theorem:
+ * ∮(x dy − y dx) over the segment, including the implicit closing edge back
+ * to the subpath start (handled by isSubPathClockwise). Every segment type
+ * uses the SAME un-halved convention: for a straight edge the exact integral
+ * is x0·y3 − x3·y0, and for cubic/quadratic Beziers it is the closed-form
+ * polynomial integral (which equals twice the signed area between the curve
+ * and its chord). Mixing normalizations across command types would corrupt
+ * the winding sum for subpaths with both lines and curves.
  */
+/** Exact Green's-theorem integral ∫(x dy − y dx) over a cubic Bezier segment. */
+function cubicArea(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  x3: number,
+  y3: number,
+): number {
+  // Monomial coefficients of B(t) = a0 + a1 t + a2 t² + a3 t³.
+  const ax = [x0, 3 * (x1 - x0), 3 * (x2 - 2 * x1 + x0), x3 - 3 * x2 + 3 * x1 - x0];
+  const ay = [y0, 3 * (y1 - y0), 3 * (y2 - 2 * y1 + y0), y3 - 3 * y2 + 3 * y1 - y0];
+
+  let sum = 0;
+  for (let i = 0; i < 4; i++) {
+    for (let j = 0; j < 4; j++) {
+      if (i === j) continue;
+      sum += ((j - i) * ax[i] * ay[j]) / (i + j);
+    }
+  }
+  return sum;
+}
+
 export function getCommandArea(cmd: Command, start: Point): number {
   if (cmd.type === "M") return 0;
-  const x0 = start.x;
-  const y0 = start.y;
-  const end = cmd.points.at(-1) || { x: 0, y: 0 };
+  let x0 = start.x;
+  let y0 = start.y;
+  const end = cmd.points.at(-1) || start;
   const x3 = end.x;
   const y3 = end.y;
 
   let area = 0;
   switch (cmd.type) {
     case "L":
-    case "Z":
-      area = (x0 + x3) * (y3 - y0);
+      // Exact ∮(x dy − y dx) over the straight segment — NOT the trapezoid
+      // form, which differs numerically per-edge and breaks mixed sums.
+      area = x0 * y3 - x3 * y0;
       break;
+    case "Z":
+      // The single closing edge is added by isSubPathClockwise.
+      area = 0;
+      break;
+    case "A": {
+      // Per spec an arc with a zero radius is a straight line to its endpoint.
+      if (!cmd.arcParams || cmd.arcParams.rx <= 0 || cmd.arcParams.ry <= 0) {
+        area = x0 * y3 - x3 * y0;
+        break;
+      }
+      let acc = 0;
+      for (const { cp1, cp2, to } of arcToBeziers(
+        x0,
+        y0,
+        cmd.arcParams.rx,
+        cmd.arcParams.ry,
+        cmd.arcParams.xRotation,
+        cmd.arcParams.largeArc,
+        cmd.arcParams.sweep,
+        x3,
+        y3,
+      )) {
+        acc += cubicArea(x0, y0, cp1.x, cp1.y, cp2.x, cp2.y, to.x, to.y);
+        x0 = to.x;
+        y0 = to.y;
+      }
+      area = acc;
+      break;
+    }
     case "Q":
     case "C":
       let x1 = 0;
@@ -57,31 +118,31 @@ export function getCommandArea(cmd: Command, start: Point): number {
         x2 = cmd.points[1]?.x ?? x3;
         y2 = cmd.points[1]?.y ?? y3;
       }
-      area =
-        (3 *
-          ((y3 - y0) * (x1 + x2) -
-            (x3 - x0) * (y1 + y2) +
-            y1 * (x0 - x2) -
-            x1 * (y0 - y2) +
-            y3 * (x2 + x0 / 3) -
-            x3 * (y2 + y0 / 3))) /
-        20;
+      area = cubicArea(x0, y0, x1, y1, x2, y2, x3, y3);
       break;
   }
   return area;
 }
 
 /**
- * Checks if a subpath has a clockwise winding order using Green's Theorem area sum.
+ * Checks if a subpath has a clockwise winding order using Green's Theorem area
+ * sum. Drawing commands contribute their segment integrals; the single closing
+ * edge from the last endpoint back to the subpath start is added here (a
+ * trailing Z contributes no area of its own).
  */
 export function isSubPathClockwise(subPath: SubPath): boolean {
+  const firstCmd = subPath.commands[0];
+  const subPathStart = firstCmd?.points[0] || { x: 0, y: 0 };
   let sum = 0;
-  let current = { x: 0, y: 0 };
+  let current = { ...subPathStart };
   subPath.commands.forEach((cmd, idx) => {
-    const start = idx === 0 ? cmd.points[0] || { x: 0, y: 0 } : current;
+    const start = idx === 0 ? subPathStart : current;
     sum += getCommandArea(cmd, start);
     current = cmd.points.at(-1) || current;
   });
+  // Closing edge from the last drawing endpoint back to the M point,
+  // using the same exact straight-segment term as L edges.
+  sum += current.x * subPathStart.y - subPathStart.x * current.y;
   return sum >= 0;
 }
 

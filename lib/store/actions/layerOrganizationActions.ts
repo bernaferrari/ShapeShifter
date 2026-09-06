@@ -1,7 +1,8 @@
 import { parsePath } from "../../shapeshifter/pathUtils";
-import { placeLayerSubtree } from "../../shapeshifter/scene/layerHierarchy";
+import { collectLayerSubtreeIds, placeLayerSubtree } from "../../shapeshifter/scene/layerHierarchy";
 import { PAGE_ROOT_ID, type LayerSelectionRef } from "../../shapeshifter/scene/owners";
-import type { Layer } from "../../shapeshifter/types";
+import type { Layer, TimelineBlock } from "../../shapeshifter/types";
+import { collectSubtreeWithAnimation, remapClonedSubtree } from "../cloneSubtree";
 import { createPathLayer } from "../defaultWorkspace";
 import type { EditorState } from "../editorStore";
 import { saveActiveFrame, saveActiveRoot, updateOwnedLayers } from "../workspaceState";
@@ -49,11 +50,14 @@ export function createLayerOrganizationActions(
       const nextFrames = savedFrames.map((frame) => {
         const selectedIds = idsByOwner.get(frame.id);
         if (!selectedIds) return frame;
-        const ids = new Set(
-          frame.layers
-            .filter((layer) => selectedIds.has(String(layer.id)) && !layer.locked)
-            .map((layer) => String(layer.id)),
-        );
+        const ids = new Set<string>();
+        for (const layer of frame.layers) {
+          if (selectedIds.has(String(layer.id)) && !layer.locked) {
+            for (const descendant of collectLayerSubtreeIds(frame.layers, layer.id)) {
+              ids.add(descendant);
+            }
+          }
+        }
         return {
           ...frame,
           layers: frame.layers.filter((layer) => !ids.has(String(layer.id)) || layer.locked),
@@ -66,11 +70,17 @@ export function createLayerOrganizationActions(
       });
       const selectedRootIds = idsByOwner.get(PAGE_ROOT_ID);
       const rootIds = selectedRootIds
-        ? new Set(
-            savedRoot.layers
-              .filter((layer) => selectedRootIds.has(String(layer.id)) && !layer.locked)
-              .map((layer) => String(layer.id)),
-          )
+        ? (() => {
+            const ids = new Set<string>();
+            for (const layer of savedRoot.layers) {
+              if (selectedRootIds.has(String(layer.id)) && !layer.locked) {
+                for (const descendant of collectLayerSubtreeIds(savedRoot.layers, layer.id)) {
+                  ids.add(descendant);
+                }
+              }
+            }
+            return ids;
+          })()
         : undefined;
       const nextRootLayers = rootIds
         ? savedRoot.layers.filter((layer) => !rootIds.has(String(layer.id)) || layer.locked)
@@ -291,28 +301,58 @@ export function createLayerOrganizationActions(
           : (savedFrames.find((frame) => frame.id === ownerId)?.layers ?? []);
       const timestamp = Date.now();
       const clonesByOwner = new Map<string, Layer[]>();
+      const blocksByOwner = new Map<string, TimelineBlock[]>();
       const cloneRefs: LayerSelectionRef[] = [];
       for (const ref of refs) {
-        const layer = layersForOwner(ref.ownerId).find(
-          (candidate) => String(candidate.id) === String(ref.layerId),
-        );
+        const ownerLayers = layersForOwner(ref.ownerId);
+        const layer = ownerLayers.find((candidate) => String(candidate.id) === String(ref.layerId));
         if (!layer || layer.locked) continue;
-        const clone: Layer = {
-          ...structuredClone(layer),
-          id: `${layer.id}-dup-${timestamp}-${Math.random().toString(36).slice(2, 6)}`,
-          name: `${layer.name} copy`,
-          translateX: (layer.translateX ?? 0) + dx,
-          translateY: (layer.translateY ?? 0) + dy,
-        };
-        clonesByOwner.set(ref.ownerId, [...(clonesByOwner.get(ref.ownerId) ?? []), clone]);
-        cloneRefs.push({ ownerId: ref.ownerId, layerId: clone.id });
+        const ownerAnimation =
+          ref.ownerId === PAGE_ROOT_ID
+            ? savedRoot.animation
+            : savedFrames.find((frame) => frame.id === ref.ownerId)?.animation;
+        const remapped = remapClonedSubtree(
+          collectSubtreeWithAnimation(ownerLayers, ownerAnimation?.blocks ?? [], [layer.id]),
+          {
+            prefix: `dup-${timestamp}`,
+            offsetX: dx,
+            offsetY: dy,
+            rename: "copy",
+            unmatchedParent: "keep",
+          },
+        );
+        clonesByOwner.set(ref.ownerId, [
+          ...(clonesByOwner.get(ref.ownerId) ?? []),
+          ...remapped.layers,
+        ]);
+        blocksByOwner.set(ref.ownerId, [
+          ...(blocksByOwner.get(ref.ownerId) ?? []),
+          ...remapped.blocks,
+        ]);
+        cloneRefs.push({
+          ownerId: ref.ownerId,
+          layerId: remapped.idRemap.get(String(layer.id))!,
+        });
       }
       if (cloneRefs.length === 0) return;
-      const nextFrames = savedFrames.map((frame) => ({
-        ...frame,
-        layers: [...frame.layers, ...(clonesByOwner.get(frame.id) ?? [])],
-      }));
+      const nextFrames = savedFrames.map((frame) => {
+        const clones = clonesByOwner.get(frame.id);
+        const blocks = blocksByOwner.get(frame.id);
+        if (!clones && !blocks) return frame;
+        return {
+          ...frame,
+          layers: [...frame.layers, ...(clones ?? [])],
+          ...(blocks
+            ? { animation: { ...frame.animation, blocks: [...frame.animation.blocks, ...blocks] } }
+            : {}),
+        };
+      });
       const nextRootLayers = [...savedRoot.layers, ...(clonesByOwner.get(PAGE_ROOT_ID) ?? [])];
+      const rootBlocks = blocksByOwner.get(PAGE_ROOT_ID);
+      const nextRootAnimation = rootBlocks
+        ? { ...savedRoot.animation, blocks: [...savedRoot.animation.blocks, ...rootBlocks] }
+        : savedRoot.animation;
+      const activeFrame = nextFrames.find((frame) => frame.id === state.selectedFrameId);
       const activeClones = cloneRefs
         .filter((ref) => ref.ownerId === state.selectedFrameId)
         .map((ref) => ref.layerId);
@@ -325,7 +365,13 @@ export function createLayerOrganizationActions(
       set({
         frames: nextFrames,
         rootLayers: nextRootLayers,
+        rootAnimation: nextRootAnimation,
         layers: nextLayers,
+        ...(state.selectedFrameId === PAGE_ROOT_ID
+          ? { animation: nextRootAnimation }
+          : activeFrame
+            ? { animation: activeFrame.animation }
+            : {}),
         selectedLayerId: activeClones.at(-1) ?? cloneRefs.at(-1)!.layerId,
         selectedLayerIds: activeClones,
         selectedLayerRefs: cloneRefs,

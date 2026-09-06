@@ -5,6 +5,7 @@ import { Copy, Trash2 } from "lucide-react";
 import type { Viewport } from "@/lib/shapeshifter/camera";
 import type { CanvasFrame } from "@/lib/store/editorStore";
 import { useEditorStore } from "@/lib/store/editorStore";
+import { vectorCoordinateRect } from "@/lib/shapeshifter/vectorSpace";
 import { cn } from "@/lib/utils";
 
 interface Size {
@@ -15,8 +16,7 @@ interface Size {
 const frameBounds = (frame: CanvasFrame) => ({
   x: frame.x || 0,
   y: frame.y || 0,
-  w: frame.vector?.width || 48,
-  h: frame.vector?.height || 48,
+  ...vectorCoordinateRect(frame.vector, 48),
 });
 
 const formatDimension = (value: number) =>

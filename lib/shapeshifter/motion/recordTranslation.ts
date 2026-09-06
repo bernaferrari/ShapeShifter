@@ -70,6 +70,10 @@ export function recordTranslationAtProgress(
     const nextId = (suffix: string) =>
       `block-${layer.id}-${propertyName}-${idSeed}-${sequence++}-${suffix}`;
     if (segments.length === 0) {
+      // A fresh track spans the whole timeline, so its start must resolve to what
+      // numberAtTime returned before the track existed — the layer's current base
+      // value. Seeding 0 would teleport the layer from its authored resting pose
+      // to the origin during playback/scrub.
       return [
         ...blocks,
         {
@@ -77,7 +81,7 @@ export function recordTranslationAtProgress(
           layerId: layer.id,
           propertyName,
           type: "number",
-          fromValue: nearStart ? value : 0,
+          fromValue: value,
           toValue: value,
           startTime: 0,
           endTime: duration,
@@ -106,6 +110,40 @@ export function recordTranslationAtProgress(
         ];
       }
       const first = segments[0]!.block;
+      const interior =
+        ms > first.startTime &&
+        ms < last.endTime &&
+        segments.length > 1;
+      if (interior) {
+        // Recording inside a gap between two authored segments: end the previous
+        // segment at the playhead and append a new block seeded from the layer's
+        // current base value, so both the authored head and tail survive.
+        let gapIndex = -1;
+        for (let i = 0; i < segments.length - 1; i += 1) {
+          if (segments[i]!.block.endTime <= ms) gapIndex = i;
+        }
+        const previousBlock = segments[gapIndex]!.block;
+        const nextBlock = segments[gapIndex + 1]!.block;
+        return [
+          ...blocks.map((block, index) =>
+            index === segments[gapIndex]!.index
+              ? { ...previousBlock, endTime: ms, type: "number" as const }
+              : block,
+          ),
+          {
+            id: nextId("interior"),
+            layerId: layer.id,
+            propertyName,
+            type: "number",
+            fromValue: value,
+            toValue: Number(nextBlock.fromValue) || 0,
+            startTime: ms,
+            endTime: nextBlock.startTime,
+            interpolator:
+              previousBlock.interpolator || "FAST_OUT_SLOW_IN",
+          },
+        ];
+      }
       return [
         ...blocks,
         {

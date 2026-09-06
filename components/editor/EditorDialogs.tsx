@@ -114,7 +114,7 @@ export function EditorHelpDialog({
 
 const EXPORT_COMMANDS: ReadonlyArray<[EditorExportType, string]> = [
   ["svg", "Export animated SVG"],
-  ["static", "Export high-fidelity static SVG"],
+  ["static", "Export static SVG"],
   ["css", "Export CSS keyframes"],
   ["json", "Export project JSON"],
   ["lottie", "Export Lottie JSON"],
@@ -201,16 +201,7 @@ export function EditorCommandPalette({
             <ArrowLeftRight className="mr-2 size-4" /> Shift points
             <CommandShortcut>⇧S</CommandShortcut>
           </CommandItem>
-          <CommandItem
-            onSelect={() =>
-              run(() => {
-                useEditorStore.getState().booleanCombine("union");
-                toast.success("Union applied");
-              })
-            }
-          >
-            Union selected layers
-          </CommandItem>
+          <CommandItem disabled>Union selected layers (unavailable)</CommandItem>
           <CommandItem
             onSelect={() =>
               run(() => {

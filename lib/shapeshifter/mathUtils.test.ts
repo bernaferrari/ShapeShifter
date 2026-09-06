@@ -233,6 +233,19 @@ describe("Matrix", () => {
     expect(result.f).toBeCloseTo(21, 5);
   });
 
+  it("long chains accumulate no per-multiply rounding drift", () => {
+    // dot() used to round every product to 9 decimals, so each multiply
+    // quantized its inputs and long chains drifted ~1e-9 per step (360
+    // one-degree rotations ended ~5e-9..1.7e-8 off). Unrounded products
+    // keep the composed result at float precision of a single rotation.
+    let m = Matrix.identity();
+    for (let i = 0; i < 360; i++) m = m.dot(Matrix.rotation(1));
+    expect(m.a).toBeCloseTo(1, 11);
+    expect(m.b).toBeCloseTo(0, 11);
+    expect(m.c).toBeCloseTo(0, 11);
+    expect(m.d).toBeCloseTo(1, 11);
+  });
+
   it("flatten combines matrices", () => {
     const result = Matrix.flatten([Matrix.scaling(2, 3), Matrix.translation(5, 7)]);
     expect(result.a).toBeCloseTo(2, 5);

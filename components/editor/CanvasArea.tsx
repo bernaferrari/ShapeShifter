@@ -36,9 +36,11 @@ import {
   WorldSmartGuides,
   WorldVectorNetwork,
 } from "./canvas/WorldEditingOverlays";
+import { useShallow } from "zustand/react/shallow";
 import { PAGE_ROOT_ID, useEditorStore } from "@/lib/store/editorStore";
 import { computeGridSpec, computeGridVisibility } from "@/lib/shapeshifter/camera";
 import { isPointInFillRegion } from "@/lib/shapeshifter/pathUtils";
+import { vectorFromPageMetadata } from "@/lib/shapeshifter/vectorSpace";
 import type { PathData } from "@/lib/shapeshifter/types";
 
 interface CanvasAreaProps {
@@ -90,13 +92,62 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     spacePanActive,
     animation,
     syncActiveOwner,
-  } = useEditorStore();
+    documentV2,
+  } = useEditorStore(
+    useShallow((state) => ({
+      isPlaying: state.isPlaying,
+      progress: state.progress,
+      zoom: state.zoom,
+      setZoom: state.setZoom,
+      getCompatibilityStatus: state.getCompatibilityStatus,
+      editingSide: state.editingSide,
+      isActionMode: state.isActionMode,
+      toolMode: state.toolMode,
+      layers: state.layers,
+      selectedLayerId: state.selectedLayerId,
+      frames: state.frames,
+      rootLayers: state.rootLayers,
+      rootAnimation: state.rootAnimation,
+      selectedFrameId: state.selectedFrameId,
+      selectedFrameIds: state.selectedFrameIds,
+      addFrame: state.addFrame,
+      selectFrame: state.selectFrame,
+      selectFrames: state.selectFrames,
+      setSelectedFrameIds: state.setSelectedFrameIds,
+      worldViewport: state.worldViewport,
+      setWorldViewport: state.setWorldViewport,
+      fitWorldToFrames: state.fitWorldToFrames,
+      bringFrameIntoView: state.bringFrameIntoView,
+      bringLayerIntoView: state.bringLayerIntoView,
+      selectLayer: state.selectLayer,
+      selectLayerRefs: state.selectLayerRefs,
+      selectedLayerIds: state.selectedLayerIds,
+      selectedLayerRefs: state.selectedLayerRefs,
+      selectedPoints: state.selectedPoints,
+      updateSelectedLayer: state.updateSelectedLayer,
+      setToolMode: state.setToolMode,
+      snapToGrid: state.snapToGrid,
+      gridDivisions: state.gridDivisions,
+      setGridDivisions: state.setGridDivisions,
+      hasCanvasSelection: state.hasCanvasSelection,
+      selectionKind: state.selectionKind,
+      deselectAll: state.deselectAll,
+      spacePanActive: state.spacePanActive,
+      animation: state.animation,
+      syncActiveOwner: state.syncActiveOwner,
+      documentV2: state.documentV2,
+    })),
+  );
 
   /** Figma mental model: Select = objects; Direct = vector points. */
   const isObjectTool = toolMode === "select";
   const isPointTool = toolMode === "direct";
 
   const compatibility = getCompatibilityStatus();
+  const rootVector = useMemo(
+    () => vectorFromPageMetadata(documentV2.page, PAGE_ROOT_ID),
+    [documentV2.page],
+  );
 
   const {
     editFrame,
@@ -691,7 +742,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                           strokeWidth={worldPerPx}
                         />
                       </pattern>
-                      {/* Subtle lift shadow for artboards — Figma-grade tactility */}
+                      {/* Subtle lift shadow for artboards. */}
                       <filter id="dragShadow" x="-50%" y="-50%" width="200%" height="200%">
                         <feDropShadow dx="0" dy="1.5" stdDeviation="1.4" floodOpacity="0.2" />
                       </filter>
@@ -703,6 +754,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       activeAnimation={animation}
                       rootLayers={selectedFrameId === PAGE_ROOT_ID ? layers : rootLayers}
                       rootAnimation={selectedFrameId === PAGE_ROOT_ID ? animation : rootAnimation}
+                      rootVector={rootVector}
                       selectedFrameId={selectedFrameId}
                       selectedFrameIds={selectedFrameIds}
                       selectedLayerRefs={selectedLayerRefs}

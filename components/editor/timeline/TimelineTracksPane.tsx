@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { X } from "lucide-react";
+import { TriangleAlert, X } from "lucide-react";
+import type { FormatProfile } from "@/lib/shapeshifter/formatCapabilities";
 import { pathToString } from "@/lib/shapeshifter/pathUtils";
 import type { TimelineBlock } from "@/lib/shapeshifter/types";
 import { useEditorStore } from "@/lib/store/editorStore";
@@ -172,6 +173,8 @@ interface TimelineTracksPaneProps {
   onDismissEmptyHint: () => void;
   scrollRef: React.RefObject<HTMLDivElement | null>;
   onScroll: () => void;
+  /** When set, property rows carrying a capabilityNote get a warning glyph. */
+  formatProfile?: FormatProfile;
 }
 
 export function TimelineTracksPane({
@@ -184,6 +187,7 @@ export function TimelineTracksPane({
   onDismissEmptyHint,
   scrollRef,
   onScroll,
+  formatProfile,
 }: TimelineTracksPaneProps) {
   const frames = useEditorStore((state) => state.frames);
   const selectedFrameId = useEditorStore((state) => state.selectedFrameId);
@@ -320,6 +324,14 @@ export function TimelineTracksPane({
                 }
               }}
             >
+              {formatProfile && row.kind === "property" && row.capabilityNote && (
+                <span
+                  className="absolute left-1 top-1/2 z-[2] flex -translate-y-1/2 items-center gap-1 rounded bg-muted px-1 py-px text-[10px] text-muted-foreground"
+                  title={row.capabilityNote}
+                >
+                  <TriangleAlert className="size-3" />
+                </span>
+              )}
               {row.kind === "property" &&
                 propertyBlocks.map((block) =>
                   row.frameId === selectedFrameId ? (

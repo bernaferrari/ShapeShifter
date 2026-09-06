@@ -3,8 +3,15 @@
 import { useCallback, useEffect, useState, type RefObject } from "react";
 import { snapValueToStep } from "@/lib/shapeshifter/camera";
 import { isPointInFillRegion } from "@/lib/shapeshifter/pathUtils";
+import { evaluateAndroidScene } from "@/lib/shapeshifter/scene/evaluate";
+import {
+  inverseAffine,
+  transformPointWithMatrix,
+  type AffineMatrix,
+} from "@/lib/shapeshifter/scene/layerTransform";
 import type { PathData, Point } from "@/lib/shapeshifter/types";
 import type { ToolMode } from "@/lib/shapeshifter/toolModes";
+import { useEditorStore } from "@/lib/store/editorStore";
 
 interface LayerHit {
   frameId: string;
@@ -44,6 +51,28 @@ export function useWorldPointerPreview({
   const [hoveredFrameId, setHoveredFrameId] = useState<string | null>(null);
   const [hoveredLayerKey, setHoveredLayerKey] = useState<string | null>(null);
   const [paintHoverValid, setPaintHoverValid] = useState(false);
+  /**
+   * World point -> layer-local coordinates, mirroring the commit path in
+   * useWorldPointerRouter: subtract the owner origin, then apply the inverse of
+   * the evaluated world matrix (resolved from the same memoized scene that
+   * CanvasArea overlays render with, so preview and commit always agree).
+   */
+  const resolveEditMatrix = useCallback((): AffineMatrix | null => {
+    const state = useEditorStore.getState();
+    if (!state.layers.length || state.selectedLayerId == null) return null;
+    const scene = evaluateAndroidScene(state.layers, state.animation, state.progress, true);
+    return scene.nodesById.get(String(state.selectedLayerId))?.worldMatrix ?? null;
+  }, []);
+
+  const worldToLocal = useCallback(
+    (point: Point, origin: Point, matrix: AffineMatrix | null): Point | null => {
+      const ownerPoint = { x: point.x - origin.x, y: point.y - origin.y };
+      if (!matrix) return ownerPoint;
+      const inverse = inverseAffine(matrix);
+      return inverse ? transformPointWithMatrix(ownerPoint, inverse) : null;
+    },
+    [],
+  );
 
   const clearObjectHover = useCallback(() => {
     setHoveredFrameId(null);
@@ -69,14 +98,15 @@ export function useWorldPointerPreview({
       if (toolMode === "pen" && penActiveSubpathRef.current != null && editOrigin) {
         const point = worldPointFromClient(clientX, clientY);
         if (!point) return;
-        const local = { x: point.x - editOrigin.x, y: point.y - editOrigin.y };
+        const raw = worldToLocal(point, editOrigin, resolveEditMatrix());
+        if (!raw) return;
         const free = modifiers.metaKey || modifiers.ctrlKey || !snapToGrid;
         setPenPreview(
           free
-            ? local
+            ? raw
             : {
-                x: snapValueToStep(local.x, snapStep),
-                y: snapValueToStep(local.y, snapStep),
+                x: snapValueToStep(raw.x, snapStep),
+                y: snapValueToStep(raw.y, snapStep),
               },
         );
         return;
@@ -89,11 +119,13 @@ export function useWorldPointerPreview({
       hitArtboard,
       hitLayerAtWorld,
       penActiveSubpathRef,
+      resolveEditMatrix,
       setPenPreview,
       snapStep,
       snapToGrid,
       toolMode,
       worldPointFromClient,
+      worldToLocal,
     ],
   );
 
@@ -104,14 +136,21 @@ export function useWorldPointerPreview({
         return;
       }
       if (editOrigin && editPath) {
-        setPaintHoverValid(
-          isPointInFillRegion({ x: point.x - editOrigin.x, y: point.y - editOrigin.y }, editPath),
-        );
+        const local = worldToLocal(point, editOrigin, resolveEditMatrix());
+        setPaintHoverValid(local ? isPointInFillRegion(local, editPath) : false);
         return;
       }
       setPaintHoverValid(Boolean(hitArtboard(point)));
     },
-    [clearPaintPreview, editOrigin, editPath, hitArtboard, toolMode],
+    [
+      clearPaintPreview,
+      editOrigin,
+      editPath,
+      hitArtboard,
+      resolveEditMatrix,
+      toolMode,
+      worldToLocal,
+    ],
   );
 
   const handlePointerLeave = useCallback(() => {

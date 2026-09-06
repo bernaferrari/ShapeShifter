@@ -94,9 +94,21 @@ export function useWorldSceneModel({
     () => new Set(selectedLayerRefs.map((reference) => reference.ownerId)).size,
     [selectedLayerRefs],
   );
+  // Evaluating every owner's full Android scene (flatten + matrix transforms) is only
+  // meaningful when something is selected; with an empty selection this memo used to
+  // redo all of that work on each progress tick just to return null.
+  const hasLayerSelection = selectionKind === "layer" && selectedLayerRefs.length > 0;
   const documentSelectionBounds = useMemo(
-    () => unionOwnedLayerBounds(sceneOwners, selectedLayerRefs),
-    [sceneOwners, selectedLayerRefs],
+    () =>
+      hasLayerSelection
+        ? unionOwnedLayerBounds(
+            sceneOwners.filter((owner) =>
+              selectedLayerRefs.some((ref) => ref.ownerId === owner.ownerId),
+            ),
+            selectedLayerRefs,
+          )
+        : null,
+    [hasLayerSelection, sceneOwners, selectedLayerRefs],
   );
   const activeSelectedLayerIds = useMemo(
     () =>

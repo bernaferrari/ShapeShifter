@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+  <group android:name="content" android:translateX="4">
+    <clip-path android:name="mask" android:pathData="M0,0 L24,0 L24,48 L0,48 Z" />
+    <path
+        android:name="art"
+        android:pathData="M0,0 L48,0 L48,48 L0,48 Z"
+        android:fillColor="#FF3366" />
+  </group>
+</vector>

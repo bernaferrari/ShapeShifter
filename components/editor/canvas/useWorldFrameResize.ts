@@ -7,6 +7,10 @@ import {
   FrameResizeGesture,
   type FrameResizeHandle,
 } from "@/lib/shapeshifter/gestures/select/FrameResizeGesture";
+import {
+  vectorCoordinateResizePatch,
+  vectorCoordinateResizePolicy,
+} from "@/lib/shapeshifter/vectorSpace";
 import { getCanvasFrameBounds } from "./useWorldCamera";
 
 interface WorldFrameResizeOptions {
@@ -22,9 +26,19 @@ export function useWorldFrameResize({ svgRef, frame }: WorldFrameResizeOptions) 
       if (!frame) return;
       event.stopPropagation();
       event.preventDefault();
+      const resizePolicy = vectorCoordinateResizePolicy(useEditorStore.getState().vector);
       gestureRef.current = new FrameResizeGesture(getCanvasFrameBounds(frame), handle, {
         beginTransaction: () => useEditorStore.getState().pushHistory(),
-        applySize: ({ width, height }) => useEditorStore.getState().updateVector({ width, height }),
+        applySize: ({ width, height }) => {
+          // Frame handles operate in the canvas's canonical viewport coordinates.
+          // Capture whether to mirror intrinsic dimensions before the first
+          // update writes viewport metadata, then keep that policy for the drag.
+          useEditorStore
+            .getState()
+            .updateVector(vectorCoordinateResizePatch(width, height, resizePolicy), {
+              recordHistory: false,
+            });
+        },
         rollback: () => useEditorStore.getState().cancelLastHistoryTransaction(),
       });
       try {

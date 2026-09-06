@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "layers": {
+    "vectorLayer": {
+      "id": "old-page-vector",
+      "name": "Legacy page vector",
+      "type": "vector",
+      "width": 48,
+      "height": 32,
+      "alpha": 1,
+      "children": [
+        {
+          "id": "old-page-path",
+          "name": "Legacy page path",
+          "type": "path",
+          "pathData": "M0 0 L48 0 L48 32 Z",
+          "fillColor": "#336699"
+        }
+      ]
+    },
+    "hiddenLayerIds": []
+  },
+  "timeline": {
+    "animation": {
+      "id": "old-page-motion",
+      "name": "Legacy page motion",
+      "duration": 600,
+      "blocks": []
+    }
+  },
+  "frames": [
+    {
+      "id": "old-frame-one",
+      "name": "Old frame one",
+      "x": 12,
+      "y": 20,
+      "vector": {
+        "id": "old-frame-one",
+        "name": "Old frame one",
+        "width": 24,
+        "height": 24,
+        "alpha": 1
+      },
+      "animation": {
+        "id": "old-frame-one-motion",
+        "name": "Frame one motion",
+        "duration": 600,
+        "blocks": []
+      },
+      "hiddenLayerIds": [],
+      "layers": [
+        {
+          "id": "old-frame-one-path",
+          "name": "Frame one path",
+          "type": "path",
+          "from": "M0 0 L24 0 L24 24 Z",
+          "pathData": "M0 0 L24 0 L24 24 Z",
+          "visible": true,
+          "locked": false,
+          "fillColor": "#ff0000"
+        }
+      ]
+    },
+    {
+      "id": "old-frame-two",
+      "name": "Old frame two",
+      "x": 72,
+      "y": 20,
+      "vector": {
+        "id": "old-frame-two",
+        "name": "Old frame two",
+        "width": 36,
+        "height": 18,
+        "alpha": 0.8
+      },
+      "animation": {
+        "id": "old-frame-two-motion",
+        "name": "Frame two motion",
+        "duration": 900,
+        "blocks": []
+      },
+      "hiddenLayerIds": [],
+      "layers": [
+        {
+          "id": "old-frame-two-path",
+          "name": "Frame two path",
+          "type": "path",
+          "from": "M0 0 L36 0 L36 18 Z",
+          "pathData": "M0 0 L36 0 L36 18 Z",
+          "visible": true,
+          "locked": false,
+          "fillColor": "#00aa88"
+        }
+      ]
+    }
+  ],
+  "documentV2": {
+    "id": "damaged-old-document",
+    "name": "Damaged old multi-frame export",
+    "version": 2,
+    "frameIds": ["missing-frame"],
+    "frames": {},
+    "page": {
+      "name": "Damaged page",
+      "width": 1,
+      "height": 1,
+      "alpha": 1
+    },
+    "rootNodeIds": [],
+    "rootClipIds": [],
+    "nodes": {},
+    "geometryVersions": {},
+    "morphMappings": {},
+    "clips": {},
+    "tracks": {},
+    "keyframes": {}
+  }
+}

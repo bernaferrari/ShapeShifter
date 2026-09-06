@@ -30,6 +30,7 @@ export function exportProjectJSON(
   }>,
   pageRoot?: {
     layers: Layer[];
+    vector?: VectorMetadata;
     animation: AnimationState;
     hiddenLayerIds?: string[];
   },
@@ -115,7 +116,9 @@ export function exportProjectJSON(
       // legacy payload remains a recovery path for older clients and must not erase
       // authored morph endpoints or Android metadata.
       layers: f.layers
-        ? (f.layers as Layer[]).map(function serializeFrameLayer(layer: Layer): Record<string, unknown> {
+        ? (f.layers as Layer[]).map(function serializeFrameLayer(
+            layer: Layer,
+          ): Record<string, unknown> {
             return {
               ...layer,
               id: String(layer.id),
@@ -131,6 +134,7 @@ export function exportProjectJSON(
 
   if (pageRoot) {
     result.pageRoot = {
+      vector: pageRoot.vector,
       animation: pageRoot.animation,
       hiddenLayerIds: pageRoot.hiddenLayerIds ?? [],
       layers: pageRoot.layers.map((layer) => ({
@@ -142,12 +146,12 @@ export function exportProjectJSON(
     };
   }
 
-  const root = pageRoot ?? { layers, animation, hiddenLayerIds };
+  const root = pageRoot ?? { layers, vector, animation, hiddenLayerIds };
   result.documentV2 = createDocumentV2FromLegacy({
     id: String(vector.id),
     name: vector.name || "ShapeShifter",
     rootLayers: root.layers,
-    rootVector: vector,
+    rootVector: root.vector ?? vector,
     rootAnimation: root.animation,
     rootHiddenLayerIds: root.hiddenLayerIds ?? [],
     frames: (frames ?? []).map((frame) => ({

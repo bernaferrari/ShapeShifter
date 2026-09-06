@@ -1,7 +1,26 @@
-import { dominantColor, linearVector, normalizeStops } from "./gradients";
+import {
+  dominantColor,
+  gradientUsesUserSpace,
+  linearGradientCoordinates,
+  normalizeStops,
+} from "./gradients";
 import { svgToAndroidColor } from "./mathUtils";
-import { parsePath, pathToString } from "./pathUtils";
-import type { AnimationState, Gradient, Layer, TimelineBlock, VectorMetadata } from "./types";
+import {
+  areAndroidPathsMorphCompatible,
+  normalizePathData,
+  parsePath,
+  pathToString,
+} from "./pathUtils";
+import { capabilityFor } from "./formatCapabilities";
+import { layerTransformToMatrix, transformPointWithMatrix } from "./scene/layerTransform";
+import type {
+  AnimationState,
+  Gradient,
+  Layer,
+  PathData,
+  TimelineBlock,
+  VectorMetadata,
+} from "./types";
 
 export interface AndroidDiagnostic {
   severity: "error" | "warning" | "info";
@@ -51,6 +70,12 @@ const PATH_PROPERTIES = new Set([
   "trimPathOffset",
 ]);
 
+const TRACK_CAPABILITY_BY_PROPERTY: Record<string, "trimPath" | undefined> = {
+  trimPathStart: "trimPath",
+  trimPathEnd: "trimPath",
+  trimPathOffset: "trimPath",
+};
+
 const xml = (value: string | number) =>
   String(value)
     .replace(/&/g, "&amp;")
@@ -82,15 +107,24 @@ function flattenLayers(layers: Layer[]): Layer[] {
   return [...result.values()];
 }
 
-function uniqueLayerNames(layers: Layer[]): Map<string, string> {
+function uniqueLayerNames(
+  layers: Layer[],
+  transformWrapperLayerIds: ReadonlySet<string>,
+): Map<string, string> {
   const used = new Set<string>();
   const names = new Map<string, string>();
   for (const layer of layers) {
-    const base = androidResourceName(layer.androidName || layer.name || `layer_${String(layer.id)}`);
+    const base = androidResourceName(
+      layer.androidName || layer.name || `layer_${String(layer.id)}`,
+    );
     let candidate = base;
     let suffix = 2;
-    while (used.has(candidate)) candidate = `${base}_${suffix++}`;
+    const needsWrapper = transformWrapperLayerIds.has(String(layer.id));
+    while (used.has(candidate) || (needsWrapper && used.has(`${candidate}_transform`))) {
+      candidate = `${base}_${suffix++}`;
+    }
     used.add(candidate);
+    if (needsWrapper) used.add(`${candidate}_transform`);
     names.set(String(layer.id), candidate);
   }
   return names;
@@ -122,15 +156,17 @@ function gradientXml(gradient: Gradient, width: number, height: number, alpha: n
     })
     .join("\n");
   if (gradient.type === "radial") {
+    const userSpace = gradientUsesUserSpace(gradient);
     return `<aapt:attr name="android:fillColor">
-        <gradient android:type="radial" android:centerX="${number((gradient.cx ?? 0.5) * width)}" android:centerY="${number((gradient.cy ?? 0.5) * height)}" android:gradientRadius="${number((gradient.r ?? 0.5) * Math.max(width, height))}">
+        <gradient android:type="radial" android:centerX="${number(userSpace ? (gradient.cx ?? width / 2) : (gradient.cx ?? 0.5) * width)}" android:centerY="${number(userSpace ? (gradient.cy ?? height / 2) : (gradient.cy ?? 0.5) * height)}" android:gradientRadius="${number(userSpace ? (gradient.r ?? Math.max(width, height) / 2) : (gradient.r ?? 0.5) * Math.max(width, height))}">
 ${items}
         </gradient>
       </aapt:attr>`;
   }
-  const direction = linearVector(gradient.angle ?? 0);
+  const direction = linearGradientCoordinates(gradient);
+  const userSpace = gradientUsesUserSpace(gradient);
   return `<aapt:attr name="android:fillColor">
-        <gradient android:startX="${number(direction.x1 * width)}" android:startY="${number(direction.y1 * height)}" android:endX="${number(direction.x2 * width)}" android:endY="${number(direction.y2 * height)}">
+        <gradient android:startX="${number(userSpace ? direction.x1 : direction.x1 * width)}" android:startY="${number(userSpace ? direction.y1 : direction.y1 * height)}" android:endX="${number(userSpace ? direction.x2 : direction.x2 * width)}" android:endY="${number(userSpace ? direction.y2 : direction.y2 * height)}">
 ${items}
         </gradient>
       </aapt:attr>`;
@@ -161,23 +197,27 @@ function pathElement(
   inheritedAlpha = 1,
 ): string {
   const tag = layer.type === "clipPath" ? "clip-path" : "path";
-  const pathData = pathToString(layer.pathData ?? layer.from);
+  const sourcePath = layer.pathData ?? layer.from;
+  const pathData =
+    layer.type === "clipPath" ? clipPathDataString(layer, sourcePath) : pathToString(sourcePath);
   if (tag === "clip-path") {
-    return `${indent}<clip-path android:name="${xml(name)}" android:pathData="${xml(pathData)}" />`;
+    return `${indent}<clip-path android:name="${xml(name)}" android:pathData="${xml(pathData)}"${
+      layer.fillType === "evenOdd" ? ' android:fillType="evenOdd"' : ""
+    } />`;
   }
   const gradient = layer.fillGradient;
   const attributes = [
     `android:name="${xml(name)}"`,
     `android:pathData="${xml(pathData)}"`,
     !gradient ? `android:fillColor="${xml(androidColor(layer.fillColor))}"` : "",
-    !gradient ? `android:fillAlpha="${number((layer.fillAlpha ?? 1) * inheritedAlpha)}"` : "",
+    `android:fillAlpha="${number((layer.fillAlpha ?? 1) * inheritedAlpha)}"`,
     `android:strokeColor="${xml(androidColor(layer.strokeColor))}"`,
     `android:strokeAlpha="${number((layer.strokeAlpha ?? 1) * inheritedAlpha)}"`,
     `android:strokeWidth="${number(layer.strokeWidth ?? 0)}"`,
     `android:strokeLineCap="${layer.strokeLinecap ?? "butt"}"`,
     `android:strokeLineJoin="${layer.strokeLinejoin ?? "miter"}"`,
     `android:strokeMiterLimit="${number(layer.strokeMiterLimit ?? 4)}"`,
-    `android:fillType="${layer.fillType === "evenOdd" ? "evenOdd" : "nonZero"}"`,
+    layer.fillType === "evenOdd" ? 'android:fillType="evenOdd"' : "",
     `android:trimPathStart="${number(layer.trimPathStart ?? 0)}"`,
     `android:trimPathEnd="${number(layer.trimPathEnd ?? 1)}"`,
     `android:trimPathOffset="${number(layer.trimPathOffset ?? 0)}"`,
@@ -185,7 +225,11 @@ function pathElement(
     .filter(Boolean)
     .join(`\n${indent}    `);
   if (!gradient) return `${indent}<path\n${indent}    ${attributes} />`;
-  return `${indent}<path\n${indent}    ${attributes}>\n${indent}  ${gradientXml(gradient, vector.width, vector.height, (layer.fillAlpha ?? 1) * inheritedAlpha)}\n${indent}</path>`;
+  const viewportWidth = vector.viewportWidth ?? vector.width;
+  const viewportHeight = vector.viewportHeight ?? vector.height;
+  // Path fillAlpha stays outside the complex color. This lets Android animate
+  // fillAlpha without multiplying a static alpha already baked into every stop.
+  return `${indent}<path\n${indent}    ${attributes}>\n${indent}  ${gradientXml(gradient, viewportWidth, viewportHeight, 1)}\n${indent}</path>`;
 }
 
 function hasTransform(layer: Layer): boolean {
@@ -200,6 +244,46 @@ function hasTransform(layer: Layer): boolean {
   );
 }
 
+/**
+ * Android clip paths scope only to their current group and that group's
+ * descendants. A wrapper group around a transformed clip therefore ends the
+ * clip before the following sibling paths. Bake local static clip transforms
+ * into its geometry instead, leaving the clip in sibling order.
+ */
+function transformedClipPathData(layer: Layer, pathData: PathData): PathData {
+  const matrix = layerTransformToMatrix(layer);
+  const normalized = normalizePathData(pathData);
+  return {
+    subPaths: normalized.subPaths.map((subPath) => ({
+      commands: subPath.commands.map((command) => ({
+        ...command,
+        points: command.points.map((point) => transformPointWithMatrix(point, matrix)),
+      })),
+    })),
+  };
+}
+
+function clipPathDataString(layer: Layer, pathData: PathData): string {
+  return pathToString(hasTransform(layer) ? transformedClipPathData(layer, pathData) : pathData);
+}
+
+function transformedClipPathBlock(block: TimelineBlock, layer: Layer): TimelineBlock {
+  if (
+    layer.type !== "clipPath" ||
+    block.propertyName !== "pathData" ||
+    !hasTransform(layer) ||
+    typeof block.fromValue !== "string" ||
+    typeof block.toValue !== "string"
+  ) {
+    return block;
+  }
+  return {
+    ...block,
+    fromValue: clipPathDataString(layer, parsePath(block.fromValue)),
+    toValue: clipPathDataString(layer, parsePath(block.toValue)),
+  };
+}
+
 function platformInterpolator(value?: string): string | null {
   switch (value) {
     case "FAST_OUT_LINEAR_IN":
@@ -210,6 +294,8 @@ function platformInterpolator(value?: string): string | null {
       return "@android:anim/accelerate_decelerate_interpolator";
     case "LINEAR":
       return "@android:anim/linear_interpolator";
+    case "FAST_OUT_SLOW_IN":
+      return "@android:interpolator/fast_out_slow_in";
     default:
       return null;
   }
@@ -224,23 +310,11 @@ function customBezier(value: string | undefined): [number, number, number, numbe
   return [x1, y1, x2, y2];
 }
 
-function pathSignature(value: string | number): string | null {
-  if (typeof value !== "string") return null;
-  try {
-    return parsePath(value)
-      .subPaths.map((subPath) =>
-        subPath.commands.map((command) => `${command.type}:${command.points.length}`).join(","),
-      )
-      .join("|");
-  } catch {
-    return null;
-  }
-}
-
 function objectAnimator(
   block: TimelineBlock,
   propertyName: string,
   interpolator: string,
+  valueMultiplier = 1,
 ): string | null {
   const valueType =
     propertyName === "pathData"
@@ -250,13 +324,17 @@ function objectAnimator(
         : "floatType";
   if (
     propertyName === "pathData" &&
-    pathSignature(block.fromValue) !== pathSignature(block.toValue)
+    (typeof block.fromValue !== "string" ||
+      typeof block.toValue !== "string" ||
+      !areAndroidPathsMorphCompatible(block.fromValue, block.toValue))
   )
     return null;
   const value = (raw: string | number) =>
     propertyName === "fillColor" || propertyName === "strokeColor"
       ? androidColor(String(raw))
-      : String(raw);
+      : propertyName === "fillAlpha" || propertyName === "strokeAlpha"
+        ? number(Number(raw) * valueMultiplier)
+        : String(raw);
   return `  <objectAnimator
       android:startOffset="${Math.max(0, Math.round(block.startTime))}"
       android:duration="${Math.max(1, Math.round(block.endTime - block.startTime))}"
@@ -300,16 +378,32 @@ export function compileAndroidArtboard(input: AndroidArtboardInput): AndroidExpo
     if (cached != null) return cached;
     const own = Math.max(0, Math.min(1, layer.alpha ?? 1));
     const parent = layer.parentId != null ? byId.get(String(layer.parentId)) : undefined;
-    const value = !parent || visiting.has(id) ? own : own * effectiveAlpha(parent, new Set(visiting).add(id));
+    const value =
+      !parent || visiting.has(id) ? own : own * effectiveAlpha(parent, new Set(visiting).add(id));
     alphaMemo.set(id, value);
     return value;
   };
-  const names = uniqueLayerNames(layers);
+  const inheritedAlpha = (layer: Layer) => {
+    const parent = layer.parentId != null ? byId.get(String(layer.parentId)) : undefined;
+    return parent ? effectiveAlpha(parent) : 1;
+  };
   const transformAnimated = new Set(
     input.animation.blocks
       .filter((block) => TRANSFORM_PROPERTIES.has(block.propertyName))
       .map((block) => String(block.layerId)),
   );
+  const transformWrapperLayerIds = new Set(
+    layers
+      .filter(
+        (layer) =>
+          layer.type !== "group" &&
+          layer.type !== "vector" &&
+          layer.type !== "clipPath" &&
+          (hasTransform(layer) || transformAnimated.has(String(layer.id))),
+      )
+      .map((layer) => String(layer.id)),
+  );
+  const names = uniqueLayerNames(layers, transformWrapperLayerIds);
   const children = new Map<string | null, Layer[]>();
   for (const layer of layers) {
     const parent =
@@ -325,7 +419,7 @@ export function compileAndroidArtboard(input: AndroidArtboardInput): AndroidExpo
       const body = nested.map((child) => render(child, depth + 1)).join("\n");
       return `${indent}<group android:name="${xml(name)}"${transformAttributes(layer)}>\n${body}\n${indent}</group>`;
     }
-    if (!hasTransform(layer) && !transformAnimated.has(String(layer.id))) {
+    if (!transformWrapperLayerIds.has(String(layer.id))) {
       return pathElement(layer, name, input.vector, indent, effectiveAlpha(layer));
     }
     const element = pathElement(layer, name, input.vector, `${indent}  `, effectiveAlpha(layer));
@@ -340,17 +434,40 @@ export function compileAndroidArtboard(input: AndroidArtboardInput): AndroidExpo
     android:height="${number(input.vector.height)}${xml(input.vector.heightUnit ?? "dp")}"
     android:viewportWidth="${number(input.vector.viewportWidth ?? input.vector.width)}"
     android:viewportHeight="${number(input.vector.viewportHeight ?? input.vector.height)}"
-    android:alpha="${number(input.vector.alpha ?? 1)}"${input.vector.tint ? `
-    android:tint="${xml(androidColor(input.vector.tint))}"` : ""}${input.vector.tintMode ? `
-    android:tintMode="${xml(input.vector.tintMode)}"` : ""}${input.vector.autoMirrored ? `
-    android:autoMirrored="true"` : ""}>
+    android:alpha="${number(input.vector.alpha ?? 1)}"${
+      input.vector.tint
+        ? `
+    android:tint="${xml(androidColor(input.vector.tint))}"`
+        : ""
+    }${
+      input.vector.tintMode
+        ? `
+    android:tintMode="${xml(input.vector.tintMode)}"`
+        : ""
+    }${
+      input.vector.autoMirrored
+        ? `
+    android:autoMirrored="true"`
+        : ""
+    }>
 ${body}
 </vector>\n`;
   const files: AndroidAssetFile[] = [
     { path: `res/drawable/${resourceName}_vector.xml`, content: vectorXml },
   ];
 
-  const expandedBlocks: Array<{ block: TimelineBlock; propertyName: string }> = [];
+  const expandedBlocks: Array<{
+    block: TimelineBlock;
+    propertyName: string;
+    valueMultiplier?: number;
+  }> = [];
+  const animatedPropertiesByLayer = new Map<string, Set<string>>();
+  for (const block of input.animation.blocks) {
+    const layerId = String(block.layerId);
+    const properties = animatedPropertiesByLayer.get(layerId) ?? new Set<string>();
+    properties.add(block.propertyName);
+    animatedPropertiesByLayer.set(layerId, properties);
+  }
   for (const block of input.animation.blocks) {
     const layer = byId.get(String(block.layerId));
     if (!layer) {
@@ -363,10 +480,42 @@ ${body}
       });
       continue;
     }
+    if (layer.type === "clipPath" && block.propertyName !== "pathData") {
+      diagnostics.push({
+        severity: "warning",
+        code: "CLIP_PROPERTY_UNSUPPORTED",
+        message: "Android clip paths can only animate pathData.",
+        layerId: String(layer.id),
+        propertyName: block.propertyName,
+      });
+      continue;
+    }
+    const animationBlock = transformedClipPathBlock(block, layer);
     if (block.propertyName === "alpha" && layer.type === "path") {
-      expandedBlocks.push({ block, propertyName: "fillAlpha" });
+      const properties = animatedPropertiesByLayer.get(String(layer.id));
+      if (properties?.has("fillAlpha") || properties?.has("strokeAlpha")) {
+        diagnostics.push({
+          severity: "error",
+          code: "ALPHA_TRACK_COMBINATION_UNSUPPORTED",
+          message:
+            "A path cannot export simultaneous alpha and fill/stroke-alpha tracks without changing their multiplied timing.",
+          layerId: String(layer.id),
+          propertyName: block.propertyName,
+        });
+        continue;
+      }
+      const parentAlpha = inheritedAlpha(layer);
+      expandedBlocks.push({
+        block: animationBlock,
+        propertyName: "fillAlpha",
+        valueMultiplier: parentAlpha * Math.max(0, Math.min(1, layer.fillAlpha ?? 1)),
+      });
       if (layer.strokeColor && layer.strokeColor !== "none")
-        expandedBlocks.push({ block, propertyName: "strokeAlpha" });
+        expandedBlocks.push({
+          block: animationBlock,
+          propertyName: "strokeAlpha",
+          valueMultiplier: parentAlpha * Math.max(0, Math.min(1, layer.strokeAlpha ?? 1)),
+        });
       continue;
     }
     if (block.propertyName === "alpha") {
@@ -385,6 +534,19 @@ ${body}
         severity: "warning",
         code: "PROPERTY_UNSUPPORTED",
         message: `Android VectorDrawable does not support ${block.propertyName}.`,
+        layerId: String(layer.id),
+        propertyName: block.propertyName,
+      });
+      continue;
+    }
+    const trackCapability = TRACK_CAPABILITY_BY_PROPERTY[block.propertyName];
+    const capability = trackCapability ? capabilityFor("avd", trackCapability) : undefined;
+    if (capability && !capability.supported) {
+      diagnostics.push({
+        severity: trackCapability === "trimPath" ? "error" : "warning",
+        code: "UNSUPPORTED_TRACK_FOR_FORMAT",
+        message:
+          `AnimatedVectorDrawable cannot represent animated ${block.propertyName}. ${capability.note ?? ""}`.trim(),
         layerId: String(layer.id),
         propertyName: block.propertyName,
       });
@@ -420,10 +582,20 @@ ${body}
       });
       continue;
     }
-    expandedBlocks.push({ block, propertyName: block.propertyName });
+    expandedBlocks.push({
+      block: animationBlock,
+      propertyName: block.propertyName,
+      valueMultiplier:
+        block.propertyName === "fillAlpha" || block.propertyName === "strokeAlpha"
+          ? effectiveAlpha(layer)
+          : undefined,
+    });
   }
 
-  const tracks = new Map<string, Array<{ block: TimelineBlock; propertyName: string }>>();
+  const tracks = new Map<
+    string,
+    Array<{ block: TimelineBlock; propertyName: string; valueMultiplier?: number }>
+  >();
   for (const entry of expandedBlocks) {
     const key = `${String(entry.block.layerId)}\u0000${entry.propertyName}`;
     tracks.set(key, [...(tracks.get(key) ?? []), entry]);
@@ -431,9 +603,18 @@ ${body}
   const targets: Array<{ name: string; animator: string }> = [];
   const customInterpolators = new Map<string, string>();
   const resolveInterpolator = (value: string | undefined): string => {
+    if (!value) return "@android:anim/accelerate_decelerate_interpolator";
     const platform = platformInterpolator(value);
     if (platform) return platform;
-    if (value?.startsWith("@")) return value;
+    if (value.startsWith("@android:")) return value;
+    if (value.startsWith("@")) {
+      diagnostics.push({
+        severity: "warning",
+        code: "INTERPOLATOR_RESOURCE_UNRESOLVED",
+        message: `Interpolator resource ${value} is not bundled with this export; Android accelerate_decelerate was used.`,
+      });
+      return "@android:anim/accelerate_decelerate_interpolator";
+    }
     const bezier = customBezier(value);
     if (!bezier) {
       diagnostics.push({
@@ -458,9 +639,7 @@ ${body}
     const layer = byId.get(String(first.block.layerId))!;
     const layerName = names.get(String(layer.id))!;
     const targetName =
-      TRANSFORM_PROPERTIES.has(first.propertyName) &&
-      layer.type !== "group" &&
-      layer.type !== "vector"
+      TRANSFORM_PROPERTIES.has(first.propertyName) && transformWrapperLayerIds.has(String(layer.id))
         ? `${layerName}_transform`
         : layerName;
     const animatorName = androidResourceName(`${resourceName}_${layerName}_${first.propertyName}`);
@@ -471,6 +650,7 @@ ${body}
           entry.block,
           entry.propertyName,
           resolveInterpolator(entry.block.interpolator),
+          entry.valueMultiplier,
         );
         if (rendered) return [rendered];
         diagnostics.push({
@@ -505,11 +685,23 @@ ${targets.map((target) => `  <target android:name="${xml(target.name)}" android:
     });
   }
 
+  const requiresApi24 = hasGradient || layers.some((layer) => layer.fillType === "evenOdd");
+  for (const layer of layers) {
+    if (layer.strokeDasharray) {
+      diagnostics.push({
+        severity: "warning",
+        code: "STROKE_DASHARRAY_UNSUPPORTED",
+        message:
+          "Android VectorDrawable does not support stroke dash arrays; the dash pattern was omitted.",
+        layerId: String(layer.id),
+      });
+    }
+  }
   diagnostics.push({
     severity: "info",
     code: "ANDROID_MIN_SDK",
-    message: hasGradient
-      ? "Gradient vectors require Android API 24 or newer."
+    message: requiresApi24
+      ? "Gradient vectors and evenOdd fills require Android API 24 or newer."
       : "VectorDrawable output supports Android API 21 or newer.",
   });
   return { resourceName, files, diagnostics };

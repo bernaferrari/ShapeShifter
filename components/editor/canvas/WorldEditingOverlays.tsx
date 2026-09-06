@@ -1,6 +1,10 @@
 import { pathToString } from "@/lib/shapeshifter/pathUtils";
 import { numberAtTime, sampleMotionPath } from "@/lib/shapeshifter/playheadResolve";
-import { matrixToSvg, transformPointWithMatrix, type AffineMatrix } from "@/lib/shapeshifter/scene/layerTransform";
+import {
+  matrixToSvg,
+  transformPointWithMatrix,
+  type AffineMatrix,
+} from "@/lib/shapeshifter/scene/layerTransform";
 import type { GuideLine } from "@/lib/shapeshifter/smartGuides";
 import type { AnimationState, Layer, PathData, Selection } from "@/lib/shapeshifter/types";
 import type { PointerEvent as ReactPointerEvent } from "react";
@@ -145,18 +149,24 @@ export function WorldBezierHandles({
   return (
     <g pointerEvents="none">
       {segments.map(([anchor, control, key]) => {
-        const transformedAnchor = worldMatrix ? transformPointWithMatrix(anchor, worldMatrix) : anchor;
-        const transformedControl = worldMatrix ? transformPointWithMatrix(control, worldMatrix) : control;
-        return <line
-          key={key}
-          x1={origin.x + transformedAnchor.x}
-          y1={origin.y + transformedAnchor.y}
-          x2={origin.x + transformedControl.x}
-          y2={origin.y + transformedControl.y}
-          stroke="#0d99ff"
-          strokeOpacity={0.5}
-          strokeWidth={worldPerPixel}
-        />;
+        const transformedAnchor = worldMatrix
+          ? transformPointWithMatrix(anchor, worldMatrix)
+          : anchor;
+        const transformedControl = worldMatrix
+          ? transformPointWithMatrix(control, worldMatrix)
+          : control;
+        return (
+          <line
+            key={key}
+            x1={origin.x + transformedAnchor.x}
+            y1={origin.y + transformedAnchor.y}
+            x2={origin.x + transformedControl.x}
+            y2={origin.y + transformedControl.y}
+            stroke="#0d99ff"
+            strokeOpacity={0.5}
+            strokeWidth={worldPerPixel}
+          />
+        );
       })}
     </g>
   );
@@ -259,7 +269,10 @@ export function WorldPaintPreview({
 }) {
   if (path && origin) {
     return (
-      <g transform={`translate(${origin.x} ${origin.y}) ${worldMatrix ? matrixToSvg(worldMatrix) : ""}`} pointerEvents="none">
+      <g
+        transform={`translate(${origin.x} ${origin.y}) ${worldMatrix ? matrixToSvg(worldMatrix) : ""}`}
+        pointerEvents="none"
+      >
         <path
           d={pathToString(path)}
           fill={color}

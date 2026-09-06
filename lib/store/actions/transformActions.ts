@@ -206,127 +206,15 @@ export function createTransformActions(
           : layers.filter((l) => String(l.id) === String(selectedLayerId));
       if (targets.length === 0) return;
 
-      const duration = Math.max(1, animation.duration);
-      const ms = Math.round(progress * duration);
-      const nearStart = ms <= duration * 0.05;
-      const nearEnd = ms >= duration * 0.95;
-      const minSeg = 50;
-
-      /** Insert or update keys for one property — splits segments at playhead (multi-keyframe). */
-      const upsertKey = (
-        blocks: typeof animation.blocks,
-        layer: Layer,
-        propertyName: "translateX" | "translateY",
-        value: number,
-      ) => {
-        const segs = blocks
-          .map((b, i) => ({ b, i }))
-          .filter(
-            ({ b }) => String(b.layerId) === String(layer.id) && b.propertyName === propertyName,
-          )
-          .sort((a, c) => a.b.startTime - c.b.startTime);
-
-        if (segs.length === 0) {
-          return [
-            ...blocks,
-            {
-              id: `block-${layer.id}-${propertyName}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-              layerId: layer.id,
-              propertyName,
-              type: "number" as const,
-              fromValue: nearStart ? value : 0,
-              toValue: value,
-              startTime: 0,
-              endTime: duration,
-              interpolator: "FAST_OUT_SLOW_IN" as const,
-            },
-          ];
-        }
-
-        // Find covering segment
-        const cover = segs.find(({ b }) => ms >= b.startTime && ms <= b.endTime);
-        if (!cover) {
-          // Between segments or past end — extend last or create new
-          const last = segs[segs.length - 1]!.b;
-          if (ms > last.endTime) {
-            return [
-              ...blocks,
-              {
-                id: `block-${layer.id}-${propertyName}-${Date.now()}-tail`,
-                layerId: layer.id,
-                propertyName,
-                type: "number" as const,
-                fromValue: Number(last.toValue) || 0,
-                toValue: value,
-                startTime: last.endTime,
-                endTime: duration,
-                interpolator: last.interpolator || "FAST_OUT_SLOW_IN",
-              },
-            ];
-          }
-          const first = segs[0]!.b;
-          return [
-            ...blocks,
-            {
-              id: `block-${layer.id}-${propertyName}-${Date.now()}-head`,
-              layerId: layer.id,
-              propertyName,
-              type: "number" as const,
-              fromValue: value,
-              toValue: Number(first.fromValue) || 0,
-              startTime: 0,
-              endTime: first.startTime,
-              interpolator: first.interpolator || "FAST_OUT_SLOW_IN",
-            },
-          ];
-        }
-
-        const prev = cover.b;
-        const fromV = Number(prev.fromValue) || 0;
-        const toV = Number(prev.toValue) || 0;
-
-        if (nearStart || Math.abs(ms - prev.startTime) < minSeg) {
-          const next = [...blocks];
-          next[cover.i] = { ...prev, fromValue: value, type: "number" };
-          return next;
-        }
-        if (nearEnd || Math.abs(ms - prev.endTime) < minSeg) {
-          const next = [...blocks];
-          next[cover.i] = { ...prev, toValue: value, type: "number" };
-          return next;
-        }
-
-        // Mid-segment: SPLIT into two blocks at playhead (true multi-keyframe).
-        const left = {
-          ...prev,
-          id: `${prev.id}-L`,
-          toValue: value,
-          endTime: ms,
-          type: "number" as const,
-        };
-        const right = {
-          ...prev,
-          id: `${prev.id}-R-${Date.now()}`,
-          fromValue: value,
-          toValue: toV,
-          startTime: ms,
-          type: "number" as const,
-        };
-        // Keep left from as fromV
-        left.fromValue = fromV;
-        const without = blocks.filter((_, i) => i !== cover.i);
-        return [...without, left, right];
-      };
-
-      let blocks = animation.blocks;
-      for (const layer of targets) {
-        blocks = upsertKey(blocks, layer, "translateX", layer.translateX ?? 0);
-        blocks = upsertKey(blocks, layer, "translateY", layer.translateY ?? 0);
-      }
-
-      const targetIds = new Set(targets.map((l) => String(l.id)));
-      const newLayers = layers.map((l) =>
-        targetIds.has(String(l.id)) ? { ...l, expanded: true } : l,
+      // Delegate to the pure helper so the ACTIVE owner shares key-insertion
+      // semantics with every other scene owner — a fresh track seeds from the
+      // layer's current base value instead of teleporting from 0 when recorded
+      // mid-timeline.
+      const recorded = recordTranslationAtProgress(
+        layers,
+        animation,
+        targets.map((layer) => layer.id),
+        progress,
       );
 
       const current = get();
@@ -334,26 +222,26 @@ export function createTransformActions(
       for (const ref of current.selectedLayerRefs) {
         idsByOwner.set(ref.ownerId, [...(idsByOwner.get(ref.ownerId) ?? []), ref.layerId]);
       }
-      const activeAnimation = { ...animation, blocks };
+      const activeAnimation = recorded.animation;
       const savedFrames = saveActiveFrame(current);
       const savedRoot = saveActiveRoot(current);
       const nextFrames = savedFrames.map((frame) => {
         if (frame.id === current.selectedFrameId) {
-          return { ...frame, layers: newLayers, animation: activeAnimation };
+          return { ...frame, layers: recorded.layers, animation: recorded.animation };
         }
         const ownerIds = idsByOwner.get(frame.id);
         if (!ownerIds?.length) return frame;
-        const recorded = recordTranslationAtProgress(
+        const ownerRecorded = recordTranslationAtProgress(
           frame.layers,
           frame.animation,
           ownerIds,
           progress,
         );
-        return { ...frame, layers: recorded.layers, animation: recorded.animation };
+        return { ...frame, layers: ownerRecorded.layers, animation: ownerRecorded.animation };
       });
       const rootRecorded =
         current.selectedFrameId === PAGE_ROOT_ID
-          ? { layers: newLayers, animation: activeAnimation }
+          ? { layers: recorded.layers, animation: recorded.animation }
           : idsByOwner.get(PAGE_ROOT_ID)?.length
             ? recordTranslationAtProgress(
                 savedRoot.layers,
@@ -368,7 +256,7 @@ export function createTransformActions(
         rootLayers: rootRecorded.layers,
         rootAnimation: rootRecorded.animation,
         animation: activeAnimation,
-        layers: newLayers,
+        layers: recorded.layers,
       });
     },
 

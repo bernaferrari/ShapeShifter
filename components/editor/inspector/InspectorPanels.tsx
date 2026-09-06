@@ -268,7 +268,7 @@ export function FrameDesignPanel({
           </p>
         )}
       </Section>
-      <Section title="Position & size">
+      <Section title="Position & intrinsic size">
         <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
           <NumberRow
             label="X"
@@ -283,13 +283,13 @@ export function FrameDesignPanel({
           {count === 1 ? (
             <>
               <NumberRow
-                label="W"
+                label="Intrinsic W"
                 value={frame.vector.width}
                 min={1}
                 onChange={(value) => onResize(value, frame.vector.height)}
               />
               <NumberRow
-                label="H"
+                label="Intrinsic H"
                 value={frame.vector.height}
                 min={1}
                 onChange={(value) => onResize(frame.vector.width, value)}
@@ -311,6 +311,55 @@ export function FrameDesignPanel({
           )}
         </div>
       </Section>
+      {count === 1 && (
+        <Section title="Android">
+          <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+            <NumberRow
+              label="VP W"
+              value={frame.vector.viewportWidth ?? frame.vector.width}
+              min={1}
+              onChange={(value) => useEditorStore.getState().updateVector({ viewportWidth: value })}
+            />
+            <NumberRow
+              label="VP H"
+              value={frame.vector.viewportHeight ?? frame.vector.height}
+              min={1}
+              onChange={(value) =>
+                useEditorStore.getState().updateVector({ viewportHeight: value })
+              }
+            />
+          </div>
+          <Row label="Tint">
+            <TextInput
+              ariaLabel="Android tint"
+              value={frame.vector.tint ?? ""}
+              onChange={(value) =>
+                useEditorStore.getState().updateVector({ tint: value || undefined })
+              }
+            />
+          </Row>
+          <Row label="Tint mode">
+            <TextInput
+              ariaLabel="Android tint mode"
+              value={frame.vector.tintMode ?? ""}
+              onChange={(value) =>
+                useEditorStore.getState().updateVector({ tintMode: value || undefined })
+              }
+            />
+          </Row>
+          <Row label="Mirror">
+            <button
+              type="button"
+              className="h-7 rounded-md border border-border px-2 text-[11px]"
+              onClick={() =>
+                useEditorStore.getState().updateVector({ autoMirrored: !frame.vector.autoMirrored })
+              }
+            >
+              {frame.vector.autoMirrored ? "On" : "Off"}
+            </button>
+          </Row>
+        </Section>
+      )}
       {count === 1 && (
         <Section title="Actions" defaultOpen={false}>
           <div className="grid grid-cols-2 gap-1.5">

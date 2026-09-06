@@ -11,12 +11,12 @@ import {
   type Viewport,
 } from "@/lib/shapeshifter/camera";
 import { PAGE_ROOT_ID, useEditorStore, type CanvasFrame } from "@/lib/store/editorStore";
+import { vectorCoordinateRect } from "@/lib/shapeshifter/vectorSpace";
 
 export const getCanvasFrameBounds = (frame: CanvasFrame): Rect => ({
   x: frame.x || 0,
   y: frame.y || 0,
-  w: frame.vector?.width || 48,
-  h: frame.vector?.height || 48,
+  ...vectorCoordinateRect(frame.vector, 48),
 });
 
 export function useWorldCamera({

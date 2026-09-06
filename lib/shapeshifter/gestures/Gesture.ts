@@ -74,6 +74,10 @@ export abstract class Gesture {
   // Optional: called when gesture is cancelled (e.g. tool change mid-gesture)
   cancel?(): void;
 
+  // Test seam: set to true when cancel() is invoked, so tests can verify cancellation
+  // without each concrete gesture having to expose its own flag.
+  cancelCalled?: boolean;
+
   // Helper for subclasses
   protected setCursor(cursor: CursorType) {
     this.callbacks.setCursor(cursor);

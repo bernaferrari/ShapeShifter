@@ -27,13 +27,18 @@ export function hitTestOwnedLayers(
       owner.usePlayhead ?? false,
     );
     for (const node of [...scene.nodes].reverse()) {
-      if (!node.visible || node.locked || node.alpha <= 0 || node.type !== "path" || !node.path) continue;
+      if (!node.visible || node.locked || node.alpha <= 0 || node.type !== "path" || !node.path)
+        continue;
 
       let clipped = false;
       for (const clipId of node.clipNodeIds) {
         const clip = scene.nodesById.get(String(clipId));
         const inverseClip = clip ? inverseAffine(clip.worldMatrix) : null;
-        if (!clip?.path || !inverseClip || !isPointInPath(transformPointWithMatrix(ownerPoint, inverseClip), clip.path)) {
+        if (
+          !clip?.path ||
+          !inverseClip ||
+          !isPointInPath(transformPointWithMatrix(ownerPoint, inverseClip), clip.path)
+        ) {
           clipped = true;
           break;
         }

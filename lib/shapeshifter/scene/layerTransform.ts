@@ -48,7 +48,14 @@ export function scaleAffine(x: number, y: number): AffineMatrix {
 
 export function rotateAffine(degrees: number): AffineMatrix {
   const radians = (degrees * Math.PI) / 180;
-  return { a: Math.cos(radians), b: Math.sin(radians), c: -Math.sin(radians), d: Math.cos(radians), e: 0, f: 0 };
+  return {
+    a: Math.cos(radians),
+    b: Math.sin(radians),
+    c: -Math.sin(radians),
+    d: Math.cos(radians),
+    e: 0,
+    f: 0,
+  };
 }
 
 /** Android group transform order: scale, rotate, then translate around its pivot. */

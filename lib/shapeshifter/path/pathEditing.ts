@@ -83,11 +83,23 @@ export function changeCommandType(
       newPoints = [endPoint];
       break;
     case "H":
-      newPoints = [{ x: endPoint.x, y: 0 }];
-      break;
     case "V":
-      newPoints = [{ x: 0, y: endPoint.y }];
-      break;
+      // parsePath has no H/V representation of its own — it stores them as L
+      // commands carrying the fully resolved current point, and pathToString
+      // emits both coordinates for any non-Z/A command. Emitting the old
+      // fabricated [{x, 0}]/[{0, y}] serialized as "H30 0"/"V0 30", which
+      // reparsed with a phantom segment back to an axis zero (corrupting saved
+      // data, winding sums, and bounds). Convert to the exact equivalent
+      // absolute line instead: H resolves to (endX, penY), V to (penX, endY),
+      // and parsePath(pathToString(cmd)) reproduces identical geometry.
+      sub.commands[cmdIdx] = {
+        ...oldCmd,
+        type: "L",
+        points: [newType === "H" ? { x: endPoint.x, y: prev.y } : { x: prev.x, y: endPoint.y }],
+        arcParams: undefined,
+      };
+      return newData;
+
     case "C": {
       // Gentle default cubic: cp1 = prev + 0.3*(end-prev), cp2 = end - 0.3*(end-prev).
       const dx = (endPoint.x - prev.x) * 0.3;

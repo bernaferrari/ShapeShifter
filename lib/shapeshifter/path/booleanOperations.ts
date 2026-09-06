@@ -1,5 +1,6 @@
 import type { Command, PathData, Point } from "../types";
 import { generateId } from "../ids";
+import { arcToBeziers } from "../geometry";
 
 const clonePath = (path: PathData): PathData => structuredClone(path);
 
@@ -62,9 +63,11 @@ export function pathToPolygons(path: PathData, steps = 12): Point[][] {
     const polygon: Point[] = [];
     let current: Point = { x: 0, y: 0 };
     for (const command of subPath.commands) {
-      if (command.type === "M" && command.points[0]) {
-        current = { ...command.points[0] };
-        if (polygon.length === 0) polygon.push({ ...current });
+      const end = command.points.at(-1);
+      if (!end) continue;
+      if (command.type === "M" && !polygon.length) {
+        current = { ...end };
+        polygon.push({ ...current });
       } else if (
         (command.type === "L" || command.type === "H" || command.type === "V") &&
         command.points[0]
@@ -79,8 +82,28 @@ export function pathToPolygons(path: PathData, steps = 12): Point[][] {
       } else if (command.type === "Q" && command.points.length === 2) {
         polygon.push(...sampleQuadratic(current, command.points[0], command.points[1], steps));
         current = { ...command.points[1] };
-      } else if (command.type !== "Z" && command.points.length > 0) {
-        current = { ...command.points.at(-1)! };
+      } else if (command.type === "A" && command.arcParams) {
+        // Arcs are preserved as first-class A commands with their real geometry
+        // in arcParams (pathDataIO); flattening them via arcToBeziers keeps
+        // circles/ellipses round instead of degenerating toward a bare chord.
+        let arcStart = current;
+        for (const segment of arcToBeziers(
+          arcStart.x,
+          arcStart.y,
+          command.arcParams.rx,
+          command.arcParams.ry,
+          command.arcParams.xRotation,
+          command.arcParams.largeArc,
+          command.arcParams.sweep,
+          end.x,
+          end.y,
+        )) {
+          polygon.push(...sampleCubic(arcStart, segment.cp1, segment.cp2, segment.to, steps));
+          arcStart = segment.to;
+        }
+        current = { ...end };
+      } else if (command.type !== "Z") {
+        current = { ...end };
         polygon.push({ ...current });
       }
     }
@@ -107,6 +130,9 @@ function polygonsToPathData(polygons: Point[][]): PathData {
 }
 
 export type BooleanOp = "union" | "subtract" | "intersect" | "exclude";
+
+/** Destructive Boolean commands stay off until a curve-capable clipper exists. */
+export const BOOLEAN_OPERATIONS_ENABLED = false;
 
 /**
  * Containment-aware boolean operations for closed paths. Disjoint paths are exact; partially
@@ -138,11 +164,8 @@ export function booleanCombine(operation: BooleanOp, first: PathData, second: Pa
         ? []
         : [firstPolygon];
   } else if (operation === "intersect") {
-    result = firstInsideSecond
-      ? [firstPolygon]
-      : secondInsideFirst
-        ? [secondPolygon]
-        : [firstPolygon];
+    // Unsupported partial overlap must not impersonate the first operand.
+    result = firstInsideSecond ? [firstPolygon] : secondInsideFirst ? [secondPolygon] : [];
   } else {
     result =
       firstInsideSecond || secondInsideFirst
@@ -150,8 +173,9 @@ export function booleanCombine(operation: BooleanOp, first: PathData, second: Pa
         : [...firstPolygons, ...secondPolygons];
   }
 
-  const combined = polygonsToPathData(result);
-  return combined.subPaths.length === 0 ? clonePath(first) : combined;
+  // Empty is a valid result (disjoint intersect, contained subtract). Never
+  // substitute the first operand — that silently damages artwork.
+  return polygonsToPathData(result);
 }
 
 export function isPointInFillRegion(point: Point, path: PathData): boolean {

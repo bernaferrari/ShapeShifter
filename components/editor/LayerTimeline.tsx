@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useEditorStore } from "@/lib/store/editorStore";
+import { CAPABILITY_MATRIX, type ExportFormatId } from "@/lib/shapeshifter/formatCapabilities";
 import { cn } from "@/lib/utils";
 import {
   TimelineCurrentTimeInput,
@@ -36,8 +37,10 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
   const addLayer = useEditorStore((state) => state.addLayer);
   const animation = useEditorStore((state) => state.animation);
   const setAnimationDuration = useEditorStore((state) => state.setAnimationDuration);
-  const isPlaying = useEditorStore((state) => state.isPlaying);
   const togglePlayback = useEditorStore((state) => state.togglePlayback);
+  const isPlaying = useEditorStore((state) => state.isPlaying);
+  const preferredExportFormat = useEditorStore((state) => state.preferredExportFormat);
+  const formatProfile = CAPABILITY_MATRIX[preferredExportFormat as ExportFormatId] ?? null;
 
   /**
    * Figma motion ruler labels: short clips in whole ms (0 · 200 · 400),
@@ -97,8 +100,17 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
         activeAnimation: animation,
         collapsedFrameIds,
         collapsedGroupKeys,
+        formatProfile,
       }),
-    [animation, collapsedFrameIds, collapsedGroupKeys, frames, layers, selectedFrameId],
+    [
+      animation,
+      collapsedFrameIds,
+      collapsedGroupKeys,
+      formatProfile,
+      frames,
+      layers,
+      selectedFrameId,
+    ],
   );
   const timelineRows = timelineProjection.rows;
   const blocksForLayerInFrame = timelineProjection.blocksForLayer;
@@ -389,6 +401,7 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
           onDismissEmptyHint={() => setEmptyHintDismissed(true)}
           scrollRef={rightScrollRef}
           onScroll={() => syncScroll("right")}
+          formatProfile={formatProfile}
         />
       </div>
     </section>

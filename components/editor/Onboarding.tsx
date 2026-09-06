@@ -30,9 +30,9 @@ const TIPS: Tip[] = [
     title: "From → To morph",
     body: (
       <>
-        Each shape has a <span className="rounded bg-muted px-1 text-[10px] capitalize">from</span>{" "}
-        and a <span className="rounded bg-muted px-1 text-[10px] capitalize">to</span>. Edit both,
-        then hit Play to morph between them.
+        Shapes can stay static. Add a{" "}
+        <span className="rounded bg-muted px-1 text-[10px] capitalize">to</span> path only when you
+        want a morph, then hit Play.
       </>
     ),
   },

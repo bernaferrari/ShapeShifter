@@ -102,6 +102,21 @@ describe("gradient helpers", () => {
     expect(svg).toContain('cx="0.5"');
   });
 
+  it("preserves safe CSS named and functional stop colors", () => {
+    const svg = gradientToSvg(
+      {
+        type: "linear",
+        stops: [
+          { offset: 0, color: "rebeccapurple" },
+          { offset: 1, color: "rgb(0 64 255 / 50%)" },
+        ],
+      },
+      "g3",
+    );
+    expect(svg).toContain('stop-color="rebeccapurple"');
+    expect(svg).toContain('stop-color="rgb(0 64 255 / 50%)"');
+  });
+
   it("dominantColor prefers the most opaque stop", () => {
     expect(dominantColor(linear)).toBe("#ff0000");
   });
@@ -126,9 +141,11 @@ describe("gradient export", () => {
     const vd = exportVectorDrawable(makeLayer({ fillGradient: linear }));
     expect(vd).toContain('xmlns:aapt="http://schemas.android.com/aapt"');
     expect(vd).toContain('<aapt:attr name="android:fillColor">');
-    expect(vd).toContain('android:type="linear"');
+    // Linear is Android's default gradient type, so the canonical compiler
+    // leaves the redundant attribute out.
+    expect(vd).not.toContain('android:type="radial"');
     // alpha baked into #AARRGGBB; 0.5 opacity ≈ #80
-    expect(vd).toMatch(/android:color="#[0-9A-F]{8}"/);
+    expect(vd).toMatch(/android:color="#[0-9a-f]{8}"/i);
     expect(vd).not.toContain('android:fillColor="');
   });
 

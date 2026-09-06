@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parsePath, pathToString } from "../pathUtils";
 import {
   createDocumentV2FromLegacy,
+  legacyProjectionIssues,
   legacySnapshotFromDocumentV2,
   validateDocumentV2,
   type LegacyDocumentSnapshot,
@@ -116,12 +117,16 @@ describe("DocumentV2 migration adapter", () => {
     };
 
     const document = createDocumentV2FromLegacy(original);
-    const node = Object.values(document.nodes).find((candidate) => candidate.androidName === "animated_glyph");
+    const node = Object.values(document.nodes).find(
+      (candidate) => candidate.androidName === "animated_glyph",
+    );
     expect(node?.fromGeometryVersionId).toBeTruthy();
     expect(node?.toGeometryVersionId).toBeTruthy();
     expect(node?.fromGeometryVersionId).not.toBe(node?.toGeometryVersionId);
     expect(Object.values(document.morphMappings)).toEqual(
-      expect.arrayContaining([expect.objectContaining({ fromGeometryId: node?.fromGeometryVersionId })]),
+      expect.arrayContaining([
+        expect.objectContaining({ fromGeometryId: node?.fromGeometryVersionId }),
+      ]),
     );
 
     const restored = legacySnapshotFromDocumentV2(document);
@@ -144,6 +149,61 @@ describe("DocumentV2 migration adapter", () => {
     document.frames["frame-1"]!.childrenNodeIds.push("missing");
     expect(validateDocumentV2(document)).toContain(
       "Frame frame-1 references missing node missing.",
+    );
+  });
+
+  it("reports a missing page animation clip instead of projecting an empty fallback", () => {
+    const document = createDocumentV2FromLegacy(snapshot());
+    document.rootClipIds.push("missing-page-motion");
+    expect(validateDocumentV2(document)).toContain(
+      "Page references missing clip missing-page-motion.",
+    );
+  });
+
+  it("rejects orphaned scene and timeline records before projection can drop them", () => {
+    const document = createDocumentV2FromLegacy(snapshot());
+    const pageNodeId = document.rootNodeIds[0]!;
+    const frame = document.frames["frame-1"]!;
+    const frameClipId = frame.clipIds[0]!;
+    const trackId = document.clips[frameClipId]!.trackIds[0]!;
+    const keyframeId = document.tracks[trackId]!.keyframeIds[0]!;
+
+    document.rootNodeIds = [];
+    frame.clipIds = [];
+
+    expect(validateDocumentV2(document)).toEqual(
+      expect.arrayContaining([
+        `Node ${pageNodeId} is not reachable from page or frame roots.`,
+        `Clip ${frameClipId} is not reachable from page or frame clip lists.`,
+        `Track ${trackId} is not reachable from an animation clip.`,
+        `Keyframe ${keyframeId} is not reachable from an animation track.`,
+      ]),
+    );
+  });
+
+  it("identifies valid native V2 data that the legacy projection would lose", () => {
+    const document = createDocumentV2FromLegacy(snapshot());
+    document.components = { button: { id: "button" } };
+    const nativeTrack = Object.values(document.tracks)[0]!;
+    const extraKeyframe = {
+      ...document.keyframes[nativeTrack.keyframeIds[1]!]!,
+      id: "native-midpoint",
+      time: 300,
+      legacyBlockId: undefined,
+    };
+    document.keyframes[extraKeyframe.id] = extraKeyframe;
+    nativeTrack.keyframeIds = [
+      nativeTrack.keyframeIds[0]!,
+      extraKeyframe.id,
+      nativeTrack.keyframeIds[1]!,
+    ];
+
+    expect(validateDocumentV2(document)).toEqual([]);
+    expect(legacyProjectionIssues(document)).toEqual(
+      expect.arrayContaining([
+        "reusable components",
+        `native keyframe sequence on track ${nativeTrack.id}`,
+      ]),
     );
   });
 });

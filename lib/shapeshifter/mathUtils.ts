@@ -135,15 +135,20 @@ export class Matrix {
     public readonly f: number,
   ) {}
 
-  /** Returns the dot product (matrix multiplication) of this matrix with m. */
+  /**
+   * Returns the dot product (matrix multiplication) of this matrix with m.
+   * Products are left unrounded: rounding each entry quantized intermediates
+   * so long chains (Matrix.flatten over deep transform stacks) accumulated
+   * ~1e-9 drift per multiply.
+   */
   dot(m: Matrix): Matrix {
     return new Matrix(
-      round(this.a * m.a + this.c * m.b),
-      round(this.b * m.a + this.d * m.b),
-      round(this.a * m.c + this.c * m.d),
-      round(this.b * m.c + this.d * m.d),
-      round(this.a * m.e + this.c * m.f + this.e),
-      round(this.b * m.e + this.d * m.f + this.f),
+      this.a * m.a + this.c * m.b,
+      this.b * m.a + this.d * m.b,
+      this.a * m.c + this.c * m.d,
+      this.b * m.c + this.d * m.d,
+      this.a * m.e + this.c * m.f + this.e,
+      this.b * m.e + this.d * m.f + this.f,
     );
   }
 

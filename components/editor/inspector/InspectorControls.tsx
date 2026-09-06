@@ -4,6 +4,7 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useEditorStore } from "@/lib/store/editorStore";
 
 const fieldBase =
   "h-7 w-full rounded-[4px] border border-transparent bg-muted/65 px-2 text-xs text-foreground outline-none transition-[background-color,border-color,box-shadow] placeholder:text-muted-foreground/50 hover:bg-muted focus:border-primary/70 focus:bg-background focus:ring-1 focus:ring-primary/25";
@@ -129,8 +130,11 @@ export function NumberRow({
 
   const onPointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {}
     scrub.current = { startX: e.clientX, startVal: value };
+    useEditorStore.getState().beginHistoryGesture();
   };
   const onPointerMove = (e: React.PointerEvent) => {
     if (!scrub.current) return;
@@ -142,6 +146,7 @@ export function NumberRow({
       (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     } catch {}
     scrub.current = null;
+    useEditorStore.getState().endHistoryGesture();
   };
 
   if (compact) {
@@ -174,14 +179,20 @@ export function NumberRow({
           aria-label={label}
           value={display}
           placeholder={mixed ? "Mixed" : undefined}
-          onFocus={() => setDraft(mixed ? "" : Number.isFinite(value) ? String(value) : "0")}
+          onFocus={() => {
+            useEditorStore.getState().beginHistoryGesture();
+            setDraft(mixed ? "" : Number.isFinite(value) ? String(value) : "0");
+          }}
           onChange={(event) => {
             const raw = event.target.value;
             setDraft(raw);
             const number = Number(raw.replace(",", "."));
             if (Number.isFinite(number)) onChange(clamp(number));
           }}
-          onBlur={() => setDraft(null)}
+          onBlur={() => {
+            setDraft(null);
+            useEditorStore.getState().endHistoryGesture();
+          }}
           className={cn(
             fieldBase,
             "pl-7 font-mono tabular-nums",
@@ -256,14 +267,20 @@ export function NumberRow({
           aria-label={label}
           value={display}
           placeholder={mixed ? "Mixed" : undefined}
-          onFocus={() => setDraft(mixed ? "" : Number.isFinite(value) ? String(value) : "0")}
+          onFocus={() => {
+            useEditorStore.getState().beginHistoryGesture();
+            setDraft(mixed ? "" : Number.isFinite(value) ? String(value) : "0");
+          }}
           onChange={(e) => {
             const raw = e.target.value;
             setDraft(raw);
             const n = Number(raw.replace(",", "."));
             if (Number.isFinite(n)) onChange(clamp(n));
           }}
-          onBlur={() => setDraft(null)}
+          onBlur={() => {
+            setDraft(null);
+            useEditorStore.getState().endHistoryGesture();
+          }}
           className={cn(
             fieldBase,
             "font-mono tabular-nums",

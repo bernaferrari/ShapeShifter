@@ -36,12 +36,12 @@ the supported Android contract and expose semantic drift rather than preserving 
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
+| Purpose       | Command                                                         | Expected                                                                           |
+| ------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | Focused tests | `pnpm test -- lib/shapeshifter/__tests__/androidParity.test.ts` | all new tests pass after later plans; expected failures must be `.fails` initially |
-| Full tests | `pnpm test` | all tests pass |
-| Typecheck | `pnpm typecheck` | exit 0 |
-| Lint | `pnpm lint` | exit 0 |
+| Full tests    | `pnpm test`                                                     | all tests pass                                                                     |
+| Typecheck     | `pnpm typecheck`                                                | exit 0                                                                             |
+| Lint          | `pnpm lint`                                                     | exit 0                                                                             |
 
 ## Scope
 
@@ -133,4 +133,3 @@ Every later plan must convert its corresponding `it.fails` case to a normal test
 Treat these fixtures as the Android language contract. Future import, model,
 preview, or compiler changes must update them only when the supported Android
 contract deliberately changes.
-

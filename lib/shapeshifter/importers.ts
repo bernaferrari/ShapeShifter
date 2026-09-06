@@ -248,7 +248,7 @@ const pathFromPoints = (element: Element, close: boolean) => {
   return commands.join(" ");
 };
 
-// ── Gradient parsing (objectBoundingBox <linearGradient>/<radialGradient>) ──
+// ── Gradient parsing (<linearGradient>/<radialGradient>) ──────────────────
 
 const stopOffset = (raw: string): number => {
   if (!raw) return 0;
@@ -287,70 +287,34 @@ function parseGradientStops(el: Element, doc: Document, depth = 0): GradientStop
 
 type GradientLookupEntry = {
   gradient: Gradient;
-  // When the source gradient used gradientUnits="userSpaceOnUse", the raw
-  // user-space coordinates are kept here and converted to objectBoundingBox
-  // fractions at style-resolution time using the referencing path's bbox.
-  // (The Gradient type has no units field by design — the conversion happens
-  // at import so export via objectBoundingBox is correct.)
-  userSpaceLinear?: { x1: number; y1: number; x2: number; y2: number };
-  userSpaceRadial?: { cx: number; cy: number; r: number };
+  userSpaceTransform?: Matrix;
 };
 
-type BBox = { minX: number; minY: number; maxX: number; maxY: number };
-
-/** Sample every command point of a path's `d` string for an approximate bbox. */
-function pathBBox(d: string): BBox | null {
-  let parsed: PathData;
-  try {
-    parsed = parsePath(d);
-  } catch {
-    return null;
+function transformUserSpaceGradient(gradient: Gradient, matrix: Matrix): Gradient {
+  if (gradient.coordinateSpace !== "userSpace" || isIdentity(matrix))
+    return structuredClone(gradient);
+  if (gradient.type === "linear") {
+    const start = transformPoint(matrix, { x: gradient.x1 ?? 0, y: gradient.y1 ?? 0 });
+    const end = transformPoint(matrix, { x: gradient.x2 ?? 1, y: gradient.y2 ?? 0 });
+    return { ...structuredClone(gradient), x1: start.x, y1: start.y, x2: end.x, y2: end.y };
   }
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-  let any = false;
-  for (const sp of parsed.subPaths) {
-    for (const cmd of sp.commands) {
-      for (const p of cmd.points) {
-        if (Number.isFinite(p.x) && Number.isFinite(p.y)) {
-          any = true;
-          if (p.x < minX) minX = p.x;
-          if (p.y < minY) minY = p.y;
-          if (p.x > maxX) maxX = p.x;
-          if (p.y > maxY) maxY = p.y;
-        }
-      }
-    }
-  }
-  return any ? { minX, minY, maxX, maxY } : null;
+  const center = transformPoint(matrix, { x: gradient.cx ?? 0.5, y: gradient.cy ?? 0.5 });
+  const sx = Math.hypot(matrix[0], matrix[1]);
+  const sy = Math.hypot(matrix[2], matrix[3]);
+  const conformal =
+    Math.abs(sx - sy) < 1e-9 && Math.abs(matrix[0] * matrix[2] + matrix[1] * matrix[3]) < 1e-9;
+  return {
+    ...structuredClone(gradient),
+    cx: center.x,
+    cy: center.y,
+    // A non-uniform transform turns a radial gradient elliptical, which the
+    // current portable model cannot encode. Keep its authored radius in that
+    // edge case rather than silently inventing an arbitrary scale factor.
+    r: conformal ? (gradient.r ?? 0.5) * sx : gradient.r,
+  };
 }
 
-/** Convert a userSpaceOnUse gradient entry to the objectBoundingBox fraction model. */
-function convertUserSpaceGradient(entry: GradientLookupEntry, bbox: BBox): Gradient {
-  const w = bbox.maxX - bbox.minX || 1;
-  const h = bbox.maxY - bbox.minY || 1;
-  const refLen = (w + h) / 2 || 1;
-  if (entry.userSpaceRadial) {
-    const u = entry.userSpaceRadial;
-    return {
-      ...entry.gradient,
-      cx: (u.cx - bbox.minX) / w,
-      cy: (u.cy - bbox.minY) / h,
-      r: u.r / refLen,
-    };
-  }
-  const u = entry.userSpaceLinear!;
-  const fx1 = (u.x1 - bbox.minX) / w;
-  const fy1 = (u.y1 - bbox.minY) / h;
-  const fx2 = (u.x2 - bbox.minX) / w;
-  const fy2 = (u.y2 - bbox.minY) / h;
-  const angle = Math.round((Math.atan2(fy2 - fy1, fx2 - fx1) * 180) / Math.PI);
-  return { ...entry.gradient, angle };
-}
-
-/** Build a map of gradient id → entry (model Gradient + optional user-space coords). */
+/** Build a map of gradient id → model Gradient. */
 function buildGradientLookup(doc: Document): Map<string, GradientLookupEntry> {
   const map = new Map<string, GradientLookupEntry>();
   for (const el of Array.from(doc.querySelectorAll("linearGradient, radialGradient"))) {
@@ -363,26 +327,33 @@ function buildGradientLookup(doc: Document): Map<string, GradientLookupEntry> {
     const isRadial = el.tagName.toLowerCase() === "radialgradient";
 
     if (units === "userSpaceOnUse") {
-      // Keep raw user-space coordinates; convert to fractions at fill resolution
-      // (where the referencing path's bbox is known).
+      // Preserve the source coordinate system instead of collapsing Android/SVG
+      // endpoints into an angle. That lets a static SVG or VectorDrawable make a
+      // lossless round-trip even when a path occupies only part of the viewport.
       if (isRadial) {
         map.set(id, {
-          gradient: { type: "radial", stops },
-          userSpaceRadial: {
+          gradient: {
+            type: "radial",
+            coordinateSpace: "userSpace",
+            stops,
             cx: parseRatio(el.getAttribute("cx"), 0.5),
             cy: parseRatio(el.getAttribute("cy"), 0.5),
             r: parseRatio(el.getAttribute("r"), 0.5),
           },
+          userSpaceTransform: parseSvgTransform(el.getAttribute("gradientTransform") ?? ""),
         });
       } else {
         map.set(id, {
-          gradient: { type: "linear", stops },
-          userSpaceLinear: {
+          gradient: {
+            type: "linear",
+            coordinateSpace: "userSpace",
+            stops,
             x1: parseRatio(el.getAttribute("x1"), 0),
             y1: parseRatio(el.getAttribute("y1"), 0),
             x2: parseRatio(el.getAttribute("x2"), 1),
             y2: parseRatio(el.getAttribute("y2"), 0),
           },
+          userSpaceTransform: parseSvgTransform(el.getAttribute("gradientTransform") ?? ""),
         });
       }
     } else {
@@ -428,7 +399,7 @@ const urlRef = (value: string): string | null => {
 function getStyle(
   element: Element,
   gradients?: Map<string, GradientLookupEntry>,
-  pathDataD?: string,
+  matrix: Matrix = IDENTITY,
 ) {
   // Parse inline style attribute into a lookup map
   const inlineStyle = new Map<string, string>();
@@ -457,14 +428,10 @@ function getStyle(
   if (fillRefId) {
     const entry = gradients?.get(fillRefId);
     if (entry) {
-      if (entry.userSpaceLinear || entry.userSpaceRadial) {
-        // userSpaceOnUse: convert raw user-space coords to objectBoundingBox
-        // fractions using THIS referencing path's bbox (sampled from its d).
-        const bbox = pathDataD ? pathBBox(pathDataD) : null;
-        fillGradient = bbox ? convertUserSpaceGradient(entry, bbox) : entry.gradient;
-      } else {
-        fillGradient = entry.gradient;
-      }
+      const gradientMatrix = entry.userSpaceTransform
+        ? multiplyMatrices(matrix, entry.userSpaceTransform)
+        : matrix;
+      fillGradient = transformUserSpaceGradient(entry.gradient, gradientMatrix);
     }
   }
 
@@ -519,6 +486,79 @@ const SVG_SHAPE_TAGS: Record<string, true> = {
   polyline: true,
 };
 
+interface SvgClipDefinition {
+  clipPath: Element;
+  shape: Element;
+}
+
+/**
+ * Resolve the simple clip-path form emitted by our static exporter. A model
+ * clip path represents one geometry, so general SVG clip definitions with
+ * multiple shapes are intentionally not flattened into a visually different
+ * intersection. The first renderable shape is enough for self-round-trips.
+ */
+function buildClipLookup(doc: Document): Map<string, SvgClipDefinition> {
+  const clips = new Map<string, SvgClipDefinition>();
+  for (const clipPath of Array.from(doc.querySelectorAll("clipPath"))) {
+    const id = clipPath.getAttribute("id");
+    if (!id || (clipPath.getAttribute("clipPathUnits") || "userSpaceOnUse") !== "userSpaceOnUse") {
+      continue;
+    }
+    const shape = Array.from(
+      clipPath.querySelectorAll("path, rect, circle, ellipse, line, polygon, polyline"),
+    ).find((candidate) => SVG_SHAPE_TAGS[candidate.tagName.toLowerCase()]);
+    if (shape) clips.set(id, { clipPath, shape });
+  }
+  return clips;
+}
+
+/** Get transforms inside a clip definition without accidentally applying the SVG root twice. */
+function clipDefinitionTransform(definition: SvgClipDefinition): Matrix {
+  const chain: Matrix[] = [];
+  let current: Element | null = definition.shape;
+  while (current) {
+    const attr = current.getAttribute("transform");
+    if (attr) chain.unshift(parseSvgTransform(attr));
+    if (current === definition.clipPath) break;
+    current = current.parentElement;
+  }
+  return chain.reduce<Matrix>((matrix, next) => multiplyMatrices(matrix, next), [...IDENTITY]);
+}
+
+function addReferencedClip(
+  element: Element,
+  parentId: string | null,
+  counter: { n: number },
+  namePrefix: string,
+  clips: Map<string, SvgClipDefinition>,
+  layers: Layer[],
+) {
+  const clipId = urlRef(element.getAttribute("clip-path") ?? "");
+  const definition = clipId ? clips.get(clipId) : undefined;
+  if (!definition) return;
+  try {
+    const tag = definition.shape.tagName.toLowerCase();
+    const pathData = svgPathDataFor(definition.shape, tag);
+    if (!pathData.trim()) return;
+    const matrix = multiplyMatrices(
+      getAccumulatedTransform(element),
+      clipDefinitionTransform(definition),
+    );
+    const name = definition.clipPath.getAttribute("id") || `${namePrefix}_clip_${counter.n + 1}`;
+    const clip = layerFromPathData(
+      name,
+      pathData,
+      `${namePrefix}_clip_${counter.n++}`,
+      matrix,
+      {},
+      parentId,
+    );
+    layers.push({ ...clip, type: "clipPath", fillColor: "", strokeColor: "" });
+  } catch {
+    // A malformed external clip must not reject otherwise usable artwork.
+  }
+}
+
 /** Convert a leaf SVG shape element to its `d` string. */
 function svgPathDataFor(element: Element, tag: string): string {
   switch (tag) {
@@ -550,6 +590,7 @@ function walkSvgChildren(
   parentId: string | null,
   counter: { n: number },
   gradients: Map<string, GradientLookupEntry>,
+  clips: Map<string, SvgClipDefinition>,
   namePrefix: string,
   layers: Layer[],
 ): void {
@@ -572,7 +613,10 @@ function walkSvgChildren(
         locked: false,
         parentId,
       } satisfies Layer);
-      walkSvgChildren(child, groupId, counter, gradients, namePrefix, layers);
+      // SVG's clip is scoped to this group. In our retained sibling-order model
+      // a clipPath immediately before the group's children has the same scope.
+      addReferencedClip(child, groupId, counter, namePrefix, clips, layers);
+      walkSvgChildren(child, groupId, counter, gradients, clips, namePrefix, layers);
       continue;
     }
 
@@ -588,7 +632,7 @@ function walkSvgChildren(
           pathData,
           id,
           matrix,
-          getStyle(child, gradients, pathData),
+          getStyle(child, gradients, matrix),
           parentId,
         );
         // Harden: skip any layer whose parsed geometry contains non-finite coords
@@ -647,7 +691,8 @@ export function importLayersFromSvg(svgText: string, namePrefix = "svg") {
   }
 
   const gradients = buildGradientLookup(doc);
+  const clips = buildClipLookup(doc);
   const layers: Layer[] = [];
-  walkSvgChildren(doc.documentElement, null, { n: 0 }, gradients, namePrefix, layers);
+  walkSvgChildren(doc.documentElement, null, { n: 0 }, gradients, clips, namePrefix, layers);
   return layers;
 }

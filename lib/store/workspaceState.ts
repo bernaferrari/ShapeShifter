@@ -2,9 +2,10 @@ import { ensureStableCommandIds } from "../shapeshifter/pathUtils";
 import { computeDetailViewport, computeFitViewport } from "../shapeshifter/camera";
 import { PAGE_ROOT_ID } from "../shapeshifter/scene/owners";
 import type { AnimationState, Layer, PathData, VectorMetadata } from "../shapeshifter/types";
-import type { EditorState, HistoryEntry } from "./editorStore";
+import type { EditorState } from "./editorStore";
 import type { CanvasFrame } from "./defaultWorkspace";
 import type { LegacyDocumentSnapshot } from "../shapeshifter/documentModel";
+import { vectorCoordinateRect } from "../shapeshifter/vectorSpace";
 
 export const cloneLayers = (layers: Layer[]) => structuredClone(layers);
 
@@ -50,58 +51,8 @@ function snapshotFrame(state: EditorState, frame?: CanvasFrame): CanvasFrame {
 
 export function saveActiveFrame(state: EditorState) {
   return state.frames.map((frame) =>
-    frame.id === state.selectedFrameId ? snapshotFrame(state, frame) : cloneFrame(frame),
+    frame.id === state.selectedFrameId ? snapshotFrame(state, frame) : frame,
   );
-}
-
-export function snapshotHistoryEntry(state: EditorState): HistoryEntry {
-  const root = saveActiveRoot(state);
-  return {
-    frames: saveActiveFrame(state),
-    selectedFrameId: state.selectedFrameId,
-    selectedFrameIds: [...state.selectedFrameIds],
-    rootLayers: root.layers,
-    rootAnimation: root.animation,
-    rootHiddenLayerIds: root.hiddenLayerIds,
-    layers: cloneLayers(state.layers),
-    vector: structuredClone(state.vector),
-    animation: structuredClone(state.animation),
-    hiddenLayerIds: [...state.hiddenLayerIds],
-    selectedLayerId: state.selectedLayerId,
-    selectedLayerIds: [...state.selectedLayerIds],
-    selectedLayerRefs: state.selectedLayerRefs.map((ref) => ({ ...ref })),
-    selection: state.selection ? structuredClone(state.selection) : null,
-    selectedPoints: state.selectedPoints.map((point) => structuredClone(point)),
-    selectedSubPaths: state.selectedSubPaths.map((subpath) => structuredClone(subpath)),
-    editingSide: state.editingSide,
-    hasCanvasSelection: state.hasCanvasSelection,
-    selectionKind: state.selectionKind,
-  };
-}
-
-export function restoreHistoryEntry(state: EditorState, entry: HistoryEntry) {
-  const layerExists = entry.layers.some((layer) => layer.id === entry.selectedLayerId);
-  return {
-    frames: entry.frames.map(cloneFrame),
-    selectedFrameId: entry.selectedFrameId,
-    selectedFrameIds: [...entry.selectedFrameIds],
-    rootLayers: cloneLayers(entry.rootLayers),
-    rootAnimation: structuredClone(entry.rootAnimation),
-    rootHiddenLayerIds: [...entry.rootHiddenLayerIds],
-    layers: entry.layers,
-    vector: entry.vector,
-    animation: entry.animation,
-    hiddenLayerIds: entry.hiddenLayerIds,
-    selectedLayerId: layerExists ? entry.selectedLayerId : (entry.layers[0]?.id ?? 0),
-    selectedLayerIds: entry.selectedLayerIds,
-    selectedLayerRefs: entry.selectedLayerRefs.map((ref) => ({ ...ref })),
-    selection: entry.selection,
-    selectedPoints: entry.selectedPoints,
-    selectedSubPaths: entry.selectedSubPaths,
-    editingSide: entry.editingSide,
-    hasCanvasSelection: entry.hasCanvasSelection,
-    selectionKind: entry.selectionKind,
-  };
 }
 
 function normalizeLayerPaths(layer: Layer): Layer {
@@ -152,9 +103,7 @@ export function buildLoadedProjectState(
     rootLayers: [],
     rootAnimation: structuredClone(rootAnimation),
     rootHiddenLayerIds: [],
-    worldViewport: computeFitViewport([
-      { x: 0, y: 0, w: frame.vector.width, h: frame.vector.height },
-    ]),
+    worldViewport: computeFitViewport([{ x: 0, y: 0, ...vectorCoordinateRect(frame.vector) }]),
     detailViewport: computeDetailViewport(frame.vector),
     layers: cloneLayers(layers),
     vector: structuredClone(project.vector),
@@ -214,8 +163,7 @@ export function buildLoadedDocumentState(snapshot: LegacyDocumentSnapshot): Part
   const frameBounds = frames.map((frame) => ({
     x: frame.x,
     y: frame.y,
-    w: frame.vector.width,
-    h: frame.vector.height,
+    ...vectorCoordinateRect(frame.vector),
   }));
 
   return {
@@ -232,7 +180,7 @@ export function buildLoadedDocumentState(snapshot: LegacyDocumentSnapshot): Part
     worldViewport: computeFitViewport(
       frameBounds.length
         ? frameBounds
-        : [{ x: 0, y: 0, w: snapshot.rootVector.width, h: snapshot.rootVector.height }],
+        : [{ x: 0, y: 0, ...vectorCoordinateRect(snapshot.rootVector) }],
     ),
     detailViewport: computeDetailViewport(vector),
     selectedLayerId,

@@ -9,8 +9,7 @@
  * owns the lifecycle while PathCanvas owns only transient rect rendering.
  *
  * References: DESIGN_ID 67dd105e (Key Decision #2: dispatcher as single source of truth for all canvas
- * interactions), PR-01, gesture lifecycle, beads mvd (review), ish (impl task), c9f (parent), dwm (foundation),
- * v6j (vision epic). This finally makes the "dispatcher decides" claim true at the integration layer.
+ * interactions), PR-01, gesture lifecycle.
  */
 
 import type { Point } from "../types";
@@ -28,7 +27,6 @@ export interface HitTestResult {
   commandIndex?: number;
   pointIndex?: number;
   t?: number;
-  // ... more as gestures are implemented
 }
 
 export class GestureDispatcher {
@@ -41,19 +39,30 @@ export class GestureDispatcher {
     this.callbacks = callbacks;
   }
 
+  // Introspection for tests/consumers: whether a gesture lifecycle is in flight.
+  hasActiveGesture(): boolean {
+    return this.activeGesture !== null;
+  }
+
+  // Introspection for tests: the active gesture instance, if any.
+  getActiveGesture(): Gesture | null {
+    return this.activeGesture;
+  }
+
   // Called on pointer down — the main decision point.
-  // PR-01.1 fix round: For select/default tool, we treat "empty" canvas hits or explicit "marquee" intent
-  // as the trigger for box selection. This is the gate. The concrete SelectDragItemsGesture is instantiated
-  // here for the first time in runtime. The beginMarqueeSelection callback is invoked so PathCanvas can
+  // For select/default tool, we treat "empty" canvas hits or explicit "marquee" intent
+  // as the trigger for box selection. This is the gate. The concrete SelectDragItemsGesture is
+  // instantiated here at runtime. The beginMarqueeSelection callback is invoked so PathCanvas can
   // start the visual rect + capture + conditional clear (if !additive).
   handlePointerDown(
     point: Point,
     hit: HitTestResult | null,
     modifiers: { shift: boolean; alt: boolean; ctrl: boolean },
   ) {
-    // Cancel any running gesture
+    // Cancel any running gesture and record it for test introspection.
     if (this.activeGesture) {
       this.activeGesture.cancel?.();
+      this.activeGesture.cancelCalled = true;
       this.activeGesture = null;
     }
 
@@ -62,66 +71,41 @@ export class GestureDispatcher {
     if (tool === "select" || tool === "default") {
       // Marquee / box-select intent decision.
       // Synthetic "marquee" hit (from PathCanvas when it knows it wants marquee) or empty hit or no hit
-      // currently routes here. (PR-02 will evolve this with real AABB hit tests inside the gesture.)
+      // currently routes here.
       const isMarqueeIntent = !hit || hit.type === "empty" || hit.type === "marquee";
 
       if (isMarqueeIntent) {
         this.activeGesture = new SelectDragItemsGesture(this.context, this.callbacks);
-        // (historical) [GestureDispatcher] decided marquee — instantiated first SelectDragItemsGesture (PR-01.1 / ShapeShifter-ish fix round xwx under mvd, DESIGN_ID 67dd105e Key Decision #2)
-        // Decision path hardened (vn7 k88): no console in production; refs preserved in comment only.
 
         // Let the registered callback drive the transient visual start in PathCanvas.
         // The gesture owns the lifecycle; the callback is the bridge for the rect.
         this.callbacks.beginMarqueeSelection?.(point, !!modifiers.shift);
 
-        // Give the concrete gesture its down event (future PR-02 will move more AABB logic here).
+        // Give the concrete gesture its down event (the gesture commits selection on mouse up).
         this.activeGesture.onMouseDown?.(point, modifiers);
         return;
       }
 
       // Future: click-to-select single item path (still routed through dispatcher).
-      // (historical) [GestureDispatcher] select click (non-marquee for now) — hardened vn7, refs in comment.
     } else if (tool === "pen" || tool === "direct") {
-      // PR-02 foundation + ny0 (Bend/Flex Ctrl+drag): direct tool now supports professional curvature flex.
-      // When ctrl is held during drag on a curve/handle, we treat as "flex" intent (user's explicit
-      // vision request for Figma-grade direct manipulation: Ctrl+drag to intelligently flex curves
-      // while preserving smoothness/G1-G2). The concrete flex logic (curvature adjustment math) is
-      // provided via the flexCurvature helper (added to HitTests) and wired in PathCanvas for the
-      // direct mode drag paths (existing cubic/quadraticPointAt + bendSelectedLayerSegment).
-      // This is the first real implementation of the Bend tool behavior on the clean dispatcher.
-      //
-      // Basic Lasso stub also starts here (for pencil or future dedicated lasso tool): we can
-      // begin a polygon/point collection path that will evolve into real lasso hit testing.
+      // Direct tool Ctrl+drag is Bend/Flex curvature intent: when ctrl is held during drag on a
+      // curve/handle, we treat as "flex" intent (Ctrl+drag to intelligently flex curves while
+      // preserving smoothness/G1-G2). The actual flex math + store mutation happens in PathCanvas's
+      // segment/handle drag handlers when toolMode=direct && ctrlKey; this decision point stays
+      // reserved for a future dedicated BendFlexGesture / SelectDragHandleGesture subclass.
       const isFlexIntent = modifiers.ctrl && tool === "direct";
-      if (isFlexIntent) {
-        // (historical) [GestureDispatcher] direct + ctrl — Bend/Flex curvature intent (ny0 under v6j, DESIGN_ID 67dd105e)
-        // Decision path hardened (vn7 k88): no console; refs preserved.
-        // The actual flex math + store mutation happens in PathCanvas handle* (segment/handle drag)
-        // when toolMode=direct && ctrlKey. Dispatcher decision point is here for future dedicated
-        // BendFlexGesture or SelectDragHandleGesture subclass.
-      } else {
-        // Will become SelectDragDrawSegmentsGesture or handle editing
-        // (historical) [GestureDispatcher] would start path edit gesture — hardened vn7.
+      if (!isFlexIntent) {
+        // Will become SelectDragDrawSegmentsGesture or handle editing.
       }
     } else if (tool === "pencil" || tool === "ellipse" || tool === "rectangle") {
-      // Will become shape creation gestures.
-      // 9rp (ShapeShifter-9rp under v6j): pencil is the current Lasso entry (L shortcut in BottomToolPalette).
-      // Real polygon hit testing (pointInPolygon + collectPointsInLasso in HitTests) + refined collection
-      // + shift-additive store commit now live (wired in PathCanvas on up, mirroring marquee).
-      // Future: dedicated LassoSelectGesture + explicit "lasso" ToolMode (per DESIGN_ID 67dd105e).
-      if (tool === "pencil") {
-        // (historical) [GestureDispatcher] pencil/lasso intent (9rp real hit testing live)
-      }
-      // (historical) [GestureDispatcher] would start shape creation — hardened vn7 k88, no runtime console in decision paths.
+      // Pencil is the current Lasso entry (L shortcut): real polygon hit testing lives in
+      // collectPointsInLasso (HitTests), committed from PathCanvas on pointer up, mirroring marquee.
+      // Future: dedicated LassoSelectGesture + explicit "lasso" ToolMode.
     } else if (tool === "paint") {
-      // Paint bucket / fill (rsn under v6j DESIGN 67dd105e): dispatcher sole decision point.
-      // On pointerDown in PathCanvas (when tool=paint): compute hit region via path sampling (pathToPolygons)
-      // + pointInPolygon (odd count for holes) from HitTests/pathUtils. Preview: semi fill overlay on hover
-      // (60fps raf like lasso). Commit on click: mutate hit layer fill* (copy current style via updateSelectedLayer),
-      // pushHistory, select, toast. Works detail+world preview. Undoable, no regressions.
-      // (historical) [GestureDispatcher] paint bucket intent (rsn completeness for professional palette)
+      // Paint bucket / fill: hit region via path sampling + pointInPolygon, commit mutates hit layer
+      // fill via updateSelectedLayer + pushHistory. Wired directly in PathCanvas pointer handlers.
     } else if (tool === "rotate" || tool === "transform") {
-      // "rotate"/"transform" are ToolMode enum members that no UI currently sets
+      // "rotate"/"transform" are ToolMode members that no UI currently sets
       // (BottomToolPalette only exposes select/direct/pen/pencil/paint/knife) — this
       // branch is unreachable today. Routing it to SelectDragItemsGesture would be a
       // no-op anyway: that class only implements the marquee commit on mouseUp, not
@@ -141,10 +125,8 @@ export class GestureDispatcher {
         this.activeGesture.onMouseMove(point, modifiers);
       }
 
-      // Gate the marquee update callback: only while a gesture that cares about marquee is active.
-      // This resolves the review suggestion about unconditional noisy calls in a future with many gesture types.
-      // (For now any active gesture during a marquee path will drive it; the concrete SelectDragItemsGesture
-      // is the one that will be active.)
+      // Gate the marquee update callback: only while a gesture is active, so idle moves don't emit
+      // noisy callback traffic.
       this.callbacks.updateMarquee?.(point);
     }
   }
@@ -164,6 +146,7 @@ export class GestureDispatcher {
   cancelActiveGesture() {
     if (this.activeGesture) {
       this.activeGesture.cancel?.();
+      this.activeGesture.cancelCalled = true;
       this.activeGesture = null;
     }
     // Also clear any in-flight marquee visual.

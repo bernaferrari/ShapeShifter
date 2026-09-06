@@ -33,12 +33,12 @@ than rendered curves. These errors make even valid VectorDrawable geometry unsaf
 
 ## Commands
 
-| Purpose | Command | Expected |
-|---|---|---|
+| Purpose        | Command                                                                                                                                             | Expected |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
 | Geometry tests | `pnpm test -- lib/shapeshifter/__tests__/sceneHitTest.test.ts lib/shapeshifter/__tests__/sceneSelection.test.ts components/editor/canvas/__tests__` | all pass |
-| Full suite | `pnpm test` | all pass |
-| Typecheck | `pnpm typecheck` | exit 0 |
-| Lint | `pnpm lint` | exit 0 |
+| Full suite     | `pnpm test`                                                                                                                                         | all pass |
+| Typecheck      | `pnpm typecheck`                                                                                                                                    | exit 0   |
+| Lint           | `pnpm lint`                                                                                                                                         | exit 0   |
 
 ## Scope
 
@@ -126,4 +126,3 @@ both operands with an actionable diagnostic.
 
 Keep geometry helpers independent of React. Cache flattened curves by geometry
 version so selection performance remains stable as documents grow.
-

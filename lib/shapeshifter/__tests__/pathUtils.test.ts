@@ -6,7 +6,9 @@ import {
   shiftPath,
   splitCommandInHalf,
   autoFixPathPair,
+  prepareForMorph,
   getInterpolatedPath,
+  interpolatedPathIfCompatible,
   arePathsStructurallyCompatible,
   countPathPoints,
   setCommandAsFirst,
@@ -253,6 +255,45 @@ describe("pathUtils", () => {
       const [fixedFrom, fixedTo] = autoFixPathPair(from, to);
       expect(arePathsStructurallyCompatible(fixedFrom, fixedTo)).toBe(true);
     });
+
+    it("splits the aligned segment facing a gap, not mid-subpath (NW index mapping)", () => {
+      // `to` has two extra commands between L(100,0) and L(100,50); the aligner
+      // marks those gap columns on the `from` side, so Auto Fix must subdivide
+      // the segment that follows them — the top edge L(0,0)→L(100,0) — at its
+      // midpoint. A fabricated column/2 index split some unrelated command.
+      const from = parsePath("M 0 0 L 100 0 L 100 50 L 0 50 L 0 0");
+      const to = parsePath("M 0 0 L 50 0 L 75 25 L 100 50 L 50 50 L 0 50 L 0 0");
+      const [fixedFrom, fixedTo] = autoFixPathPair(from, to);
+      expect(arePathsStructurallyCompatible(fixedFrom, fixedTo)).toBe(true);
+      const ends = fixedFrom.subPaths[0].commands
+        .map((cmd) => cmd.points.at(-1))
+        .filter((p) => p)
+        .map((p) => `(${p!.x},${p!.y})`)
+        .join(" ");
+      expect(ends).toContain("(50,0)");
+    });
+
+    it("resolves trailing-gap residue via the fallback without hanging", () => {
+      // The trailing segment on `from` has no following aligned column to
+      // face, so applyAlignmentSplits skips it and equalizeSubpathCommands
+      // must pad the count itself — re-reading command counts from its own
+      // (freshly cloned) result each iteration.
+      const from = parsePath("M 0 0 L 10 0 L 10 10");
+      const to = parsePath("M 0 0 L 10 0 L 10 10 L 15 15");
+      const [fixedFrom, fixedTo] = autoFixPathPair(from, to);
+      expect(arePathsStructurallyCompatible(fixedFrom, fixedTo)).toBe(true);
+      expect(countPathPoints(fixedFrom)).toEqual(countPathPoints(fixedTo));
+    });
+
+    it("prepareForMorph reports real pole positions instead of an empty list", () => {
+      const prepared = prepareForMorph(parsePath("M0 0 L10 10 Z"), parsePath("M1 1 L9 9 Z"));
+      expect(prepared.mapping.polePositions.length).toBe(prepared.from.subPaths.length);
+      expect(prepared.mapping.polePositions.length).toBeGreaterThan(0);
+      for (const pole of prepared.mapping.polePositions) {
+        expect(Number.isFinite(pole.x)).toBe(true);
+        expect(Number.isFinite(pole.y)).toBe(true);
+      }
+    });
   });
 
   describe("getInterpolatedPath", () => {
@@ -315,6 +356,23 @@ describe("pathUtils", () => {
     });
   });
 
+  describe("interpolatedPathIfCompatible", () => {
+    it("matches getInterpolatedPath for Android-compatible pairs", () => {
+      const from = parsePath("M 0 0 L 10 10");
+      const to = parsePath("M 5 5 L 20 20");
+      expect(interpolatedPathIfCompatible(from, to, 0.5)).toBe(getInterpolatedPath(from, to, 0.5));
+    });
+
+    it("returns the start path when Android pathType would reject the pair", () => {
+      const from = parsePath("M 0 0 L 10 10");
+      const to = parsePath("M 0 0 C 2 2 8 8 10 10");
+      expect(interpolatedPathIfCompatible(from, to, 0.5)).toBe(pathToString(from));
+      expect(interpolatedPathIfCompatible(from, to, 0.5)).not.toBe(
+        getInterpolatedPath(from, to, 0.5),
+      );
+    });
+  });
+
   describe("arePathsStructurallyCompatible", () => {
     it("returns true for identical paths", () => {
       const path = parsePath("M 0 0 L 10 10 L 20 20");
@@ -362,6 +420,14 @@ describe("pathUtils", () => {
     it("no-op on index 0", () => {
       const input = "M 0 0 L 10 10 L 20 20 Z";
       const result = pathToString(setCommandAsFirst(parsePath(input), 0, 0));
+      expect(result).toEqual(n(input));
+    });
+
+    it("no-op on open polyline that ends away from its start point", () => {
+      // Regression: the closure test treated every non-empty path as closed,
+      // rotating open polylines and duplicating the first point.
+      const input = "M 4 4 L 4 20 L 20 20 L 20 4";
+      const result = pathToString(setCommandAsFirst(parsePath(input), 0, 2));
       expect(result).toEqual(n(input));
     });
   });
@@ -472,6 +538,29 @@ describe("pathUtils", () => {
       expect(cmd.arcParams!.ry).toBe(5);
       expect(cmd.arcParams!.largeArc).toBe(true);
       expect(cmd.arcParams!.sweep).toBe(false);
+    });
+
+    it("tokenizes spec-legal compact arc flags (SVGO minified)", () => {
+      // "a25 25 0 017 7" = rx=25 ry=25 rot=0 largeArc=0 sweep=1 end=(7,7):
+      // the flags are single digits glued to each other and the endpoint.
+      const result = parsePath("M0 0a25 25 0 017 7");
+      const cmd = result.subPaths[0].commands[1];
+      expect(cmd.type).toBe("A");
+      expect(cmd.arcParams).toEqual({ rx: 25, ry: 25, xRotation: 0, largeArc: false, sweep: true });
+      expect(cmd.points[0]).toEqual({ x: 7, y: 7 });
+    });
+
+    it("keeps multi-digit radii when flags are compact", () => {
+      const result = parsePath("M0 0A5.5 6.5 10 1110 20");
+      const cmd = result.subPaths[0].commands[1];
+      expect(cmd.arcParams).toEqual({
+        rx: 5.5,
+        ry: 6.5,
+        xRotation: 10,
+        largeArc: true,
+        sweep: true,
+      });
+      expect(cmd.points[0]).toEqual({ x: 10, y: 20 });
     });
 
     it("handles scientific notation in coordinates", () => {

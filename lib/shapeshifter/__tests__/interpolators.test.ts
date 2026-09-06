@@ -53,6 +53,15 @@ describe("interpolators", () => {
 
     it("ACCELERATE_DECELERATE at t=0, 0.5, 1", () => {
       expect(evaluateInterpolator(0, "ACCELERATE_DECELERATE")).toBeCloseTo(0, 5);
+      expect(evaluateInterpolator(0.5, "ACCELERATE_DECELERATE")).toBe(0.5);
+      expect(evaluateInterpolator(0.25, "ACCELERATE_DECELERATE")).toBeCloseTo(
+        (1 - Math.cos(Math.PI * 0.25)) / 2,
+        8,
+      );
+      expect(evaluateInterpolator(0.25)).toBeCloseTo(
+        evaluateInterpolator(0.25, "ACCELERATE_DECELERATE"),
+        8,
+      );
       expect(evaluateInterpolator(1, "ACCELERATE_DECELERATE")).toBeCloseTo(1, 5);
     });
 

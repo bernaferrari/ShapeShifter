@@ -3,17 +3,11 @@
 import { useCallback } from "react";
 import { toast } from "sonner";
 import {
-  downloadAnimatedSVG,
-  downloadCSSKeyframes,
-  exportLottieDocument,
-  exportAnimatedVectorDrawable,
-  exportPDF,
-  exportProjectJSON,
-  exportStaticSVG,
-  exportSvgSpritesheet,
-  exportVectorDrawable,
-} from "@/lib/shapeshifter/exporter";
-import { PAGE_ROOT_ID, useEditorStore } from "@/lib/store/editorStore";
+  exportLiveDocument,
+  LIVE_EXPORT_SCOPE,
+  summarizeAndroidWarnings,
+  type LiveExportKind,
+} from "@/lib/store/exportDocument";
 
 export type EditorExportType =
   | "svg"
@@ -56,119 +50,56 @@ function downloadContent(content: BlobPart, type: string, fileName: string) {
 }
 
 export function useProjectExport() {
-  return useCallback((type: string) => {
-    useEditorStore.getState().syncActiveOwner({ includeAnimation: true });
-    const state = useEditorStore.getState();
-    const layer =
-      state.layers.find((candidate) => candidate.id === state.selectedLayerId) ?? state.layers[0];
-    if (!layer) {
-      toast.error("Select a layer to export");
-      return;
-    }
-
+  return useCallback(async (type: string) => {
     if (!isEditorExportType(type)) {
       toast.error(`Unsupported export format: ${type}`);
       return;
     }
-    const exportType = type;
-    const from = layer.from;
-    const to = layer.to ?? from;
-    const name = (layer.name || "vector").trim().replace(/\s+/g, "-").toLocaleLowerCase();
-    const visibleLayers = state.layers.filter((candidate) => candidate.visible !== false);
-    const documentLayers = visibleLayers.length ? visibleLayers : state.layers;
+    const exportType = type as LiveExportKind;
 
     try {
-      if (exportType === "svg" || exportType === "animated") {
-        downloadAnimatedSVG(from, to, name);
-        toast.success("Animated SVG exported");
+      const exported = await exportLiveDocument(exportType);
+      if (
+        exported.scope === "selected-layer" &&
+        LIVE_EXPORT_SCOPE[exportType] === "selected-layer" &&
+        exported.live.layers.length === 0
+      ) {
+        toast.error("Select a layer to export");
         return;
       }
-      if (exportType === "css") {
-        downloadCSSKeyframes(from, to, name);
-        toast.success("CSS keyframes exported");
+      const blocking = exported.androidDiagnostics.filter(
+        (diagnostic) => diagnostic.severity === "error",
+      );
+      if (exportType === "avd" && blocking.length > 0) {
+        toast.error("Android export needs attention", { description: blocking[0]!.message });
         return;
       }
-      if (exportType === "lottie") {
-        const sourceAnimation =
-          state.selectedFrameId === PAGE_ROOT_ID ? state.animation : state.frames.find((frame) => frame.id === state.selectedFrameId)?.animation ?? state.animation;
-        const sourceVector =
-          state.selectedFrameId === PAGE_ROOT_ID ? state.vector : state.frames.find((frame) => frame.id === state.selectedFrameId)?.vector ?? state.vector;
-        downloadContent(
-          JSON.stringify(
-            exportLottieDocument(documentLayers, sourceVector.name || name, {
-              animation: sourceAnimation,
-              vector: sourceVector,
-              duration: sourceAnimation.duration / 1000,
-            }),
-            null,
-            2,
-          ),
-          "application/json",
-          `${name}.json`,
-        );
-        toast.success("Lottie exported");
+      const payload =
+        exported.content instanceof Uint8Array
+          ? (exported.content.buffer.slice(
+              exported.content.byteOffset,
+              exported.content.byteOffset + exported.content.byteLength,
+            ) as ArrayBuffer)
+          : exported.content;
+      downloadContent(payload, exported.mimeType, exported.filename);
+      const warnings = summarizeAndroidWarnings(exported.androidDiagnostics);
+      if (warnings) {
+        const warningLabel = warnings.count === 1 ? "warning" : "warnings";
+        toast.warning(`Exported ${exportType.toUpperCase()} with ${warnings.count} ${warningLabel}`, {
+          description:
+            exportType === "avd"
+              ? `${warnings.description} Full details are in SHAPESHIFTER_EXPORT.txt.`
+              : warnings.description,
+        });
         return;
       }
-      if (exportType === "vector" || exportType === "avd" || exportType === "spritesheet") {
-        const content =
-          exportType === "vector"
-            ? exportVectorDrawable(layer)
-            : exportType === "avd"
-              ? exportAnimatedVectorDrawable(layer)
-              : exportSvgSpritesheet(layer);
-        downloadContent(
-          content,
-          exportType === "spritesheet" ? "image/svg+xml" : "application/xml",
-          `${name}-${exportType}.${exportType === "spritesheet" ? "svg" : "xml"}`,
-        );
-        toast.success(
-          exportType === "vector"
-            ? "Vector Drawable exported"
-            : exportType === "avd"
-              ? "Animated Vector Drawable exported"
-              : "SVG spritesheet exported",
-        );
+      if (exported.staticDiagnostics.length) {
+        toast.warning("Static SVG exported with warning", {
+          description: exported.staticDiagnostics.map((diagnostic) => diagnostic.message).join(" "),
+        });
         return;
       }
-      if (exportType === "json") {
-        const pageRoot = {
-          layers: state.selectedFrameId === PAGE_ROOT_ID ? state.layers : state.rootLayers,
-          animation: state.selectedFrameId === PAGE_ROOT_ID ? state.animation : state.rootAnimation,
-          hiddenLayerIds:
-            state.selectedFrameId === PAGE_ROOT_ID
-              ? state.hiddenLayerIds
-              : state.rootHiddenLayerIds,
-        };
-        downloadContent(
-          JSON.stringify(
-            exportProjectJSON(
-              state.layers,
-              state.vector,
-              state.animation,
-              state.hiddenLayerIds,
-              state.frames,
-              pageRoot,
-            ),
-            null,
-            2,
-          ),
-          "application/json",
-          `${state.vector.name || "shapeshifter"}.shapeshifter`,
-        );
-        toast.success("ShapeShifter project exported");
-        return;
-      }
-      if (exportType === "pdf") {
-        downloadContent(exportPDF(documentLayers), "application/pdf", `${name}.pdf`);
-        toast.success("Vector PDF exported");
-        return;
-      }
-      if (exportType === "static") {
-        downloadContent(exportStaticSVG(documentLayers), "image/svg+xml", `${name}-static.svg`);
-        toast.success("Static SVG exported");
-        return;
-      }
-      toast.error(`Unknown export format: ${type}`);
+      toast.success(`Exported ${exportType.toUpperCase()}`, { description: exported.filename });
     } catch (error) {
       toast.error("Export failed", { description: String(error) });
     }

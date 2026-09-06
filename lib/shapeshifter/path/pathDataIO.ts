@@ -61,6 +61,37 @@ export function parsePath(d: string): PathData {
     return relative ? { x: current.x + x, y: current.y + y } : { x, y };
   };
 
+  // Spec-legal compact arcs glue the two single-digit flags — and sometimes
+  // the following coordinate — onto one token ("a25 25 0 017 7"). The flags
+  // are therefore lexed digit-wise; any remainder of the token is consumed
+  // as a whole number by the next readArcNumber call.
+  let arcTail = "";
+  // Reads a flag digit ('0' or '1'). Returns null when no argument is available
+  // or the next character is not a flag digit — e.g. a glued decimal fragment
+  // ("0.57" after a flag) is not spec-legal flag concatenation — so the caller
+  // can drop the malformed command instead of fabricating sweep=true.
+  const readFlagDigit = (): string | null => {
+    if (!arcTail) {
+      if (index >= tokens.length || isCommand(tokens[index])) return null;
+      arcTail = tokens[index++];
+    }
+    const digit = arcTail[0]!;
+    if (digit !== "0" && digit !== "1") return null;
+    arcTail = arcTail.slice(1);
+    return digit;
+  };
+  // Reads a full arc coordinate: the remainder of a glued token, or the next
+  // token. Returns NaN when no argument is available.
+  const readArcNumber = (): number => {
+    if (!arcTail) {
+      if (index >= tokens.length || isCommand(tokens[index])) return NaN;
+      arcTail = tokens[index++];
+    }
+    const value = Number(arcTail);
+    arcTail = "";
+    return value;
+  };
+
   while (index < tokens.length) {
     if (isCommand(tokens[index])) {
       commandToken = tokens[index++];
@@ -125,25 +156,35 @@ export function parsePath(d: string): PathData {
       }
 
       if (type === "A") {
-        // Preserve arc data (rx, ry, xRotation, largeArc, sweep, endpoint)
-        // Full arc-to-bezier conversion will be done in Wave 1 (W1-T1).
-        // For now we at least stop silent data loss so roundtrips and later
-        // conversion are possible.
-        if (!canReadNumbers(7)) {
+        // Preserve arc data (rx, ry, xRotation, largeArc, sweep, endpoint).
+        // Per spec the two flags are single digits and may be concatenated
+        // with each other or the endpoint ("a25 25 0 017 7"), so they are
+        // lexed digit-wise while radii/rotation/endpoint read whole tokens.
+        const rx = readArcNumber();
+        const ry = readArcNumber();
+        const xRotation = readArcNumber();
+        const largeArcDigit = readFlagDigit();
+        const sweepDigit = readFlagDigit();
+        const endX = readArcNumber();
+        const endY = readArcNumber();
+        if (
+          !largeArcDigit ||
+          !sweepDigit ||
+          ![rx, ry, xRotation, endX, endY].every(Number.isFinite)
+        ) {
+          // Discard any partially-consumed glued token so it cannot leak into
+          // a following arc command.
+          arcTail = "";
           skipMalformedArgs();
           break;
         }
-        const rx = readNumber();
-        const ry = readNumber();
-        const xRotation = readNumber();
-        const largeArc = readNumber() !== 0;
-        const sweep = readNumber() !== 0;
-        const end = readPoint(relative);
-        current = end;
+        const largeArc = largeArcDigit === "1";
+        const sweep = sweepDigit === "1";
+        current = { x: relative ? current.x + endX : endX, y: relative ? current.y + endY : endY };
         subPath.commands.push({
           id: generateId(),
           type: "A",
-          points: [end],
+          points: [{ ...current }],
           arcParams: { rx, ry, xRotation, largeArc, sweep },
         });
         continue;
@@ -220,7 +261,7 @@ export function pathToString(pathData: PathData): string {
   return d.trim();
 }
 
-/** Axis-aligned bounds of path command points (object-selection / resize AABB). */
+/** Curve-aware AABB (exact analytic Bézier extrema) for object selection / resize. */
 export function getPathDataBounds(
   pathData: PathData | null | undefined,
 ): { x: number; y: number; w: number; h: number } | null {

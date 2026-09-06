@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compileAndroidArtboard } from "../androidCompiler";
-import { parsePath } from "../pathUtils";
+import { parsePath, pathToString } from "../pathUtils";
 import type { AndroidArtboardInput } from "../androidCompiler";
 
 const input = (): AndroidArtboardInput => ({
@@ -151,5 +151,294 @@ describe("Android artboard compiler", () => {
     const vector = compileAndroidArtboard(source).files[0]!.content;
     expect(vector).toContain('android:fillAlpha="0.25"');
     expect(vector).toContain('android:strokeAlpha="0.4"');
+  });
+
+  it("keeps animated alpha under static parent alpha in preview/export parity", () => {
+    const source = input();
+    source.layers[0] = { ...source.layers[0]!, alpha: 0.5 };
+    source.layers[1] = { ...source.layers[1]!, alpha: 0.8, fillAlpha: 0.5 };
+    source.animation.blocks = [
+      {
+        id: "fade",
+        layerId: "heart",
+        propertyName: "alpha",
+        fromValue: 0,
+        toValue: 1,
+        startTime: 0,
+        endTime: 1000,
+      },
+    ];
+
+    const animator = compileAndroidArtboard(source).files.find((file) =>
+      file.path.includes("fillalpha"),
+    )?.content;
+    // Editor: parent .5 × static fillAlpha .5 × animated alpha (0 → 1).
+    expect(animator).toContain('android:valueFrom="0"');
+    expect(animator).toContain('android:valueTo="0.25"');
+  });
+
+  it("scales direct fill-alpha tracks by the effective layer alpha", () => {
+    const source = input();
+    source.layers[0] = { ...source.layers[0]!, alpha: 0.5 };
+    source.layers[1] = { ...source.layers[1]!, alpha: 0.8, fillAlpha: 0.2 };
+    source.animation.blocks = [
+      {
+        id: "fill-fade",
+        layerId: "heart",
+        propertyName: "fillAlpha",
+        fromValue: 0,
+        toValue: 1,
+        startTime: 0,
+        endTime: 1000,
+      },
+    ];
+
+    const animator = compileAndroidArtboard(source).files.find((file) =>
+      file.path.includes("fillalpha"),
+    )?.content;
+    // Editor: parent .5 × path alpha .8 × animated fillAlpha (0 → 1).
+    expect(animator).toContain('android:valueTo="0.4"');
+  });
+
+  it("keeps gradient stop alpha separate from static and animated fill alpha", () => {
+    const source = input();
+    source.layers[0] = { ...source.layers[0]!, alpha: 0.5 };
+    source.layers[1] = {
+      ...source.layers[1]!,
+      alpha: 0.8,
+      fillAlpha: 0.5,
+      fillGradient: {
+        type: "linear",
+        angle: 0,
+        stops: [
+          { offset: 0, color: "#ff0000", opacity: 1 },
+          { offset: 1, color: "#0000ff", opacity: 0.5 },
+        ],
+      },
+    };
+    source.animation.blocks = [
+      {
+        id: "gradient-fade",
+        layerId: "heart",
+        propertyName: "fillAlpha",
+        fromValue: 0,
+        toValue: 1,
+        startTime: 0,
+        endTime: 1000,
+      },
+    ];
+
+    const bundle = compileAndroidArtboard(source);
+    const vector = bundle.files.find((file) => file.path.endsWith("_vector.xml"))?.content ?? "";
+    const animator = bundle.files.find((file) => file.path.includes("fillalpha"))?.content ?? "";
+    // Static path alpha = group .5 × path .8 × fill .5; stop alpha contains
+    // only its own color/opacity and is never multiplied again by the animator.
+    expect(vector).toContain('android:fillAlpha="0.2"');
+    expect(vector).toContain('android:color="#ffff0000"');
+    expect(vector).toContain('android:color="#800000ff"');
+    expect(animator).toContain('android:valueFrom="0"');
+    expect(animator).toContain('android:valueTo="0.4"');
+  });
+
+  it("blocks alpha plus fill-alpha tracks that Android cannot multiply faithfully", () => {
+    const source = input();
+    source.animation.blocks = [
+      {
+        id: "fade-layer",
+        layerId: "heart",
+        propertyName: "alpha",
+        fromValue: 0,
+        toValue: 1,
+        startTime: 0,
+        endTime: 1000,
+      },
+      {
+        id: "fade-fill",
+        layerId: "heart",
+        propertyName: "fillAlpha",
+        fromValue: 1,
+        toValue: 0.5,
+        startTime: 0,
+        endTime: 1000,
+      },
+    ];
+
+    expect(compileAndroidArtboard(source).diagnostics).toContainEqual(
+      expect.objectContaining({ code: "ALPHA_TRACK_COMBINATION_UNSUPPORTED", severity: "error" }),
+    );
+  });
+
+  it("reserves generated transform target names against authored layer names", () => {
+    const source = input();
+    source.layers = [
+      {
+        ...source.layers[1]!,
+        id: "foo",
+        name: "foo",
+        parentId: undefined,
+        translateX: 1,
+      },
+      {
+        ...source.layers[1]!,
+        id: "authored-wrapper-name",
+        name: "foo_transform",
+        parentId: undefined,
+        translateX: 0,
+      },
+    ];
+    source.animation.blocks = [
+      {
+        id: "move-foo",
+        layerId: "foo",
+        propertyName: "translateX",
+        fromValue: 1,
+        toValue: 3,
+        startTime: 0,
+        endTime: 1000,
+      },
+      {
+        id: "fade-authored",
+        layerId: "authored-wrapper-name",
+        propertyName: "fillAlpha",
+        fromValue: 0,
+        toValue: 1,
+        startTime: 0,
+        endTime: 1000,
+      },
+    ];
+
+    const bundle = compileAndroidArtboard(source);
+    const vector = bundle.files.find((file) => file.path.endsWith("_vector.xml"))?.content ?? "";
+    const names = [
+      ...vector.matchAll(/<(?:(?:group)|(?:path))\s+[^>]*android:name="([^"]+)"/g),
+    ].map((match) => match[1]);
+    expect(names).toContain("foo_transform");
+    expect(names).toContain("foo_transform_2");
+    expect(new Set(names).size).toBe(names.length);
+    const avd = bundle.files.find((file) => file.path.endsWith("_animated.xml"))?.content ?? "";
+    expect(avd).toContain('android:name="foo_transform"');
+    expect(avd).toContain('android:name="foo_transform_2"');
+  });
+
+  it("rejects unsupported clip animation properties instead of silently changing output", () => {
+    const source = input();
+    source.layers[1] = { ...source.layers[1]!, id: "clip", type: "clipPath" };
+    source.animation.blocks = [
+      {
+        id: "clip-color",
+        layerId: "clip",
+        propertyName: "fillColor",
+        fromValue: "#000000",
+        toValue: "#ffffff",
+        startTime: 0,
+        endTime: 1000,
+      },
+    ];
+
+    const bundle = compileAndroidArtboard(source);
+    expect(bundle.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "CLIP_PROPERTY_UNSUPPORTED", layerId: "clip" }),
+    );
+  });
+
+  it("bakes clip transforms without ending their sibling scope and preserves evenOdd clips", () => {
+    const source = input();
+    const clipPath = parsePath("M0 0 L10 0 L10 10 L0 10 Z");
+    source.layers = [
+      source.layers[0]!,
+      {
+        id: "clip",
+        name: "Clip",
+        type: "clipPath",
+        parentId: "group",
+        from: clipPath,
+        pathData: clipPath,
+        visible: true,
+        locked: false,
+        translateX: 4,
+        scaleX: 2,
+        fillType: "evenOdd",
+      },
+      {
+        ...source.layers[1]!,
+        id: "art",
+        name: "Art",
+        parentId: "group",
+        translateX: 0,
+      },
+    ];
+    source.animation.blocks = [
+      {
+        id: "clip-morph",
+        layerId: "clip",
+        propertyName: "pathData",
+        fromValue: "M0 0 L10 0 L10 10 L0 10 Z",
+        toValue: "M1 0 L11 0 L11 10 L1 10 Z",
+        startTime: 0,
+        endTime: 1000,
+      },
+    ];
+
+    const bundle = compileAndroidArtboard(source);
+    const vector = bundle.files.find((file) => file.path.endsWith("_vector.xml"))?.content ?? "";
+    const animator =
+      bundle.files.find((file) => file.path.includes("clip_pathdata"))?.content ?? "";
+    const transformedFrom = pathToString(parsePath("M4 0 L24 0 L24 10 L4 10 Z"));
+    const transformedTo = pathToString(parsePath("M6 0 L26 0 L26 10 L6 10 Z"));
+
+    expect(vector).toContain(
+      `<clip-path android:name="clip" android:pathData="${transformedFrom}" android:fillType="evenOdd" />`,
+    );
+    expect(vector).not.toContain('android:name="clip_transform"');
+    expect(vector).toMatch(
+      /<clip-path[^>]*android:name="clip"[^>]*\/>\s*<path\s+[\s\S]*android:name="art"/,
+    );
+    expect(animator).toContain(`android:valueFrom="${transformedFrom}"`);
+    expect(animator).toContain(`android:valueTo="${transformedTo}"`);
+  });
+
+  it("uses Android's default accelerate-decelerate timing when no interpolator is stored", () => {
+    const source = input();
+    source.animation.blocks = [
+      {
+        id: "move-default",
+        layerId: "heart",
+        propertyName: "translateX",
+        fromValue: 0,
+        toValue: 4,
+        startTime: 0,
+        endTime: 1000,
+      },
+    ];
+
+    const bundle = compileAndroidArtboard(source);
+    expect(
+      bundle.files.some((file) => file.content.includes("accelerate_decelerate_interpolator")),
+    ).toBe(true);
+    expect(
+      bundle.diagnostics.some((diagnostic) => diagnostic.code === "INTERPOLATOR_FALLBACK"),
+    ).toBe(false);
+  });
+
+  it("only emits API-24 path attributes when needed and reports unsupported dashes", () => {
+    const source = input();
+    source.layers[1] = {
+      ...source.layers[1]!,
+      fillType: "evenOdd",
+      strokeDasharray: "2 1",
+    };
+
+    const bundle = compileAndroidArtboard(source);
+    const vector = bundle.files[0]!.content;
+    expect(vector).toContain('android:fillType="evenOdd"');
+    expect(bundle.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "STROKE_DASHARRAY_UNSUPPORTED", layerId: "heart" }),
+    );
+    expect(bundle.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "ANDROID_MIN_SDK",
+        message: expect.stringContaining("API 24"),
+      }),
+    );
   });
 });

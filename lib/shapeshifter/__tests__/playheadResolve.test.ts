@@ -237,6 +237,7 @@ describe("colorAtTime", () => {
       toValue: "#00ff00",
       startTime: 0,
       endTime: 1000,
+      interpolator: "LINEAR",
     };
     expect(colorAtTime(layer, [block], "fillColor", 499, 1000, "#fallback")).toBe("#807f00");
     expect(colorAtTime(layer, [block], "fillColor", 501, 1000, "#fallback")).toBe("#7f8000");
@@ -316,6 +317,15 @@ describe("pathDAtTime", () => {
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
     expect(result).toBe(getInterpolatedPath(from, to, progress01));
+  });
+
+  it("holds the start path when an implicit from/to morph is Android-incompatible", () => {
+    const from = parsePath("M0 0 L10 10");
+    const to = parsePath("M0 0 C2 2 8 8 10 10");
+    const layer = makeLayer({ from, to });
+    const result = pathDAtTime(layer, [], 500, 1000, 0.5);
+    expect(result).toBe(pathToString(from));
+    expect(result).not.toBe(getInterpolatedPath(from, to, 0.5));
   });
 });
 

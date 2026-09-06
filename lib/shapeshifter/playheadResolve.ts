@@ -4,7 +4,7 @@
  * once per blocks array and gives every preview/export consumer identical values.
  */
 import { evaluateInterpolator } from "./interpolators";
-import { getInterpolatedPath, parsePath, pathToString } from "./pathUtils";
+import { interpolatedPathIfCompatible, parsePath, pathToString } from "./pathUtils";
 import type { Layer, PathData, TimelineBlock } from "./types";
 
 type CompiledBlocks = Map<string, TimelineBlock[]>;
@@ -28,7 +28,9 @@ export function compileTimelineBlocks(blocks: TimelineBlock[]): CompiledBlocks {
   for (const entries of compiled.values()) {
     entries.sort(
       (a, b) =>
-        a.startTime - b.startTime || a.endTime - b.endTime || String(a.id).localeCompare(String(b.id)),
+        a.startTime - b.startTime ||
+        a.endTime - b.endTime ||
+        String(a.id).localeCompare(String(b.id)),
     );
   }
   compiledBlockCache.set(blocks, compiled);
@@ -73,7 +75,8 @@ function resolveSegment(segments: TimelineBlock[], ms: number): ResolvedSegment 
   if (active.length) {
     const block = active.at(-1)!;
     const span = block.endTime - block.startTime;
-    const progress = span <= 0 ? 1 : evaluateInterpolator((ms - block.startTime) / span, block.interpolator);
+    const progress =
+      span <= 0 ? 1 : evaluateInterpolator((ms - block.startTime) / span, block.interpolator);
     return { block, progress: clamp01(progress), before: false, after: false };
   }
 
@@ -216,19 +219,11 @@ export function pathDAtTime(
     const pathTo = pathFromValue(segment.block.toValue, layer.to ?? pathFrom);
     if (segment.progress <= 0) return pathToString(pathFrom);
     if (segment.progress >= 1) return pathToString(pathTo);
-    try {
-      return getInterpolatedPath(pathFrom, pathTo, segment.progress);
-    } catch {
-      return pathToString(pathFrom);
-    }
+    return interpolatedPathIfCompatible(pathFrom, pathTo, segment.progress);
   }
 
   if (layer.to && progress01 > 0) {
-    try {
-      return getInterpolatedPath(from, layer.to, clamp01(progress01));
-    } catch {
-      return pathToString(from);
-    }
+    return interpolatedPathIfCompatible(from, layer.to, clamp01(progress01));
   }
   return pathToString(layer.pathData ?? from);
 }

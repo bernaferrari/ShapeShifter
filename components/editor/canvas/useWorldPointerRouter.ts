@@ -171,12 +171,7 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
           (candidate) => String(candidate.id) === String(options.selectedLayerId),
         );
         if (!layer || layer.locked) return;
-        useEditorStore
-          .getState()
-          .addPointOnPath(
-            rawLocal.x,
-            rawLocal.y,
-          );
+        useEditorStore.getState().addPointOnPath(rawLocal.x, rawLocal.y);
         return;
       }
 
@@ -266,7 +261,10 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
       if (options.penDragRef.current && options.editOrigin) {
         const point = options.worldPointFromEvent(event.clientX, event.clientY);
         if (point) {
-          const ownerPoint = { x: point.x - options.editOrigin.x, y: point.y - options.editOrigin.y };
+          const ownerPoint = {
+            x: point.x - options.editOrigin.x,
+            y: point.y - options.editOrigin.y,
+          };
           const inverse = options.editWorldMatrix ? inverseAffine(options.editWorldMatrix) : null;
           const local = options.editWorldMatrix
             ? inverse

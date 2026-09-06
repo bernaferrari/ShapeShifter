@@ -14,8 +14,8 @@ export interface Rect {
   height: number;
 }
 
-export interface HitTestResult {
-  type: "selection-handle" | "segment" | "curve" | "pivot" | "empty";
+export interface SelectionHitTest {
+  type: "selection-handle" | "pivot";
   handle?: "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "rotate";
   subPathIndex?: number;
   commandIndex?: number;
@@ -30,7 +30,7 @@ export function hitTestSelectionBounds(
   bounds: Rect,
   handleSize = 8,
   pivotRadius = 10,
-): HitTestResult | null {
+): SelectionHitTest | null {
   const hs = handleSize / 2;
   const cx = bounds.x + bounds.width / 2;
   const cy = bounds.y + bounds.height / 2;
@@ -42,16 +42,17 @@ export function hitTestSelectionBounds(
   }
 
   // Corner and edge handles
-  const handles: Array<{ x: number; y: number; handle: NonNullable<HitTestResult["handle"]> }> = [
-    { x: bounds.x, y: bounds.y, handle: "nw" },
-    { x: cx, y: bounds.y, handle: "n" },
-    { x: bounds.x + bounds.width, y: bounds.y, handle: "ne" },
-    { x: bounds.x + bounds.width, y: cy, handle: "e" },
-    { x: bounds.x + bounds.width, y: bounds.y + bounds.height, handle: "se" },
-    { x: cx, y: bounds.y + bounds.height, handle: "s" },
-    { x: bounds.x, y: bounds.y + bounds.height, handle: "sw" },
-    { x: bounds.x, y: cy, handle: "w" },
-  ];
+  const handles: Array<{ x: number; y: number; handle: NonNullable<SelectionHitTest["handle"]> }> =
+    [
+      { x: bounds.x, y: bounds.y, handle: "nw" },
+      { x: cx, y: bounds.y, handle: "n" },
+      { x: bounds.x + bounds.width, y: bounds.y, handle: "ne" },
+      { x: bounds.x + bounds.width, y: cy, handle: "e" },
+      { x: bounds.x + bounds.width, y: bounds.y + bounds.height, handle: "se" },
+      { x: cx, y: bounds.y + bounds.height, handle: "s" },
+      { x: bounds.x, y: bounds.y + bounds.height, handle: "sw" },
+      { x: bounds.x, y: cy, handle: "w" },
+    ];
 
   for (const h of handles) {
     if (Math.abs(point.x - h.x) <= hs && Math.abs(point.y - h.y) <= hs) {
@@ -59,36 +60,6 @@ export function hitTestSelectionBounds(
     }
   }
 
-  return null;
-}
-
-/**
- * Hit test against path segments (for direct/edit path mode).
- */
-export function hitTestEditPathSegments(
-  point: Point,
-  pathData: { subPaths: Array<{ commands: Array<{ points: Point[] }> }> },
-  threshold = 6,
-): HitTestResult | null {
-  for (let si = 0; si < pathData.subPaths.length; si++) {
-    const sub = pathData.subPaths[si];
-    for (let ci = 0; ci < sub.commands.length; ci++) {
-      const cmd = sub.commands[ci];
-      if (cmd.points.length === 0) continue;
-
-      for (let pi = 0; pi < cmd.points.length; pi++) {
-        const p = cmd.points[pi];
-        if (Math.hypot(point.x - p.x, point.y - p.y) < threshold) {
-          return {
-            type: "segment",
-            subPathIndex: si,
-            commandIndex: ci,
-            t: 0, // simplified
-          };
-        }
-      }
-    }
-  }
   return null;
 }
 
@@ -174,13 +145,11 @@ export function rectsIntersect(
  * intelligently adjusts the control point(s) to "flex" the curve while preserving
  * smoothness (approximate G1 tangent continuity at endpoints).
  *
- * This is the mathematical heart of the user's explicit vision request:
- * "Ctrl+drag to flex paths" / "professional direct manipulation" / Figma-grade Bend tool
- * (see BottomToolPalette "Direct / Bend (Flex) – Ctrl+drag curves" and ny0).
+ * This supports Ctrl+drag curve flexing in the direct-editing tool.
  *
  * Implementation leverages the existing cubicPointAt / quadraticPointAt helpers
  * (ported in PathCanvas; future: move to shared mathUtils/geometry for reuse).
- * For a real production version this would solve for new control points given
+ * A future refinement could solve for new control points given
  * a desired offset along the normal at t while keeping endpoint tangents stable.
  *
  * PR-02 foundation + ny0 (ShapeShifter-ny0 under v6j): first real implementation
@@ -350,28 +319,42 @@ export function collectPointsInLasso(
         const isCubic = cmd.type === "C" && cmd.points.length >= 3;
         const isQuad = cmd.type === "Q" && cmd.points.length >= 2;
         if (isCubic || isQuad) {
-          const p0 = cmd.points[cmd.points.length - 1]; // rough proxy start for interior
+          // C commands carry [cp1, cp2, end], Q carries [cp, end]: neither includes the
+          // segment start. The true start of this segment is the previous command's
+          // endpoint; without it the sampled "curve" would be a degenerate loop through
+          // the control points back to the endpoint (wrong in both directions: misses
+          // curves whose body crosses the lasso, and probes the control-point hull for
+          // curves wholly outside it).
+          const prevCmd = ci > 0 ? sp.commands[ci - 1] : undefined;
+          const p0 =
+            prevCmd && prevCmd.points && prevCmd.points.length > 0
+              ? prevCmd.points[prevCmd.points.length - 1]
+              : null;
           const p1 = cmd.points[0];
           const p2 = isCubic ? cmd.points[1] : null;
           const p3 = cmd.points[cmd.points.length - 1]; // end
           const numSamples = isCubic ? 5 : 4;
           let hitOnCurve = false;
-          for (let s = 1; s < numSamples; s++) {
-            const t = s / numSamples;
-            const mt = 1 - t;
-            let sx: number;
-            let sy: number;
-            if (isCubic && p2) {
-              sx = mt ** 3 * p0.x + 3 * mt ** 2 * t * p1.x + 3 * mt * t ** 2 * p2.x + t ** 3 * p3.x;
-              sy = mt ** 3 * p0.y + 3 * mt ** 2 * t * p1.y + 3 * mt * t ** 2 * p2.y + t ** 3 * p3.y;
-            } else {
-              // quad
-              sx = mt ** 2 * p0.x + 2 * mt * t * p1.x + t ** 2 * p3.x;
-              sy = mt ** 2 * p0.y + 2 * mt * t * p1.y + t ** 2 * p3.y;
-            }
-            if (pointInPolygon({ x: sx, y: sy }, lassoPoints)) {
-              hitOnCurve = true;
-              break;
+          if (p0) {
+            for (let s = 1; s < numSamples; s++) {
+              const t = s / numSamples;
+              const mt = 1 - t;
+              let sx: number;
+              let sy: number;
+              if (isCubic && p2) {
+                sx =
+                  mt ** 3 * p0.x + 3 * mt ** 2 * t * p1.x + 3 * mt * t ** 2 * p2.x + t ** 3 * p3.x;
+                sy =
+                  mt ** 3 * p0.y + 3 * mt ** 2 * t * p1.y + 3 * mt * t ** 2 * p2.y + t ** 3 * p3.y;
+              } else {
+                // quad
+                sx = mt ** 2 * p0.x + 2 * mt * t * p1.x + t ** 2 * p3.x;
+                sy = mt ** 2 * p0.y + 2 * mt * t * p1.y + t ** 2 * p3.y;
+              }
+              if (pointInPolygon({ x: sx, y: sy }, lassoPoints)) {
+                hitOnCurve = true;
+                break;
+              }
             }
           }
           if (hitOnCurve) {
@@ -401,31 +384,4 @@ export function collectPointsInLasso(
     }
   }
   return hits;
-}
-
-// 1td advanced (14l): advanced curvature beyond flexCurvature (tension-aware for professional direct manipulation).
-// Builds directly on existing flex impl (no dup math). Smallest delta for "advanced curvature tools".
-// Refs: 1td, 14l, v6j DESIGN 67dd105e, y5q.
-export function advancedCurvature(
-  start: Point,
-  control1: Point | null,
-  control2: Point | null,
-  end: Point,
-  t: number,
-  delta: Point,
-  options: { strength?: number; tension?: number } = {},
-): { control1: Point | null; control2: Point | null } {
-  const { strength = 1.0, tension = 0.5 } = options;
-  const base = flexCurvature(start, control1, control2, end, t, delta, strength);
-  // Tension modulates flex toward chord (0.5=neutral, < pulls smoother, > more dramatic) for curvature beyond basic flex.
-  if ((base.control1 || base.control2) && tension !== 0.5) {
-    const adj = (tension - 0.5) * 0.4;
-    if (base.control1) {
-      base.control1 = { x: base.control1.x * (1 - adj), y: base.control1.y * (1 - adj) };
-    }
-    if (base.control2) {
-      base.control2 = { x: base.control2.x * (1 - adj), y: base.control2.y * (1 - adj) };
-    }
-  }
-  return base;
 }
