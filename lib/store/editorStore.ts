@@ -59,7 +59,11 @@ import type {
   TimelineClipboard,
   TimelinePasteResult,
 } from "../shapeshifter/motion/timelineClipboard";
-import type { TimelinePreviewRange } from "../shapeshifter/motion/previewRange";
+import type {
+  TimelinePreviewRange,
+  PlaybackMode,
+  PlaybackDirection,
+} from "../shapeshifter/motion/previewRange";
 
 export type { CanvasFrame } from "./defaultWorkspace";
 export { PAGE_ROOT_ID, type LayerSelectionRef } from "../shapeshifter/scene/owners";
@@ -199,6 +203,8 @@ export interface EditorState {
   speed: number;
   isSlowMotion: boolean;
   isRepeating: boolean;
+  playbackMode: PlaybackMode;
+  playbackDirection: PlaybackDirection;
 
   // UI
   zoom: number;
@@ -410,6 +416,7 @@ export interface EditorState {
   setSpeed: (speed: number) => void;
   toggleSlowMotion: () => void;
   toggleRepeating: () => void;
+  setPlaybackMode: (mode: PlaybackMode) => void;
 
   // UI
   setZoom: (zoom: number) => void;
@@ -679,6 +686,8 @@ export const useEditorStore = create<EditorState>((rawSet, get) => {
     speed: 1,
     isSlowMotion: false,
     isRepeating: true,
+    playbackMode: "forward",
+    playbackDirection: 1,
     zoom: 1,
     snapToGrid: true,
     gridDivisions: 4,
@@ -989,6 +998,8 @@ export const useEditorStore = create<EditorState>((rawSet, get) => {
         zoom: 1,
         isSlowMotion: false,
         isRepeating: true,
+        playbackMode: "forward",
+        playbackDirection: 1,
         isPlaying: false,
         isActionMode: false,
         morphPreview: null,

@@ -20,7 +20,7 @@ beforeEach(() => {
   useEditorStore.getState().resetProject();
   useEditorStore.setState({ timelineZoom: 1, timelineScrollX: 0 });
   useTimelineViewSettings.setState({ unit: "milliseconds", fps: 30, snapping: true });
-  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1000);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1240);
 });
 afterEach(() => {
   rendered?.unmount();
@@ -49,6 +49,38 @@ function KeyboardTimeline() {
 }
 
 describe("timeline navigation", () => {
+  it("offers back-and-forth playback with an explicit snapping hint", async () => {
+    rendered = renderEditorComponent(<LayerTimeline />);
+    await timelineOption("Back-and-forth playback");
+    expect(useEditorStore.getState().playbackMode).toBe("back-and-forth");
+    expect(useEditorStore.getState().isRepeating).toBe(true);
+    await timelineOption("Back-and-forth playback");
+    expect(useEditorStore.getState().playbackMode).toBe("forward");
+    if (button("Timeline options").getAttribute("aria-expanded") !== "true") {
+      React.act(() => button("Timeline options").click());
+    }
+    expect(document.body.textContent).toContain("Hold Alt / Option to ignore snapping.");
+    expect(document.body.textContent).not.toContain("bypass");
+  });
+
+  it("uses one scroll viewport for names and tracks and records its vertical position", () => {
+    rendered = renderEditorComponent(<LayerTimeline />);
+    const viewport = rendered.container.querySelector<HTMLElement>(
+      '[aria-label="Animation tracks"]',
+    )!;
+    const names = rendered.container.querySelector<HTMLElement>("[data-timeline-layer-names]")!;
+    const segments = rendered.container.querySelector<HTMLElement>("[data-timeline-segments]")!;
+    expect(viewport.contains(names)).toBe(true);
+    expect(viewport.contains(segments)).toBe(true);
+    expect(names.className).not.toContain("overflow-y-auto");
+    expect(segments.className).not.toContain("overflow-auto");
+    React.act(() => {
+      viewport.scrollTop = 90;
+      viewport.dispatchEvent(new Event("scroll"));
+    });
+    expect(useEditorStore.getState().timelineScrollY).toBe(90);
+  });
+
   it("snaps ruler scrubbing to fractional keys with a visible guide, and honors Alt and the snap toggle", async () => {
     const store = useEditorStore.getState();
     store.addTimelineBlock(store.layers[0].id, "rotation");
@@ -169,7 +201,9 @@ describe("timeline navigation", () => {
       '[aria-label="Timeline playhead"]',
     )!;
     const content = rendered.container.querySelector<HTMLElement>("[data-timeline-content]")!;
-    const tracks = content.parentElement!;
+    const tracks = rendered.container.querySelector<HTMLElement>(
+      '[aria-label="Animation tracks"]',
+    )!;
     const head = () => rendered!.container.querySelector<HTMLElement>("[data-timeline-playhead]")!;
     expect(head().style.left).toBe("840px");
     await timelineOption("Zoom in");

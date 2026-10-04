@@ -67,8 +67,6 @@ function mount(rows: TimelineRow[]) {
       <TimelineLayersPane
         rows={rows}
         width={260}
-        scrollRef={React.useRef<HTMLDivElement>(null)}
-        onScroll={() => {}}
         onToggleFrame={onToggleFrame}
         onToggleGroup={() => {}}
         blocksForLayer={(frameId, layerId) =>

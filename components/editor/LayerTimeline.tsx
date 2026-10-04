@@ -59,6 +59,7 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
   const togglePlayback = useEditorStore((state) => state.togglePlayback);
   const isPlaying = useEditorStore((state) => state.isPlaying);
   const isRepeating = useEditorStore((state) => state.isRepeating);
+  const playbackMode = useEditorStore((state) => state.playbackMode);
   const selectedBlockIds = useEditorStore((state) => state.selectedBlockIds);
   const isSlowMotion = useEditorStore((state) => state.isSlowMotion);
   const storedPreviewRange = useEditorStore((state) => state.timelinePreviewRange);
@@ -85,14 +86,12 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
     if (isTimelineEmpty) setEmptyHintDismissed(false);
   }, [isTimelineEmpty]);
 
-  const leftScrollRef = React.useRef<HTMLDivElement>(null);
-  const rightScrollRef = React.useRef<HTMLDivElement>(null);
+  const timelineScrollRef = React.useRef<HTMLDivElement>(null);
   const rulerRef = React.useRef<HTMLDivElement>(null);
   const sectionRef = React.useRef<HTMLElement>(null);
   const scrubCleanupRef = React.useRef<(() => void) | null>(null);
   React.useEffect(() => () => scrubCleanupRef.current?.(), [selectedFrameId]);
-  const navigation = useTimelineNavigation(sectionRef, rightScrollRef, LAYERS_W);
-  const syncingScroll = React.useRef(false);
+  const navigation = useTimelineNavigation(sectionRef, timelineScrollRef, LAYERS_W);
 
   React.useEffect(() => {
     // Keep the accessible slider value current without rerendering the ruler's
@@ -119,17 +118,6 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
         updateValue();
     });
   }, [timeUnit, fps]);
-
-  const syncScroll = (source: "left" | "right") => {
-    if (syncingScroll.current) return;
-    syncingScroll.current = true;
-    const from = source === "left" ? leftScrollRef.current : rightScrollRef.current;
-    const to = source === "left" ? rightScrollRef.current : leftScrollRef.current;
-    if (from && to) to.scrollTop = from.scrollTop;
-    requestAnimationFrame(() => {
-      syncingScroll.current = false;
-    });
-  };
 
   const [collapsedFrameIds, setCollapsedFrameIds] = React.useState<Set<string>>(() => new Set());
   const [collapsedGroupKeys, setCollapsedGroupKeys] = React.useState<Set<string>>(() => new Set());
@@ -245,9 +233,7 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
       ? Math.max(1, Math.min(5, Math.round((rulerMajorStepMs * fps) / 1000)))
       : 5;
   const rulerMinorStepMs = rulerMajorStepMs / rulerMinorPerMajor;
-  const selectedBlocks = animation.blocks.filter((block) =>
-    selectedBlockIds.includes(block.id),
-  );
+  const selectedBlocks = animation.blocks.filter((block) => selectedBlockIds.includes(block.id));
   const selectedRange = selectedBlocks.length
     ? {
         start: Math.min(...selectedBlocks.map((block) => block.startTime)),
@@ -400,12 +386,20 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
             >
               <Ellipsis className="size-3.5" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" side="top" className="w-56">
+            <DropdownMenuContent align="start" side="top" className="w-64">
               <DropdownMenuCheckboxItem
                 checked={isRepeating}
                 onCheckedChange={() => useEditorStore.getState().toggleRepeating()}
               >
                 Loop playback
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={playbackMode === "back-and-forth"}
+                onCheckedChange={(checked) =>
+                  useEditorStore.getState().setPlaybackMode(checked ? "back-and-forth" : "forward")
+                }
+              >
+                Back-and-forth playback
               </DropdownMenuCheckboxItem>
               <DropdownMenuCheckboxItem
                 checked={isSlowMotion}
@@ -418,8 +412,10 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
                 onCheckedChange={(checked) => setSnapping(Boolean(checked))}
               >
                 Snap to keyframes
-                <DropdownMenuShortcut>⌥ bypass</DropdownMenuShortcut>
               </DropdownMenuCheckboxItem>
+              <p className="px-2 py-1 text-[11px] leading-relaxed whitespace-nowrap text-muted-foreground">
+                Hold Alt / Option to ignore snapping.
+              </p>
               <DropdownMenuSeparator />
               <DropdownMenuRadioGroup
                 value={timeUnit}
@@ -679,40 +675,42 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
       </div>
 
       {/* ══ Body: names | tracks ══ */}
-      <div className="relative flex min-h-0 flex-1">
-        <TimelineLayersPane
-          rows={timelineRows}
-          width={LAYERS_W}
-          scrollRef={leftScrollRef}
-          onScroll={() => syncScroll("left")}
-          onToggleFrame={toggleFrameExpanded}
-          onToggleGroup={toggleGroupExpanded}
-          blocksForLayer={blocksForLayerInFrame}
-          blocksForProperty={blocksForPropertyInFrame}
-        />
+      <div
+        ref={timelineScrollRef}
+        className="relative min-h-0 flex-1 overflow-auto"
+        aria-label="Animation tracks"
+        tabIndex={-1}
+        onScroll={(event) => {
+          const element = event.currentTarget;
+          useEditorStore.getState().setTimelineScroll(element.scrollLeft, element.scrollTop);
+        }}
+      >
+        <div className="flex min-h-full" style={{ width: LAYERS_W + navigation.contentWidth }}>
+          <TimelineLayersPane
+            rows={timelineRows}
+            width={LAYERS_W}
+            onToggleFrame={toggleFrameExpanded}
+            onToggleGroup={toggleGroupExpanded}
+            blocksForLayer={blocksForLayerInFrame}
+            blocksForProperty={blocksForPropertyInFrame}
+          />
 
-        <TimelineTracksPane
-          rows={timelineRows}
-          blocksForLayer={blocksForLayerInFrame}
-          blocksForProperty={blocksForPropertyInFrame}
-          contentWidth={navigation.contentWidth}
-          majorStep={rulerMajorStepMs}
-          gridStep={snapping ? (timeUnit === "frames" ? 1000 / fps : rulerMinorStepMs) : 1}
-          snapping={snapping}
-          onSnapChange={reportSnap}
-          keyboardStep={timeUnit === "frames" ? 1000 / fps : 1}
-          empty={isTimelineEmpty}
-          emptyHintDismissed={emptyHintDismissed}
-          onDismissEmptyHint={() => setEmptyHintDismissed(true)}
-          scrollRef={rightScrollRef}
-          onScroll={() => {
-            syncScroll("right");
-            const element = rightScrollRef.current;
-            if (element)
-              useEditorStore.getState().setTimelineScroll(element.scrollLeft, element.scrollTop);
-          }}
-          formatProfile={formatProfile}
-        />
+          <TimelineTracksPane
+            rows={timelineRows}
+            blocksForLayer={blocksForLayerInFrame}
+            blocksForProperty={blocksForPropertyInFrame}
+            contentWidth={navigation.contentWidth}
+            majorStep={rulerMajorStepMs}
+            gridStep={snapping ? (timeUnit === "frames" ? 1000 / fps : rulerMinorStepMs) : 1}
+            snapping={snapping}
+            onSnapChange={reportSnap}
+            keyboardStep={timeUnit === "frames" ? 1000 / fps : 1}
+            empty={isTimelineEmpty}
+            emptyHintDismissed={emptyHintDismissed}
+            onDismissEmptyHint={() => setEmptyHintDismissed(true)}
+            formatProfile={formatProfile}
+          />
+        </div>
       </div>
     </section>
   );

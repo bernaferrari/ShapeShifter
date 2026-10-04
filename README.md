@@ -23,7 +23,7 @@ This is a modern React and TypeScript rewrite of [Alex Lockwood’s ShapeShifter
 
 - **Property animation.** Animate geometry, position, rotation, scale, opacity, colors, stroke width, and trim paths, with the supported properties exposed for each layer type.
 - **Precise timing.** Snap to nearby keyframes, the playhead, and the grid with a visible guide. Move selected segments together while preserving their spacing and linked endpoints; hold Alt/Option to bypass snapping.
-- **Direct keyframe editing.** Double-click, right-click, or press Enter on a diamond to edit its exact time and value beside the timeline. Insert at the playhead, copy compatible segments, zoom and pan, or loop a selected preview range.
+- **Direct keyframe editing.** Double-click, right-click, or press Enter on a diamond to edit its exact time and value beside the timeline. Insert at the playhead, copy compatible segments, zoom and pan, or preview the full animation or a selected range with forward or back-and-forth playback.
 - **Custom easing.** Use Android presets or edit cubic Bézier handles and their numeric coordinates. Numeric motion preserves overshoot.
 - **Value and velocity graphs.** Inspect one numeric segment with property units and the same easing calculation used by playback.
 - **Morph preparation.** Edit both path endpoints and resolve command compatibility before generating an Android animation.

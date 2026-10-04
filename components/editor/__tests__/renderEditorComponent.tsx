@@ -46,6 +46,7 @@ export function buttonWithText(container: ParentNode, text: string): HTMLButtonE
 /** Opens a dropdown menu from its trigger and activates the item whose text starts with `itemText`. */
 export async function chooseMenuItem(trigger: Element, itemText: string) {
   await act(async () => {
+    if (trigger.getAttribute("aria-expanded") === "true") return;
     trigger.dispatchEvent(
       new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
     );

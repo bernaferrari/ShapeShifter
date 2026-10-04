@@ -130,6 +130,8 @@ export function buildLoadedProjectState(
     speed: 1,
     isSlowMotion: false,
     isRepeating: true,
+    playbackMode: "forward",
+    playbackDirection: 1,
     zoom: 1,
     snapToGrid: true,
     toolMode: "select",

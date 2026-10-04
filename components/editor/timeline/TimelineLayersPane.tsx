@@ -17,8 +17,6 @@ const ROW_PROPERTY_HEIGHT = 28;
 interface TimelineLayersPaneProps {
   rows: TimelineRow[];
   width: number;
-  scrollRef: React.RefObject<HTMLDivElement | null>;
-  onScroll: () => void;
   onToggleFrame: (frameId: string) => void;
   onToggleGroup: (rowKey: string) => void;
   blocksForLayer: TimelineProjection["blocksForLayer"];
@@ -28,8 +26,6 @@ interface TimelineLayersPaneProps {
 export function TimelineLayersPane({
   rows,
   width,
-  scrollRef,
-  onScroll,
   onToggleFrame,
   onToggleGroup,
   blocksForLayer,
@@ -54,10 +50,9 @@ export function TimelineLayersPane({
 
   return (
     <div
-      ref={scrollRef}
-      className="min-h-0 shrink-0 overflow-y-auto overflow-x-hidden border-r border-border"
+      className="sticky left-0 z-10 shrink-0 border-r border-border bg-card"
+      data-timeline-layer-names
       style={{ width }}
-      onScroll={onScroll}
     >
       {rows.map((row) => {
         if (row.kind === "frame") {

@@ -14,6 +14,7 @@ type SessionAction =
   | "setSpeed"
   | "toggleSlowMotion"
   | "toggleRepeating"
+  | "setPlaybackMode"
   | "setZoom"
   | "toggleSnap"
   | "setGridDivisions"
@@ -165,19 +166,23 @@ export function createSessionActions(set: SetEditorState, get: () => EditorState
   return {
     togglePlayback: () =>
       set((state) => {
+        if (!state.isPlaying && state.progress === 0) {
+          return { isPlaying: true, playbackDirection: 1 };
+        }
         const atEnd = state.progress >= 0.999;
-        return !state.isPlaying && atEnd
+        return !state.isPlaying && atEnd && state.playbackMode === "forward"
           ? { isPlaying: true, progress: 0 }
           : { isPlaying: !state.isPlaying };
       }),
     setProgress: (progress) => {
       if (!Number.isFinite(progress)) return;
       // Point tools stay active while scrubbing: they edit the shape at the playhead.
-      set({ progress: Math.max(0, Math.min(1, progress)) });
+      set({ progress: Math.max(0, Math.min(1, progress)), playbackDirection: 1 });
     },
     setSpeed: (speed) => set({ speed }),
     toggleSlowMotion: () => set((state) => ({ isSlowMotion: !state.isSlowMotion })),
     toggleRepeating: () => set((state) => ({ isRepeating: !state.isRepeating })),
+    setPlaybackMode: (playbackMode) => set({ playbackMode, playbackDirection: 1 }),
     setZoom: (zoom) =>
       set((state) => {
         const detailViewport = zoomDetailAtCenter(state, zoom);

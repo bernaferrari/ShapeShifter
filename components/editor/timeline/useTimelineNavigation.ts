@@ -7,7 +7,7 @@ import { anchoredTimelineScroll } from "./timelineScale";
 /** One pixel/time mapping drives ruler, tracks, pointer editing, and playhead. */
 export function useTimelineNavigation(
   sectionRef: React.RefObject<HTMLElement | null>,
-  tracksRef: React.RefObject<HTMLDivElement | null>,
+  viewportRef: React.RefObject<HTMLDivElement | null>,
   layersWidth: number,
 ) {
   const storedZoom = useEditorStore((state) => state.timelineZoom);
@@ -17,18 +17,20 @@ export function useTimelineNavigation(
   const pendingAnchor = React.useRef<{ progress: number; anchor: number } | null>(null);
 
   React.useLayoutEffect(() => {
-    const element = tracksRef.current;
+    const element = viewportRef.current;
     if (!element) return;
     const measure = () =>
-      setWidth(Math.max(1, element.clientWidth || element.getBoundingClientRect().width));
+      setWidth(
+        Math.max(1, (element.clientWidth || element.getBoundingClientRect().width) - layersWidth),
+      );
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [tracksRef]);
+  }, [viewportRef, layersWidth]);
 
   React.useLayoutEffect(() => {
-    const element = tracksRef.current;
+    const element = viewportRef.current;
     if (!element) return;
     const state = useEditorStore.getState();
     const desired = pendingAnchor.current
@@ -42,7 +44,7 @@ export function useTimelineNavigation(
     pendingAnchor.current = null;
     element.scrollLeft = desired;
     if (state.timelineScrollX !== desired) state.setTimelineScroll(desired, element.scrollTop);
-  }, [zoom, width, tracksRef]);
+  }, [zoom, width, viewportRef]);
 
   const zoomBy = React.useCallback(
     (factor: number, pixelAnchor?: number) => {
@@ -68,17 +70,17 @@ export function useTimelineNavigation(
   const focusPlayhead = React.useCallback(() => {
     const state = useEditorStore.getState();
     const desired = anchoredTimelineScroll(state.progress, width, zoom);
-    if (tracksRef.current) tracksRef.current.scrollLeft = desired;
-    state.setTimelineScroll(desired, tracksRef.current?.scrollTop ?? 0);
-  }, [width, zoom, tracksRef]);
+    if (viewportRef.current) viewportRef.current.scrollLeft = desired;
+    state.setTimelineScroll(desired, viewportRef.current?.scrollTop ?? 0);
+  }, [width, zoom, viewportRef]);
 
   const fit = React.useCallback(() => {
     const state = useEditorStore.getState();
     pendingAnchor.current = { progress: 0, anchor: 0 };
     state.setTimelineZoom(1);
-    state.setTimelineScroll(0, tracksRef.current?.scrollTop ?? 0);
-    if (tracksRef.current) tracksRef.current.scrollLeft = 0;
-  }, [tracksRef]);
+    state.setTimelineScroll(0, viewportRef.current?.scrollTop ?? 0);
+    if (viewportRef.current) viewportRef.current.scrollLeft = 0;
+  }, [viewportRef]);
 
   React.useEffect(() => {
     const section = sectionRef.current;
@@ -89,19 +91,22 @@ export function useTimelineNavigation(
       if (event.ctrlKey || event.metaKey) {
         event.preventDefault();
         zoomBy(Math.exp(-event.deltaY * 0.005), Math.min(width, x));
-      } else if (event.shiftKey && zoom > 1 && tracksRef.current) {
+      } else if (event.shiftKey && zoom > 1 && viewportRef.current) {
         event.preventDefault();
         const desired = Math.max(
           0,
-          Math.min(width * (zoom - 1), tracksRef.current.scrollLeft + event.deltaY + event.deltaX),
+          Math.min(
+            width * (zoom - 1),
+            viewportRef.current.scrollLeft + event.deltaY + event.deltaX,
+          ),
         );
-        tracksRef.current.scrollLeft = desired;
-        useEditorStore.getState().setTimelineScroll(desired, tracksRef.current.scrollTop);
+        viewportRef.current.scrollLeft = desired;
+        useEditorStore.getState().setTimelineScroll(desired, viewportRef.current.scrollTop);
       }
     };
     section.addEventListener("wheel", onWheel, { passive: false });
     return () => section.removeEventListener("wheel", onWheel);
-  }, [sectionRef, tracksRef, layersWidth, zoomBy, width, zoom]);
+  }, [sectionRef, viewportRef, layersWidth, zoomBy, width, zoom]);
 
   React.useEffect(
     () =>
@@ -110,17 +115,17 @@ export function useTimelineNavigation(
           !state.isPlaying ||
           state.progress === previous.progress ||
           zoom <= 1 ||
-          !tracksRef.current
+          !viewportRef.current
         )
           return;
-        const position = state.progress * width * zoom - tracksRef.current.scrollLeft;
+        const position = state.progress * width * zoom - viewportRef.current.scrollLeft;
         if (position < 0 || position > width) {
           const desired = anchoredTimelineScroll(state.progress, width, zoom, 0.1);
-          tracksRef.current.scrollLeft = desired;
-          state.setTimelineScroll(desired, tracksRef.current.scrollTop);
+          viewportRef.current.scrollLeft = desired;
+          state.setTimelineScroll(desired, viewportRef.current.scrollTop);
         }
       }),
-    [width, zoom, tracksRef],
+    [width, zoom, viewportRef],
   );
 
   return { zoom, width, contentWidth: width * zoom, scrollLeft, zoomBy, focusPlayhead, fit };

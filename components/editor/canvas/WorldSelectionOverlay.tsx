@@ -315,7 +315,7 @@ function WorldSelectionOverlayComponent({
                   width={handleSize * 2}
                   height={handleSize * 2}
                   rx={worldPerPx}
-                  fill="var(--background)"
+                  fill="#ffffff"
                   stroke="var(--primary)"
                   strokeWidth={1.25}
                   vectorEffect="non-scaling-stroke"

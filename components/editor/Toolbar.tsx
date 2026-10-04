@@ -248,6 +248,7 @@ function MainMenu({
   );
   const resetProject = useEditorStore((state) => state.resetProject);
   const isRepeating = useEditorStore((state) => state.isRepeating);
+  const playbackMode = useEditorStore((state) => state.playbackMode);
   const isSlowMotion = useEditorStore((state) => state.isSlowMotion);
   const toggleRepeating = useEditorStore((state) => state.toggleRepeating);
   const toggleSlowMotion = useEditorStore((state) => state.toggleSlowMotion);
@@ -409,6 +410,14 @@ function MainMenu({
             <DropdownMenuSeparator />
             <DropdownMenuCheckboxItem checked={isRepeating} onCheckedChange={toggleRepeating}>
               Loop playback
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={playbackMode === "back-and-forth"}
+              onCheckedChange={(checked) =>
+                useEditorStore.getState().setPlaybackMode(checked ? "back-and-forth" : "forward")
+              }
+            >
+              Back-and-forth playback
             </DropdownMenuCheckboxItem>
             <DropdownMenuCheckboxItem checked={isSlowMotion} onCheckedChange={toggleSlowMotion}>
               Slow motion

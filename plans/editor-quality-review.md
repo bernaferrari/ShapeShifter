@@ -122,3 +122,11 @@ These ideas were adapted to ShapeShifter's millisecond-based Android segment mod
 Validation: 98 test files and **1,412 tests passed**; TypeScript, lint, and the production build passed. Regression coverage includes fractional snapping, zoom-invariant thresholds, linked groups, collisions, inherited locks, one-step Undo, pointer interruption, invalid drafts, numeric/color/path values, keyboard opening, and explicit keyframe deletion.
 
 Real browser controls confirmed fractional time entry at 17.25 ms, keyboard focus and Escape cancellation, and a two-property drag snapping exactly to the 777.25 ms playhead while preserving segment spacing. Production preview: http://localhost:3004. [Editor screenshot](../artifacts/editor-review/editor.jpg).
+
+## Playback and selection refinement — October 4, 2026
+
+Back-and-forth preview reverses at both endpoints without jumping, respects selected preview ranges and speed, preserves direction across pause/resume, and completes one return trip when looping is disabled. The setting is available in Timeline options, View, and the document inspector. Preview settings leave authored and exported motion unchanged.
+
+Layer names and tracks now share one native scroll viewport. Names stay fixed during horizontal zoom and pan; both columns scroll vertically together. Endpoint hit areas no longer create an unnecessary horizontal scrollbar in fit view. Removed the redundant animation diamond from the Layers sidebar, replaced “bypass” with a single-line explanation of Alt/Option snapping, and made all four selection corner handles white within their blue outlines.
+
+Validation: **1,402 tests across 98 files passed**, along with TypeScript, lint, and the production build. Browser controls verified a return from 950 ms to zero, scrolling over both timeline columns, fixed names during horizontal scrolling, and white handles over a black rectangle. Visual proofs: [selection handles](../artifacts/editor-review/selection-handles.jpg) and [playback options](../artifacts/editor-review/playback-options.jpg).

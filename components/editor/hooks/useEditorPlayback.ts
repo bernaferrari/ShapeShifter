@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useEditorStore } from "@/lib/store/editorStore";
 import {
+  advanceBackAndForthPlaybackTime,
   advancePlaybackTime,
   resolveTimelinePreviewRange,
 } from "@/lib/shapeshifter/motion/previewRange";
@@ -27,18 +28,24 @@ export function useEditorPlayback() {
         store.selectedFrameId,
         duration,
       );
-      const next = advancePlaybackTime(
+      const args = [
         store.progress * duration,
         elapsed,
         speed,
         duration,
         range,
         store.isRepeating,
-      );
-      store.setProgress(next.time / duration);
-      if (next.finished) store.togglePlayback();
-
-      frameId = requestAnimationFrame(tick);
+      ] as const;
+      const next =
+        store.playbackMode === "back-and-forth"
+          ? advanceBackAndForthPlaybackTime(...args, store.playbackDirection)
+          : { ...advancePlaybackTime(...args), direction: 1 as const };
+      useEditorStore.setState({
+        progress: next.time / duration,
+        playbackDirection: next.direction,
+        ...(next.finished && { isPlaying: false }),
+      });
+      if (!next.finished) frameId = requestAnimationFrame(tick);
     };
 
     frameId = requestAnimationFrame(tick);

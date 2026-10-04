@@ -304,7 +304,6 @@ export function LayersPanel({
       const canContainLayers = layer.type === "group";
       const expanded = normalizedQuery.length > 0 || !collapsedGroups.has(key);
       const selected = selectionKind === "layer" && selectedKeys.has(key);
-      const animated = owner.blocks.some((block) => String(block.layerId) === String(layer.id));
       const renaming = renamingKey === key;
       const activeDropPosition =
         dropTarget?.ownerId === owner.id && String(dropTarget.layerId) === String(layer.id)
@@ -452,13 +451,6 @@ export function LayersPanel({
                 }}
               >
                 <span className="truncate">{layer.name || "Layer"}</span>
-                {animated && (
-                  <span
-                    className="size-1.5 shrink-0 rotate-45 rounded-[1px] bg-primary"
-                    title="Contains animation"
-                    aria-label="Contains animation"
-                  />
-                )}
               </button>
             )}
             <div className="flex shrink-0 items-center">

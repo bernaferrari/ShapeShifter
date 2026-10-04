@@ -64,9 +64,8 @@ export function Inspector() {
   React.useEffect(() => {
     const view = useInspectorView.getState();
     const owner = view.easingBlockId
-      ? useEditorStore
-          .getState()
-          .animation.blocks.find((block) => block.id === view.easingBlockId)?.layerId
+      ? useEditorStore.getState().animation.blocks.find((block) => block.id === view.easingBlockId)
+          ?.layerId
       : undefined;
     if (owner !== undefined && String(owner) !== String(selectedLayerId)) view.close();
   }, [selectedLayerId]);
@@ -321,10 +320,7 @@ export function Inspector() {
   if (easingBlock)
     return (
       <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-        <EasingPanel
-          block={easingBlock}
-          onBack={() => useInspectorView.getState().close()}
-        />
+        <EasingPanel block={easingBlock} onBack={() => useInspectorView.getState().close()} />
       </div>
     );
 
@@ -613,6 +609,7 @@ function DocumentPanel() {
   const duration = useEditorStore((state) => state.animation.duration);
   const setAnimationDuration = useEditorStore((state) => state.setAnimationDuration);
   const isRepeating = useEditorStore((state) => state.isRepeating);
+  const playbackMode = useEditorStore((state) => state.playbackMode);
   const toggleRepeating = useEditorStore((state) => state.toggleRepeating);
   const vector = useEditorStore((state) => state.vector);
   return (
@@ -639,6 +636,19 @@ function DocumentPanel() {
               className="size-3.5 accent-primary"
               checked={isRepeating}
               onChange={toggleRepeating}
+            />
+          </label>
+          <label className="flex h-7 items-center justify-between text-[11px] text-muted-foreground">
+            Back-and-forth playback
+            <input
+              type="checkbox"
+              className="size-3.5 accent-primary"
+              checked={playbackMode === "back-and-forth"}
+              onChange={(event) =>
+                useEditorStore
+                  .getState()
+                  .setPlaybackMode(event.target.checked ? "back-and-forth" : "forward")
+              }
             />
           </label>
         </Section>

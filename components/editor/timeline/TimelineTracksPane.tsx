@@ -148,8 +148,6 @@ interface TimelineTracksPaneProps {
   empty: boolean;
   emptyHintDismissed: boolean;
   onDismissEmptyHint: () => void;
-  scrollRef: React.RefObject<HTMLDivElement | null>;
-  onScroll: () => void;
   /** When set, property rows carrying a capabilityNote get a warning glyph. */
   formatProfile?: FormatProfile;
 }
@@ -167,8 +165,6 @@ export function TimelineTracksPane({
   empty,
   emptyHintDismissed,
   onDismissEmptyHint,
-  scrollRef,
-  onScroll,
   formatProfile,
 }: TimelineTracksPaneProps) {
   const frames = useEditorStore((state) => state.frames);
@@ -180,13 +176,7 @@ export function TimelineTracksPane({
   const hasCanvasSelection = useEditorStore((state) => state.hasCanvasSelection);
 
   return (
-    <div
-      ref={scrollRef}
-      className="relative min-h-0 min-w-0 flex-1 overflow-auto bg-background"
-      aria-label="Animation tracks"
-      tabIndex={-1}
-      onScroll={onScroll}
-    >
+    <div className="relative min-w-0 flex-1 overflow-clip bg-background" data-timeline-segments>
       <div
         data-timeline-content
         className="relative min-h-full"
