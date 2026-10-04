@@ -43,6 +43,10 @@ Supported static reparenting preserves appearance. Transfers involving animated 
 
 The timeline supports numeric, color, and path endpoint authoring, linked keyframe insertion, custom cubic easing, compatible segment copy/paste, and a loopable preview range. Display and snapping can use 24, 30, or 60 fps; destination playback remains controlled by its renderer.
 
+Double-click, right-click, or press Enter on a keyframe diamond to edit its exact time and value in a popover. Fractional drafts validate before committing; Escape cancels. Deletion is explicit and linked endpoints remain coherent.
+
+Magnetic snapping targets nearby keyframes, the playhead, and timeline bounds within an eight-pixel threshold at every zoom level. A visible guide identifies the target; Alt/Option bypasses snapping. Selected segments move with one shared offset and one Undo step. Linked neighbors follow their shared endpoint, unrelated segments prevent overlap, and inherited layer locks block edits. Escape, lost pointer capture, and unmount cancel an owned drag safely.
+
 Value and velocity graphs show one numeric segment. Velocity is a sampled numerical derivative in property units per second; color and path segments have no numeric velocity graph. Inserting a keyframe into accelerate–decelerate easing preserves the current pose but changes transition timing.
 
 ## Interoperability exports

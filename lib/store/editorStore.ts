@@ -435,6 +435,11 @@ export interface EditorState {
     offset: number,
     options?: { recordHistory?: boolean },
   ) => void;
+  moveTimelineBlocks: (
+    blockIds: string[],
+    offset: number,
+    options?: { recordHistory?: boolean },
+  ) => void;
   updateTimelineKeyframe: (
     blockId: string,
     edge: "start" | "end",

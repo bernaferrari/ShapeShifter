@@ -9,7 +9,8 @@ import { useEditorStore } from "@/lib/store/editorStore";
 import { cn } from "@/lib/utils";
 import { TimelineKeyframeDiamond, TimelinePropertyBlock } from "./TimelinePropertyBlock";
 import type { TimelineProjection, TimelineRow } from "./timelineProjection";
-import { shiftTimelineItems } from "./timelineTiming";
+import type { TimelineSnapTarget } from "./timelineTiming";
+import { useTimelineGesture } from "./useTimelineGesture";
 
 const ROW_SELECTED = "bg-primary/10";
 const ROW_LAYER_HEIGHT = 30;
@@ -17,12 +18,6 @@ const ROW_PROPERTY_HEIGHT = 28;
 const OBJECT_CLIP_HEIGHT = 18;
 
 type ObjectSpan = { start: number; end: number; blocks: TimelineBlock[] };
-type DragSession = {
-  startX: number;
-  historyRecorded: boolean;
-  items: { id: string; originalStart: number; originalEnd: number }[];
-};
-
 function ReadonlyPropertyRail({ block, duration }: { block: TimelineBlock; duration: number }) {
   const start = (block.startTime / duration) * 100;
   const end = (block.endTime / duration) * 100;
@@ -52,6 +47,8 @@ function TimelineObjectClip({
   interactive,
   gridStep,
   keyboardStep,
+  snapping,
+  onSnapChange,
 }: {
   span: ObjectSpan;
   duration: number;
@@ -59,24 +56,13 @@ function TimelineObjectClip({
   interactive: boolean;
   gridStep: number;
   keyboardStep: number;
+  snapping: boolean;
+  onSnapChange: (target: TimelineSnapTarget | null) => void;
 }) {
-  const dragRef = React.useRef<DragSession | null>(null);
+  const gesture = useTimelineGesture({ gridStep, snapping, onSnapChange });
   const left = (span.start / duration) * 100;
   const width = Math.max(1.2, ((span.end - span.start) / duration) * 100);
   const primaryId = span.blocks[0]?.id;
-
-  const endDrag = (event: React.PointerEvent, cancelled = false) => {
-    const session = dragRef.current;
-    dragRef.current = null;
-    if (cancelled && session?.historyRecorded) {
-      useEditorStore.getState().cancelLastHistoryTransaction();
-    }
-    try {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    } catch {
-      // Capture may already be released by the browser.
-    }
-  };
 
   return (
     <button
@@ -93,61 +79,24 @@ function TimelineObjectClip({
           : "border-border bg-muted text-muted-foreground hover:bg-accent",
       )}
       style={{ left: `${left}%`, width: `${width}%`, height: OBJECT_CLIP_HEIGHT }}
-      title={`Path · ${span.start}–${span.end} ms · Alt-drag for precise timing`}
+      title={`Path · ${span.start}–${span.end} ms · Snap to keys and playhead · Alt-drag for precise timing`}
       onPointerDown={
         interactive
           ? (event) => {
               if (event.button !== 0) return;
               event.stopPropagation();
-              event.currentTarget.setPointerCapture?.(event.pointerId);
-              dragRef.current = {
-                startX: event.clientX,
-                historyRecorded: false,
-                items: span.blocks.map((block) => ({
-                  id: block.id,
-                  originalStart: block.startTime,
-                  originalEnd: block.endTime,
-                })),
-              };
               const store = useEditorStore.getState();
+              const ids = span.blocks.map((block) => block.id);
               if (span.blocks[0]) store.selectLayer(span.blocks[0].layerId);
-              store.selectBlocks(span.blocks.map((block) => block.id));
+              store.selectBlocks(ids);
+              gesture.begin(event, ids);
             }
           : undefined
       }
-      onPointerMove={(event) => {
-        const session = dragRef.current;
-        if (!session || !primaryId || !session.items.some((item) => item.id === primaryId)) return;
-        const track = event.currentTarget.closest("[data-timeline-row]") as HTMLElement | null;
-        const trackWidth = Math.max(1, track?.getBoundingClientRect().width ?? 300);
-        const deltaTime = ((event.clientX - session.startX) / trackWidth) * duration;
-        const shift = shiftTimelineItems(
-          session.items,
-          deltaTime,
-          duration,
-          event.altKey,
-          gridStep,
-        );
-        const nextItems = session.items.map((item) => {
-          return { item, startTime: item.originalStart + shift, endTime: item.originalEnd + shift };
-        });
-        const store = useEditorStore.getState();
-        if (
-          !session.historyRecorded &&
-          nextItems.some(
-            ({ item, startTime, endTime }) =>
-              startTime !== item.originalStart || endTime !== item.originalEnd,
-          )
-        ) {
-          store.pushHistory();
-          session.historyRecorded = true;
-        }
-        for (const { item, startTime, endTime } of nextItems) {
-          store.updateTimelineBlock(item.id, { startTime, endTime }, { recordHistory: false });
-        }
-      }}
-      onPointerUp={(event) => endDrag(event)}
-      onPointerCancel={(event) => endDrag(event, true)}
+      onPointerMove={gesture.move}
+      onPointerUp={(event) => gesture.end(event)}
+      onPointerCancel={(event) => gesture.end(event, true)}
+      onLostPointerCapture={(event) => gesture.end(event, true)}
       onClick={(event) => {
         event.stopPropagation();
         if (span.blocks.length) {
@@ -164,26 +113,10 @@ function TimelineObjectClip({
           return;
         event.preventDefault();
         if (event.key === "ArrowUp" || event.key === "ArrowDown") return;
-        const items = span.blocks.map((block) => ({
-          originalStart: block.startTime,
-          originalEnd: block.endTime,
-        }));
-        const shift = shiftTimelineItems(
-          items,
+        useEditorStore.getState().moveTimelineBlocks(
+          span.blocks.map((block) => block.id),
           (event.key === "ArrowLeft" ? -1 : 1) * keyboardStep * (event.shiftKey ? 10 : 1),
-          duration,
-          false,
-          keyboardStep,
         );
-        if (!shift) return;
-        const store = useEditorStore.getState();
-        store.pushHistory();
-        for (const block of span.blocks)
-          store.updateTimelineBlock(
-            block.id,
-            { startTime: block.startTime + shift, endTime: block.endTime + shift },
-            { recordHistory: false },
-          );
       }}
     >
       <span className="pointer-events-none absolute inset-y-[2px] left-[2.5px] w-[1.5px] rounded-full bg-current opacity-40" />
@@ -210,6 +143,8 @@ interface TimelineTracksPaneProps {
   majorStep: number;
   gridStep: number;
   keyboardStep: number;
+  snapping: boolean;
+  onSnapChange: (target: TimelineSnapTarget | null) => void;
   empty: boolean;
   emptyHintDismissed: boolean;
   onDismissEmptyHint: () => void;
@@ -227,6 +162,8 @@ export function TimelineTracksPane({
   majorStep,
   gridStep,
   keyboardStep,
+  snapping,
+  onSnapChange,
   empty,
   emptyHintDismissed,
   onDismissEmptyHint,
@@ -247,6 +184,7 @@ export function TimelineTracksPane({
       ref={scrollRef}
       className="relative min-h-0 min-w-0 flex-1 overflow-auto bg-background"
       aria-label="Animation tracks"
+      tabIndex={-1}
       onScroll={onScroll}
     >
       <div
@@ -385,6 +323,8 @@ export function TimelineTracksPane({
                       selected={selectedBlockIds.includes(block.id)}
                       gridStep={gridStep}
                       keyboardStep={keyboardStep}
+                      snapping={snapping}
+                      onSnapChange={onSnapChange}
                     />
                   ) : (
                     <ReadonlyPropertyRail key={block.id} block={block} duration={duration} />
@@ -402,6 +342,8 @@ export function TimelineTracksPane({
                   interactive={row.frameId === selectedFrameId && objectSpan.blocks.length > 0}
                   gridStep={gridStep}
                   keyboardStep={keyboardStep}
+                  snapping={snapping}
+                  onSnapChange={onSnapChange}
                 />
               )}
             </div>

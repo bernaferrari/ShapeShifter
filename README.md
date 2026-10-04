@@ -6,7 +6,7 @@ ShapeShifter is a browser-based vector and motion editor for **Android VectorDra
 
 This is a modern React and TypeScript rewrite of [Alex Lockwood’s ShapeShifter](https://github.com/alexjlockwood/ShapeShifter), with direct vector editing, a property timeline, recovery history, and an editing interface for agents.
 
-![ShapeShifter in light mode, showing the layer tree, vector canvas, rotation value graph, and animation timeline](artifacts/editor-review/final-editor-light.png)
+![ShapeShifter showing the layer tree, vector canvas, animation timeline, and easing editor](artifacts/editor-review/editor.jpg)
 
 [Get started](#get-started) · [First animation](#your-first-animation) · [Formats](#import-and-export) · [Agent tools](#editing-with-agents) · [Development](#development)
 
@@ -22,7 +22,8 @@ This is a modern React and TypeScript rewrite of [Alex Lockwood’s ShapeShifter
 ### Make the motion feel right
 
 - **Property animation.** Animate geometry, position, rotation, scale, opacity, colors, stroke width, and trim paths, with the supported properties exposed for each layer type.
-- **Precise timing.** Insert a keyframe at the playhead, edit linked From/To values, copy compatible segments, zoom and pan the timeline, or loop a selected preview range.
+- **Precise timing.** Snap to nearby keyframes, the playhead, and the grid with a visible guide. Move selected segments together while preserving their spacing and linked endpoints; hold Alt/Option to bypass snapping.
+- **Direct keyframe editing.** Double-click, right-click, or press Enter on a diamond to edit its exact time and value beside the timeline. Insert at the playhead, copy compatible segments, zoom and pan, or loop a selected preview range.
 - **Custom easing.** Use Android presets or edit cubic Bézier handles and their numeric coordinates. Numeric motion preserves overshoot.
 - **Value and velocity graphs.** Inspect one numeric segment with property units and the same easing calculation used by playback.
 - **Morph preparation.** Edit both path endpoints and resolve command compatibility before generating an Android animation.
@@ -32,15 +33,6 @@ This is a modern React and TypeScript rewrite of [Alex Lockwood’s ShapeShifter
 Undo and Redo cover committed edits, including agent batches and recovery restores. The save indicator shows when the browser-local document is saving, saved, or needs attention. **File → Earlier autosaves** exposes retained checkpoints; conflicting saves from another tab are detected before overwriting newer work.
 
 Export project JSON for a portable backup. Autosave lives in this browser’s storage; it is not cloud sync.
-
-<details>
-<summary>See dark mode and the compact desktop layout</summary>
-
-![ShapeShifter in dark mode, with a rotation velocity graph](artifacts/editor-review/final-editor-dark.png)
-
-![ShapeShifter at 820 × 740, with collapsed side panels and accessible canvas and timeline controls](artifacts/editor-review/final-editor-narrow.png)
-
-</details>
 
 ## Get started
 
@@ -90,6 +82,9 @@ Intrinsic dimensions and viewport dimensions are separate. A drawable can be `24
 | Duplicate                      | `Mod D`                                              |
 | Group / Ungroup                | `Mod G` / `Mod Shift G`                              |
 | Rename a layer                 | `F2` in the layer tree                               |
+| Edit a timeline keyframe       | Double-click, right-click, or `Enter` on its diamond |
+| Bypass timeline snapping       | Hold `Alt` / `Option` while dragging                 |
+| Cancel a timeline drag         | `Escape`                                             |
 | Finish a Pen path              | `Enter` or `Escape`; click the first anchor to close |
 
 ## Import and export

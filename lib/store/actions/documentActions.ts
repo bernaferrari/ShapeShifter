@@ -1,7 +1,7 @@
 import { computeDetailViewport } from "../../shapeshifter/camera";
 import { generateId } from "../../shapeshifter/ids";
 import { parsePath, pathToString } from "../../shapeshifter/pathUtils";
-import type { Layer, LayerType } from "../../shapeshifter/types";
+import type { Layer, LayerType, TimelineBlock } from "../../shapeshifter/types";
 import { createPathLayer } from "../defaultWorkspace";
 import type { EditorState } from "../editorStore";
 import { collectLayerSubtreeIds } from "../../shapeshifter/scene/layerHierarchy";
@@ -12,8 +12,9 @@ import {
   insertTimelineKeyframe,
   linkedTimelineKeyframe,
   timelineKeyframeRange,
-  timelineBlockStartRange,
 } from "../../shapeshifter/motion/timelineKeyframes";
+import { retimeTimelineBlocks } from "../../shapeshifter/motion/timelineRetiming";
+import { createLayerTreeModel } from "../../shapeshifter/scene/layerHierarchy";
 import { planTimelinePaste } from "../../shapeshifter/motion/timelineClipboard";
 import { resolveTimelinePreviewRange } from "../../shapeshifter/motion/previewRange";
 import { mapLayerTimelines } from "../timelineLayerMapping";
@@ -31,6 +32,7 @@ type DocumentActionKey =
   | "insertTimelineKeyframe"
   | "updateTimelineKeyframe"
   | "moveTimelineBlock"
+  | "moveTimelineBlocks"
   | "startTimelinePathEditing"
   | "beginTimelineMorphEditing"
   | "copyTimelineBlocks"
@@ -68,6 +70,14 @@ function updateLayerById(
 
 function withoutTimelineBlocks(layers: Layer[], blockIds: Set<string>): Layer[] {
   return mapLayerTimelines(layers, (blocks) => blocks.filter((block) => !blockIds.has(block.id)));
+}
+
+function canEditTimelineTargets(state: EditorState, blocks: TimelineBlock[]) {
+  const tree = createLayerTreeModel(state.layers);
+  return blocks.every((block) => {
+    const layer = tree.allLayers.find((item) => String(item.id) === String(block.layerId));
+    return layer && !layer.locked && !tree.ancestorsOf(layer.id).some((parent) => parent.locked);
+  });
 }
 /**
  * Typed base value for a timeline track. Imported SVG/AVD layers may omit
@@ -488,7 +498,7 @@ export function createDocumentActions(
     updateTimelineKeyframe: (blockId, edge, patch, options) => {
       const state = get();
       const target = state.animation.blocks.find((item) => item.id === blockId);
-      if (!target) return;
+      if (!target || !canEditTimelineTargets(state, [target])) return;
       const adjacent = linkedTimelineKeyframe(state.animation.blocks, target, edge);
       const originalTime = edge === "start" ? target.startTime : target.endTime;
       const [min, max] = timelineKeyframeRange(
@@ -533,31 +543,36 @@ export function createDocumentActions(
     },
 
     moveTimelineBlock: (blockId, offset, options) => {
+      get().moveTimelineBlocks([blockId], offset, options);
+    },
+
+    moveTimelineBlocks: (blockIds, offset, options) => {
       const state = get();
-      const target = state.animation.blocks.find((item) => item.id === blockId);
-      if (!target || !Number.isFinite(offset)) return;
-      const [min, max] = timelineBlockStartRange(
+      const blocks = retimeTimelineBlocks(
         state.animation.blocks,
-        target,
+        blockIds,
+        offset,
         state.animation.duration,
       );
-      const start = Math.max(min, Math.min(max, target.startTime + offset));
-      const delta = start - target.startTime;
-      if (!delta) return;
-      const left = linkedTimelineKeyframe(state.animation.blocks, target, "start");
-      const right = linkedTimelineKeyframe(state.animation.blocks, target, "end");
-      const apply = (block: typeof target) =>
-        block.id === target.id
-          ? { ...block, startTime: start, endTime: target.endTime + delta }
-          : block.id === left?.id
-            ? { ...block, endTime: start }
-            : block.id === right?.id
-              ? { ...block, startTime: target.endTime + delta }
-              : block;
+      if (blocks === state.animation.blocks) return;
+      if (
+        !canEditTimelineTargets(
+          state,
+          blocks.filter((block, index) => block !== state.animation.blocks[index]),
+        )
+      )
+        return;
+      const byId = new Map(
+        blocks
+          .filter((block, index) => block !== state.animation.blocks[index])
+          .map((block) => [block.id, block]),
+      );
       if (options?.recordHistory !== false) state.pushHistory();
       set({
-        animation: { ...state.animation, blocks: state.animation.blocks.map(apply) },
-        layers: mapLayerTimelines(state.layers, (blocks) => blocks.map(apply)),
+        animation: { ...state.animation, blocks },
+        layers: mapLayerTimelines(state.layers, (items) =>
+          items.map((block) => byId.get(block.id) ?? block),
+        ),
       });
     },
 
@@ -590,7 +605,7 @@ export function createDocumentActions(
     removeTimelineKeyframe: (blockId, edge) => {
       const state = get();
       const target = state.animation.blocks.find((block) => block.id === blockId);
-      if (!target) return;
+      if (!target || !canEditTimelineTargets(state, [target])) return;
       const time = edge === "start" ? target.startTime : target.endTime;
       const sameTrack = state.animation.blocks.filter(
         (block) =>

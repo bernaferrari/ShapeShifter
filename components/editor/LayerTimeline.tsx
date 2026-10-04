@@ -43,6 +43,11 @@ import {
 } from "./timeline/TimelineClipboardControls";
 import { TimelinePreviewRangeControls } from "./timeline/TimelinePreviewRangeControls";
 import { resolveTimelinePreviewRange } from "@/lib/shapeshifter/motion/previewRange";
+import {
+  snapTimelineOffset,
+  timelineSnapTargets,
+  type TimelineSnapTarget,
+} from "./timeline/timelineTiming";
 
 const PLAYHEAD = "var(--primary)";
 const SURFACE = "bg-card";
@@ -66,6 +71,12 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
   const [timeUnit, setTimeUnit] = React.useState<TimelineTimeUnit>("milliseconds");
   const [fps, setFps] = React.useState(30);
   const [snapping, setSnapping] = React.useState(true);
+  const [snapGuide, setSnapGuide] = React.useState<TimelineSnapTarget | null>(null);
+  const reportSnap = React.useCallback((target: TimelineSnapTarget | null) => {
+    setSnapGuide((previous) =>
+      previous?.time === target?.time && previous?.kind === target?.kind ? previous : target,
+    );
+  }, []);
   const isTimelineEmpty =
     frames.every((f) => (f.animation?.blocks?.length ?? 0) === 0) && animation.blocks.length === 0;
   const [emptyHintDismissed, setEmptyHintDismissed] = React.useState(false);
@@ -78,6 +89,8 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
   const rightScrollRef = React.useRef<HTMLDivElement>(null);
   const rulerRef = React.useRef<HTMLDivElement>(null);
   const sectionRef = React.useRef<HTMLElement>(null);
+  const scrubCleanupRef = React.useRef<(() => void) | null>(null);
+  React.useEffect(() => () => scrubCleanupRef.current?.(), [selectedFrameId]);
   const navigation = useTimelineNavigation(sectionRef, rightScrollRef, LAYERS_W);
   const syncingScroll = React.useRef(false);
 
@@ -160,31 +173,50 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
   const timelineRows = timelineProjection.rows;
   const blocksForLayerInFrame = timelineProjection.blocksForLayer;
   const blocksForPropertyInFrame = timelineProjection.blocksForProperty;
-  const setProgressFromClientX = (clientX: number, el: HTMLElement) => {
+  const setProgressFromClientX = (clientX: number, el: HTMLElement, bypass = false) => {
     const rect = el.getBoundingClientRect();
     const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
-    useEditorStore.getState().setProgress(x / Math.max(1, rect.width));
+    const state = useEditorStore.getState();
+    const result = snapTimelineOffset({
+      offset: (x / Math.max(1, rect.width)) * state.animation.duration,
+      anchors: [0],
+      targets: timelineSnapTargets(state.animation.blocks, state.animation.duration),
+      range: [0, state.animation.duration],
+      duration: state.animation.duration,
+      contentWidth: rect.width,
+      gridStep: timeUnit === "frames" ? 1000 / fps : 1,
+      enabled: snapping,
+      bypass,
+    });
+    state.setProgress(result.offset / Math.max(1, state.animation.duration));
+    reportSnap(result.target);
   };
 
   const beginScrub = (e: React.PointerEvent<HTMLElement>) => {
     if (e.button !== 0) return;
     e.preventDefault();
+    scrubCleanupRef.current?.();
     // Figma pauses playback while you scrub the ruler, so the playhead RAF
     // loop can't fight the drag. Just pause — don't auto-resume on release.
     if (useEditorStore.getState().isPlaying) {
       useEditorStore.getState().togglePlayback();
     }
     const element = e.currentTarget;
-    setProgressFromClientX(e.clientX, element);
+    setProgressFromClientX(e.clientX, element, e.altKey);
     try {
       element.setPointerCapture(e.pointerId);
     } catch {
       /* ignore — scrubbing still works via the window listeners below */
     }
-    const onMove = (moveEvent: PointerEvent) => setProgressFromClientX(moveEvent.clientX, element);
-    const onUp = (upEvent: PointerEvent) => {
+    const onMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId === e.pointerId)
+        setProgressFromClientX(moveEvent.clientX, element, moveEvent.altKey);
+    };
+    const finish = () => {
+      scrubCleanupRef.current = null;
+      reportSnap(null);
       try {
-        element.releasePointerCapture(upEvent.pointerId);
+        element.releasePointerCapture(e.pointerId);
       } catch {
         /* ignore */
       }
@@ -192,6 +224,10 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
     };
+    const onUp = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId === e.pointerId) finish();
+    };
+    scrubCleanupRef.current = finish;
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
@@ -245,6 +281,39 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
         viewportWidth={navigation.width}
         scrollLeft={navigation.scrollLeft}
       />
+      {snapGuide &&
+        (() => {
+          const x =
+            (snapGuide.time / Math.max(1, animation.duration)) * navigation.contentWidth -
+            navigation.scrollLeft;
+          if (x < 0 || x > navigation.width) return null;
+          return (
+            <div
+              data-timeline-snap-guide
+              className="pointer-events-none absolute top-0 bottom-8 z-[15] border-l border-dashed border-primary/65"
+              style={{ left: LAYERS_W + x }}
+            >
+              <span
+                role="status"
+                style={{
+                  left: x > navigation.width - 160 ? undefined : 4,
+                  right: x > navigation.width - 160 ? 4 : undefined,
+                }}
+                className="absolute top-1 whitespace-nowrap rounded bg-primary px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-primary-foreground shadow-sm"
+              >
+                {snapGuide.kind === "playhead"
+                  ? "Playhead"
+                  : snapGuide.kind === "keyframe"
+                    ? "Keyframe"
+                    : "Boundary"}{" "}
+                ·{" "}
+                {timeUnit === "frames"
+                  ? `${Number(((snapGuide.time * fps) / 1000).toFixed(2))} f`
+                  : `${Number(snapGuide.time.toFixed(3))} ms`}
+              </span>
+            </div>
+          );
+        })()}
       {previewRange && previewRight > previewLeft && (
         <div
           data-timeline-preview-range
@@ -332,6 +401,9 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
               isTimelineEmpty ? "cursor-default" : "cursor-ew-resize",
             )}
             onPointerDown={isTimelineEmpty ? undefined : beginScrub}
+            onLostPointerCapture={(event) => {
+              if (event.target === event.currentTarget) scrubCleanupRef.current?.();
+            }}
             role="slider"
             aria-label="Timeline playhead"
             aria-valuemin={0}
@@ -525,6 +597,8 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
           contentWidth={navigation.contentWidth}
           majorStep={rulerMajorStepMs}
           gridStep={snapping ? (timeUnit === "frames" ? 1000 / fps : rulerMinorStepMs) : 1}
+          snapping={snapping}
+          onSnapChange={reportSnap}
           keyboardStep={timeUnit === "frames" ? 1000 / fps : 1}
           empty={isTimelineEmpty}
           emptyHintDismissed={emptyHintDismissed}
@@ -575,7 +649,7 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
             type="button"
             aria-label="Snap timeline edits to grid"
             aria-pressed={snapping}
-            title="Snap timing to grid · Alt-drag for 1 ms precision"
+            title="Snap to keyframes, playhead, and grid · Alt-drag for 1 ms precision"
             onClick={() => setSnapping((value) => !value)}
             className={cn(
               "grid size-6 place-items-center rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring",

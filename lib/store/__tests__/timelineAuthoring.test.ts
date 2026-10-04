@@ -53,6 +53,44 @@ function setup(propertyName = "rotation") {
 const blocks = () => useEditorStore.getState().animation.blocks;
 
 describe("timeline authoring actions", () => {
+  it("moves a selected chain atomically, including per-layer metadata and one Undo", () => {
+    setup();
+    const store = useEditorStore.getState();
+    useEditorStore.setState({
+      animation: { ...useEditorStore.getState().animation, duration: 1500 },
+    });
+    store.selectBlocks(["left", "right"]);
+    const historyLength = useEditorStore.getState().history.length;
+    store.moveTimelineBlocks(["left", "right"], 125.25);
+    expect(blocks().map((block) => [block.startTime, block.endTime])).toEqual([
+      [125.25, 625.25],
+      [625.25, 1125.25],
+    ]);
+    expect(useEditorStore.getState().layers[0].timeline).toEqual(blocks());
+    expect(useEditorStore.getState().history).toHaveLength(historyLength + 1);
+    store.undo();
+    expect(blocks().map((block) => [block.startTime, block.endTime])).toEqual([
+      [0, 500],
+      [500, 1000],
+    ]);
+    expect(useEditorStore.getState().selectedBlockIds).toEqual(["left", "right"]);
+  });
+  it("clamps an endpoint before an unrelated segment and refuses locked endpoint edits", () => {
+    setup();
+    const store = useEditorStore.getState();
+    store.updateTimelineBlock("right", { startTime: 700, fromValue: 75 });
+    store.updateTimelineKeyframe("left", "end", { time: 900 });
+    expect(blocks()[0].endTime).toBe(700);
+    const state = useEditorStore.getState();
+    useEditorStore.setState({ layers: state.layers.map((layer) => ({ ...layer, locked: true })) });
+    const before = blocks();
+    const history = useEditorStore.getState().history.length;
+    store.updateTimelineKeyframe("left", "end", { time: 600, value: 99 });
+    store.moveTimelineBlocks(["left", "right"], 100);
+    store.removeTimelineKeyframe("left", "end");
+    expect(blocks()).toBe(before);
+    expect(useEditorStore.getState().history).toHaveLength(history);
+  });
   it("preserves layer identities when a canonical timeline edit changes no per-layer metadata", () => {
     setup();
     useEditorStore.setState((state) => ({

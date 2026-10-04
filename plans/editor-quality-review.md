@@ -101,8 +101,24 @@ The production-browser pass exercised actual controls and native WebMCP calls:
 | Agent transactions  | A validated batch changed multiple properties atomically; a stale revision rejected; one Undo restored the batch.                                                        |
 | Keyboard and layout | Layer rename cancellation, tree navigation, frame Space activation, and an 820 × 740 layout with reachable drawing tools and panel controls.                             |
 
-Final screenshots: [light](../artifacts/editor-review/final-editor-light.png), [dark with velocity graph](../artifacts/editor-review/final-editor-dark.png), and [narrow](../artifacts/editor-review/final-editor-narrow.png). Independent filled-trim PDF proof: [document](../artifacts/export-fixtures/production-trim.pdf) and [render](../artifacts/export-fixtures/production-trim.png).
+Editor screenshot: [canvas, timeline, and easing controls](../artifacts/editor-review/editor.jpg). Independent filled-trim PDF proof: [document](../artifacts/export-fixtures/production-trim.pdf) and [render](../artifacts/export-fixtures/production-trim.png).
 
 Assessment: approximately **9/10 for the supported Android vector and motion workflows**, judged on drawing precision, coherent editing, motion authoring, recovery, export trust, and repeated browser use. Figma remains the 10/10 craft reference; its broader product scope is described in the deliberate limits above.
 
 Next.js generated the standard AGENTS.md and CLAUDE.md guidance; these files are separate from editor functionality.
+
+## Timeline comparison refinement — October 4, 2026
+
+Compared the timeline in the local Glyphrise 3D editor with ShapeShifter's motion workflow. The useful references were `TimelineSnapping.ts`, `TimelineKeyframeModel.ts`, `useTimelineTrackKeyframes.ts`, and `TimelineKeyframeEditor.tsx` under that project's `components/editor/timeline/` directory.
+
+| Idea adapted                  | ShapeShifter behavior                                                                                                                                                                                                                                                |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Magnetic snapping             | Segment rails, endpoint diamonds, and ruler scrubbing snap to nearby keyframes, the playhead, and bounds. An eight-pixel threshold stays consistent across zoom levels; fractional targets stay exact. The guide names its target, and Alt/Option bypasses snapping. |
+| Related timing moves together | Selected segments use one constrained offset and one atomic history transaction. Linked neighbors retain shared endpoints. Timeline bounds, minimum segment length, unrelated segments, and inherited locks constrain the edit.                                      |
+| Edit beside the keyframe      | Double-click, right-click, or Enter opens an anchored time/value editor. Inputs share the inspector's validation, focus the time field on opening, and discard drafts on Escape. Delete is deliberate; double-click no longer deletes a keyframe.                    |
+
+These ideas were adapted to ShapeShifter's millisecond-based Android segment model. Group retiming is a pure model operation, shared by pointer and keyboard editing. Pointer sessions own their live-edit marker and history entry, so cancellation, lost capture, unmount, Undo, owner changes, and competing agent edits cannot revive a stale drag. Existing graphs, zoom, looping, and playback following already cover those reference workflows.
+
+Validation: 98 test files and **1,412 tests passed**; TypeScript, lint, and the production build passed. Regression coverage includes fractional snapping, zoom-invariant thresholds, linked groups, collisions, inherited locks, one-step Undo, pointer interruption, invalid drafts, numeric/color/path values, keyboard opening, and explicit keyframe deletion.
+
+Real browser controls confirmed fractional time entry at 17.25 ms, keyboard focus and Escape cancellation, and a two-property drag snapping exactly to the 777.25 ms playhead while preserving segment spacing. Production preview: http://localhost:3004. [Editor screenshot](../artifacts/editor-review/editor.jpg).

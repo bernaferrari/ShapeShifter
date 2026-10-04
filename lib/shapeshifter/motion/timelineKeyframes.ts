@@ -127,9 +127,26 @@ export function timelineKeyframeRange(
   duration: number,
 ): [number, number] {
   const adjacent = linkedTimelineKeyframe(blocks, target, edge);
+  const sameTrack = blocks.filter(
+    (block) =>
+      block.id !== target.id &&
+      block.id !== adjacent?.id &&
+      String(block.layerId) === String(target.layerId) &&
+      block.propertyName === target.propertyName,
+  );
+  const previousEnd = Math.max(
+    0,
+    ...sameTrack.filter((block) => block.endTime <= target.startTime).map((block) => block.endTime),
+  );
+  const nextStart = Math.min(
+    duration,
+    ...sameTrack
+      .filter((block) => block.startTime >= target.endTime)
+      .map((block) => block.startTime),
+  );
   return edge === "start"
-    ? [Math.max(0, (adjacent?.startTime ?? -1) + 1), target.endTime - 1]
-    : [target.startTime + 1, Math.min(duration, (adjacent?.endTime ?? duration + 1) - 1)];
+    ? [Math.max(previousEnd, (adjacent?.startTime ?? -1) + 1), target.endTime - 1]
+    : [target.startTime + 1, Math.min(nextStart, (adjacent?.endTime ?? duration + 1) - 1)];
 }
 
 export function timelineBlockStartRange(

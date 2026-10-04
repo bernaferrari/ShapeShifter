@@ -42,6 +42,45 @@ function select(label: string, value: string) {
 }
 
 describe("timeline navigation", () => {
+  it("snaps ruler scrubbing to fractional keys with a visible guide, and honors Alt and the snap toggle", () => {
+    const store = useEditorStore.getState();
+    store.addTimelineBlock(store.layers[0].id, "rotation");
+    store.updateTimelineBlock(useEditorStore.getState().selectedBlockIds[0], { endTime: 450.25 });
+    rendered = renderEditorComponent(<LayerTimeline />);
+    const ruler = rendered.container.querySelector<HTMLElement>(
+      '[aria-label="Timeline playhead"]',
+    )!;
+    ruler.getBoundingClientRect = () => ({ left: 0, width: 1000 }) as DOMRect;
+    const scrub = (altKey = false) => {
+      React.act(() =>
+        ruler.dispatchEvent(
+          new PointerEvent("pointerdown", {
+            clientX: 446,
+            button: 0,
+            pointerId: 1,
+            altKey,
+            bubbles: true,
+            cancelable: true,
+          }),
+        ),
+      );
+    };
+    scrub();
+    expect(useEditorStore.getState().progress).toBe(0.45025);
+    expect(rendered.container.querySelector("[data-timeline-snap-guide]")?.textContent).toBe(
+      "Keyframe · 450.25 ms",
+    );
+    React.act(() => window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1 })));
+    expect(rendered.container.querySelector("[data-timeline-snap-guide]")).toBeNull();
+    scrub(true);
+    expect(useEditorStore.getState().progress).toBe(0.446);
+    React.act(() => window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1 })));
+    click("Snap timeline edits to grid");
+    scrub();
+    expect(useEditorStore.getState().progress).toBe(0.446);
+    expect(rendered.container.querySelector("[data-timeline-snap-guide]")).toBeNull();
+    React.act(() => window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1 })));
+  });
   it("shows a selected preview range and resets to full duration without editing keyframe timing", () => {
     const store = useEditorStore.getState();
     store.addTimelineBlock(store.layers[0].id, "rotation");
