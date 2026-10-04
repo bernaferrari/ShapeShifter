@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, Trash2 } from "lucide-react";
 import type { Viewport } from "@/lib/shapeshifter/camera";
 import type { CanvasFrame } from "@/lib/store/editorStore";
 import { useEditorStore } from "@/lib/store/editorStore";
@@ -41,12 +40,10 @@ export function WorldFrameChrome({
 }) {
   const selectedFrameId = useEditorStore((state) => state.selectedFrameId);
   const selectedFrameIds = useEditorStore((state) => state.selectedFrameIds);
-  const frameCount = useEditorStore((state) => state.frames.length);
   const selectionKind = useEditorStore((state) => state.selectionKind);
   const hasCanvasSelection = useEditorStore((state) => state.hasCanvasSelection);
   const selectFrame = useEditorStore((state) => state.selectFrame);
   const renameFrame = useEditorStore((state) => state.renameFrame);
-  const deleteFrame = useEditorStore((state) => state.deleteFrame);
   const [renamingFrameId, setRenamingFrameId] = useState<string | null>(null);
 
   const selectTitle = (frameId: string, additive: boolean) => {
@@ -81,12 +78,11 @@ export function WorldFrameChrome({
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         {frames.map((frame) => {
           const screen = screenRect(frame);
-          const centerX = screen.x + screen.width / 2;
           if (
             screen.y < -40 ||
             screen.y > viewportSize.h + 40 ||
-            centerX < -120 ||
-            centerX > viewportSize.w + 120
+            screen.x + screen.width < -40 ||
+            screen.x > viewportSize.w + 40
           )
             return null;
           const selected =
@@ -96,13 +92,17 @@ export function WorldFrameChrome({
               (selectedFrameIds.length === 0 && frame.id === selectedFrameId));
           const containsSelection =
             hasCanvasSelection && selectionKind === "layer" && frame.id === selectedFrameId;
-          const showTitle = selected || containsSelection || frame.id === hoveredFrameId;
+          const hovered = frame.id === hoveredFrameId;
 
           return (
             <div
               key={frame.id}
-              className="pointer-events-auto absolute -translate-x-1/2"
-              style={{ left: Math.round(centerX), top: Math.round(screen.y) - 28 }}
+              className="pointer-events-auto absolute"
+              style={{
+                left: Math.round(screen.x),
+                top: Math.round(screen.y) - 22,
+                maxWidth: Math.max(48, Math.round(screen.width)),
+              }}
             >
               {renamingFrameId === frame.id ? (
                 <input
@@ -120,21 +120,14 @@ export function WorldFrameChrome({
                       setRenamingFrameId(null);
                     }
                   }}
-                  className="h-6 w-36 rounded-md border border-primary bg-card px-2 text-center text-[11px] text-foreground shadow-sm outline-none"
+                  className="h-5 w-36 rounded border border-primary bg-card px-1 text-[11px] text-foreground outline-none"
                   onPointerDown={(event) => event.stopPropagation()}
                   aria-label={`Rename ${frame.name}`}
                 />
               ) : (
                 <div
                   className={cn(
-                    "flex items-center gap-0.5 rounded-md border border-transparent py-0.5 pl-1 pr-1 transition-colors",
-                    selected
-                      ? "border-primary/35 bg-card/95 shadow-sm ring-1 ring-primary/15 backdrop-blur-sm"
-                      : containsSelection
-                        ? "bg-transparent"
-                        : showTitle
-                          ? "bg-card/80 backdrop-blur-sm"
-                          : "bg-transparent",
+                    "flex min-w-0 items-center",
                     isDragging && draggingFrameIds.includes(frame.id)
                       ? "cursor-grabbing"
                       : "cursor-default",
@@ -143,11 +136,11 @@ export function WorldFrameChrome({
                   <button
                     type="button"
                     className={cn(
-                      "max-w-[160px] truncate rounded px-1.5 text-[11px] leading-5",
+                      "max-w-full truncate text-[11px] leading-5 transition-colors",
                       selected
                         ? "font-medium text-primary"
-                        : containsSelection
-                          ? "text-muted-foreground/70"
+                        : hovered || containsSelection
+                          ? "text-foreground"
                           : "text-muted-foreground hover:text-foreground",
                     )}
                     title="Click to select frame · double-click to rename frame"
@@ -187,42 +180,6 @@ export function WorldFrameChrome({
                   >
                     {frame.name}
                   </button>
-                  <span
-                    aria-hidden={!selected}
-                    className={cn(
-                      "flex items-center gap-0.5 transition-opacity",
-                      selected ? "opacity-100" : "pointer-events-none opacity-0",
-                    )}
-                  >
-                    <button
-                      type="button"
-                      title="Duplicate frame"
-                      aria-label={`Duplicate ${frame.name}`}
-                      tabIndex={selected ? 0 : -1}
-                      disabled={!selected}
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onClick={() => {
-                        const store = useEditorStore.getState();
-                        store.selectFrame(frame.id);
-                        store.duplicateFrame();
-                      }}
-                      className="grid size-5 cursor-pointer place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                    >
-                      <Copy className="size-3" />
-                    </button>
-                    <button
-                      type="button"
-                      title="Delete frame"
-                      aria-label={`Delete ${frame.name}`}
-                      tabIndex={selected ? 0 : -1}
-                      disabled={!selected || frameCount <= 1}
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onClick={() => deleteFrame(frame.id)}
-                      className="grid size-5 cursor-pointer place-items-center rounded text-muted-foreground hover:bg-muted hover:text-destructive disabled:pointer-events-none disabled:opacity-40"
-                    >
-                      <Trash2 className="size-3" />
-                    </button>
-                  </span>
                 </div>
               )}
             </div>
@@ -246,7 +203,7 @@ export function WorldFrameChrome({
           return (
             <div
               key={frame.id}
-              className="absolute -translate-x-1/2 rounded-full bg-primary px-2 py-0.5 font-mono text-[10px] font-medium text-primary-foreground shadow-sm"
+              className="absolute -translate-x-1/2 rounded-[4px] bg-primary px-1.5 py-px text-[10px] font-medium tabular-nums text-primary-foreground"
               style={{ left: Math.round(centerX), top: Math.round(bottom) + 8 }}
             >
               {formatDimension(screen.bounds.w)} × {formatDimension(screen.bounds.h)}

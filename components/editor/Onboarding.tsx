@@ -13,37 +13,29 @@ interface Tip {
   body: React.ReactNode;
 }
 
+const kbd = "rounded border border-border bg-background px-1 py-px text-[10px] font-medium text-foreground";
+
 const TIPS: Tip[] = [
   {
     icon: <MousePointer2 className="size-3.5" />,
-    title: "Pick a tool",
+    title: "Draw",
     body: (
       <>
-        The palette below holds Move, Vector, Pen, Lasso &amp; Paint. Press{" "}
-        <kbd className="rounded bg-muted px-1 font-mono text-[10px]">V</kbd> /{" "}
-        <kbd className="rounded bg-muted px-1 font-mono text-[10px]">P</kbd> to switch fast.
+        Pick a tool below, or press <kbd className={kbd}>P</kbd> for Pen.
       </>
     ),
   },
   {
     icon: <Sparkles className="size-3.5" />,
-    title: "From → To morph",
-    body: (
-      <>
-        Shapes can stay static. Add a{" "}
-        <span className="rounded bg-muted px-1 text-[10px] capitalize">to</span> path only when you
-        want a morph, then hit Play.
-      </>
-    ),
+    title: "Animate",
+    body: <>Click ◇ next to any property, then move the playhead and change it.</>,
   },
   {
     icon: <Command className="size-3.5" />,
-    title: "Power moves",
+    title: "Find anything",
     body: (
       <>
-        <kbd className="rounded bg-muted px-1 font-mono text-[10px]">⌘K</kbd> opens the command
-        palette; <kbd className="rounded bg-muted px-1 font-mono text-[10px]">Space</kbd> plays the
-        animation.
+        <kbd className={kbd}>⌘K</kbd> for every command, <kbd className={kbd}>Space</kbd> to play.
       </>
     ),
   },
@@ -91,24 +83,19 @@ export function Onboarding() {
       role="dialog"
       aria-label="Getting started"
       className={cn(
-        "pointer-events-auto absolute bottom-16 right-4 z-40 w-72 max-w-[calc(100%-2rem)] rounded-xl border border-border bg-card/95 p-3.5 shadow-lg shadow-black/10 backdrop-blur-md",
-        "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 dark:shadow-black/40",
+        "pointer-events-auto absolute bottom-14 right-3 z-40 w-64 max-w-[calc(100%-2rem)] rounded-xl bg-card p-3 [box-shadow:var(--elevation-floating)]",
+        "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300",
       )}
     >
-      <div className="mb-2.5 flex items-center justify-between">
-        <div className="flex items-center gap-1.5 text-[13px] font-semibold">
-          <Sparkles className="size-3.5 text-primary" />
-          Welcome to ShapeShifter
-        </div>
-      </div>
-      <ul className="space-y-2.5">
+      <div className="mb-2.5 text-[12px] font-semibold">Welcome to ShapeShifter</div>
+      <ul className="space-y-2">
         {TIPS.map((tip, i) => (
           <li key={i} className="flex gap-2.5">
-            <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+            <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">
               {tip.icon}
             </span>
             <div className="min-w-0">
-              <div className="text-[12px] font-medium leading-tight">{tip.title}</div>
+              <div className="text-[11px] font-medium leading-tight">{tip.title}</div>
               <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{tip.body}</p>
             </div>
           </li>
@@ -117,7 +104,7 @@ export function Onboarding() {
       <div className="mt-3 flex justify-end">
         <Button
           size="sm"
-          className="h-7 px-3 text-xs"
+          className="h-6 px-3 text-[11px]"
           onClick={dismiss}
           aria-label="Dismiss onboarding"
         >

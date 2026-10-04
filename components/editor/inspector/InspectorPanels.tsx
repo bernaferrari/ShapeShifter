@@ -1,9 +1,15 @@
 "use client";
 
 import React from "react";
-import { Button } from "@/components/ui/button";
-import { Copy, Link2, Lock, Pencil, Trash2, Unlink2, Unlock } from "lucide-react";
+import { Copy, Ellipsis, Link2, RotateCw, Scaling, Trash2, Unlink2 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { getPathDataBounds } from "@/lib/shapeshifter/path/pathDataIO";
 import { useEditorStore } from "@/lib/store/editorStore";
 import type { CanvasFrame } from "@/lib/store/editorStore";
 import type { Layer } from "@/lib/shapeshifter/types";
@@ -13,46 +19,60 @@ import {
   sharedValue,
   type InspectorSelectionBounds,
 } from "@/lib/shapeshifter/scene/inspectorSelection";
-import { NumberRow, Row, Section, TextInput } from "./InspectorControls";
-import { MotionBlockEditor } from "./MotionBlockEditor";
 import {
-  TimelineClipboardControls,
-  handleTimelineClipboardShortcut,
-} from "../timeline/TimelineClipboardControls";
+  KeyframeToggle,
+  NumberRow,
+  Row,
+  Section,
+  TextInput,
+  type KeyframeToggleProps,
+} from "./InspectorControls";
+import { parsePath, pathToString } from "@/lib/shapeshifter/pathUtils";
+import { pathDAtTime } from "@/lib/shapeshifter/playheadResolve";
+import { scalePathToBounds } from "@/lib/shapeshifter/path/pathEditing";
 
-export type InspectorTab = "design" | "motion";
-
-export function InspectorTabs({
-  value,
-  onChange,
-}: {
-  value: InspectorTab;
-  onChange: (tab: InspectorTab) => void;
-}) {
-  return (
-    <div
-      className="grid h-9 grid-cols-2 border-b border-border/80 px-3"
-      role="tablist"
-      aria-label="Inspector mode"
-    >
-      {(["design", "motion"] as const).map((tab) => (
-        <button
-          key={tab}
-          type="button"
-          role="tab"
-          aria-selected={value === tab}
-          onClick={() => onChange(tab)}
-          className={cn(
-            "relative text-[11px] font-medium capitalize text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-foreground/35",
-            value === tab && "text-foreground",
-          )}
-        >
-          {tab}
-          {value === tab && <span className="absolute inset-x-4 bottom-0 h-px bg-primary" />}
-        </button>
-      ))}
-    </div>
+/**
+ * Resolves the inline ◇ toggle for a property. Only properties the layer type can
+ * actually animate (and export) get one, so the inspector never offers a dead end.
+ */
+export function useKeyframeToggles(layer: Layer, count: number) {
+  const blocks = useEditorStore((state) => state.animation.blocks);
+  const addTimelineBlock = useEditorStore((state) => state.addTimelineBlock);
+  const removeTimelineProperty = useEditorStore((state) => state.removeTimelineProperty);
+  const animatable = React.useMemo(
+    () => new Set(timelinePropertiesForLayer(layer.type)),
+    [layer.type],
   );
+  /** One ◇ for a property, or for a pair animated together (Position, Scale). */
+  return (property: string | string[], groupLabel?: string): KeyframeToggleProps | undefined => {
+    const properties = Array.isArray(property) ? property : [property];
+    if (count > 1 || layer.locked || !properties.every((name) => animatable.has(name as never)))
+      return undefined;
+    const animated = properties.filter((name) =>
+      blocks.some(
+        (block) => String(block.layerId) === String(layer.id) && block.propertyName === name,
+      ),
+    );
+    const active = animated.length > 0;
+    const label = groupLabel ?? propertyLabel(properties[0]!);
+    return {
+      active,
+      label: active ? `Remove ${label} animation` : `Animate ${label}`,
+      onClick: () => {
+        if (active) {
+          for (const name of animated) removeTimelineProperty(layer.id, name);
+          return;
+        }
+        const store = useEditorStore.getState();
+        const added: string[] = [];
+        for (const name of properties) {
+          addTimelineBlock(layer.id, name);
+          added.push(...useEditorStore.getState().selectedBlockIds);
+        }
+        if (properties.length > 1) store.selectBlocks(added);
+      },
+    };
+  };
 }
 
 export function LayerTransformSection({
@@ -62,7 +82,7 @@ export function LayerTransformSection({
   count,
   onPatch,
   onTranslate,
-  onToggleLock,
+  size,
 }: {
   layer: Layer;
   selectedLayers: Layer[];
@@ -70,16 +90,15 @@ export function LayerTransformSection({
   count: number;
   onPatch: (patch: Partial<Layer>) => void;
   onTranslate: (dx: number, dy: number) => void;
-  onToggleLock: () => void;
+  /** Geometry W/H, shown under position like Figma's design panel. */
+  size?: Omit<React.ComponentProps<typeof LayerSizeRow>, "count" | "linked">;
 }) {
   const scaleX = sharedValue(selectedLayers, (item) => item.scaleX ?? 1, layer.scaleX ?? 1);
   const scaleY = sharedValue(selectedLayers, (item) => item.scaleY ?? 1, layer.scaleY ?? 1);
   const rotation = sharedValue(selectedLayers, (item) => item.rotation ?? 0, layer.rotation ?? 0);
   const positionX = bounds?.x ?? layer.translateX ?? 0;
   const positionY = bounds?.y ?? layer.translateY ?? 0;
-  const blocks = useEditorStore((state) => state.animation.blocks);
-  const addTimelineBlock = useEditorStore((state) => state.addTimelineBlock);
-  const removeTimelineProperty = useEditorStore((state) => state.removeTimelineProperty);
+  const keyframeFor = useKeyframeToggles(layer, count);
   const [scaleLinked, setScaleLinked] = React.useState(
     () => !scaleX.mixed && !scaleY.mixed && Math.abs(scaleX.value - scaleY.value) < 1e-6,
   );
@@ -102,122 +121,308 @@ export function LayerTransformSection({
         : { scaleX: linkedValue, scaleY: value },
     );
   };
-  const keyframeFor = (propertyName: string) => {
-    if (count !== 1) return undefined;
-    const matches = blocks.filter(
-      (block) => String(block.layerId) === String(layer.id) && block.propertyName === propertyName,
+  const clipOnly = layer.type === "clipPath";
+  const showKeyframes = count === 1;
+  const blocks = useEditorStore((state) => state.animation.blocks);
+  const animated = (...names: string[]) =>
+    blocks.some(
+      (block) => String(block.layerId) === String(layer.id) && names.includes(block.propertyName),
     );
-    const active = matches.length > 0;
-    const label = propertyLabel(propertyName);
-    return {
-      active,
-      label: active ? `Remove ${label} animation` : `Animate ${label}`,
-      onClick: () =>
-        active
-          ? removeTimelineProperty(layer.id, propertyName)
-          : addTimelineBlock(layer.id, propertyName),
-    };
-  };
+  // Progressive disclosure: scale and the rotation center appear when used or asked for.
+  const [revealed, setRevealed] = React.useState<{ scale: boolean; center: boolean }>({
+    scale: false,
+    center: false,
+  });
+  React.useEffect(() => setRevealed({ scale: false, center: false }), [layer.id]);
+  const showScale =
+    !clipOnly &&
+    (revealed.scale ||
+      scaleX.mixed ||
+      scaleY.mixed ||
+      Math.abs(scaleX.value - 1) > 1e-6 ||
+      Math.abs(scaleY.value - 1) > 1e-6 ||
+      animated("scaleX", "scaleY"));
+  const showCenter =
+    count === 1 &&
+    !clipOnly &&
+    (revealed.center ||
+      layer.type === "group" ||
+      (layer.pivotX ?? 0) !== 0 ||
+      (layer.pivotY ?? 0) !== 0 ||
+      animated("pivotX", "pivotY"));
+
   return (
     <Section
-      title={count > 1 ? `Transform · ${count} layers` : "Transform"}
+      title="Transform"
       action={
-        <div className="flex items-center">
-          <button
-            type="button"
-            onClick={() => setScaleLinked((linked) => !linked)}
-            className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label="Link scale proportions"
-            aria-pressed={scaleLinked}
-            title={scaleLinked ? "Scale proportions linked" : "Scale proportions unlinked"}
-          >
-            {scaleLinked ? <Link2 className="size-3.5" /> : <Unlink2 className="size-3.5" />}
-          </button>
-          <button
-            type="button"
-            onClick={onToggleLock}
-            className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-            aria-label={layer.locked ? "Unlock layer" : "Lock layer"}
-            title={layer.locked ? "Unlock layer" : "Lock layer"}
-          >
-            {layer.locked ? <Lock className="size-3.5" /> : <Unlock className="size-3.5" />}
-          </button>
-        </div>
+        !clipOnly && (
+          <>
+            <button
+              type="button"
+              onClick={() => setScaleLinked((linked) => !linked)}
+              className={cn(
+                "grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground",
+                scaleLinked && "text-foreground",
+              )}
+              aria-label="Lock proportions"
+              aria-pressed={scaleLinked}
+              title={scaleLinked ? "Proportions locked" : "Proportions unlocked"}
+            >
+              {scaleLinked ? <Link2 className="size-3.5" /> : <Unlink2 className="size-3.5" />}
+            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label="More transform options"
+                    className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground data-popup-open:bg-muted"
+                  />
+                }
+              >
+                <Ellipsis className="size-3.5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuCheckboxItem
+                  checked={showScale}
+                  disabled={showScale && !revealed.scale}
+                  onCheckedChange={(checked) =>
+                    setRevealed((value) => ({ ...value, scale: Boolean(checked) }))
+                  }
+                >
+                  Scale
+                </DropdownMenuCheckboxItem>
+                {count === 1 && (
+                  <DropdownMenuCheckboxItem
+                    checked={showCenter}
+                    disabled={showCenter && !revealed.center}
+                    onCheckedChange={(checked) =>
+                      setRevealed((value) => ({ ...value, center: Boolean(checked) }))
+                    }
+                  >
+                    Rotation center
+                  </DropdownMenuCheckboxItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        )
       }
     >
-      {count > 1 && (
-        <p className="text-[10px] text-muted-foreground">Values apply to the full selection.</p>
-      )}
-      <div className="grid grid-cols-2 gap-1.5">
+      <PairRow
+        keyframe={keyframeFor(["translateX", "translateY"], "Position")}
+        reserve={showKeyframes}
+      >
         <NumberRow
           label="X"
           compact
           value={positionX}
           onChange={(value) => onTranslate(value - positionX, 0)}
-          keyframe={keyframeFor("translateX")}
         />
         <NumberRow
           label="Y"
           compact
           value={positionY}
           onChange={(value) => onTranslate(0, value - positionY)}
-          keyframe={keyframeFor("translateY")}
         />
-        <NumberRow
-          label="SX"
-          compact
-          value={Math.round(scaleX.value * 10000) / 100}
-          mixed={scaleX.mixed}
-          step={1}
-          suffix="%"
-          onChange={(value) => patchScale("x", value)}
-          keyframe={keyframeFor("scaleX")}
-        />
-        <NumberRow
-          label="SY"
-          compact
-          value={Math.round(scaleY.value * 10000) / 100}
-          mixed={scaleY.mixed}
-          step={1}
-          suffix="%"
-          onChange={(value) => patchScale("y", value)}
-          keyframe={keyframeFor("scaleY")}
-        />
-      </div>
-      <NumberRow
-        label="R"
-        compact
-        value={rotation.value}
-        mixed={rotation.mixed}
-        suffix="°"
-        onChange={(value) => onPatch({ rotation: value })}
-        keyframe={keyframeFor("rotation")}
-      />
-      {count > 1 && bounds?.coordinateSpace === "world" && (
-        <p className="text-[10px] leading-relaxed text-muted-foreground">
-          X and Y use page coordinates across frames.
-        </p>
+      </PairRow>
+      {size && <LayerSizeRow {...size} count={count} linked={scaleLinked} />}
+      {!clipOnly && (
+        <div className="grid grid-cols-2 gap-1.5">
+          <NumberRow
+            label="Rotation"
+            glyph={<RotateCw className="size-3" />}
+            compact
+            value={Math.round(rotation.value * 100) / 100}
+            mixed={rotation.mixed}
+            suffix="°"
+            onChange={(value) => onPatch({ rotation: value })}
+            keyframe={keyframeFor("rotation")}
+            reserveKeyframeSlot={showKeyframes}
+          />
+        </div>
       )}
-      {count === 1 && (
-        <details className="group/details pt-0.5">
-          <summary className="cursor-pointer select-none text-[10px] text-muted-foreground hover:text-foreground">
-            Transform origin
-          </summary>
-          <div className="mt-1.5 grid grid-cols-2 gap-2">
+      {showScale && scaleLinked && (
+        <div className="grid grid-cols-2 gap-1.5">
+          <NumberRow
+            label="Scale"
+            glyph={<Scaling className="size-3" />}
+            compact
+            value={Math.round(scaleX.value * 10000) / 100}
+            mixed={scaleX.mixed}
+            step={1}
+            suffix="%"
+            onChange={(value) => onPatch({ scaleX: value / 100, scaleY: value / 100 })}
+            keyframe={keyframeFor(["scaleX", "scaleY"], "Scale")}
+            reserveKeyframeSlot={showKeyframes}
+          />
+        </div>
+      )}
+      {showScale && !scaleLinked && (
+        <PairRow keyframe={keyframeFor(["scaleX", "scaleY"], "Scale")} reserve={showKeyframes}>
+          <NumberRow
+            label="Scale X"
+            glyph={<span className="text-[10px]">SX</span>}
+            compact
+            value={Math.round(scaleX.value * 10000) / 100}
+            mixed={scaleX.mixed}
+            step={1}
+            suffix="%"
+            onChange={(value) => patchScale("x", value)}
+          />
+          <NumberRow
+            label="Scale Y"
+            glyph={<span className="text-[10px]">SY</span>}
+            compact
+            value={Math.round(scaleY.value * 10000) / 100}
+            mixed={scaleY.mixed}
+            step={1}
+            suffix="%"
+            onChange={(value) => patchScale("y", value)}
+          />
+        </PairRow>
+      )}
+      {showCenter && (
+        <div className="space-y-1">
+          <div
+            className="text-[11px] text-muted-foreground"
+            title="The point rotation and scale happen around"
+          >
+            Rotation center
+          </div>
+          <PairRow keyframe={keyframeFor(["pivotX", "pivotY"], "Rotation center")} reserve>
             <NumberRow
-              label="X"
+              label="Center X"
+              glyph="X"
+              compact
               value={layer.pivotX ?? 0}
               onChange={(value) => onPatch({ pivotX: value })}
             />
             <NumberRow
-              label="Y"
+              label="Center Y"
+              glyph="Y"
+              compact
               value={layer.pivotY ?? 0}
               onChange={(value) => onPatch({ pivotY: value })}
             />
-          </div>
-        </details>
+          </PairRow>
+        </div>
       )}
     </Section>
+  );
+}
+
+/** Two fields sharing one ◇ — the pair animates together (Position, Scale, Size). */
+export function PairRow({
+  children,
+  keyframe,
+  reserve = false,
+}: {
+  children: React.ReactNode;
+  keyframe?: KeyframeToggleProps;
+  reserve?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-1.5">
+      {children}
+      {keyframe ? (
+        <KeyframeToggle keyframe={keyframe} />
+      ) : (
+        reserve && <span className="size-6" aria-hidden />
+      )}
+    </div>
+  );
+}
+
+/** Geometry size. Animating it keys the path shape, so W/H share the Path ◇. */
+export function LayerSizeRow({
+  layer,
+  selectedLayers,
+  bounds,
+  count,
+  progressMs,
+  linked,
+}: {
+  layer: Layer;
+  selectedLayers: Layer[];
+  bounds: InspectorSelectionBounds | null;
+  count: number;
+  progressMs: number;
+  /** Proportions lock shared with scale. */
+  linked: boolean;
+}) {
+  const blocks = useEditorStore((state) => state.animation.blocks);
+  const duration = useEditorStore((state) => state.animation.duration);
+  const keyframeFor = useKeyframeToggles(layer, count);
+  const animated =
+    count === 1 &&
+    blocks.some(
+      (block) => String(block.layerId) === String(layer.id) && block.propertyName === "pathData",
+    );
+  const geometry = React.useMemo(() => {
+    if (bounds?.coordinateSpace === "world") return null;
+    const paths = selectedLayers.filter((item) => item.type !== "group");
+    if (!paths.length || paths.length !== selectedLayers.length) return null;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const item of paths) {
+      const source = animated
+        ? parsePath(pathDAtTime(item, blocks, progressMs, duration, progressMs / duration))
+        : item.from;
+      const box = getPathDataBounds(source);
+      if (!box) continue;
+      minX = Math.min(minX, box.x);
+      minY = Math.min(minY, box.y);
+      maxX = Math.max(maxX, box.x + box.w);
+      maxY = Math.max(maxY, box.y + box.h);
+    }
+    if (!Number.isFinite(minX)) return null;
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  }, [animated, blocks, bounds?.coordinateSpace, duration, progressMs, selectedLayers]);
+  if (!geometry || layer.locked) return null;
+
+  const resize = (axis: "width" | "height", value: number) => {
+    if (value <= 0) return;
+    const ratio = geometry.width / Math.max(1e-6, geometry.height);
+    const width = axis === "width" ? value : linked ? value * ratio : geometry.width;
+    const height = axis === "height" ? value : linked ? value / ratio : geometry.height;
+    const target = { ...geometry, width, height };
+    const store = useEditorStore.getState();
+    if (animated) {
+      // Animated shape: write the resized shape at the playhead.
+      const current = parsePath(
+        pathDAtTime(layer, store.animation.blocks, progressMs, duration, progressMs / duration),
+      );
+      store.setPropertiesAtPlayhead(layer.id, {
+        pathData: pathToString(scalePathToBounds(current, geometry, target)),
+      });
+      return;
+    }
+    store.resizeSelectedLayer(geometry, target);
+  };
+  const round = (value: number) => Math.round(value * 100) / 100;
+
+  return (
+    <PairRow keyframe={keyframeFor("pathData", "Path")} reserve={count === 1}>
+      <NumberRow
+        label="W"
+        compact
+        value={round(geometry.width)}
+        min={0.01}
+        step={0.1}
+        onChange={(value) => resize("width", value)}
+      />
+      <NumberRow
+        label="H"
+        compact
+        value={round(geometry.height)}
+        min={0.01}
+        step={0.1}
+        onChange={(value) => resize("height", value)}
+      />
+    </PairRow>
   );
 }
 
@@ -245,21 +450,40 @@ export function FrameDesignPanel({
   const selectionY = Math.min(...selectedFrames.map((item) => item.y));
   const widthValues = selectedFrames.map((item) => item.vector.width);
   const heightValues = selectedFrames.map((item) => item.vector.height);
-  const widths = {
-    value: widthValues[0] ?? frame.vector.width,
-    mixed: widthValues.some((value) => value !== widthValues[0]),
-  };
-  const heights = {
-    value: heightValues[0] ?? frame.vector.height,
-    mixed: heightValues.some((value) => value !== heightValues[0]),
-  };
   const [nameDraft, setNameDraft] = React.useState(frame.name);
   React.useEffect(() => setNameDraft(frame.name), [frame.id, frame.name]);
 
   return (
     <>
-      <Section title={count > 1 ? `Frames · ${count}` : "Frame"}>
-        {count === 1 ? (
+      <Section
+        title="Frame"
+        action={
+          count === 1 ? (
+            <>
+              <button
+                type="button"
+                onClick={onDuplicate}
+                className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label="Duplicate frame"
+                title="Duplicate frame"
+              >
+                <Copy className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={onDelete}
+                disabled={!canDelete}
+                className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                aria-label="Delete frame"
+                title="Delete frame"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            </>
+          ) : undefined
+        }
+      >
+        {count === 1 && (
           <Row label="Name">
             <TextInput
               value={nameDraft}
@@ -268,34 +492,32 @@ export function FrameDesignPanel({
               ariaLabel="Frame name"
             />
           </Row>
-        ) : (
-          <p className="text-[10px] leading-relaxed text-muted-foreground">
-            Position changes move every selected frame together.
-          </p>
         )}
-      </Section>
-      <Section title="Position & intrinsic size">
-        <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+        <div className="grid grid-cols-2 gap-1.5">
           <NumberRow
             label="X"
+            compact
             value={selectionX}
             onChange={(value) => onMove(value - selectionX, 0)}
           />
           <NumberRow
             label="Y"
+            compact
             value={selectionY}
             onChange={(value) => onMove(0, value - selectionY)}
           />
           {count === 1 ? (
             <>
               <NumberRow
-                label="Intrinsic W"
+                label="W"
+                compact
                 value={frame.vector.width}
                 min={1}
                 onChange={(value) => onResize(value, frame.vector.height)}
               />
               <NumberRow
-                label="Intrinsic H"
+                label="H"
+                compact
                 value={frame.vector.height}
                 min={1}
                 onChange={(value) => onResize(frame.vector.width, value)}
@@ -303,31 +525,25 @@ export function FrameDesignPanel({
             </>
           ) : (
             <>
-              <Row label="W">
-                <span className="text-[11px] text-muted-foreground">
-                  {widths.mixed ? "Mixed" : widths.value}
-                </span>
-              </Row>
-              <Row label="H">
-                <span className="text-[11px] text-muted-foreground">
-                  {heights.mixed ? "Mixed" : heights.value}
-                </span>
-              </Row>
+              <MixedReadout label="W" values={widthValues} />
+              <MixedReadout label="H" values={heightValues} />
             </>
           )}
         </div>
       </Section>
       {count === 1 && (
-        <Section title="Android">
-          <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
+        <Section title="Android" defaultOpen={false}>
+          <div className="grid grid-cols-2 gap-1.5">
             <NumberRow
-              label="VP W"
+              label="VW"
+              compact
               value={frame.vector.viewportWidth ?? frame.vector.width}
               min={1}
               onChange={(value) => useEditorStore.getState().updateVector({ viewportWidth: value })}
             />
             <NumberRow
-              label="VP H"
+              label="VH"
+              compact
               value={frame.vector.viewportHeight ?? frame.vector.height}
               min={1}
               onChange={(value) =>
@@ -339,6 +555,7 @@ export function FrameDesignPanel({
             <TextInput
               ariaLabel="Android tint"
               value={frame.vector.tint ?? ""}
+              placeholder="None"
               onChange={(value) =>
                 useEditorStore.getState().updateVector({ tint: value || undefined })
               }
@@ -348,178 +565,35 @@ export function FrameDesignPanel({
             <TextInput
               ariaLabel="Android tint mode"
               value={frame.vector.tintMode ?? ""}
+              placeholder="src_in"
               onChange={(value) =>
                 useEditorStore.getState().updateVector({ tintMode: value || undefined })
               }
             />
           </Row>
-          <Row label="Mirror">
-            <button
-              type="button"
-              className="h-7 rounded-md border border-border px-2 text-[11px]"
-              onClick={() =>
+          <label className="flex h-7 items-center justify-between text-[11px] text-muted-foreground">
+            Auto-mirror in RTL
+            <input
+              type="checkbox"
+              className="size-3.5 accent-primary"
+              checked={Boolean(frame.vector.autoMirrored)}
+              onChange={() =>
                 useEditorStore.getState().updateVector({ autoMirrored: !frame.vector.autoMirrored })
               }
-            >
-              {frame.vector.autoMirrored ? "On" : "Off"}
-            </button>
-          </Row>
-        </Section>
-      )}
-      {count === 1 && (
-        <Section title="Actions" defaultOpen={false}>
-          <div className="grid grid-cols-2 gap-1.5">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5 text-[11px]"
-              onClick={onDuplicate}
-            >
-              <Copy className="size-3.5" /> Duplicate
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5 text-[11px] text-destructive hover:text-destructive"
-              onClick={onDelete}
-              disabled={!canDelete}
-            >
-              <Trash2 className="size-3.5" /> Delete
-            </Button>
-          </div>
+            />
+          </label>
         </Section>
       )}
     </>
   );
 }
 
-export function MotionPanel({
-  layer,
-  selectionCount,
-  onEditMorph,
-}: {
-  layer: Layer;
-  selectionCount: number;
-  onEditMorph: () => void;
-}) {
-  const blocks = useEditorStore((state) => state.animation.blocks);
-  const addTimelineBlock = useEditorStore((state) => state.addTimelineBlock);
-  const removeTimelineProperty = useEditorStore((state) => state.removeTimelineProperty);
-  const selectBlocks = useEditorStore((state) => state.selectBlocks);
-  const selectedBlockIds = useEditorStore((state) => state.selectedBlockIds);
-  const duration = useEditorStore((state) => state.animation.duration);
-  const layerBlocks = blocks.filter((block) => String(block.layerId) === String(layer.id));
-  const selectedBlocks = layerBlocks.filter((block) => selectedBlockIds.includes(block.id));
-  const propertyNames = Array.from(
-    new Set([
-      ...layerBlocks.map((block) => block.propertyName),
-      ...timelinePropertiesForLayer(layer.type),
-    ]),
-  );
-
-  if (selectionCount > 1) {
-    return (
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <Section title={`Motion · ${selectionCount} layers`}>
-          <p className="rounded-md bg-muted/55 px-2 py-2 text-[10px] leading-relaxed text-muted-foreground">
-            Select one layer to edit its motion tracks. Design properties can still be changed for
-            the full selection.
-          </p>
-        </Section>
-      </div>
-    );
-  }
-
+function MixedReadout({ label, values }: { label: string; values: number[] }) {
+  const mixed = values.some((value) => value !== values[0]);
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto" onKeyDown={handleTimelineClipboardShortcut}>
-      <TimelineClipboardControls />
-      {selectedBlocks.map((block) => (
-        <MotionBlockEditor
-          key={block.id}
-          block={block}
-          duration={duration}
-          onEditMorph={onEditMorph}
-        />
-      ))}
-      {(layer.type === "path" || layer.type === "clipPath") && (
-        <Section title="Vector morph">
-          <button
-            type="button"
-            onClick={onEditMorph}
-            disabled={layer.locked}
-            className="flex h-8 w-full items-center gap-2 rounded-[4px] bg-muted/65 px-2 text-left text-[11px] text-foreground transition-colors hover:bg-muted disabled:opacity-50"
-          >
-            <Pencil className="size-3.5 text-muted-foreground" />
-            <span className="flex-1">Start and end paths</span>
-            <span className="text-[10px] text-muted-foreground">Edit</span>
-          </button>
-          <p className="text-[10px] leading-relaxed text-muted-foreground">
-            Edit the selected path segment, or create a path track for this layer.
-          </p>
-        </Section>
-      )}
-      <Section title="Animations">
-        {(layer.type === "group" || layer.type === "vector") && (
-          <p className="text-[10px] leading-relaxed text-muted-foreground">
-            Animate child opacity for fades in Android exports.
-          </p>
-        )}
-        <div className="space-y-1">
-          {propertyNames.map((propertyName) => {
-            const matches = layerBlocks.filter((block) => block.propertyName === propertyName);
-            const active = matches.length > 0;
-            return (
-              <div
-                key={propertyName}
-                className={cn(
-                  "group flex h-7 w-full items-center rounded-[4px] hover:bg-muted",
-                  active ? "text-foreground" : "text-muted-foreground",
-                )}
-              >
-                <button
-                  type="button"
-                  disabled={layer.locked}
-                  onClick={() =>
-                    active
-                      ? selectBlocks(matches.map((block) => block.id))
-                      : addTimelineBlock(layer.id, propertyName)
-                  }
-                  className="flex h-full min-w-0 flex-1 items-center gap-2 px-2 text-left text-[11px] disabled:opacity-50"
-                  aria-label={
-                    active
-                      ? `Edit ${propertyLabel(propertyName)} animation`
-                      : `Animate ${propertyLabel(propertyName)}`
-                  }
-                >
-                  <span
-                    className={cn(
-                      "size-2 rotate-45 rounded-[1px] border",
-                      active ? "border-primary bg-primary" : "border-muted-foreground/40",
-                    )}
-                  />
-                  <span className="flex-1">{propertyLabel(propertyName)}</span>
-                  <span className="text-[10px] opacity-60 transition-opacity group-hover:opacity-100">
-                    {active ? "Edit" : "Animate"}
-                  </span>
-                </button>
-                {active && (
-                  <button
-                    type="button"
-                    onClick={() => removeTimelineProperty(layer.id, propertyName)}
-                    className="grid size-7 shrink-0 place-items-center rounded-[4px] text-muted-foreground opacity-60 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
-                    aria-label={`Remove ${propertyLabel(propertyName)} animation`}
-                    title={`Remove ${propertyLabel(propertyName)} animation`}
-                  >
-                    <Trash2 className="size-3" />
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </Section>
+    <div className="flex h-7 items-center gap-2 rounded-md bg-secondary/60 px-2 text-[11px]">
+      <span className="w-3 text-muted-foreground">{label}</span>
+      <span className="text-muted-foreground">{mixed ? "Mixed" : values[0]}</span>
     </div>
   );
 }

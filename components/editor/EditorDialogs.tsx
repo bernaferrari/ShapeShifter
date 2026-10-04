@@ -2,25 +2,38 @@
 
 import {
   ArrowLeftRight,
+  Circle,
+  Copy,
   Download,
-  HelpCircle,
+  FolderMinus,
+  FolderPlus,
+  Frame,
+  Gauge,
+  Keyboard,
   Lasso,
+  Maximize,
   MousePointer2,
   PaintBucket,
-  PenTool,
-  Play,
-  RotateCw,
-  Waypoints,
-  Zap,
-  Scissors,
-  Undo2,
-  Redo2,
-  Upload,
-  Maximize,
+  PanelBottom,
   PanelLeft,
   PanelRight,
-  PanelBottom,
-  FolderPlus,
+  Pause,
+  PenTool,
+  Play,
+  Redo2,
+  Repeat,
+  RotateCw,
+  Ruler,
+  Scissors,
+  SkipBack,
+  Sparkles,
+  Spline,
+  Square,
+  Undo2,
+  Upload,
+  Waypoints,
+  Zap,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -33,58 +46,79 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { KeyCombo } from "@/components/ui/kbd";
 import { DEMO_INFOS } from "@/lib/shapeshifter/demoProjects";
 import { useEditorStore } from "@/lib/store/editorStore";
 import type { EditorExportType } from "./project/useProjectExport";
 
-const SHORTCUT_SECTIONS = [
-  {
-    title: "Playback & Timeline",
-    rows: [
-      ["Space", "Tap play · hold and drag to pan"],
-      ["H", "Hand / pan"],
-      ["Timeline blocks", "Drag to move · resize either edge"],
-    ],
-  },
+const SHORTCUT_SECTIONS: ReadonlyArray<{
+  title: string;
+  rows: ReadonlyArray<readonly [description: string, keys: string]>;
+}> = [
   {
     title: "Tools",
     rows: [
-      ["V", "Move / Select"],
-      ["A / D", "Vector / Direct"],
-      ["P", "Pen"],
-      ["R / O", "Rectangle / Ellipse"],
-      ["L", "Lasso"],
-      ["B", "Paint / Fill"],
-      ["K", "Add point"],
+      ["Move", "V"],
+      ["Edit points", "A / D"],
+      ["Pen", "P"],
+      ["Rectangle", "R"],
+      ["Ellipse", "O"],
+      ["Lasso", "L"],
+      ["Paint fill", "B"],
+      ["Add point", "K"],
+      ["Hand", "H"],
     ],
   },
   {
-    title: "Editing",
+    title: "Playback",
     rows: [
-      ["⇧F", "Auto-fix morph"],
-      ["⇧R", "Reverse path"],
-      ["⇧S", "Shift points"],
-      ["⌘G / ⇧⌘G", "Group / Ungroup"],
-      ["X", "Split command"],
-      ["Delete / ⌫", "Remove selected points"],
-      ["Arrows (+Shift)", "Nudge fine / coarse"],
-      ["⌘D / Ctrl+D", "Duplicate selected layers"],
+      ["Play / pause", "Space"],
+      ["Previous / next frame", ", / ."],
+      ["Jump 10 frames", "⇧, / ⇧."],
+      ["Precise timing while dragging", "⌥"],
     ],
   },
   {
-    title: "Navigation & Power",
+    title: "Edit",
     rows: [
-      ["⌘K", "Command palette"],
-      ["⌘Z / ⌘⇧Z", "Undo / Redo"],
-      ["1 / 2", "Start / End path"],
-      ["⇧1 / ⇧2", "Fit all / Fit selection"],
-      ["Esc / Enter", "Clear selection / finish pen path"],
-      ["⌘W", "Close Action Mode"],
-      ["Alt + timeline drag", "Adjust timing in milliseconds"],
-      ["Layer arrows / F2", "Navigate layers / Rename"],
+      ["Undo", "⌘Z"],
+      ["Redo", "⇧⌘Z"],
+      ["Duplicate", "⌘D"],
+      ["Group / ungroup", "⌘G / ⇧⌘G"],
+      ["Delete", "⌫"],
+      ["Nudge", "← / →"],
+      ["Rename layer", "F2"],
     ],
   },
-] as const;
+  {
+    title: "Paths & morph",
+    rows: [
+      ["Make morph-compatible", "⇧F"],
+      ["Reverse direction", "⇧R"],
+      ["Shift start point", "⇧S"],
+      ["Split segment", "X"],
+      ["Start / end shape", "1 / 2"],
+      ["Leave morph editing", "⌘W"],
+    ],
+  },
+  {
+    title: "View",
+    rows: [
+      ["Zoom in / out", "+ / −"],
+      ["Zoom to 100%", "0"],
+      ["Zoom to fit", "⇧1"],
+      ["Zoom to selection", "⇧2"],
+    ],
+  },
+  {
+    title: "General",
+    rows: [
+      ["Quick actions", "⌘K"],
+      ["Keyboard shortcuts", "?"],
+      ["Clear selection", "Esc"],
+    ],
+  },
+];
 
 export function EditorHelpDialog({
   open,
@@ -95,26 +129,26 @@ export function EditorHelpDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
+      <DialogContent className="gap-0 p-0 sm:max-w-[680px]">
+        <DialogHeader className="border-b border-border px-6 py-4">
           <DialogTitle>Keyboard shortcuts</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 py-2 text-sm">
+        <div className="grid gap-x-10 gap-y-6 px-6 py-5 sm:grid-cols-2">
           {SHORTCUT_SECTIONS.map((section) => (
             <section key={section.title} aria-labelledby={`shortcut-${section.title}`}>
               <h3
                 id={`shortcut-${section.title}`}
-                className="mb-1.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground"
+                className="mb-2 text-[12px] font-semibold text-foreground"
               >
                 {section.title}
               </h3>
-              <dl className="space-y-1">
-                {section.rows.map(([keys, description]) => (
-                  <div key={keys} className="flex items-center justify-between gap-4">
-                    <dt>
-                      <kbd className="rounded bg-muted px-1.5 py-px font-mono text-xs">{keys}</kbd>
-                    </dt>
-                    <dd className="text-right text-muted-foreground">{description}</dd>
+              <dl className="space-y-1.5">
+                {section.rows.map(([description, keys]) => (
+                  <div key={description} className="flex items-center justify-between gap-4">
+                    <dt className="text-[13px] text-muted-foreground">{description}</dt>
+                    <dd>
+                      <KeyCombo keys={keys} />
+                    </dd>
                   </div>
                 ))}
               </dl>
@@ -127,15 +161,15 @@ export function EditorHelpDialog({
 }
 
 const EXPORT_COMMANDS: ReadonlyArray<[EditorExportType, string]> = [
-  ["svg", "Export animated SVG"],
-  ["static", "Export static SVG"],
-  ["css", "Export CSS keyframes"],
-  ["json", "Export project JSON"],
-  ["lottie", "Export Lottie JSON"],
-  ["vector", "Export Vector Drawable"],
   ["avd", "Export Animated Vector Drawable"],
+  ["vector", "Export Vector Drawable"],
+  ["svg", "Export animated SVG"],
+  ["static", "Export SVG"],
+  ["css", "Export CSS keyframes"],
+  ["lottie", "Export Lottie"],
+  ["pdf", "Export PDF"],
   ["spritesheet", "Export SVG spritesheet"],
-  ["pdf", "Export vector PDF"],
+  ["json", "Save project file"],
 ];
 
 interface EditorCommandPaletteProps {
@@ -148,7 +182,19 @@ interface EditorCommandPaletteProps {
   onToggleLayers: () => void;
   onToggleInspector: () => void;
   onToggleTimeline: () => void;
+  onToggleRulers?: () => void;
   onResetViews: () => void;
+}
+
+interface PaletteCommand {
+  label: string;
+  icon?: LucideIcon;
+  shortcut?: string;
+  keywords?: string[];
+  disabled?: boolean;
+  /** Commands that open another surface handle closing themselves. */
+  keepOpen?: boolean;
+  action: () => void;
 }
 
 export function EditorCommandPalette({
@@ -161,6 +207,7 @@ export function EditorCommandPalette({
   onToggleLayers,
   onToggleInspector,
   onToggleTimeline,
+  onToggleRulers,
   onResetViews,
 }: EditorCommandPaletteProps) {
   const canUndo = useEditorStore((state) => state.canUndo);
@@ -169,185 +216,214 @@ export function EditorCommandPalette({
     (state) => state.selectionKind === "layer" && state.hasCanvasSelection,
   );
   const isPlaying = useEditorStore((state) => state.isPlaying);
-  const run = (action: () => void) => {
-    action();
-    onOpenChange(false);
-  };
-  const setTool = (tool: "select" | "pen" | "direct" | "pencil" | "paint" | "knife") =>
-    run(() => useEditorStore.getState().setToolMode(tool));
+  const store = () => useEditorStore.getState();
+  const tool = (mode: Parameters<ReturnType<typeof store>["setToolMode"]>[0]) => () =>
+    store().setToolMode(mode);
+
+  const groups: Array<{ heading: string; commands: PaletteCommand[] }> = [
+    {
+      heading: "Tools",
+      commands: [
+        { label: "Move", icon: MousePointer2, shortcut: "V", action: tool("select") },
+        {
+          label: "Edit points",
+          icon: Waypoints,
+          shortcut: "A",
+          keywords: ["direct", "vector", "anchor", "bezier"],
+          action: tool("direct"),
+        },
+        { label: "Pen", icon: PenTool, shortcut: "P", action: tool("pen") },
+        { label: "Rectangle", icon: Square, shortcut: "R", action: tool("rectangle") },
+        { label: "Ellipse", icon: Circle, shortcut: "O", action: tool("ellipse") },
+        { label: "Lasso", icon: Lasso, shortcut: "L", action: tool("pencil") },
+        { label: "Paint fill", icon: PaintBucket, shortcut: "B", action: tool("paint") },
+        { label: "Add point", icon: Scissors, shortcut: "K", action: tool("knife") },
+      ],
+    },
+    {
+      heading: "Edit",
+      commands: [
+        {
+          label: "Undo",
+          icon: Undo2,
+          shortcut: "⌘Z",
+          disabled: !canUndo,
+          action: () => store().undo(),
+        },
+        {
+          label: "Redo",
+          icon: Redo2,
+          shortcut: "⇧⌘Z",
+          disabled: !canRedo,
+          action: () => store().redo(),
+        },
+        {
+          label: "Duplicate",
+          icon: Copy,
+          shortcut: "⌘D",
+          disabled: !hasSelection,
+          action: () => {
+            const state = store();
+            state.copyLayers(
+              state.selectedLayerIds.length ? state.selectedLayerIds : [state.selectedLayerId],
+            );
+            state.pasteLayers();
+          },
+        },
+        {
+          label: "Group selection",
+          icon: FolderPlus,
+          shortcut: "⌘G",
+          disabled: !hasSelection,
+          action: () => store().groupSelectedLayers(),
+        },
+        {
+          label: "Ungroup",
+          icon: FolderMinus,
+          shortcut: "⇧⌘G",
+          disabled: !hasSelection,
+          action: () => store().ungroupSelectedLayer(),
+        },
+        { label: "New path layer", icon: Spline, action: () => store().addLayer("path") },
+        { label: "New frame", icon: Frame, action: () => store().addFrame() },
+      ],
+    },
+    {
+      heading: "Path & morph",
+      commands: [
+        {
+          label: "Make morph-compatible",
+          icon: Zap,
+          shortcut: "⇧F",
+          keywords: ["prepare", "auto fix", "match"],
+          disabled: !hasSelection,
+          action: () => {
+            if (store().previewPrepareForMorph())
+              toast.message("Review the morph in the properties panel, then Apply or Cancel");
+            else if (store().autoFixSelectedLayer()) toast.success("Paths made compatible");
+          },
+        },
+        {
+          label: "Reverse direction",
+          icon: RotateCw,
+          shortcut: "⇧R",
+          disabled: !hasSelection,
+          action: () => store().reverseSelectedLayer(),
+        },
+        {
+          label: "Shift start point",
+          icon: ArrowLeftRight,
+          shortcut: "⇧S",
+          disabled: !hasSelection,
+          action: () => store().shiftSelectedLayer(1),
+        },
+      ],
+    },
+    {
+      heading: "Playback",
+      commands: [
+        {
+          label: isPlaying ? "Pause" : "Play",
+          icon: isPlaying ? Pause : Play,
+          shortcut: "Space",
+          action: () => store().togglePlayback(),
+        },
+        { label: "Go to start", icon: SkipBack, action: () => store().setProgress(0) },
+        { label: "Toggle loop", icon: Repeat, action: () => store().toggleRepeating() },
+        { label: "Toggle slow motion", icon: Gauge, action: () => store().toggleSlowMotion() },
+      ],
+    },
+    {
+      heading: "View",
+      commands: [
+        { label: "Zoom to fit", icon: Maximize, shortcut: "⇧1", action: onResetViews },
+        { label: "Toggle layers", icon: PanelLeft, action: onToggleLayers },
+        { label: "Toggle properties", icon: PanelRight, action: onToggleInspector },
+        { label: "Toggle timeline", icon: PanelBottom, action: onToggleTimeline },
+        ...(onToggleRulers
+          ? [{ label: "Toggle rulers", icon: Ruler, action: onToggleRulers }]
+          : []),
+        {
+          label: "Keyboard shortcuts",
+          icon: Keyboard,
+          shortcut: "?",
+          keepOpen: true,
+          action: () => {
+            onOpenChange(false);
+            onOpenHelp();
+          },
+        },
+      ],
+    },
+    {
+      heading: "File",
+      commands: [
+        { label: "Import SVG, XML or project…", icon: Upload, action: onOpenImport },
+        ...EXPORT_COMMANDS.map(([type, label]) => ({
+          label,
+          icon: Download,
+          keywords: ["export", "download"],
+          action: () => onExport(type),
+        })),
+      ],
+    },
+    {
+      heading: "Examples",
+      commands: DEMO_INFOS.map((demo, index) => ({
+        label: `Open “${demo.title}”`,
+        icon: Sparkles,
+        keywords: ["sample", "demo", "example"],
+        action: () => onLoadSample(index),
+      })),
+    },
+  ];
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput placeholder="Type a command or search…" />
+    <CommandDialog open={open} onOpenChange={onOpenChange} title="Quick actions">
+      <CommandInput placeholder="Search actions…" />
       <CommandList>
-        <CommandEmpty>No results found.</CommandEmpty>
-        <CommandGroup heading="Tools">
-          <CommandItem onSelect={() => setTool("select")}>
-            <MousePointer2 className="mr-2 size-4" /> Move / Select
-            <CommandShortcut>V</CommandShortcut>
-          </CommandItem>
-          <CommandItem onSelect={() => setTool("pen")}>
-            <PenTool className="mr-2 size-4" /> Pen
-            <CommandShortcut>P</CommandShortcut>
-          </CommandItem>
-          <CommandItem
-            keywords={["direct", "anchor", "bezier", "points"]}
-            onSelect={() => setTool("direct")}
-          >
-            <Waypoints className="mr-2 size-4" /> Vector / Edit points
-            <CommandShortcut>A</CommandShortcut>
-          </CommandItem>
-          <CommandItem onSelect={() => setTool("pencil")}>
-            <Lasso className="mr-2 size-4" /> Lasso
-            <CommandShortcut>L</CommandShortcut>
-          </CommandItem>
-          <CommandItem onSelect={() => setTool("paint")}>
-            <PaintBucket className="mr-2 size-4" /> Paint / Fill
-            <CommandShortcut>B</CommandShortcut>
-          </CommandItem>
-          <CommandItem onSelect={() => setTool("knife")}>
-            <Scissors className="mr-2 size-4" /> Add point
-            <CommandShortcut>K</CommandShortcut>
-          </CommandItem>
-        </CommandGroup>
-        <CommandGroup heading="Document">
-          <CommandItem onSelect={() => run(onOpenImport)}>
-            <Upload className="mr-2 size-4" /> Import SVG, XML, or project…
-          </CommandItem>
-          <CommandItem
-            disabled={!canUndo}
-            onSelect={() => run(() => useEditorStore.getState().undo())}
-          >
-            <Undo2 className="mr-2 size-4" /> Undo<CommandShortcut>⌘Z</CommandShortcut>
-          </CommandItem>
-          <CommandItem
-            disabled={!canRedo}
-            onSelect={() => run(() => useEditorStore.getState().redo())}
-          >
-            <Redo2 className="mr-2 size-4" /> Redo<CommandShortcut>⇧⌘Z</CommandShortcut>
-          </CommandItem>
-          <CommandItem
-            disabled={!hasSelection}
-            onSelect={() =>
-              run(() => {
-                const store = useEditorStore.getState();
-                store.copyLayers(
-                  store.selectedLayerIds.length ? store.selectedLayerIds : [store.selectedLayerId],
+        <CommandEmpty>No matching actions</CommandEmpty>
+        {groups.map((group) => (
+          <CommandGroup key={group.heading} heading={group.heading}>
+            {group.commands
+              .filter((command) => !command.disabled)
+              .map((command) => {
+                const Icon = command.icon;
+                return (
+                  <CommandItem
+                    key={command.label}
+                    value={`${group.heading} ${command.label}`}
+                    keywords={command.keywords}
+                    disabled={command.disabled}
+                    onSelect={() => {
+                      command.action();
+                      if (!command.keepOpen) onOpenChange(false);
+                    }}
+                  >
+                    {Icon ? <Icon className="size-4" /> : <span className="size-4" />}
+                    <span className="flex-1 truncate">{command.label}</span>
+                    {command.shortcut && (
+                      <CommandShortcut>
+                        <KeyCombo keys={command.shortcut} />
+                      </CommandShortcut>
+                    )}
+                  </CommandItem>
                 );
-                store.pasteLayers();
-              })
-            }
-          >
-            Duplicate selected layers<CommandShortcut>⌘D</CommandShortcut>
-          </CommandItem>
-          <CommandItem
-            disabled={!hasSelection}
-            onSelect={() => run(() => useEditorStore.getState().groupSelectedLayers())}
-          >
-            <FolderPlus className="mr-2 size-4" /> Group selected layers
-            <CommandShortcut>⌘G</CommandShortcut>
-          </CommandItem>
-          <CommandItem
-            disabled={!hasSelection}
-            onSelect={() => run(() => useEditorStore.getState().ungroupSelectedLayer())}
-          >
-            Ungroup selected layer<CommandShortcut>⇧⌘G</CommandShortcut>
-          </CommandItem>
-        </CommandGroup>
-        <CommandGroup heading="Actions">
-          <CommandItem
-            onSelect={() => {
-              onOpenChange(false);
-              onOpenHelp();
-            }}
-          >
-            <HelpCircle className="mr-2 size-4" /> Show keyboard shortcuts
-          </CommandItem>
-          <CommandItem onSelect={() => run(() => useEditorStore.getState().togglePlayback())}>
-            <Play className="mr-2 size-4" /> {isPlaying ? "Pause animation" : "Play animation"}
-            <CommandShortcut>Space</CommandShortcut>
-          </CommandItem>
-          <CommandItem
-            disabled={!hasSelection}
-            onSelect={() =>
-              run(() => {
-                const store = useEditorStore.getState();
-                if (store.previewPrepareForMorph())
-                  toast.message("Review the morph in the inspector, then Apply or Cancel");
-                else if (store.autoFixSelectedLayer()) toast.success("Paths made compatible");
-              })
-            }
-          >
-            <Zap className="mr-2 size-4" /> Prepare paths for morph
-            <CommandShortcut>⇧F</CommandShortcut>
-          </CommandItem>
-          <CommandItem
-            disabled={!hasSelection}
-            onSelect={() => run(() => useEditorStore.getState().reverseSelectedLayer())}
-          >
-            <RotateCw className="mr-2 size-4" /> Reverse path
-            <CommandShortcut>⇧R</CommandShortcut>
-          </CommandItem>
-          <CommandItem
-            disabled={!hasSelection}
-            onSelect={() => run(() => useEditorStore.getState().shiftSelectedLayer(1))}
-          >
-            <ArrowLeftRight className="mr-2 size-4" /> Shift points
-            <CommandShortcut>⇧S</CommandShortcut>
-          </CommandItem>
-          <CommandItem
-            onSelect={() =>
-              run(() => {
-                useEditorStore.getState().addLayer("path");
-                toast.success("Path layer added");
-              })
-            }
-          >
-            Add path layer
-          </CommandItem>
-          <CommandItem onSelect={() => run(() => useEditorStore.getState().toggleSlowMotion())}>
-            Toggle slow motion
-          </CommandItem>
-          <CommandItem onSelect={() => run(() => useEditorStore.getState().toggleRepeating())}>
-            Toggle repeat playback
-          </CommandItem>
-          <CommandItem onSelect={() => run(() => useEditorStore.getState().setProgress(0))}>
-            Reset playback head
-          </CommandItem>
-          <CommandItem onSelect={() => run(() => useEditorStore.getState().clearBlockSelection())}>
-            Clear timeline block selection
-          </CommandItem>
-        </CommandGroup>
-        <CommandGroup heading="View">
-          <CommandItem onSelect={() => run(() => useEditorStore.getState().fitWorldToFrames())}>
-            <Maximize className="mr-2 size-4" /> Fit all frames<CommandShortcut>⇧1</CommandShortcut>
-          </CommandItem>
-          <CommandItem onSelect={() => run(onResetViews)}>Reset canvas views</CommandItem>
-          <CommandItem onSelect={() => run(onToggleLayers)}>
-            <PanelLeft className="mr-2 size-4" /> Toggle layers panel
-          </CommandItem>
-          <CommandItem onSelect={() => run(onToggleInspector)}>
-            <PanelRight className="mr-2 size-4" /> Toggle inspector
-          </CommandItem>
-          <CommandItem onSelect={() => run(onToggleTimeline)}>
-            <PanelBottom className="mr-2 size-4" /> Toggle timeline
-          </CommandItem>
-        </CommandGroup>
-        <CommandGroup heading="Samples">
-          {DEMO_INFOS.map((demo, index) => (
-            <CommandItem key={demo.id} onSelect={() => run(() => onLoadSample(index))}>
-              {demo.title}
-            </CommandItem>
-          ))}
-        </CommandGroup>
-        <CommandGroup heading="Export">
-          {EXPORT_COMMANDS.map(([type, label]) => (
-            <CommandItem key={type} onSelect={() => run(() => onExport(type))}>
-              <Download className="mr-2 size-4" /> {label}
-            </CommandItem>
-          ))}
-        </CommandGroup>
+              })}
+          </CommandGroup>
+        ))}
       </CommandList>
+      <div className="flex h-9 items-center gap-4 border-t border-border px-4 text-[11px] text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <KeyCombo keys="↑" /> <KeyCombo keys="↓" /> Navigate
+        </span>
+        <span className="flex items-center gap-1.5">
+          <KeyCombo keys="↵" /> Run
+        </span>
+        <span className="ml-auto flex items-center gap-1.5">
+          <KeyCombo keys="Esc" /> Close
+        </span>
+      </div>
     </CommandDialog>
   );
 }

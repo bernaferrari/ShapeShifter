@@ -62,7 +62,9 @@ export function TimelineClipboardControls({ compact = false }: { compact?: boole
     },
   ];
   return (
-    <div className={cn("flex items-center gap-1", !compact && "border-b border-border px-3 py-2")}>
+    <div
+      className={cn("flex items-center gap-0.5", !compact && "border-b border-border px-3 py-2")}
+    >
       {controls.map(({ label, title, icon: Icon, disabled, action }) => (
         <button
           key={label}
@@ -72,7 +74,7 @@ export function TimelineClipboardControls({ compact = false }: { compact?: boole
           disabled={disabled}
           onClick={action}
           className={cn(
-            "flex h-6 shrink-0 items-center justify-center gap-1 rounded text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-35",
+            "flex h-6 shrink-0 items-center justify-center gap-1 rounded-md text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-35",
             compact ? "size-6" : "flex-1 bg-muted/50 px-2",
           )}
         >

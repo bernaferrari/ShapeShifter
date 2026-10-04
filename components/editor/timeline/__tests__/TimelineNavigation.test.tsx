@@ -4,9 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { LayerTimeline } from "../../LayerTimeline";
 import {
+  chooseMenuItem,
   renderEditorComponent,
   type RenderedEditorComponent,
 } from "../../__tests__/renderEditorComponent";
+import { TimelineInsertKeyframeButton } from "../TimelineInsertKeyframeButton";
+import { useTimelineViewSettings } from "../timelineViewSettings";
 import { anchoredTimelineScroll, formatTimelineMark, timelineMajorStep } from "../timelineScale";
 import { useEditorKeyboardShortcuts } from "../../hooks/useEditorKeyboardShortcuts";
 
@@ -16,6 +19,7 @@ beforeEach(() => {
   baseline = useEditorStore.getState();
   useEditorStore.getState().resetProject();
   useEditorStore.setState({ timelineZoom: 1, timelineScrollX: 0 });
+  useTimelineViewSettings.setState({ unit: "milliseconds", fps: 30, snapping: true });
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1000);
 });
 afterEach(() => {
@@ -31,18 +35,21 @@ function button(label: string) {
 function click(label: string) {
   React.act(() => button(label).click());
 }
-function select(label: string, value: string) {
-  const field = rendered!.container.querySelector<HTMLSelectElement>(
-    `select[aria-label="${label}"]`,
-  )!;
-  React.act(() => {
-    field.value = value;
-    field.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+function timelineOption(itemText: string) {
+  return chooseMenuItem(button("Timeline options"), itemText);
+}
+function stepFrame(key: "," | ".") {
+  React.act(() =>
+    window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })),
+  );
+}
+function KeyboardTimeline() {
+  useEditorKeyboardShortcuts();
+  return <LayerTimeline />;
 }
 
 describe("timeline navigation", () => {
-  it("snaps ruler scrubbing to fractional keys with a visible guide, and honors Alt and the snap toggle", () => {
+  it("snaps ruler scrubbing to fractional keys with a visible guide, and honors Alt and the snap toggle", async () => {
     const store = useEditorStore.getState();
     store.addTimelineBlock(store.layers[0].id, "rotation");
     store.updateTimelineBlock(useEditorStore.getState().selectedBlockIds[0], { endTime: 450.25 });
@@ -75,27 +82,29 @@ describe("timeline navigation", () => {
     scrub(true);
     expect(useEditorStore.getState().progress).toBe(0.446);
     React.act(() => window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1 })));
-    click("Snap timeline edits to grid");
+    await timelineOption("Snap to keyframes");
+    expect(useTimelineViewSettings.getState().snapping).toBe(false);
     scrub();
     expect(useEditorStore.getState().progress).toBe(0.446);
     expect(rendered.container.querySelector("[data-timeline-snap-guide]")).toBeNull();
     React.act(() => window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1 })));
   });
-  it("shows a selected preview range and resets to full duration without editing keyframe timing", () => {
+  it("shows a selected preview range and resets to full duration without editing keyframe timing", async () => {
     const store = useEditorStore.getState();
     store.addTimelineBlock(store.layers[0].id, "rotation");
     const id = useEditorStore.getState().selectedBlockIds[0];
     store.updateTimelineBlock(id, { startTime: 100, endTime: 700 });
     const blocks = useEditorStore.getState().animation.blocks;
     rendered = renderEditorComponent(<LayerTimeline />);
-    click("Preview selected motion range");
+    await timelineOption("Loop selection");
     const range = rendered.container.querySelector<HTMLElement>("[data-timeline-preview-range]")!;
+    const label = () =>
+      rendered!.container.querySelector("[data-timeline-preview-range-label]")?.textContent;
     expect(range.style.left).toBe("340px");
     expect(range.style.width).toBe("600px");
-    expect(button("Preview selected motion range").getAttribute("aria-pressed")).toBe("true");
-    expect(button("Preview selected motion range").textContent).toBe("100–700 ms");
-    select("Timeline time display", "frames");
-    expect(button("Preview selected motion range").textContent).toBe("3–21 f");
+    expect(label()).toBe("Looping 100–700 ms");
+    await timelineOption("Show frames");
+    expect(label()).toBe("Looping 3–21 f");
     click("Preview full animation");
     expect(rendered.container.querySelector("[data-timeline-preview-range]")).toBeNull();
     expect(useEditorStore.getState().animation.blocks).toBe(blocks);
@@ -153,7 +162,7 @@ describe("timeline navigation", () => {
       useEditorStore.getState().animation.blocks.filter((block) => block.layerId === target),
     ).toHaveLength(1);
   });
-  it("keeps ruler, track width, and playhead aligned through zoom, scrolling, and fit", () => {
+  it("keeps ruler, track width, and playhead aligned through zoom, scrolling, and fit", async () => {
     useEditorStore.setState({ progress: 0.6 });
     rendered = renderEditorComponent(<LayerTimeline />);
     const ruler = rendered.container.querySelector<HTMLElement>(
@@ -163,7 +172,7 @@ describe("timeline navigation", () => {
     const tracks = content.parentElement!;
     const head = () => rendered!.container.querySelector<HTMLElement>("[data-timeline-playhead]")!;
     expect(head().style.left).toBe("840px");
-    click("Zoom timeline in");
+    await timelineOption("Zoom in");
     expect(useEditorStore.getState().timelineZoom).toBeCloseTo(Math.sqrt(2));
     expect(parseFloat(ruler.style.width)).toBeCloseTo(1000 * Math.sqrt(2));
     expect(content.style.width).toBe(ruler.style.width);
@@ -174,37 +183,37 @@ describe("timeline navigation", () => {
     });
     expect(ruler.style.left).toBe("-300px");
     expect(parseFloat(head().style.left)).toBeCloseTo(240 + 600 * Math.sqrt(2) - 300);
-    click("Fit timeline to view");
+    await timelineOption("Zoom to fit");
     expect(content.style.width).toBe("1000px");
     expect(tracks.scrollLeft).toBe(0);
     expect(head().style.left).toBe("840px");
   });
 
-  it("displays and steps exact frames without rounding fractional milliseconds", () => {
+  it("displays and steps exact frames without rounding fractional milliseconds", async () => {
     useEditorStore.setState({ progress: 0.5 });
-    rendered = renderEditorComponent(<LayerTimeline />);
-    select("Timeline time display", "frames");
+    rendered = renderEditorComponent(<KeyboardTimeline />);
+    await timelineOption("Show frames");
     const frame = rendered.container.querySelector<HTMLInputElement>(
       '[aria-label="Current frame"]',
     )!;
     expect(frame.value).toBe("15");
-    click("Step forward one frame");
+    stepFrame(".");
     expect(useEditorStore.getState().progress * 1000).toBeCloseTo(500 + 1000 / 30, 10);
     expect(frame.value).toBe("16");
-    select("Timeline frame rate", "24");
+    React.act(() => useTimelineViewSettings.getState().setFps(24));
     const previous = useEditorStore.getState().progress;
-    click("Step forward one frame");
+    stepFrame(".");
     expect(useEditorStore.getState().progress * 1000).toBeCloseTo(previous * 1000 + 1000 / 24, 10);
   });
 
-  it("moves an object clip by an exact frame from its keyboard control", () => {
+  it("moves an object clip by an exact frame from its keyboard control", async () => {
     const store = useEditorStore.getState();
     useEditorStore.setState({ animation: { ...store.animation, blocks: [] } });
     store.addTimelineBlock(store.layers[0].id, "rotation");
     const id = useEditorStore.getState().selectedBlockIds[0];
     store.updateTimelineBlock(id, { startTime: 100, endTime: 700 });
     rendered = renderEditorComponent(<LayerTimeline />);
-    select("Timeline time display", "frames");
+    await timelineOption("Show frames");
     const clip = rendered.container.querySelector<HTMLElement>("[data-timeline-block-id]")!;
     React.act(() =>
       clip.dispatchEvent(
@@ -216,7 +225,7 @@ describe("timeline navigation", () => {
     expect(updated.endTime - updated.startTime).toBeCloseTo(600);
   });
 
-  it("navigates the selected property track's keys and inserts at the current time", () => {
+  it("inserts a keyframe at the current time on the selected property track", () => {
     const store = useEditorStore.getState();
     const layer = store.layers[0];
     store.addTimelineBlock(layer.id, "rotation");
@@ -228,12 +237,12 @@ describe("timeline navigation", () => {
     store.updateTimelineBlock(unrelated, { endTime: 800 });
     store.selectBlocks([id]);
     useEditorStore.setState({ progress: 0.5, isPlaying: true });
-    rendered = renderEditorComponent(<LayerTimeline />);
-    click("Previous keyframe");
-    expect(useEditorStore.getState().progress).toBe(0.35);
-    expect(useEditorStore.getState().isPlaying).toBe(false);
-    click("Next keyframe");
-    expect(useEditorStore.getState().progress).toBe(1);
+    rendered = renderEditorComponent(
+      <>
+        <LayerTimeline />
+        <TimelineInsertKeyframeButton />
+      </>,
+    );
     React.act(() => store.setProgress(0.2));
     click("Insert keyframe at playhead");
     const blocks = useEditorStore
@@ -256,7 +265,7 @@ describe("timeline navigation", () => {
     store.selectBlocks([rotation, scale]);
     useEditorStore.setState({ progress: 0.5 });
     const historyLength = useEditorStore.getState().history.length;
-    rendered = renderEditorComponent(<LayerTimeline />);
+    rendered = renderEditorComponent(<TimelineInsertKeyframeButton />);
     click("Insert keyframe at playhead");
     expect(useEditorStore.getState().animation.blocks).toHaveLength(5);
     expect(useEditorStore.getState().selectedBlockIds).toHaveLength(2);

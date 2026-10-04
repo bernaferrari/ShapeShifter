@@ -48,20 +48,6 @@ describe("editor selection contracts", () => {
     expect(state.selectedLayerRefs).toEqual([]);
   });
 
-  it("opening Motion from a selected artboard reveals the timeline without changing selection", () => {
-    const target = useEditorStore.getState().frames[1]!;
-    useEditorStore.getState().selectFrame(target.id);
-    useEditorStore.getState().setTimelineCollapsed(true);
-    rendered = renderEditorComponent(<Inspector />);
-
-    click(buttonWithText(rendered.container, "motion"));
-
-    const state = useEditorStore.getState();
-    expect(state.timelineCollapsed).toBe(false);
-    expect(state.selectedFrameId).toBe(target.id);
-    expect(state.selectionKind).toBe("frame");
-  });
-
   it("adds animation directly from a transform property and reveals its timeline track", () => {
     const layer = useEditorStore.getState().layers[0]!;
     useEditorStore.setState((state) => ({
@@ -89,7 +75,9 @@ describe("editor selection contracts", () => {
     expect(block).toBeDefined();
     expect(state.selectedBlockIds).toEqual([block!.id]);
     expect(state.timelineCollapsed).toBe(false);
-    expect(buttonWithText(rendered.container, "motion").getAttribute("aria-selected")).toBe("true");
+    expect(
+      rendered.container.querySelector('[aria-label="Remove Rotation animation"]'),
+    ).not.toBeNull();
   });
 
   it("removes an active transform animation from its keyframe control", () => {

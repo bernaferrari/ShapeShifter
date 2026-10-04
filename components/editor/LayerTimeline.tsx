@@ -1,21 +1,19 @@
 "use client";
 
 import React from "react";
-import {
-  LocateFixed,
-  Magnet,
-  Pause,
-  PanelBottomClose,
-  Play,
-  Plus,
-  ZoomIn,
-  ZoomOut,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ChevronDown, Ellipsis, Pause, Play, X } from "lucide-react";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useEditorStore } from "@/lib/store/editorStore";
@@ -35,13 +33,9 @@ import {
   timelineMajorStep,
   type TimelineTimeUnit,
 } from "./timeline/timelineScale";
-import { TimelineTransportButtons } from "./timeline/TimelineTransportButtons";
 import { TimelineInsertKeyframeButton } from "./timeline/TimelineInsertKeyframeButton";
-import {
-  TimelineClipboardControls,
-  handleTimelineClipboardShortcut,
-} from "./timeline/TimelineClipboardControls";
-import { TimelinePreviewRangeControls } from "./timeline/TimelinePreviewRangeControls";
+import { handleTimelineClipboardShortcut } from "./timeline/TimelineClipboardControls";
+import { TIMELINE_FRAME_RATES, useTimelineViewSettings } from "./timeline/timelineViewSettings";
 import { resolveTimelinePreviewRange } from "@/lib/shapeshifter/motion/previewRange";
 import {
   snapTimelineOffset,
@@ -52,7 +46,7 @@ import {
 const PLAYHEAD = "var(--primary)";
 const SURFACE = "bg-card";
 
-const HEADER_H = 40;
+const HEADER_H = 36;
 const LAYERS_W = 240;
 
 export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
@@ -64,13 +58,19 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
   const setAnimationDuration = useEditorStore((state) => state.setAnimationDuration);
   const togglePlayback = useEditorStore((state) => state.togglePlayback);
   const isPlaying = useEditorStore((state) => state.isPlaying);
+  const isRepeating = useEditorStore((state) => state.isRepeating);
+  const selectedBlockIds = useEditorStore((state) => state.selectedBlockIds);
+  const isSlowMotion = useEditorStore((state) => state.isSlowMotion);
   const storedPreviewRange = useEditorStore((state) => state.timelinePreviewRange);
   const preferredExportFormat = useEditorStore((state) => state.preferredExportFormat);
   const formatProfile = CAPABILITY_MATRIX[preferredExportFormat as ExportFormatId] ?? null;
 
-  const [timeUnit, setTimeUnit] = React.useState<TimelineTimeUnit>("milliseconds");
-  const [fps, setFps] = React.useState(30);
-  const [snapping, setSnapping] = React.useState(true);
+  const timeUnit = useTimelineViewSettings((state) => state.unit);
+  const setTimeUnit = useTimelineViewSettings((state) => state.setUnit);
+  const fps = useTimelineViewSettings((state) => state.fps);
+  const setFps = useTimelineViewSettings((state) => state.setFps);
+  const snapping = useTimelineViewSettings((state) => state.snapping);
+  const setSnapping = useTimelineViewSettings((state) => state.setSnapping);
   const [snapGuide, setSnapGuide] = React.useState<TimelineSnapTarget | null>(null);
   const reportSnap = React.useCallback((target: TimelineSnapTarget | null) => {
     setSnapGuide((previous) =>
@@ -245,6 +245,15 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
       ? Math.max(1, Math.min(5, Math.round((rulerMajorStepMs * fps) / 1000)))
       : 5;
   const rulerMinorStepMs = rulerMajorStepMs / rulerMinorPerMajor;
+  const selectedBlocks = animation.blocks.filter((block) =>
+    selectedBlockIds.includes(block.id),
+  );
+  const selectedRange = selectedBlocks.length
+    ? {
+        start: Math.min(...selectedBlocks.map((block) => block.startTime)),
+        end: Math.max(...selectedBlocks.map((block) => block.endTime)),
+      }
+    : null;
   const previewRange = resolveTimelinePreviewRange(
     storedPreviewRange,
     selectedFrameId,
@@ -290,7 +299,7 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
           return (
             <div
               data-timeline-snap-guide
-              className="pointer-events-none absolute top-0 bottom-8 z-[15] border-l border-dashed border-primary/65"
+              className="pointer-events-none absolute top-0 bottom-0 z-[15] border-l border-dashed border-primary/65"
               style={{ left: LAYERS_W + x }}
             >
               <span
@@ -299,7 +308,7 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
                   left: x > navigation.width - 160 ? undefined : 4,
                   right: x > navigation.width - 160 ? 4 : undefined,
                 }}
-                className="absolute top-1 whitespace-nowrap rounded bg-primary px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-primary-foreground shadow-sm"
+                className="absolute top-1 whitespace-nowrap rounded bg-primary px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-primary-foreground shadow-sm"
               >
                 {snapGuide.kind === "playhead"
                   ? "Playhead"
@@ -318,10 +327,34 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
         <div
           data-timeline-preview-range
           aria-hidden
-          className="pointer-events-none absolute top-0 bottom-8 z-[2] border-x border-primary/35 bg-primary/5"
+          className="pointer-events-none absolute top-0 bottom-0 z-[2] border-x border-primary/35 bg-primary/5"
           style={{ left: LAYERS_W + previewLeft, width: previewRight - previewLeft }}
         >
           <div className="absolute inset-x-0 top-0 h-0.5 bg-primary/50" />
+        </div>
+      )}
+      {previewRange && previewRight > previewLeft && (
+        <div
+          className="absolute bottom-2 z-[16] flex h-6 items-center gap-1 rounded-full bg-primary pl-2.5 pr-0.5 text-[11px] tabular-nums text-primary-foreground shadow-sm"
+          style={{
+            left: LAYERS_W + Math.min(previewLeft + 6, Math.max(0, navigation.width - 150)),
+          }}
+        >
+          <span data-timeline-preview-range-label>
+            Looping{" "}
+            {timeUnit === "frames"
+              ? `${Number(((previewRange.start * fps) / 1000).toFixed(3))}–${Number(((previewRange.end * fps) / 1000).toFixed(3))} f`
+              : `${Number(previewRange.start.toFixed(3))}–${Number(previewRange.end.toFixed(3))} ms`}
+          </span>
+          <button
+            type="button"
+            aria-label="Preview full animation"
+            title="Preview the full animation"
+            onClick={() => useEditorStore.getState().setTimelinePreviewRange(null)}
+            className="grid size-5 place-items-center rounded-full hover:bg-white/20"
+          >
+            <X className="size-3" />
+          </button>
         </div>
       )}
 
@@ -331,22 +364,24 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
         style={{ height: HEADER_H }}
       >
         <div
-          className="flex shrink-0 items-center gap-0.5 border-r border-border px-1.5"
+          className="flex shrink-0 items-center gap-1 border-r border-border pl-1.5 pr-1"
           style={{ width: LAYERS_W }}
         >
           <button
             type="button"
-            className="grid size-7 place-items-center rounded text-foreground transition-colors hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+            className="grid size-7 place-items-center rounded-md text-foreground transition-colors hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
             aria-label={isPlaying ? "Pause" : "Play"}
+            title={isPlaying ? "Pause · Space" : "Play · Space"}
             onClick={() => togglePlayback()}
           >
             {isPlaying ? (
-              <Pause className="size-3 fill-current" strokeWidth={0} />
+              <Pause className="size-3.5 fill-current" strokeWidth={0} />
             ) : (
-              <Play className="size-3 fill-current" strokeWidth={0} />
+              <Play className="size-3.5 fill-current" strokeWidth={0} />
             )}
           </button>
-          <div className="flex h-7 min-w-0 items-center gap-[3px] rounded-md border border-border bg-muted/50 px-1.5 font-mono text-[11px] tabular-nums leading-none tracking-tight">
+          <TimelineInsertKeyframeButton iconOnly label="Add keyframe at playhead" />
+          <div className="flex h-6 min-w-0 items-center gap-[3px] rounded-md bg-secondary px-1.5 text-[11px] tabular-nums leading-none">
             <TimelineCurrentTimeInput color={PLAYHEAD} unit={timeUnit} fps={fps} />
             <span className="text-muted-foreground">/</span>
             <TimelineDurationInput unit={timeUnit} fps={fps} />
@@ -356,33 +391,99 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  className="size-7 rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                  aria-label="Add layer"
+                <button
+                  type="button"
+                  aria-label="Timeline options"
+                  className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground data-popup-open:bg-muted data-popup-open:text-foreground"
                 />
               }
             >
-              <Plus className="h-3 w-3" strokeWidth={1.75} />
+              <Ellipsis className="size-3.5" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuItem onClick={() => addLayer("path")}>New path</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => addLayer("clipPath")}>
-                New clip path
+            <DropdownMenuContent align="start" side="top" className="w-56">
+              <DropdownMenuCheckboxItem
+                checked={isRepeating}
+                onCheckedChange={() => useEditorStore.getState().toggleRepeating()}
+              >
+                Loop playback
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={isSlowMotion}
+                onCheckedChange={() => useEditorStore.getState().toggleSlowMotion()}
+              >
+                Slow motion
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={snapping}
+                onCheckedChange={(checked) => setSnapping(Boolean(checked))}
+              >
+                Snap to keyframes
+                <DropdownMenuShortcut>⌥ bypass</DropdownMenuShortcut>
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuRadioGroup
+                value={timeUnit}
+                onValueChange={(value) => setTimeUnit(value as TimelineTimeUnit)}
+              >
+                <DropdownMenuRadioItem value="milliseconds">
+                  Show milliseconds
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="frames">Show frames</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>Frame rate · {fps} fps</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-32">
+                  <DropdownMenuRadioGroup
+                    value={String(fps)}
+                    onValueChange={(value) => setFps(Number(value))}
+                  >
+                    {TIMELINE_FRAME_RATES.map((rate) => (
+                      <DropdownMenuRadioItem key={rate} value={String(rate)}>
+                        {rate} fps
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuSeparator />
+              <DropdownMenuCheckboxItem
+                checked={Boolean(previewRange)}
+                disabled={!previewRange && !selectedRange}
+                onCheckedChange={() =>
+                  useEditorStore
+                    .getState()
+                    .setTimelinePreviewRange(previewRange ? null : selectedRange)
+                }
+              >
+                Loop selection
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuItem onClick={() => navigation.zoomBy(Math.sqrt(2))}>
+                Zoom in
+                <DropdownMenuShortcut>⌘ scroll</DropdownMenuShortcut>
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => addLayer("group")}>New group layer</DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={navigation.zoom <= 1}
+                onClick={() => navigation.zoomBy(1 / Math.sqrt(2))}
+              >
+                Zoom out
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={navigation.fit}>Zoom to fit</DropdownMenuItem>
+              <DropdownMenuItem onClick={navigation.focusPlayhead}>Go to playhead</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => addLayer("path")}>New path layer</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => addLayer("group")}>New group</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => addLayer("clipPath")}>New mask</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           {onCollapse && (
             <button
               type="button"
               onClick={onCollapse}
-              className="grid size-7 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+              className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
               aria-label="Hide timeline"
               title="Hide timeline"
             >
-              <PanelBottomClose className="size-3.5" />
+              <ChevronDown className="size-3.5" />
             </button>
           )}
         </div>
@@ -488,7 +589,7 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
                     {showLabel && (
                       <span
                         className={cn(
-                          "absolute bottom-[10px] whitespace-nowrap font-mono text-[10px] tabular-nums leading-none text-muted-foreground",
+                          "absolute bottom-[10px] whitespace-nowrap text-[10px] tabular-nums leading-none text-muted-foreground",
                           atEnd ? "-translate-x-full pr-0.5" : "left-0 pl-[3px]",
                         )}
                       >
@@ -612,101 +713,6 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
           }}
           formatProfile={formatProfile}
         />
-      </div>
-      <div className="flex h-8 shrink-0 items-center border-t border-border bg-card">
-        <div
-          className="flex shrink-0 items-center gap-2 border-r border-border px-2"
-          style={{ width: LAYERS_W }}
-        >
-          <select
-            aria-label="Timeline time display"
-            value={timeUnit}
-            onChange={(event) => setTimeUnit(event.target.value as TimelineTimeUnit)}
-            className="h-6 min-w-0 rounded bg-transparent px-1 text-[10px] text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value="milliseconds">Time</option>
-            <option value="frames">Frames</option>
-          </select>
-          <select
-            aria-label="Timeline frame rate"
-            title="Frame grid and stepping"
-            value={fps}
-            onChange={(event) => setFps(Number(event.target.value))}
-            className="h-6 rounded bg-transparent px-1 font-mono text-[10px] text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {[24, 30, 60].map((rate) => (
-              <option key={rate} value={rate}>
-                {rate} fps
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-2 [&>button]:shrink-0">
-          <TimelineTransportButtons fps={fps} />
-          <TimelineInsertKeyframeButton />
-          <TimelineClipboardControls compact />
-          <button
-            type="button"
-            aria-label="Snap timeline edits to grid"
-            aria-pressed={snapping}
-            title="Snap to keyframes, playhead, and grid · Alt-drag for 1 ms precision"
-            onClick={() => setSnapping((value) => !value)}
-            className={cn(
-              "grid size-6 place-items-center rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring",
-              snapping
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-          >
-            <Magnet className="size-3.5" />
-          </button>
-          <TimelinePreviewRangeControls unit={timeUnit} fps={fps} />
-          <span className="mx-1 h-4 w-px bg-border" />
-          <button
-            type="button"
-            aria-label="Focus timeline playhead"
-            title="Focus playhead"
-            onClick={navigation.focusPlayhead}
-            className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
-          >
-            <LocateFixed className="size-3.5" />
-          </button>
-          <div className="flex-1" />
-          <button
-            type="button"
-            aria-label="Zoom timeline out"
-            title="Zoom out · Ctrl/⌘ scroll"
-            disabled={navigation.zoom <= 1}
-            onClick={() => navigation.zoomBy(1 / Math.sqrt(2))}
-            className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-35"
-          >
-            <ZoomOut className="size-3.5" />
-          </button>
-          <span
-            aria-label="Timeline zoom"
-            className="w-10 text-center font-mono text-[10px] tabular-nums text-muted-foreground"
-          >
-            {Math.round(navigation.zoom * 100)}%
-          </span>
-          <button
-            type="button"
-            aria-label="Zoom timeline in"
-            title="Zoom in · Ctrl/⌘ scroll"
-            disabled={navigation.zoom >= 10}
-            onClick={() => navigation.zoomBy(Math.sqrt(2))}
-            className="grid size-6 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-35"
-          >
-            <ZoomIn className="size-3.5" />
-          </button>
-          <button
-            type="button"
-            aria-label="Fit timeline to view"
-            onClick={navigation.fit}
-            className="h-6 rounded px-2 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
-          >
-            Fit
-          </button>
-        </div>
       </div>
     </section>
   );

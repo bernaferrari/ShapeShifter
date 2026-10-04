@@ -90,7 +90,7 @@ export function WorldMotionPaths({
         <polyline
           points={points.map((point) => `${origin.x + point.x},${origin.y + point.y}`).join(" ")}
           fill="none"
-          stroke="#0d99ff"
+          stroke="var(--primary)"
           strokeWidth={primary ? 1.25 : 1}
           strokeDasharray={`${worldPerPixel * 4} ${worldPerPixel * 3}`}
           opacity={primary ? 0.75 : 0.4}
@@ -100,7 +100,7 @@ export function WorldMotionPaths({
           cx={current.x}
           cy={current.y}
           r={worldPerPixel * (primary ? 3.5 : 2.5)}
-          fill="#0d99ff"
+          fill="var(--primary)"
           opacity={primary ? 0.9 : 0.5}
         />
       </g>
@@ -162,7 +162,7 @@ export function WorldBezierHandles({
             y1={origin.y + transformedAnchor.y}
             x2={origin.x + transformedControl.x}
             y2={origin.y + transformedControl.y}
-            stroke="#0d99ff"
+            stroke="var(--primary)"
             strokeOpacity={0.5}
             strokeWidth={worldPerPixel}
           />
@@ -218,7 +218,7 @@ export function WorldPenPreview({
             y1={lastAnchorWorld.y}
             x2={previewWorld!.x}
             y2={previewWorld!.y}
-            stroke="#0d99ff"
+            stroke="var(--primary)"
             strokeOpacity={0.7}
             strokeWidth={worldPerPixel}
             strokeDasharray={`${worldPerPixel * 2} ${worldPerPixel * 2}`}
@@ -227,8 +227,8 @@ export function WorldPenPreview({
             cx={previewWorld!.x}
             cy={previewWorld!.y}
             r={anchorRadius * 0.9}
-            fill={willClose ? "#0d99ff" : "#ffffff"}
-            stroke="#0d99ff"
+            fill={willClose ? "var(--primary)" : "#ffffff"}
+            stroke="var(--primary)"
             strokeWidth={1.25}
             vectorEffect="non-scaling-stroke"
           />
@@ -240,7 +240,7 @@ export function WorldPenPreview({
           cy={firstWorld.y}
           r={willClose ? anchorRadius * 1.7 : anchorRadius * 1.3}
           fill="none"
-          stroke="#0d99ff"
+          stroke="var(--primary)"
           strokeOpacity={willClose ? 1 : 0.5}
           strokeWidth={willClose ? 1.5 : 1}
           vectorEffect="non-scaling-stroke"
@@ -277,7 +277,7 @@ export function WorldPaintPreview({
           d={pathToString(path)}
           fill={color}
           fillOpacity={Math.max(0.25, Math.min(0.65, fillAlpha * 0.7))}
-          stroke="#0d99ff"
+          stroke="var(--primary)"
           strokeWidth={worldPerPixel * 1.5}
           strokeDasharray={`${worldPerPixel * 3} ${worldPerPixel * 1.5}`}
           vectorEffect="non-scaling-stroke"
@@ -295,7 +295,7 @@ export function WorldPaintPreview({
       height={frameBounds.h}
       fill={color}
       fillOpacity={0.4}
-      stroke="#0d99ff"
+      stroke="var(--primary)"
       strokeWidth={worldPerPixel * 1.5}
       strokeDasharray={`${worldPerPixel * 3} ${worldPerPixel * 1.5}`}
       rx={Math.max(0.5, frameBounds.w * 0.015)}
@@ -328,7 +328,7 @@ export function WorldVectorNetwork({
         d={pathToString(path)}
         transform={transform}
         fill="none"
-        stroke="#0d99ff"
+        stroke="var(--primary)"
         strokeOpacity={0.35}
         strokeWidth={1.25}
         vectorEffect="non-scaling-stroke"
@@ -357,8 +357,8 @@ export function WorldVectorNetwork({
                 width={radius * 2}
                 height={radius * 2}
                 rx={radius * 0.15}
-                fill={selected ? "#0d99ff" : "#ffffff"}
-                stroke="#0d99ff"
+                fill={selected ? "var(--primary)" : "#ffffff"}
+                stroke="var(--primary)"
                 strokeWidth={1.5}
                 vectorEffect="non-scaling-stroke"
                 style={{ cursor: "grab", pointerEvents: "auto" }}
@@ -369,8 +369,8 @@ export function WorldVectorNetwork({
                 cx={x}
                 cy={y}
                 r={radius}
-                fill={selected ? "#0d99ff" : "#ffffff"}
-                stroke="#0d99ff"
+                fill={selected ? "var(--primary)" : "#ffffff"}
+                stroke="var(--primary)"
                 strokeWidth={1.25}
                 vectorEffect="non-scaling-stroke"
                 style={{ cursor: "grab", pointerEvents: "auto" }}
@@ -389,7 +389,7 @@ export function WorldFreehandLasso({ points }: { points: Point[] }) {
     <polyline
       points={points.map((point) => `${point.x},${point.y}`).join(" ")}
       fill="none"
-      stroke="#0d99ff"
+      stroke="var(--primary)"
       strokeWidth={1.2}
       strokeDasharray="3 2"
       opacity={0.9}
@@ -406,9 +406,9 @@ export function WorldMarqueeOverlay({ start, current }: { start: Point; current:
       y={Math.min(start.y, current.y)}
       width={Math.abs(current.x - start.x)}
       height={Math.abs(current.y - start.y)}
-      fill="#0d99ff"
+      fill="var(--primary)"
       fillOpacity={0.08}
-      stroke="#0d99ff"
+      stroke="var(--primary)"
       strokeWidth={1}
       strokeDasharray="4 3"
       vectorEffect="non-scaling-stroke"
@@ -443,7 +443,7 @@ export function WorldFrameResizeHandles({
           height={size * 2}
           rx={worldPerPixel}
           fill="#ffffff"
-          stroke="#0d99ff"
+          stroke="var(--primary)"
           strokeWidth={1.25}
           vectorEffect="non-scaling-stroke"
           style={{ cursor }}

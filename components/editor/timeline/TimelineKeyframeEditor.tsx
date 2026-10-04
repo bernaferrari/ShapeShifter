@@ -85,7 +85,7 @@ export function TimelineKeyframeEditor({
         sideOffset={10}
         initialFocus={locked ? true : timeRef}
         aria-label={`${label} ${edge} keyframe editor`}
-        className="w-72 max-w-[calc(100vw-16px)] gap-3 p-3 data-open:animate-none data-closed:animate-none"
+        className="w-60 max-w-[calc(100vw-16px)] gap-2.5 rounded-xl p-3 data-open:animate-none data-closed:animate-none"
         finalFocus={() =>
           triggerRef.current?.isConnected ? triggerRef.current : returnFocus.current
         }
@@ -93,14 +93,38 @@ export function TimelineKeyframeEditor({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center gap-2">
-          <PopoverTitle className="min-w-0 flex-1 text-xs">
-            {label} · {edge === "start" ? "Start" : "End"} keyframe
+          <PopoverTitle className="min-w-0 flex-1 truncate text-[12px] font-semibold">
+            {label} <span className="font-normal text-muted-foreground">· {edge}</span>
           </PopoverTitle>
+          <button
+            type="button"
+            aria-label={`Delete ${label} ${edge} keyframe`}
+            disabled={locked}
+            title={
+              linkedTimelineKeyframe(useEditorStore.getState().animation.blocks, block, edge)
+                ? "Delete keyframe (joins the adjacent segments)"
+                : "Delete keyframe and its segment"
+            }
+            onClick={() => {
+              returnFocus.current =
+                triggerRef.current
+                  ?.closest("section")
+                  ?.querySelector<HTMLElement>('[aria-label="Animation tracks"]') ?? null;
+              onOpenChange(false);
+              useEditorStore.getState().removeTimelineKeyframe(block.id, edge);
+              queueMicrotask(() => {
+                if (!triggerRef.current?.isConnected) returnFocus.current?.focus();
+              });
+            }}
+            className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40"
+          >
+            <Trash2 className="size-3.5" />
+          </button>
           <button
             type="button"
             aria-label="Close keyframe editor"
             onClick={() => onOpenChange(false)}
-            className="grid size-8 place-items-center rounded text-muted-foreground hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+            className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
           >
             <X className="size-3.5" />
           </button>
@@ -167,36 +191,9 @@ export function TimelineKeyframeEditor({
             seek(time);
           }}
         />
-        <p className="text-[10px] leading-relaxed text-muted-foreground">
-          {locked
-            ? "Unlock this layer and its parent groups to edit motion."
-            : "Linked segments share this endpoint. Enter applies a field; Escape cancels and closes."}
-        </p>
-        <button
-          type="button"
-          aria-label={`Delete ${label} ${edge} keyframe`}
-          disabled={locked}
-          title={
-            linkedTimelineKeyframe(useEditorStore.getState().animation.blocks, block, edge)
-              ? "Join the adjacent segments"
-              : "Remove this outer keyframe and its segment"
-          }
-          onClick={() => {
-            returnFocus.current =
-              triggerRef.current
-                ?.closest("section")
-                ?.querySelector<HTMLElement>('[aria-label="Animation tracks"]') ?? null;
-            onOpenChange(false);
-            useEditorStore.getState().removeTimelineKeyframe(block.id, edge);
-            queueMicrotask(() => {
-              if (!triggerRef.current?.isConnected) returnFocus.current?.focus();
-            });
-          }}
-          className="flex h-8 items-center justify-center gap-2 rounded text-xs text-destructive hover:bg-destructive/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40"
-        >
-          <Trash2 className="size-3.5" />
-          Delete keyframe
-        </button>
+        {locked && (
+          <p className="text-[11px] text-muted-foreground">Unlock this layer to edit its motion.</p>
+        )}
       </PopoverContent>
     </Popover>
   );

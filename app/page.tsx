@@ -1,17 +1,11 @@
 "use client";
 
 import React from "react";
-import {
-  PanelRightClose,
-  PanelRightOpen,
-  PanelLeftOpen,
-  ChevronUp,
-  CloudUpload,
-} from "lucide-react";
+import { PanelRightOpen, PanelLeftOpen, PanelBottomOpen, CloudUpload } from "lucide-react";
 import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { DEMO_INFOS } from "@/lib/shapeshifter/demoProjects";
-import { Toolbar } from "@/components/editor/Toolbar";
+import { Toolbar, type EditorPanelVisibility } from "@/components/editor/Toolbar";
 import { CanvasArea } from "@/components/editor/CanvasArea";
 import { Inspector } from "@/components/editor/Inspector";
 import { LayerTimeline } from "@/components/editor/LayerTimeline";
@@ -24,11 +18,13 @@ import {
   isEditorShortcutBlocked,
   useEditorKeyboardShortcuts,
 } from "@/components/editor/hooks/useEditorKeyboardShortcuts";
+import { usePlayheadPathEditing } from "@/components/editor/hooks/usePlayheadPathEditing";
 import { useEditorPlayback } from "@/components/editor/hooks/useEditorPlayback";
 import { useDocumentAutosave } from "@/components/editor/hooks/useDocumentAutosave";
 import { useProjectImport } from "@/components/editor/project/useProjectImport";
 import { useProjectExport } from "@/components/editor/project/useProjectExport";
 import { EditorCommandPalette, EditorHelpDialog } from "@/components/editor/EditorDialogs";
+import { EditorContextMenu } from "@/components/editor/EditorContextMenu";
 import { AgentToolsDialog } from "@/components/editor/AgentToolsDialog";
 import { RecoveryHistoryDialog } from "@/components/editor/RecoveryHistoryDialog";
 import { registerEditorAgentTools } from "@/lib/agent/browserTools";
@@ -39,6 +35,7 @@ const NARROW_BREAKPOINT = 1100;
 
 export default function ShapeShifter2026() {
   useEditorKeyboardShortcuts();
+  usePlayheadPathEditing();
   const autosave = useDocumentAutosave();
   const playbackActive = useEditorPlayback();
   const {
@@ -62,17 +59,7 @@ export default function ShapeShifter2026() {
   const timelineCollapsed = useEditorStore((state) => state.timelineCollapsed);
   const setTimelineCollapsed = useEditorStore((state) => state.setTimelineCollapsed);
 
-  // Reset keys for each canvas pane (increment to trigger reset)
-  const [resetFrom, setResetFrom] = React.useState(0);
-  const [resetPreview, setResetPreview] = React.useState(0);
-  const [resetTo, setResetTo] = React.useState(0);
-
-  const resetAllViews = () => {
-    setResetFrom((k) => k + 1);
-    setResetPreview((k) => k + 1);
-    setResetTo((k) => k + 1);
-    toast.success("Views reset");
-  };
+  const resetAllViews = () => useEditorStore.getState().fitWorldToFrames();
 
   // === COMMAND PALETTE STATE (moved inside for correctness) ===
   const [commandOpen, setCommandOpen] = React.useState(false);
@@ -86,6 +73,7 @@ export default function ShapeShifter2026() {
   // narrow-viewport auto-collapse below, but we never overwrite the user's choice.
   const [inspectorCollapsed, setInspectorCollapsed] = React.useState(false);
   const [layersCollapsed, setLayersCollapsed] = React.useState(false);
+  const [rulersVisible, setRulersVisible] = React.useState(false);
   const [isNarrow, setIsNarrow] = React.useState(false);
   const [narrowPanel, setNarrowPanel] = React.useState<"layers" | "inspector" | null>(null);
 
@@ -93,6 +81,7 @@ export default function ShapeShifter2026() {
     try {
       setInspectorCollapsed(localStorage.getItem("shapeshifter:panel:inspector") === "1");
       setLayersCollapsed(localStorage.getItem("shapeshifter:panel:layers") === "1");
+      setRulersVisible(localStorage.getItem("shapeshifter:view:rulers") === "1");
       const storedTimeline = localStorage.getItem("shapeshifter:panel:timeline");
       setTimelineCollapsed(storedTimeline === "1");
     } catch {
@@ -124,6 +113,18 @@ export default function ShapeShifter2026() {
     });
   }, []);
 
+  const toggleRulers = React.useCallback(() => {
+    setRulersVisible((previous) => {
+      const next = !previous;
+      try {
+        localStorage.setItem("shapeshifter:view:rulers", next ? "1" : "0");
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
   const toggleTimeline = React.useCallback(() => {
     const next = !useEditorStore.getState().timelineCollapsed;
     setTimelineCollapsed(next);
@@ -143,7 +144,8 @@ export default function ShapeShifter2026() {
   }, []);
 
   // Effective visibility: collapsed by explicit toggle OR forced by narrow width.
-  const inspectorHidden = isNarrow ? narrowPanel !== "inspector" : inspectorCollapsed;
+  // The properties panel always stays docked; narrow windows fold the layers panel instead.
+  const inspectorHidden = inspectorCollapsed;
   const layersHidden = isNarrow ? narrowPanel !== "layers" : layersCollapsed;
 
   React.useEffect(() => {
@@ -152,6 +154,9 @@ export default function ShapeShifter2026() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setCommandOpen((open) => !open);
+      } else if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setHelpOpen(true);
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -172,9 +177,20 @@ export default function ShapeShifter2026() {
     togglePlayback();
   };
 
-  const resetAnim = () => {
-    const { setProgress } = useEditorStore.getState();
-    setProgress(0);
+  const toggleLayersPanel = () =>
+    isNarrow ? setNarrowPanel((panel) => (panel === "layers" ? null : "layers")) : toggleLayers();
+  const toggleInspectorPanel = toggleInspector;
+  const panels: EditorPanelVisibility = {
+    layers: !layersHidden,
+    inspector: !inspectorHidden,
+    timeline: !timelineCollapsed,
+    rulers: rulersVisible,
+  };
+  const togglePanel = (panel: keyof EditorPanelVisibility) => {
+    if (panel === "layers") toggleLayersPanel();
+    else if (panel === "inspector") toggleInspectorPanel();
+    else if (panel === "timeline") toggleTimeline();
+    else toggleRulers();
   };
 
   // Playback + animation state flows from Zustand
@@ -189,22 +205,18 @@ export default function ShapeShifter2026() {
       </a>
       {/* File Drag-and-Drop Overlay — pro Figma drop target polish (dashed target + refined elevation) */}
       {isDraggingFile && (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-background/80 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
-          <div className="flex flex-col items-center gap-6 rounded-2xl border-2 border-dashed border-primary/40 bg-card/95 p-12 shadow-2xl ring-1 ring-primary/10 max-w-md text-center">
-            <div className="relative flex h-20 w-20 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-              <CloudUpload size={48} className="animate-bounce" />
-            </div>
-            <div className="flex flex-col gap-2">
-              <h3 className="text-2xl font-bold tracking-tight">Drop to Import</h3>
-              <p className="text-sm text-muted-foreground">
-                SVG, Vector Drawable XML, or <code className="font-mono">.shapeshifter</code>{" "}
-                project
-              </p>
-            </div>
-            <div className="flex flex-wrap justify-center gap-2 text-[10px] font-medium text-muted-foreground border-t pt-5 w-full tracking-wide">
-              <span className="rounded bg-muted px-2 py-0.5">.svg</span>
-              <span className="rounded bg-muted px-2 py-0.5">.xml</span>
-              <span className="rounded bg-muted px-2 py-0.5">.json / .shapeshifter</span>
+        <div className="pointer-events-none absolute inset-0 z-50 p-2 animate-in fade-in duration-150">
+          <div className="flex h-full w-full items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-primary/[0.06] backdrop-blur-[1px]">
+            <div className="flex items-center gap-3 rounded-xl bg-card px-4 py-3 [box-shadow:var(--elevation-floating)]">
+              <div className="grid size-9 place-items-center rounded-lg bg-primary/10 text-primary">
+                <CloudUpload className="size-5" />
+              </div>
+              <div>
+                <div className="text-[13px] font-semibold">Drop to import</div>
+                <div className="text-[12px] text-muted-foreground">
+                  SVG, Vector Drawable XML, or ShapeShifter project
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -214,12 +226,13 @@ export default function ShapeShifter2026() {
         onExport={handleExport}
         onLoadSample={loadSample}
         onTogglePlay={togglePlay}
-        onResetAnim={resetAnim}
         onOpenSVGImport={openSVGImport}
         onShowHelp={() => setHelpOpen(true)}
         onOpenCommand={() => setCommandOpen(true)}
         onOpenAgentTools={() => setAgentOpen(true)}
         onOpenRecovery={() => setRecoveryOpen(true)}
+        onTogglePanel={togglePanel}
+        panels={panels}
         autosave={autosave}
         resetAllViews={resetAllViews}
         isPlaying={isPlaying}
@@ -252,70 +265,76 @@ export default function ShapeShifter2026() {
                   }
                 />
               )}
-              <main
-                id="editor-canvas"
-                tabIndex={-1}
-                aria-label="Editor canvas"
-                className="relative flex min-w-0 flex-1 overflow-hidden"
+              <EditorContextMenu
+                render={
+                  <main
+                    id="editor-canvas"
+                    tabIndex={-1}
+                    aria-label="Editor canvas"
+                    className="relative flex min-w-0 flex-1 overflow-hidden"
+                  />
+                }
               >
                 <CanvasArea
-                  resetFrom={resetFrom}
-                  resetPreview={resetPreview}
-                  resetTo={resetTo}
                   resetAllViews={resetAllViews}
+                  showRulers={rulersVisible}
+                  onToggleRulers={toggleRulers}
                 />
                 <div className="pointer-events-none absolute bottom-3 left-1/2 z-30 -translate-x-1/2">
-                  <div className="pointer-events-auto">
+                  <div className="pointer-events-auto" onContextMenu={(event) => event.stopPropagation()}>
                     <BottomToolPalette />
                   </div>
                 </div>
                 <Onboarding />
-              </main>
+                {timelineCollapsed && (
+                  <button
+                    type="button"
+                    onClick={toggleTimeline}
+                    aria-label="Show timeline"
+                    aria-expanded={false}
+                    className="absolute bottom-3 left-3 z-30 flex h-8 items-center gap-1.5 rounded-lg bg-card px-2.5 text-[12px] text-muted-foreground [box-shadow:var(--elevation-floating)] transition-colors hover:text-foreground"
+                  >
+                    <PanelBottomOpen className="size-3.5" />
+                    Timeline
+                  </button>
+                )}
+              </EditorContextMenu>
 
               {!inspectorHidden && (
                 <aside
+                  aria-label="Properties"
                   className={cn(
-                    "flex h-full shrink-0 flex-col overflow-hidden border-l bg-sidebar shadow-xs",
-                    "w-72",
-                    isNarrow &&
-                      !inspectorHidden &&
-                      "absolute inset-y-0 right-0 z-40 shadow-[-8px_0_24px_rgba(0,0,0,0.16)]",
+                    "flex h-full w-64 shrink-0 flex-col overflow-hidden border-l bg-sidebar",
                   )}
                 >
-                  <div className="flex h-full w-72 flex-col">
-                    <Inspector />
-                  </div>
+                  <Inspector />
                 </aside>
               )}
 
               {layersHidden && (
                 <button
                   type="button"
-                  onClick={() => (isNarrow ? setNarrowPanel("layers") : toggleLayers())}
+                  onClick={toggleLayersPanel}
                   aria-label="Show layers"
-                  className="absolute left-2 top-2.5 z-50 grid size-7 place-items-center rounded-md bg-card/90 text-muted-foreground [box-shadow:var(--elevation-floating)] backdrop-blur-sm transition-colors hover:text-foreground"
+                  title="Show layers"
+                  className="absolute left-2 top-2 z-30 grid size-8 place-items-center rounded-lg bg-card text-muted-foreground [box-shadow:var(--elevation-floating)] transition-colors hover:text-foreground"
                 >
                   <PanelLeftOpen className="size-4" />
                 </button>
               )}
 
-              <button
-                type="button"
-                onClick={() =>
-                  isNarrow
-                    ? setNarrowPanel((panel) => (panel === "inspector" ? null : "inspector"))
-                    : toggleInspector()
-                }
-                aria-label={inspectorHidden ? "Show inspector" : "Hide inspector"}
-                aria-expanded={!inspectorHidden}
-                className="absolute right-2 top-2.5 z-50 grid size-7 place-items-center rounded-md bg-card/90 text-muted-foreground [box-shadow:var(--elevation-floating)] backdrop-blur-sm transition-colors hover:text-foreground"
-              >
-                {inspectorHidden ? (
+              {inspectorHidden && (
+                <button
+                  type="button"
+                  onClick={toggleInspectorPanel}
+                  aria-label="Show inspector"
+                  title="Show properties"
+                  aria-expanded={false}
+                  className="absolute right-2 top-2 z-30 grid size-8 place-items-center rounded-lg bg-card text-muted-foreground [box-shadow:var(--elevation-floating)] transition-colors hover:text-foreground"
+                >
                   <PanelRightOpen className="size-4" />
-                ) : (
-                  <PanelRightClose className="size-4" />
-                )}
-              </button>
+                </button>
+              )}
             </div>
           </ResizablePanel>
 
@@ -328,19 +347,6 @@ export default function ShapeShifter2026() {
             </>
           )}
         </ResizablePanelGroup>
-
-        {timelineCollapsed && (
-          <button
-            type="button"
-            onClick={toggleTimeline}
-            aria-label="Show timeline"
-            aria-expanded={false}
-            className="absolute bottom-3 left-1/2 z-30 ml-[122px] flex h-8 items-center gap-1 rounded-md bg-card/90 px-2 text-[11px] text-muted-foreground [box-shadow:var(--elevation-floating)] backdrop-blur-sm transition-colors hover:text-foreground"
-          >
-            <ChevronUp className="size-3.5" />
-            Timeline
-          </button>
-        )}
       </div>
 
       <input
@@ -370,17 +376,10 @@ export default function ShapeShifter2026() {
         onLoadSample={loadSample}
         onExport={handleExport}
         onOpenImport={openSVGImport}
-        onToggleLayers={() =>
-          isNarrow
-            ? setNarrowPanel((panel) => (panel === "layers" ? null : "layers"))
-            : toggleLayers()
-        }
-        onToggleInspector={() =>
-          isNarrow
-            ? setNarrowPanel((panel) => (panel === "inspector" ? null : "inspector"))
-            : toggleInspector()
-        }
+        onToggleLayers={toggleLayersPanel}
+        onToggleInspector={toggleInspectorPanel}
         onToggleTimeline={toggleTimeline}
+        onToggleRulers={toggleRulers}
         onResetViews={resetAllViews}
       />
     </div>

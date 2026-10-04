@@ -123,9 +123,9 @@ function LayerHoverBounds({
         width={bounds.w}
         height={bounds.h}
         fill="none"
-        stroke="#0d99ff"
-        strokeWidth={1}
-        strokeOpacity={0.55}
+        stroke="var(--primary)"
+        strokeWidth={1.5}
+        vectorEffect="non-scaling-stroke"
         pointerEvents="none"
       />
     </g>,
@@ -299,7 +299,6 @@ const FrameArtboard = React.memo(function FrameArtboard({
     if (
       !isPlaying &&
       isPointTool &&
-      progress === 0 &&
       active &&
       editPath &&
       editLayer &&
@@ -340,22 +339,23 @@ const FrameArtboard = React.memo(function FrameArtboard({
   const onionD = useMemo(
     () =>
       !isPlaying &&
-      progress === 0 &&
+      isPointTool &&
       frame.id === selectedFrameId &&
       editLayer &&
-      editLayer.type !== "group"
+      editLayer.type !== "group" &&
+      editLayer.to
         ? pathToString(
             (editLayer[editingSide === "from" ? "to" : "from"] as PathData) ?? {
               subPaths: [],
             },
           )
         : "",
-    [editLayer, editingSide, frame.id, isPlaying, progress, selectedFrameId],
+    [editLayer, editingSide, frame.id, isPlaying, isPointTool, selectedFrameId],
   );
   const borderColor = dropTarget
-    ? "#0d99ff"
+    ? "var(--primary)"
     : selected || draggingFrame
-      ? "#0d99ff"
+      ? "var(--primary)"
       : containsSelection
         ? "rgba(13,153,255,0.55)"
         : hoveredActive
@@ -399,7 +399,7 @@ const FrameArtboard = React.memo(function FrameArtboard({
           width={bounds.w}
           height={bounds.h}
           rx={radius}
-          fill="#0d99ff"
+          fill="var(--primary)"
           fillOpacity={0.06}
           pointerEvents="none"
         />
@@ -413,7 +413,7 @@ const FrameArtboard = React.memo(function FrameArtboard({
           <path
             d={onionD}
             fill="none"
-            stroke="#0d99ff"
+            stroke="var(--primary)"
             strokeWidth={Math.max(0.8, Math.min(2.2, bounds.w / 24))}
             strokeDasharray={`${worldPerPx * 4} ${worldPerPx * 3}`}
             opacity={0.35}
@@ -565,22 +565,25 @@ export function WorldArtboards({
             worldPerPx={worldPerPx}
             gridVisibility={gridVisibility}
           />
-          <WorldHoverOutlines
-            ownerId={frame.id}
-            hoveredLayerKey={hoveredLayerKey}
-            selectedLayerRefKeys={selectedLayerRefKeys}
-            isPointTool={isPointTool}
-            resolveDraws={() =>
-              // Frame draws live inside the memoized child; re-resolving here is
-              // cache-backed (evaluateAndroidScene WeakMap) so this stays cheap.
-              resolveWorldLayerDraws(
-                frame.id === selectedFrameId ? activeLayers : frame.layers,
-                frame.id === selectedFrameId ? activeAnimation : frame.animation,
-                progress,
-                true,
-              )
-            }
-          />
+          {/* Hover outlines share the frame's position, like its artwork. */}
+          <g transform={`translate(${getFrameBounds(frame).x} ${getFrameBounds(frame).y})`}>
+            <WorldHoverOutlines
+              ownerId={frame.id}
+              hoveredLayerKey={hoveredLayerKey}
+              selectedLayerRefKeys={selectedLayerRefKeys}
+              isPointTool={isPointTool}
+              resolveDraws={() =>
+                // Frame draws live inside the memoized child; re-resolving here is
+                // cache-backed (evaluateAndroidScene WeakMap) so this stays cheap.
+                resolveWorldLayerDraws(
+                  frame.id === selectedFrameId ? activeLayers : frame.layers,
+                  frame.id === selectedFrameId ? activeAnimation : frame.animation,
+                  progress,
+                  true,
+                )
+              }
+            />
+          </g>
         </React.Fragment>
       ))}
       <ClipDefinitions ownerId={PAGE_ROOT_ID} draws={pageDraws} />

@@ -8,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Pipette } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { hexToRgb, type ColorFormat } from "./color-picker-utils";
 import { formatSolidColorValueEdit, getSolidColorFormatValues } from "./color-solid-editor-model";
@@ -35,7 +36,13 @@ export interface SolidColorEditorProps {
   handleBlur: () => void;
   framed?: boolean;
   compact?: boolean;
+  swatches?: string[];
+  onPick?: (hex: string) => void;
 }
+
+type EyeDropperWindow = Window & {
+  EyeDropper?: new () => { open: () => Promise<{ sRGBHex: string }> };
+};
 
 export function SolidColorEditor({
   h,
@@ -58,7 +65,21 @@ export function SolidColorEditor({
   handleBlur,
   framed = true,
   compact = false,
+  swatches,
+  onPick,
 }: SolidColorEditorProps) {
+  const [canSample, setCanSample] = React.useState(false);
+  React.useEffect(() => setCanSample(Boolean((window as EyeDropperWindow).EyeDropper)), []);
+  const sample = async () => {
+    const EyeDropper = (window as EyeDropperWindow).EyeDropper;
+    if (!EyeDropper || !onPick) return;
+    try {
+      const result = await new EyeDropper().open();
+      onPick(result.sRGBHex.toUpperCase());
+    } catch {
+      // The user cancelled sampling.
+    }
+  };
   const rgb = hexToRgb(hex);
   const formatValues = getSolidColorFormatValues({ format, hex, h, s, v });
 
@@ -79,7 +100,7 @@ export function SolidColorEditor({
     <Select value={format} onValueChange={(next) => setFormat(next as ColorFormat)}>
       <SelectTrigger
         size="sm"
-        className="h-8 w-[72px] shrink-0 rounded-lg border-border bg-muted/60 px-3 text-[11px] text-foreground hover:bg-muted/75"
+        className="h-7 w-[64px] shrink-0 rounded-md border-transparent bg-secondary px-2 text-[11px] text-foreground hover:bg-accent"
       >
         <SelectValue>{format}</SelectValue>
       </SelectTrigger>
@@ -95,7 +116,7 @@ export function SolidColorEditor({
   return (
     <div
       className={cn(
-        "space-y-3",
+        "space-y-2.5",
         framed &&
           "rounded-xl border border-border bg-popover p-3 pb-2 text-popover-foreground shadow-xl",
       )}
@@ -105,39 +126,56 @@ export function SolidColorEditor({
         onMouseDown={handleCanvasStart}
         onTouchStart={handleCanvasStart}
         className={cn(
-          "relative w-full cursor-crosshair overflow-hidden rounded-lg border border-border bg-muted shadow-[inset_0_0_0_1px_hsl(var(--border)/0.45)] select-none",
-          compact ? "h-40" : "h-56",
+          "relative w-full cursor-crosshair overflow-hidden rounded-lg select-none",
+          compact ? "h-36" : "h-56",
         )}
       >
         <div
-          className="absolute inset-px rounded-[7px]"
+          className="absolute inset-0 rounded-lg shadow-[inset_0_0_0_1px_var(--border)]"
           style={{
             backgroundImage: `linear-gradient(to top, #000 0%, rgba(0, 0, 0, 0) 100%), linear-gradient(to right, #fff 0%, hsl(${h}, 100%, 50%) 100%)`,
           }}
         />
         <div
-          className="absolute z-10 flex size-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-background bg-transparent shadow-[0_1px_7px_rgba(0,0,0,0.45)]"
+          className="absolute z-10 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_rgb(0_0_0/0.25),0_1px_3px_rgb(0_0_0/0.35)]"
           style={{
             left: `${s}%`,
             top: `${100 - v}%`,
+            backgroundColor: hex,
           }}
         />
       </div>
 
-      <div
-        ref={hueRef}
-        onMouseDown={handleHueStart}
-        onTouchStart={handleHueStart}
-        className="relative h-4.5 w-full cursor-pointer rounded-full border border-border shadow-inner"
-        style={{
-          background:
-            "linear-gradient(to right, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%)",
-        }}
-      >
+      <div className="flex items-center gap-2">
+        {canSample && onPick && (
+          <button
+            type="button"
+            onClick={sample}
+            aria-label="Pick a color from the screen"
+            title="Pick a color from the screen"
+            className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <Pipette className="size-3.5" />
+          </button>
+        )}
         <div
-          className="absolute top-1/2 size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-background bg-transparent shadow-[0_1px_4px_rgba(0,0,0,0.38)]"
-          style={{ left: `clamp(8px, ${(h / 360) * 100}%, calc(100% - 8px))` }}
-        />
+          ref={hueRef}
+          onMouseDown={handleHueStart}
+          onTouchStart={handleHueStart}
+          className="relative h-3 w-full cursor-pointer rounded-full shadow-[inset_0_0_0_1px_var(--border)]"
+          style={{
+            background:
+              "linear-gradient(to right, #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%)",
+          }}
+        >
+          <div
+            className="absolute top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_rgb(0_0_0/0.25),0_1px_3px_rgb(0_0_0/0.35)]"
+            style={{
+              left: `clamp(7px, ${(h / 360) * 100}%, calc(100% - 7px))`,
+              backgroundColor: `hsl(${h}, 100%, 50%)`,
+            }}
+          />
+        </div>
       </div>
 
       {ENABLE_ALPHA && (
@@ -165,7 +203,7 @@ export function SolidColorEditor({
           {formatSelect}
           <div
             className={cn(
-              "grid min-w-0 flex-1 gap-px rounded-lg bg-border",
+              "grid min-w-0 flex-1 gap-1",
               ENABLE_ALPHA ? "grid-cols-4" : "grid-cols-3",
             )}
           >
@@ -176,9 +214,7 @@ export function SolidColorEditor({
                 value={Math.round(value)}
                 onChange={(event) => updateFormatValue(index, event.target.value)}
                 className={cn(
-                  "h-8 min-w-0 border border-border bg-muted/45 text-center font-mono text-foreground outline-none",
-                  index === 0 && "rounded-l-lg",
-                  index === formatValues.length - 1 && !ENABLE_ALPHA && "rounded-r-lg",
+                  "h-7 min-w-0 rounded-md border border-transparent bg-secondary text-center text-[11px] tabular-nums text-foreground outline-none focus:border-primary",
                 )}
               />
             ))}
@@ -200,8 +236,8 @@ export function SolidColorEditor({
       {format === "HEX" && (
         <div className="flex items-center gap-2">
           {formatSelect}
-          <div className="flex h-8 min-w-0 flex-1 items-center gap-1 rounded-lg border border-border bg-muted/45 px-2.5">
-            <span className="font-mono text-[10px] font-bold text-muted-foreground">#</span>
+          <div className="flex h-7 min-w-0 flex-1 items-center gap-1 rounded-md border border-transparent bg-secondary px-2 focus-within:border-primary">
+            <span className="text-[11px] text-muted-foreground">#</span>
             <input
               type="text"
               value={inputText.replace(/^#/, "")}
@@ -209,8 +245,31 @@ export function SolidColorEditor({
               onKeyDown={handleKeyDown}
               onBlur={handleBlur}
               placeholder="FFFFFF"
-              className="min-w-0 flex-1 border-0 bg-transparent p-0 font-mono text-xs text-foreground uppercase outline-none focus:ring-0"
+              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-[11px] tabular-nums text-foreground uppercase outline-none focus:ring-0"
             />
+          </div>
+        </div>
+      )}
+
+      {swatches && swatches.length > 0 && onPick && (
+        <div className="border-t border-border pt-2.5">
+          <div className="mb-1.5 text-[11px] text-muted-foreground">In this document</div>
+          <div className="flex flex-wrap gap-1.5">
+            {swatches.map((swatch) => (
+              <button
+                key={swatch}
+                type="button"
+                aria-label={`Use ${swatch}`}
+                title={swatch}
+                onClick={() => onPick(swatch)}
+                className={cn(
+                  "size-5 rounded-[4px] shadow-[inset_0_0_0_1px_var(--border)] transition-transform hover:scale-110",
+                  swatch.toLowerCase() === hex.toLowerCase() &&
+                    "ring-2 ring-primary ring-offset-1 ring-offset-popover",
+                )}
+                style={{ backgroundColor: swatch }}
+              />
+            ))}
           </div>
         </div>
       )}

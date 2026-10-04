@@ -59,7 +59,7 @@ export function MotionField({
   return (
     <div className="min-w-0 space-y-1">
       <div className="flex items-center justify-between gap-1">
-        <label htmlFor={id} className="text-[10px] text-muted-foreground">
+        <label htmlFor={id} className="text-[11px] text-muted-foreground">
           {label}
         </label>
         {onPreview && (
@@ -123,9 +123,9 @@ export function MotionField({
             }
           }}
           className={cn(
-            "h-8 w-full rounded-[4px] border border-transparent bg-muted/65 px-2 font-mono text-xs tabular-nums text-foreground outline-none hover:bg-muted focus:border-primary/70 focus:bg-background focus:ring-1 focus:ring-primary/25 disabled:opacity-50",
+            "h-7 w-full rounded-md border border-transparent bg-secondary px-2 text-[11px] tabular-nums text-foreground outline-none hover:border-border focus:border-primary focus:bg-background disabled:opacity-50",
             color && "pl-7",
-            multiline && "h-16 resize-y py-1.5 text-[10px] leading-relaxed",
+            multiline && "h-16 resize-y py-1.5 font-mono text-[10px] leading-relaxed",
             suffix && "pr-7",
             error && "border-destructive",
           )}

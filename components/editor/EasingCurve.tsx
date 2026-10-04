@@ -120,33 +120,24 @@ export function EasingCurve({
       width={size}
       height={size}
       viewBox={`0 0 ${size} ${size}`}
-      className={cn(
-        "shrink-0 rounded-md border border-border bg-muted/30",
-        editable && "touch-none",
-        className,
-      )}
+      className={cn("shrink-0", editable && "touch-none", className)}
       onPointerMove={editable ? handlePointerMove : undefined}
       onPointerUp={editable ? (event) => endDrag(event) : undefined}
       onPointerCancel={editable ? (event) => endDrag(event, true) : undefined}
     >
-      {/* baseline diagonal (linear reference) */}
-      <line
-        x1={px(0)}
-        y1={py(0)}
-        x2={px(1)}
-        y2={py(1)}
-        stroke="currentColor"
-        strokeOpacity={0.15}
-        strokeWidth={1}
-      />
-      {/* control handles */}
-      <g stroke="var(--primary)" strokeOpacity={0.35} strokeWidth={1}>
+      {/* start and end levels, like Figma: the handles slide along these */}
+      <g stroke="currentColor" strokeOpacity={0.22} strokeWidth={1.5} strokeLinecap="round">
+        <line x1={px(0)} y1={py(0)} x2={px(1)} y2={py(0)} />
+        <line x1={px(0)} y1={py(1)} x2={px(1)} y2={py(1)} />
+      </g>
+      {/* handle arms */}
+      <g stroke="var(--primary)" strokeWidth={1.5} strokeLinecap="round" strokeOpacity={0.8}>
         <line x1={px(0)} y1={py(0)} x2={px(x1)} y2={py(y1)} />
         <line x1={px(1)} y1={py(1)} x2={px(x2)} y2={py(y2)} />
       </g>
       {/* the curve */}
-      <path d={d} fill="none" stroke="var(--primary)" strokeWidth={2} strokeLinecap="round" />
-      {dot && <circle cx={dot.x} cy={dot.y} r={3.5} fill="var(--primary)" pointerEvents="none" />}
+      <path d={d} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
+      {dot && <circle cx={dot.x} cy={dot.y} r={3} fill="var(--primary)" pointerEvents="none" />}
       {/* draggable / static control points (drawn last so they sit on top) */}
       {[
         { n: 1 as const, x: x1, y: y1 },
@@ -168,10 +159,9 @@ export function EasingCurve({
             cx={px(x)}
             cy={py(y)}
             r={editable ? 5 : 2.5}
-            fill="var(--primary)"
-            fillOpacity={editable ? 1 : 0.5}
-            stroke={editable ? "var(--background)" : undefined}
-            strokeWidth={editable ? 1.5 : undefined}
+            fill={editable ? "var(--popover)" : "var(--primary)"}
+            stroke={editable ? "var(--primary)" : undefined}
+            strokeWidth={editable ? 2 : undefined}
             style={editable ? { cursor: "grab" } : undefined}
             tabIndex={editable ? 0 : undefined}
             role={editable ? "slider" : undefined}

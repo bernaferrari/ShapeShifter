@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { ChevronRight, Square } from "lucide-react";
+import { ChevronRight, Crop, Folder, Spline } from "lucide-react";
 import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { cn } from "@/lib/utils";
@@ -185,18 +185,17 @@ export function TimelineLayersPane({
                 )}
               </span>
               <span
-                className="flex size-[12px] shrink-0 items-center justify-center rounded-[2px] border"
-                style={{
-                  borderColor: isSelected ? SELECTION_COLOR : "var(--border)",
-                  background: "transparent",
-                }}
+                className="grid size-3.5 shrink-0 place-items-center"
+                style={{ color: isSelected ? SELECTION_COLOR : "var(--muted-foreground)" }}
                 aria-hidden
               >
-                <Square
-                  className="size-[7px]"
-                  style={{ color: isSelected ? SELECTION_COLOR : "var(--muted-foreground)" }}
-                  strokeWidth={1.75}
-                />
+                {row.layer.type === "group" ? (
+                  <Folder className="size-3" />
+                ) : row.layer.type === "clipPath" ? (
+                  <Crop className="size-3" />
+                ) : (
+                  <Spline className="size-3" />
+                )}
               </span>
               {renamingLayerKey === row.key ? (
                 <input
@@ -291,7 +290,14 @@ export function TimelineLayersPane({
             >
               {propertyLabel(row.propertyName)}
             </span>
-            <div className="flex shrink-0 items-center">
+            <div
+              className={cn(
+                "flex shrink-0 items-center transition-opacity",
+                isSelected
+                  ? "opacity-100"
+                  : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+              )}
+            >
               <button
                 type="button"
                 aria-label={`Jump to first ${propertyLabel(row.propertyName)} keyframe`}

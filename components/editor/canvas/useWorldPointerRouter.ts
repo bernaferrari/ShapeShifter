@@ -188,6 +188,7 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
           (candidate) => String(candidate.id) === String(options.selectedLayerId),
         );
         if (!layer || layer.locked) return;
+        useEditorStore.getState().ensurePathKeyframeAtPlayhead();
         useEditorStore.getState().addPointOnPath(rawLocal.x, rawLocal.y);
         return;
       }

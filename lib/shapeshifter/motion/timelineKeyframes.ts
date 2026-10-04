@@ -161,3 +161,61 @@ export function timelineBlockStartRange(
     Math.min(duration, (right?.endTime ?? duration + 1) - 1) - (target.endTime - target.startTime),
   ];
 }
+
+/** Keyframe times this close to the requested time are treated as the same keyframe. */
+const KEY_EPSILON = 1;
+
+/**
+ * Set an animated property's value at `time` (Figma Motion "auto-key"): update the
+ * keyframe there, or create one by splitting the covering segment or extending the
+ * track. Returns null when the property has no track, so callers edit the base value.
+ */
+export function setTrackValueAt(
+  blocks: TimelineBlock[],
+  layerId: string | number,
+  propertyName: string,
+  time: number,
+  value: TimelineBlock["fromValue"],
+  newId: string,
+): TimelineBlock[] | null {
+  const isTrack = (block: TimelineBlock) =>
+    String(block.layerId) === String(layerId) && block.propertyName === propertyName;
+  const track = blocks.filter(isTrack).sort((a, b) => a.startTime - b.startTime);
+  if (!track.length) return null;
+  const writeAtTime = (list: TimelineBlock[]) =>
+    list.map((block) => {
+      if (!isTrack(block)) return block;
+      const start = Math.abs(block.startTime - time) < KEY_EPSILON;
+      const end = Math.abs(block.endTime - time) < KEY_EPSILON;
+      return start || end
+        ? { ...block, ...(start && { fromValue: value }), ...(end && { toValue: value }) }
+        : block;
+    });
+  if (
+    track.some(
+      (b) => Math.abs(b.startTime - time) < KEY_EPSILON || Math.abs(b.endTime - time) < KEY_EPSILON,
+    )
+  )
+    return writeAtTime(blocks);
+  const cover = track.find((block) => time > block.startTime && time < block.endTime);
+  if (cover) {
+    const pair = insertTimelineKeyframe(cover, time, newId);
+    if (!pair) return writeAtTime(blocks);
+    return writeAtTime(blocks.flatMap((block) => (block.id === cover.id ? pair : [block])));
+  }
+  const first = track[0]!;
+  const last = track.at(-1)!;
+  const after = time > last.endTime;
+  const anchor = after ? last : first;
+  return [
+    ...blocks,
+    {
+      ...anchor,
+      id: newId,
+      startTime: after ? last.endTime : time,
+      endTime: after ? time : first.startTime,
+      fromValue: after ? last.toValue : value,
+      toValue: after ? value : first.fromValue,
+    },
+  ];
+}

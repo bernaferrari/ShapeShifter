@@ -34,13 +34,13 @@ export function DocumentSaveStatus({ autosave }: { autosave: DocumentAutosave })
     paused: {
       label: "Recovery preserved",
       detail:
-        "The previous autosave is preserved. Export your current project, then use File → Earlier autosaves to download or restore a saved copy.",
+        "The previous autosave is preserved. Export your current project, then use File → Version history to download or restore a saved copy.",
       icon: ShieldCheck,
     },
     conflict: {
       label: "Newer save found",
       detail:
-        "Another tab saved newer changes. Export your edits, then use File → Earlier autosaves to open the latest local copy.",
+        "Another tab saved newer changes. Export your edits, then use File → Version history to open the latest local copy.",
       icon: CircleAlert,
     },
   }[status];
@@ -56,8 +56,10 @@ export function DocumentSaveStatus({ autosave }: { autosave: DocumentAutosave })
             aria-disabled={status !== "error"}
             onClick={status === "error" ? retry : undefined}
             className={cn(
-              "flex h-8 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-[11px] text-muted-foreground aria-disabled:cursor-default",
-              status === "error" && "text-destructive hover:bg-destructive/10",
+              "flex h-6 shrink-0 items-center gap-1 rounded-md px-1 text-[11px] text-muted-foreground/70 aria-disabled:cursor-default",
+              (status === "error" || status === "conflict") &&
+                "text-destructive hover:bg-destructive/10",
+              status === "paused" && "text-amber-600 dark:text-amber-400",
             )}
           />
         }
@@ -66,7 +68,9 @@ export function DocumentSaveStatus({ autosave }: { autosave: DocumentAutosave })
           aria-hidden="true"
           className={cn("size-3.5", status === "saving" && "motion-safe:animate-spin")}
         />
-        <span className="hidden w-[92px] text-left xl:inline">{state.label}</span>
+        {status !== "saved" && status !== "saving" && (
+          <span className="hidden whitespace-nowrap text-left md:inline">{state.label}</span>
+        )}
       </TooltipTrigger>
       <TooltipContent className="max-w-64">{state.detail}</TooltipContent>
     </Tooltip>

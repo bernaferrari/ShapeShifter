@@ -2,8 +2,6 @@
 
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
-import { PathCanvas } from "./PathCanvas";
 import { WorldSelectionOverlay } from "./canvas/WorldSelectionOverlay";
 import { CoordinateRulers } from "./canvas/CoordinateRulers";
 import { CanvasNavigationControls } from "./canvas/CanvasNavigationControls";
@@ -46,18 +44,19 @@ import { vectorFromPageMetadata } from "@/lib/shapeshifter/vectorSpace";
 import type { PathData } from "@/lib/shapeshifter/types";
 
 interface CanvasAreaProps {
-  resetFrom: number;
-  resetPreview: number;
-  resetTo: number;
   resetAllViews: () => void;
+  showRulers?: boolean;
+  onToggleRulers?: () => void;
 }
 
-export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: CanvasAreaProps) {
+export function CanvasArea({
+  resetAllViews,
+  showRulers = false,
+  onToggleRulers,
+}: CanvasAreaProps) {
   const {
     isPlaying,
     progress,
-    zoom,
-    setZoom,
     getCompatibilityStatus,
     editingSide,
     isActionMode,
@@ -69,7 +68,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     rootAnimation,
     selectedFrameId,
     selectedFrameIds,
-    addFrame,
     selectFrame,
     selectFrames,
     setSelectedFrameIds,
@@ -99,8 +97,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     useShallow((state) => ({
       isPlaying: state.isPlaying,
       progress: state.progress,
-      zoom: state.zoom,
-      setZoom: state.setZoom,
       getCompatibilityStatus: state.getCompatibilityStatus,
       editingSide: state.editingSide,
       isActionMode: state.isActionMode,
@@ -112,7 +108,6 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       rootAnimation: state.rootAnimation,
       selectedFrameId: state.selectedFrameId,
       selectedFrameIds: state.selectedFrameIds,
-      addFrame: state.addFrame,
       selectFrame: state.selectFrame,
       selectFrames: state.selectFrames,
       setSelectedFrameIds: state.setSelectedFrameIds,
@@ -178,6 +173,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     progress,
     animation,
     rootAnimation,
+    showPlayheadPath: toolMode === "direct" && !isActionMode && !isPlaying,
   });
   const editLayerTx = editLayerTranslation.x;
   const editLayerTy = editLayerTranslation.y;
@@ -580,18 +576,15 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
       if (layerHit) {
         selectOwnedLayer(layerHit);
         useEditorStore.getState().clearSelection?.();
+        // Like Figma, entering vector editing never moves the camera.
         setToolMode("direct");
-        // Enter the vector at a restrained, useful scale instead of framing the
-        // whole artboard or reusing a stale selection viewport.
-        bringLayerIntoView(layerHit.frameId, layerHit.layerId, { animate: true, fit: true });
         return;
       }
       const hit = hitArtboard(p);
       if (!hit) return;
-      // Empty frame body: select the frame (exits vector edit via selectFrame) and frame it
+      // Empty frame body: select the frame (exits vector edit via selectFrame).
       selectFrame(hit);
       setWorldSelectedIds([hit]);
-      bringFrameIntoView(hit, { animate: true });
     },
     [
       worldPointFromEvent,
@@ -609,8 +602,41 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     ],
   );
 
+  // Figma: right-click selects what is under the cursor before the menu opens.
+  const handleWorldContextMenu = useCallback(
+    (event: React.MouseEvent) => {
+      const point = worldPointFromEvent(event.clientX, event.clientY);
+      if (!point || isPointTool) return;
+      const layerHit = hitLayerAtWorld(point);
+      if (layerHit) {
+        if (!selectedLayerRefKeys.has(`${layerHit.frameId}:${String(layerHit.layerId)}`))
+          selectOwnedLayer(layerHit);
+        return;
+      }
+      const frameHit = hitArtboard(point);
+      if (frameHit) {
+        selectFrame(frameHit);
+        setWorldSelectedIds([frameHit]);
+        return;
+      }
+      setWorldSelectedIds([]);
+      deselectAll();
+    },
+    [
+      worldPointFromEvent,
+      isPointTool,
+      hitLayerAtWorld,
+      selectedLayerRefKeys,
+      selectOwnedLayer,
+      hitArtboard,
+      selectFrame,
+      setWorldSelectedIds,
+      deselectAll,
+    ],
+  );
+
   useWorldCanvasShortcuts({
-    enabled: !isActionMode,
+    enabled: true,
     penActiveSubpathRef,
     finishPen,
     hasObjectDrag,
@@ -660,38 +686,25 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                 aria-label="Canvas"
               >
                 <CanvasNavigationControls
-                  zoomPercent={(isActionMode ? zoom : worldView.scale) * 100}
-                  showWorldControls={!isActionMode}
+                  zoomPercent={worldView.scale * 100}
+                  showWorldControls
                   gridDivisions={gridDivisions}
-                  onZoomOut={() =>
-                    isActionMode ? setZoom(Math.max(0.5, zoom - 0.25)) : zoomWorldAtCenter(0.8)
+                  onZoomOut={() => zoomWorldAtCenter(0.8)}
+                  onZoomIn={() => zoomWorldAtCenter(1.25)}
+                  onZoomToActualSize={() =>
+                    zoomWorldAtCenter(1 / useEditorStore.getState().worldViewport.scale)
                   }
-                  onZoomIn={() =>
-                    isActionMode ? setZoom(Math.min(4, zoom + 0.25)) : zoomWorldAtCenter(1.25)
-                  }
-                  onCycleGrid={() => {
-                    const cycle = [4, 5, 8];
-                    setGridDivisions(cycle[(cycle.indexOf(gridDivisions) + 1) % cycle.length] ?? 4);
-                  }}
+                  onSetGrid={setGridDivisions}
                   onFitSelection={fitWorldToSelection}
                   onReset={() => {
                     fitWorldToFrames();
                     resetAllViews();
                   }}
+                  showRulers={showRulers}
+                  onToggleRulers={onToggleRulers}
                 />
 
-                {!isActionMode && (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    className="absolute bottom-3 left-3 z-20 h-8 gap-1.5 rounded-md border-0 bg-background/95 px-3 text-xs font-medium text-foreground [box-shadow:var(--elevation-floating)] backdrop-blur-sm hover:bg-background"
-                    onClick={addFrame}
-                  >
-                    <Plus className="size-3.5" strokeWidth={2} />
-                    Add frame
-                  </Button>
-                )}
-                {!isActionMode && worldSize.w > 0 && worldSize.h > 0 && (
+                {showRulers && worldSize.w > 0 && worldSize.h > 0 && (
                   <CoordinateRulers
                     viewport={worldView}
                     width={worldSize.w}
@@ -702,7 +715,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                     scopeLabel={rulerFrame ? rulerFrame.name : "World"}
                   />
                 )}
-                {!isActionMode && layerDropPreview && worldSize.w > 0 && worldSize.h > 0 && (
+                {layerDropPreview && worldSize.w > 0 && worldSize.h > 0 && (
                   <div
                     className="pointer-events-none absolute z-30 -translate-y-[calc(100%+10px)] rounded-md bg-foreground px-2 py-1 text-[11px] font-medium text-background shadow-lg"
                     style={{
@@ -719,7 +732,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                     {layerDropPreview.label}
                   </div>
                 )}
-                {!isActionMode ? (
+                {
                   <svg
                     ref={worldSvgRef}
                     width="100%"
@@ -735,6 +748,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                     onPointerCancel={handleWorldPointerCancel}
                     onPointerLeave={handlePointerLeave}
                     onDoubleClick={handleWorldDoubleClick}
+                    onContextMenu={handleWorldContextMenu}
                     style={{
                       background: "var(--muted)",
                       cursor:
@@ -925,18 +939,9 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       />
                     )}
                   </svg>
-                ) : (
-                  <PathCanvas
-                    side={isPlaying ? "preview" : editingSide}
-                    resetKey={
-                      isPlaying ? resetPreview : editingSide === "from" ? resetFrom : resetTo
-                    }
-                    width={456}
-                    height={456}
-                  />
-                )}
+                }
 
-                {!isActionMode && worldSize.w > 0 && (
+                {worldSize.w > 0 && (
                   <WorldFrameChrome
                     frames={culledFrames}
                     viewport={worldView}
@@ -954,16 +959,17 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
 
         {/* Compatibility chip — floats over the canvas, never steals layout height */}
         {compatibility.warning && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-3 z-40 flex justify-center px-3">
-            <div className="pointer-events-auto flex max-w-[min(420px,calc(100%-1.5rem))] items-center gap-2 rounded-full border border-amber-500/35 bg-card/95 py-1 pl-3 pr-1 text-[11px] text-foreground/85 shadow-lg backdrop-blur-md">
+          <div className="pointer-events-none absolute inset-x-0 top-3 z-40 flex justify-center px-3">
+            <div className="pointer-events-auto flex max-w-[min(420px,calc(100%-1.5rem))] items-center gap-2 rounded-full bg-card py-1 pl-3 pr-1 text-[12px] text-foreground/85 [box-shadow:var(--elevation-floating)]">
+              <span className="size-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden />
               <span className="min-w-0 truncate">{compatibility.warning}</span>
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-6 shrink-0 rounded-full px-2.5 text-[10px] font-medium text-primary hover:bg-primary/10"
+                className="h-6 shrink-0 rounded-full px-2.5 text-[11px] font-medium text-primary hover:bg-primary/10"
                 onClick={() => useEditorStore.getState().autoFixSelectedLayer()}
               >
-                Auto Fix
+                Fix
               </Button>
             </div>
           </div>

@@ -60,7 +60,7 @@ export function TimelinePlayhead({
   return (
     <div
       data-timeline-playhead
-      className="pointer-events-none absolute top-0 bottom-8 z-[60] w-0"
+      className="pointer-events-none absolute top-0 bottom-0 z-[60] w-0"
       style={{
         left:
           position === undefined
@@ -143,7 +143,7 @@ export function TimelineCurrentTimeInput({
         }
       }}
       aria-label={unit === "frames" ? "Current frame" : "Current time in milliseconds"}
-      className="w-[42px] rounded-sm border-0 bg-transparent p-0 font-medium tabular-nums outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      className="min-w-[2ch] max-w-[56px] rounded-sm border-0 bg-transparent p-0 text-right font-medium tabular-nums outline-none [field-sizing:content] focus-visible:ring-1 focus-visible:ring-ring"
       style={{ color }}
     />
   );
@@ -206,7 +206,7 @@ export function TimelineDurationInput({
       aria-label={
         unit === "frames" ? "Animation duration in frames" : "Animation duration in milliseconds"
       }
-      className="h-4 w-[42px] rounded-sm border-0 bg-transparent p-0 text-[11px] tabular-nums text-muted-foreground outline-none hover:text-foreground focus:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+      className="h-4 min-w-[2ch] max-w-[56px] rounded-sm border-0 bg-transparent p-0 text-[11px] tabular-nums text-muted-foreground [field-sizing:content] outline-none hover:text-foreground focus:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
     />
   );
 }
@@ -290,12 +290,23 @@ export function TimelinePropertyValue({
             String(block.fromValue),
           )
         : "Path";
+  if (valueType === "path") return <span className="w-[48px] shrink-0" aria-hidden />;
   const display = formatCompactValue(value, propertyName);
   const title = `${formatCompactValue(block.fromValue, propertyName)} → ${formatCompactValue(block.toValue, propertyName)}`;
+  if (valueType === "color")
+    return (
+      <span className="flex w-[48px] shrink-0 items-center justify-end" title={title}>
+        <span
+          className="size-3 rounded-[3px] shadow-[inset_0_0_0_1px_var(--border)]"
+          style={{ backgroundColor: String(value) }}
+          aria-label={display}
+        />
+      </span>
+    );
   return (
     <span
       className={cn(
-        "w-[48px] shrink-0 truncate text-right font-mono text-[10px] tabular-nums",
+        "w-[48px] shrink-0 truncate text-right text-[11px] tabular-nums",
         selected ? "text-foreground" : "text-muted-foreground",
       )}
       title={title}

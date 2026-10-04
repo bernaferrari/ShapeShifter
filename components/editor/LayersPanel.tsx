@@ -8,7 +8,6 @@ import {
   Eye,
   EyeOff,
   Folder,
-  GripVertical,
   Lock,
   MoreHorizontal,
   PanelLeftClose,
@@ -30,6 +29,7 @@ import { createLayerTreeModel, type LayerPlacement } from "@/lib/shapeshifter/sc
 import type { Layer, TimelineBlock } from "@/lib/shapeshifter/types";
 import { cn } from "@/lib/utils";
 import { LayerOwnerRow } from "./layers/LayerOwnerRow";
+import { EditorContextMenu } from "./EditorContextMenu";
 import { resolveOwnerDocument } from "@/lib/store/cloneSubtree";
 import { layerReparentIssue } from "@/lib/store/commands/reparentLayer";
 
@@ -383,21 +383,18 @@ export function LayersPanel({
               clearLayerDrag();
             }}
             className={cn(
-              "group relative flex h-8 items-center gap-1 pr-1.5 text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+              "group relative flex h-8 items-center gap-1 pr-1.5 text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
               selected
                 ? "bg-primary/14 text-foreground"
-                : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+                : "text-foreground/80 hover:bg-muted/70 hover:text-foreground",
               activeDropPosition === "inside" && "bg-primary/10 ring-1 ring-inset ring-primary/70",
               activeDropPosition === "before" &&
                 "before:absolute before:inset-x-2 before:top-0 before:h-0.5 before:bg-primary",
               activeDropPosition === "after" &&
                 "after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:bg-primary",
             )}
-            style={{ paddingLeft: 6 + depth * 12 }}
+            style={{ paddingLeft: 10 + depth * 14 }}
           >
-            <span className="grid size-4 shrink-0 place-items-center text-muted-foreground/35 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
-              <GripVertical className="size-3" />
-            </span>
             <button
               type="button"
               className="grid size-5 shrink-0 place-items-center rounded hover:bg-muted disabled:opacity-0"
@@ -472,12 +469,7 @@ export function LayersPanel({
                       type="button"
                       data-tree-menu=""
                       tabIndex={selected ? 0 : -1}
-                      className={cn(
-                        "grid size-6 place-items-center rounded text-muted-foreground/55 hover:bg-muted hover:text-foreground focus-visible:opacity-100",
-                        selected
-                          ? "opacity-100"
-                          : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
-                      )}
+                      className="grid size-6 place-items-center rounded text-muted-foreground/55 opacity-0 hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
                       aria-label={`Move ${layer.name || "layer"} to another frame`}
                       onPointerDown={(event) => event.stopPropagation()}
                       onClick={(event) => event.stopPropagation()}
@@ -671,8 +663,8 @@ export function LayersPanel({
         className,
       )}
     >
-      <div className="flex h-10 shrink-0 items-center border-b border-border px-2">
-        <span className="flex-1 px-1 text-[11px] font-semibold">Layers</span>
+      <div className="flex h-10 shrink-0 items-center gap-0.5 border-b border-border pl-3 pr-2">
+        <span className="flex-1 text-[12px] font-semibold">Layers</span>
         <Button
           size="icon-xs"
           variant="ghost"
@@ -714,16 +706,35 @@ export function LayersPanel({
           />
         </div>
       )}
-      <div
-        className="min-h-0 flex-1 overflow-y-auto py-1"
-        role="tree"
-        aria-label="Layers"
-        ref={treeRef}
-        onKeyDown={handleTreeKeyDown}
-        onFocusCapture={(event) => {
-          const row = (event.target as Element).closest<HTMLElement>("[data-tree-key]");
-          if (row) setFocusedKey(row.dataset.treeKey ?? null);
-        }}
+      <EditorContextMenu
+        render={
+          <div
+            className="min-h-0 flex-1 overflow-y-auto py-1"
+            role="tree"
+            aria-label="Layers"
+            ref={treeRef}
+            onKeyDown={handleTreeKeyDown}
+            onFocusCapture={(event) => {
+              const row = (event.target as Element).closest<HTMLElement>("[data-tree-key]");
+              if (row) setFocusedKey(row.dataset.treeKey ?? null);
+            }}
+            onContextMenu={(event) => {
+              const row = (event.target as Element).closest<HTMLElement>("[data-tree-key]");
+              const ownerId = row?.dataset.ownerId;
+              if (!row || !ownerId) return;
+              const layerId = row.dataset.layerId;
+              if (layerId != null) {
+                if (!selectedKeys.has(`${ownerId}:${layerId}`)) {
+                  const owner = owners.find((candidate) => candidate.id === ownerId);
+                  const layer = owner?.layers.find((item) => String(item.id) === layerId);
+                  if (layer) selectLayerRefs([{ ownerId, layerId: layer.id }]);
+                }
+              } else if (ownerId !== PAGE_ROOT_ID && !selectedFrameIds.includes(ownerId)) {
+                selectFrame(ownerId);
+              }
+            }}
+          />
+        }
       >
         {visibleOwners.map((owner) => {
           const expanded = normalizedQuery.length > 0 || !collapsedOwners.has(owner.id);
@@ -801,7 +812,7 @@ export function LayersPanel({
             No layers match “{query}”.
           </div>
         )}
-      </div>
+      </EditorContextMenu>
     </aside>
   );
 }

@@ -97,7 +97,7 @@ export const CoordinateRulers = memo(function CoordinateRulers({
                 y={9}
                 fill="currentColor"
                 fontSize={8}
-                fontFamily="ui-monospace, monospace"
+                fontFamily="var(--font-sans), system-ui, sans-serif"
               >
                 {format(tick.value)}
               </text>
@@ -126,7 +126,7 @@ export const CoordinateRulers = memo(function CoordinateRulers({
                 y={0}
                 fill="currentColor"
                 fontSize={8}
-                fontFamily="ui-monospace, monospace"
+                fontFamily="var(--font-sans), system-ui, sans-serif"
               >
                 {format(tick.value)}
               </text>

@@ -428,6 +428,19 @@ export interface EditorState {
   insertTimelineKeyframe: (blockId: string, time: number) => boolean;
   startTimelinePathEditing: (blockId: string) => void;
   beginTimelineMorphEditing: () => boolean;
+  /** Point tools edit the path keyframe under the playhead; keep that context in sync. */
+  syncPathEditingWithPlayhead: () => void;
+  /** Before a point edit between keyframes, insert a path keyframe at the playhead. */
+  ensurePathKeyframeAtPlayhead: () => boolean;
+  /**
+   * Write animated properties at the playhead (one undo step). Properties without a
+   * track are returned so the caller can edit their base value instead.
+   */
+  setPropertiesAtPlayhead: (
+    layerId: string | number,
+    values: Record<string, TimelineBlock["fromValue"]>,
+    options?: { recordHistory?: boolean },
+  ) => Record<string, TimelineBlock["fromValue"]>;
   copyTimelineBlocks: (blockIds?: string[]) => boolean;
   pasteTimelineBlocks: (layerId?: string | number, time?: number) => TimelinePasteResult;
   moveTimelineBlock: (

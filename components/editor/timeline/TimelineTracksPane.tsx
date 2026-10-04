@@ -15,7 +15,7 @@ import { useTimelineGesture } from "./useTimelineGesture";
 const ROW_SELECTED = "bg-primary/10";
 const ROW_LAYER_HEIGHT = 30;
 const ROW_PROPERTY_HEIGHT = 28;
-const OBJECT_CLIP_HEIGHT = 18;
+const OBJECT_CLIP_HEIGHT = 16;
 
 type ObjectSpan = { start: number; end: number; blocks: TimelineBlock[] };
 function ReadonlyPropertyRail({ block, duration }: { block: TimelineBlock; duration: number }) {
@@ -75,11 +75,11 @@ function TimelineObjectClip({
         "absolute top-1/2 z-[1] flex -translate-y-1/2 items-center justify-center overflow-hidden rounded-sm border touch-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring",
         interactive ? "cursor-grab active:cursor-grabbing" : "pointer-events-none",
         selected
-          ? "border-primary bg-primary text-primary-foreground"
-          : "border-border bg-muted text-muted-foreground hover:bg-accent",
+          ? "border-primary bg-primary/20 text-primary"
+          : "border-primary/25 bg-primary/[0.07] text-muted-foreground hover:bg-primary/15",
       )}
       style={{ left: `${left}%`, width: `${width}%`, height: OBJECT_CLIP_HEIGHT }}
-      title={`Path · ${span.start}–${span.end} ms · Snap to keys and playhead · Alt-drag for precise timing`}
+      title={`Morph · ${span.start}–${span.end} ms · drag to retime · Alt for 1 ms precision`}
       onPointerDown={
         interactive
           ? (event) => {
@@ -124,11 +124,11 @@ function TimelineObjectClip({
       {width > 12 && (
         <span
           className={cn(
-            "pointer-events-none truncate px-2 text-[9px] font-medium",
-            selected ? "text-primary-foreground" : "text-muted-foreground",
+            "pointer-events-none truncate px-2 text-[10px] font-medium",
+            selected ? "text-primary" : "text-muted-foreground",
           )}
         >
-          Path
+          Morph
         </span>
       )}
     </button>
@@ -201,7 +201,7 @@ export function TimelineTracksPane({
       >
         {empty && !emptyHintDismissed && (
           <div className="absolute inset-0 z-[5] flex items-center justify-center p-6">
-            <div className="relative w-full max-w-[300px] rounded-lg border border-border bg-card px-5 py-4 text-center shadow-sm">
+            <div className="relative w-full max-w-[300px] rounded-xl bg-card px-5 py-4 text-center [box-shadow:var(--elevation-floating)]">
               <button
                 type="button"
                 className="absolute right-2 top-2 grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -210,9 +210,11 @@ export function TimelineTracksPane({
               >
                 <X className="size-3.5" />
               </button>
-              <div className="text-[13px] font-medium text-foreground">No animations yet</div>
+              <div className="text-[13px] font-medium text-foreground">Nothing is animated yet</div>
               <div className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
-                Select a layer, open Motion, and choose a property to animate.
+                Select a layer and click{" "}
+                <span className="inline-block size-[7px] rotate-45 rounded-[1px] border border-muted-foreground align-middle" />{" "}
+                next to any property.
               </div>
             </div>
           </div>

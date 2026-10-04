@@ -1,3 +1,4 @@
+import { withBasePathGeometry } from "../playheadPathEditing";
 import { PAGE_ROOT_ID, type LayerSelectionRef } from "../../shapeshifter/scene/owners";
 import { computeDetailViewport } from "../../shapeshifter/camera";
 import { vectorFromPageMetadata } from "../../shapeshifter/vectorSpace";
@@ -158,6 +159,17 @@ export function createSelectionActions(
     setEditingSide: (side) =>
       set((state) => ({
         editingSide: side,
+        // While editing a path keyframe, the start/end shape is the one at the playhead.
+        ...(state.isActionMode
+          ? (() => {
+              const block = state.animation.blocks.find(
+                (item) => item.id === state.selectedBlockIds[0] && item.propertyName === "pathData",
+              );
+              if (!block) return {};
+              const time = side === "from" ? block.startTime : block.endTime;
+              return { progress: time / Math.max(1, state.animation.duration) };
+            })()
+          : {}),
         selection: state.editingSide === side ? state.selection : null,
         selectedPoints: state.editingSide === side ? state.selectedPoints : [],
         selectedSubPaths: state.editingSide === side ? state.selectedSubPaths : [],
@@ -172,6 +184,15 @@ export function createSelectionActions(
         toolMode: "direct",
       }),
     closeActionMode: () =>
-      set({ isActionMode: false, selection: null, selectedPoints: [], selectedSubPaths: [] }),
+      set((state) => ({
+        isActionMode: false,
+        editingSide: "from",
+        selection: null,
+        selectedPoints: [],
+        selectedSubPaths: [],
+        // Leaving keyframe editing hands the layer back to its base artwork.
+        layers: withBasePathGeometry(state, state.selectedLayerId),
+        animation: state.animation,
+      })),
   };
 }

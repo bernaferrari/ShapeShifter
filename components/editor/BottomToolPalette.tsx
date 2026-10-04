@@ -1,29 +1,29 @@
 "use client";
 
 import React from "react";
-import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  MousePointer2,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  ChevronDown,
+  Circle,
+  Frame,
   Lasso,
+  MousePointer2,
   PaintBucket,
   PenTool,
   Scissors,
-  Waypoints,
   Square,
-  Circle,
+  Waypoints,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/lib/store/editorStore";
 import type { ToolMode } from "@/lib/shapeshifter/toolModes";
-
-/**
- * Bottom tool palette — first visible artifact of the 2026 vision.
- * Matches the spirit of the user's reference (Move/Lasso/Bend/Cut/Paint/Pen/Direct + More) per v6j DESIGN 67dd105e. Paint completes the professional palette (rsn).
- * Initially a clean, modern bar that drives toolMode.
- *
- * This is the start of PR-01 foundation work under ShapeShifter-v6j (P0).
- * Knife is currently "add point on path" — not a cut primitive.
- */
 
 interface ToolDef {
   mode: ToolMode;
@@ -32,126 +32,175 @@ interface ToolDef {
   shortcut?: string;
 }
 
-const TOOLS: ToolDef[] = [
-  {
-    mode: "select",
-    label: "Move",
-    icon: <MousePointer2 className="h-4 w-4" />,
-    shortcut: "V",
-  },
-  {
-    // Figma A = vector/direct — must match page.tsx (not Auto Fix)
-    mode: "direct",
-    label: "Vector",
-    icon: <Waypoints className="size-[18px]" />,
-    shortcut: "A",
-  },
-  {
-    mode: "pen",
-    label: "Pen",
-    icon: <PenTool className="h-4 w-4" />,
-    shortcut: "P",
-  },
+const SHAPES: ToolDef[] = [
   { mode: "rectangle", label: "Rectangle", icon: <Square className="size-4" />, shortcut: "R" },
   { mode: "ellipse", label: "Ellipse", icon: <Circle className="size-4" />, shortcut: "O" },
-  {
-    mode: "pencil",
-    label: "Lasso",
-    icon: <Lasso className="h-4 w-4" />,
-    shortcut: "L",
-  },
-  {
-    mode: "paint",
-    label: "Paint",
-    icon: <PaintBucket className="h-4 w-4" />,
-    shortcut: "B",
-  },
-  {
-    mode: "knife",
-    label: "Add point",
-    icon: <Scissors className="h-4 w-4" />,
-    shortcut: "K",
-  },
 ];
+
+/** Shown only while editing points, like Figma's vector edit toolbar. */
+const VECTOR_TOOLS: ToolDef[] = [
+  { mode: "direct", label: "Edit points", icon: <Waypoints className="size-4" />, shortcut: "A" },
+  { mode: "pen", label: "Pen", icon: <PenTool className="size-4" />, shortcut: "P" },
+  { mode: "pencil", label: "Lasso", icon: <Lasso className="size-4" />, shortcut: "L" },
+  { mode: "paint", label: "Paint", icon: <PaintBucket className="size-4" />, shortcut: "B" },
+  { mode: "knife", label: "Add point", icon: <Scissors className="size-4" />, shortcut: "K" },
+];
+const VECTOR_MODES = new Set<ToolMode>(["direct", "pencil", "paint", "knife"]);
+
+const toolButton =
+  "grid size-8 place-items-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring";
+const idle = "text-foreground/75 hover:bg-muted hover:text-foreground";
+const active = "bg-primary text-primary-foreground";
+
+function Tip({ label, shortcut }: { label: string; shortcut?: string }) {
+  return (
+    <TooltipContent side="top" sideOffset={8} className="flex items-center gap-2 text-[11px]">
+      {label}
+      {shortcut && <span className="text-[10px] opacity-60">{shortcut}</span>}
+    </TooltipContent>
+  );
+}
 
 export function BottomToolPalette() {
   const toolMode = useEditorStore((state) => state.toolMode);
   const setToolMode = useEditorStore((state) => state.setToolMode);
+  const [lastShape, setLastShape] = React.useState<ToolDef>(SHAPES[0]!);
+  const editingPoints = VECTOR_MODES.has(toolMode);
+
+  const choose = (mode: ToolMode) => {
+    if (mode === "rectangle" || mode === "ellipse") useEditorStore.getState().closeActionMode();
+    setToolMode(mode);
+  };
+
+  const toolButtonFor = (tool: ToolDef) => {
+    const isActive = toolMode === tool.mode;
+    return (
+      <Tooltip key={tool.mode}>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              className={cn(toolButton, isActive ? active : idle)}
+              onClick={() => choose(tool.mode)}
+              aria-label={tool.label}
+              aria-pressed={isActive}
+            >
+              {tool.icon}
+            </button>
+          }
+        />
+        <Tip label={tool.label} shortcut={tool.shortcut} />
+      </Tooltip>
+    );
+  };
+
+  if (editingPoints)
+    return (
+      <div
+        role="toolbar"
+        aria-label="Vector editing tools"
+        className="flex items-center gap-0.5 rounded-xl bg-card p-1 [box-shadow:var(--elevation-floating)]"
+      >
+        {VECTOR_TOOLS.map(toolButtonFor)}
+        <div className="mx-1 h-4 w-px bg-border" aria-hidden />
+        <button
+          type="button"
+          onClick={() => {
+            useEditorStore.getState().closeActionMode();
+            setToolMode("select");
+          }}
+          className="h-8 rounded-lg px-3 text-[12px] font-medium text-foreground hover:bg-muted"
+          title="Done editing points · Esc"
+        >
+          Done
+        </button>
+      </div>
+    );
+
+  const shapeActive = SHAPES.some((shape) => shape.mode === toolMode);
+  const currentShape = SHAPES.find((shape) => shape.mode === toolMode) ?? lastShape;
 
   return (
     <div
       role="toolbar"
       aria-label="Drawing tools"
-      className="flex items-center gap-0.5 rounded-xl bg-card/95 p-1 [box-shadow:var(--elevation-floating)] backdrop-blur-md"
+      className="flex items-center gap-0.5 rounded-xl bg-card p-1 [box-shadow:var(--elevation-floating)]"
     >
-      {TOOLS.map((tool) => {
-        const isActive = toolMode === tool.mode;
-        return (
-          <React.Fragment key={tool.mode}>
-            {/* Divider between navigate/edit tools and create tools (Figma-style grouping) */}
-            {tool.mode === "pen" && <div className="mx-0.5 h-5 w-px bg-border" />}
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className={`size-10 rounded-lg transition-colors ${
-                      isActive
-                        ? "bg-primary text-primary-foreground hover:bg-primary"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    }`}
-                    onClick={() => {
-                      if (tool.mode === "rectangle" || tool.mode === "ellipse")
-                        useEditorStore.getState().closeActionMode();
-                      setToolMode(tool.mode);
-                    }}
-                    aria-label={tool.label}
-                    aria-pressed={isActive}
-                  >
-                    {tool.icon}
-                  </Button>
-                }
+      {toolButtonFor({
+        mode: "select",
+        label: "Move",
+        icon: <MousePointer2 className="size-4" />,
+        shortcut: "V",
+      })}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              className={cn(toolButton, idle)}
+              onClick={() => useEditorStore.getState().addFrame()}
+              aria-label="Add frame"
+            >
+              <Frame className="size-4" />
+            </button>
+          }
+        />
+        <Tip label="Frame" />
+      </Tooltip>
+      <div className="flex items-center">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                className={cn(toolButton, "rounded-r-none", shapeActive ? active : idle)}
+                onClick={() => choose(currentShape.mode)}
+                aria-label={currentShape.label}
+                aria-pressed={shapeActive}
+              >
+                {currentShape.icon}
+              </button>
+            }
+          />
+          <Tip label={currentShape.label} shortcut={currentShape.shortcut} />
+        </Tooltip>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <button
+                type="button"
+                aria-label="Choose shape"
+                className={cn(
+                  "grid h-8 w-4 place-items-center rounded-r-lg transition-colors",
+                  shapeActive ? active : idle,
+                )}
               />
-              <TooltipContent side="top" className="flex flex-col gap-1 text-[11px] max-w-[220px]">
-                <div className="flex items-center gap-2">
-                  <span>{tool.label}</span>
-                  {tool.shortcut && (
-                    <kbd className="rounded bg-muted px-1 py-px font-mono text-[10px] text-muted-foreground">
-                      {tool.shortcut}
-                    </kbd>
-                  )}
-                </div>
-                {tool.mode === "direct" && (
-                  <div className="text-[10px] text-muted-foreground leading-tight">
-                    Edit path points (Figma vector). Drag blue squares. Play timeline to preview
-                    morph.
-                  </div>
-                )}
-                {tool.mode === "select" && (
-                  <div className="text-[10px] text-muted-foreground leading-tight">
-                    Move whole shapes or frames. Double-click a shape to edit its vector.
-                  </div>
-                )}
-                {tool.mode === "pen" && (
-                  <div className="text-[10px] text-muted-foreground leading-tight">
-                    Click to place points · drag for curves · Esc to finish
-                  </div>
-                )}
-                {tool.mode === "paint" && (
-                  <div className="text-[10px] text-muted-foreground leading-tight">
-                    Click a region to fill with the current color
-                  </div>
-                )}
-                {(tool.mode === "rectangle" || tool.mode === "ellipse") && (
-                  <div className="text-[10px] text-muted-foreground leading-tight">
-                    Drag to draw · Shift for equal sides · Alt to draw from center
-                  </div>
-                )}
-              </TooltipContent>
-            </Tooltip>
-          </React.Fragment>
-        );
+            }
+          >
+            <ChevronDown className="size-3" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="top" align="start" sideOffset={8} className="w-44">
+            {SHAPES.map((shape) => (
+              <DropdownMenuItem
+                key={shape.mode}
+                onClick={() => {
+                  setLastShape(shape);
+                  choose(shape.mode);
+                }}
+              >
+                {shape.icon}
+                {shape.label}
+                <DropdownMenuShortcut>{shape.shortcut}</DropdownMenuShortcut>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      {toolButtonFor({
+        mode: "pen",
+        label: "Pen",
+        icon: <PenTool className="size-4" />,
+        shortcut: "P",
       })}
     </div>
   );

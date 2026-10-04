@@ -286,3 +286,54 @@ export function sampleMotionPath(
     };
   });
 }
+
+export const PLAYHEAD_NUMBER_PROPERTIES = [
+  "translateX",
+  "translateY",
+  "rotation",
+  "scaleX",
+  "scaleY",
+  "pivotX",
+  "pivotY",
+  "alpha",
+  "fillAlpha",
+  "strokeAlpha",
+  "strokeWidth",
+  "trimPathStart",
+  "trimPathEnd",
+  "trimPathOffset",
+] as const;
+export const PLAYHEAD_COLOR_PROPERTIES = ["fillColor", "strokeColor"] as const;
+
+const NUMBER_FALLBACKS: Record<string, number> = {
+  scaleX: 1,
+  scaleY: 1,
+  alpha: 1,
+  fillAlpha: 1,
+  strokeAlpha: 1,
+  trimPathEnd: 1,
+};
+
+/** The layer as it appears at `ms`: animated numbers and colors replaced by their live values. */
+export function layerAtTime(layer: Layer, blocks: TimelineBlock[], ms: number, duration: number) {
+  const own = blocks.filter((block) => String(block.layerId) === String(layer.id));
+  if (!own.length) return layer;
+  const animated = new Set(own.map((block) => block.propertyName));
+  const patch: Record<string, unknown> = {};
+  for (const property of PLAYHEAD_NUMBER_PROPERTIES) {
+    if (animated.has(property))
+      patch[property] = numberAtTime(
+        layer,
+        own,
+        property,
+        ms,
+        duration,
+        NUMBER_FALLBACKS[property] ?? 0,
+      );
+  }
+  for (const property of PLAYHEAD_COLOR_PROPERTIES) {
+    if (animated.has(property))
+      patch[property] = colorAtTime(layer, own, property, ms, duration, layer[property] ?? "#000000");
+  }
+  return Object.keys(patch).length ? ({ ...layer, ...patch } as Layer) : layer;
+}

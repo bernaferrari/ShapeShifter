@@ -30,7 +30,7 @@ This is a modern React and TypeScript rewrite of [Alex Lockwood’s ShapeShifter
 
 ### Keep work recoverable
 
-Undo and Redo cover committed edits, including agent batches and recovery restores. The save indicator shows when the browser-local document is saving, saved, or needs attention. **File → Earlier autosaves** exposes retained checkpoints; conflicting saves from another tab are detected before overwriting newer work.
+Undo and Redo cover committed edits, including agent batches and recovery restores. The save indicator shows when the browser-local document is saving, saved, or needs attention. **File → Version history** exposes retained checkpoints; conflicting saves from another tab are detected before overwriting newer work.
 
 Export project JSON for a portable backup. Autosave lives in this browser’s storage; it is not cloud sync.
 
@@ -76,6 +76,9 @@ Intrinsic dimensions and viewport dimensions are separate. A drawable can be `24
 | Pen / Rectangle / Ellipse      | `P` / `R` / `O`                                      |
 | Pan the canvas                 | Hold `Space` and drag, or hold `H`                   |
 | Play / pause                   | Tap `Space` outside focused controls                 |
+| Previous / next frame          | `,` / `.` (hold `Shift` for 10 frames)               |
+| Animate a property             | Click the ◇ beside it in the properties panel        |
+| Keyboard shortcuts             | `?`                                                  |
 | Fit all frames / fit selection | `Shift 1` / `Shift 2`                                |
 | Reset zoom                     | `0`                                                  |
 | Undo / Redo                    | `Mod Z` / `Mod Shift Z`                              |

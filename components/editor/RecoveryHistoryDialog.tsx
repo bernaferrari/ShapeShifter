@@ -60,7 +60,7 @@ export function RecoveryHistoryDialog({
           );
       })
       .catch(() => {
-        if (!cancelled) setError("Earlier autosaves could not be opened in this browser.");
+        if (!cancelled) setError("Version history could not be opened in this browser.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -101,18 +101,29 @@ export function RecoveryHistoryDialog({
     anchor.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+  const relativeTime = (savedAt: number) => {
+    const seconds = Math.max(0, Math.round((Date.now() - savedAt) / 1000));
+    if (seconds < 60) return "Just now";
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return `${minutes} min ago`;
+    return new Date(savedAt).toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Earlier autosaves</DialogTitle>
-          <DialogDescription>
-            This browser keeps the latest local copy and up to 20 earlier checkpoints, about 30
-            seconds apart. Restoring keeps the replaced copy and is one undo step.
+      <DialogContent className="gap-0 p-0 sm:max-w-[440px]">
+        <DialogHeader className="gap-0.5 border-b border-border px-5 pb-3 pt-4">
+          <DialogTitle>Version history</DialogTitle>
+          <DialogDescription className="text-[12px]">
+            Saved automatically in this browser. Restoring can be undone.
           </DialogDescription>
         </DialogHeader>
         <div
-          className="max-h-72 space-y-1 overflow-y-auto"
+          className="max-h-80 space-y-0.5 overflow-y-auto p-2"
           role="listbox"
           aria-label="Saved checkpoints"
         >
@@ -123,12 +134,13 @@ export function RecoveryHistoryDialog({
             } catch {
               description = { name: "Recovery checkpoint", detail: "Saved project" };
             }
+            const isSelected = selected === index;
             return (
               <button
                 key={`${checkpoint.savedAt}:${index}`}
                 type="button"
                 role="option"
-                aria-selected={selected === index}
+                aria-selected={isSelected}
                 tabIndex={(selected ?? 0) === index ? 0 : -1}
                 onKeyDown={(event) => {
                   let target: number | null = null;
@@ -145,58 +157,57 @@ export function RecoveryHistoryDialog({
                     [target]?.focus();
                 }}
                 onClick={() => setSelected(index)}
-                className={`flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left text-xs focus-visible:ring-2 focus-visible:ring-ring ${selected === index ? "border-primary bg-primary/8" : "border-transparent hover:bg-muted"}`}
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring ${isSelected ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
               >
-                <span className="min-w-0">
-                  {checkpoint.current && (
-                    <span className="block text-[10px] font-medium text-primary">
-                      Latest local copy
-                    </span>
-                  )}
-                  <span className="block truncate font-medium">{description.name}</span>
-                  <span className="text-muted-foreground">{description.detail}</span>
-                </span>
-                {!checkpoint.current && (
-                  <time
-                    dateTime={new Date(checkpoint.savedAt).toISOString()}
-                    className="shrink-0 text-muted-foreground"
+                <span
+                  className={`size-2 shrink-0 rounded-full ${checkpoint.current ? (isSelected ? "bg-primary-foreground" : "bg-primary") : isSelected ? "bg-primary-foreground/60" : "bg-muted-foreground/40"}`}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-medium">
+                    {checkpoint.current ? "Current version" : description.name}
+                  </span>
+                  <span
+                    className={`block truncate text-[12px] ${isSelected ? "text-primary-foreground/80" : "text-muted-foreground"}`}
                   >
-                    {new Date(checkpoint.savedAt).toLocaleString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      second: "2-digit",
-                    })}
-                  </time>
-                )}
+                    {checkpoint.current ? description.name : description.detail}
+                  </span>
+                </span>
+                <time
+                  dateTime={new Date(checkpoint.savedAt).toISOString()}
+                  className={`shrink-0 text-[12px] tabular-nums ${isSelected ? "text-primary-foreground/80" : "text-muted-foreground"}`}
+                >
+                  {relativeTime(checkpoint.savedAt)}
+                </time>
               </button>
             );
           })}
           {!checkpoints.length && !loading && !error && (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              Earlier autosaves will appear as you work.
+            <p className="py-10 text-center text-[13px] text-muted-foreground">
+              Versions will appear here as you work.
             </p>
           )}
           {loading && (
-            <p className="py-6 text-center text-sm text-muted-foreground">Opening checkpoints…</p>
+            <p className="py-10 text-center text-[13px] text-muted-foreground">Loading versions…</p>
           )}
         </div>
-        <div className="flex items-center justify-between gap-3">
-          <p role="status" className="text-xs text-destructive">
+        {error && (
+          <p role="status" className="px-5 pb-2 text-[12px] text-destructive">
             {error}
           </p>
-          <Button onClick={restore} disabled={selected == null || loading || restoring}>
-            {restoring ? "Restoring…" : "Restore checkpoint"}
+        )}
+        <div className="flex items-center justify-between gap-2 border-t border-border px-5 py-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={download}
+            disabled={selected == null || loading || restoring}
+          >
+            Download copy
+          </Button>
+          <Button size="sm" onClick={restore} disabled={selected == null || loading || restoring}>
+            {restoring ? "Restoring…" : "Restore"}
           </Button>
         </div>
-        <Button
-          variant="outline"
-          onClick={download}
-          disabled={selected == null || loading || restoring}
-        >
-          Download selected backup
-        </Button>
       </DialogContent>
     </Dialog>
   );

@@ -4,6 +4,9 @@ import { useMemo } from "react";
 import { PAGE_ROOT_ID, type CanvasFrame, type LayerSelectionRef } from "@/lib/store/editorStore";
 import { unionOwnedLayerBounds, type SceneOwner } from "@/lib/shapeshifter/scene/selection";
 import type { Layer, PathData } from "@/lib/shapeshifter/types";
+import { parsePath } from "@/lib/shapeshifter/pathUtils";
+import { pathDAtTime } from "@/lib/shapeshifter/playheadResolve";
+import { pathTracksFor } from "@/lib/store/playheadPathEditing";
 
 interface WorldSceneModelOptions {
   frames: CanvasFrame[];
@@ -19,6 +22,8 @@ interface WorldSceneModelOptions {
   progress: number;
   animation: import("@/lib/shapeshifter/types").AnimationState;
   rootAnimation: import("@/lib/shapeshifter/types").AnimationState;
+  /** Point editing off a keyframe shows the shape at the playhead. */
+  showPlayheadPath?: boolean;
 }
 
 export function useWorldSceneModel({
@@ -35,11 +40,20 @@ export function useWorldSceneModel({
   progress,
   animation,
   rootAnimation,
+  showPlayheadPath = false,
 }: WorldSceneModelOptions) {
   const editFrame = frames.find((frame) => frame.id === selectedFrameId);
   const editLayer = layers.find((layer) => String(layer.id) === String(selectedLayerId));
-  const editPath: PathData | null =
-    editLayer && editLayer.type !== "group" ? (editLayer[editingSide] as PathData) : null;
+  const editPath = useMemo((): PathData | null => {
+    if (!editLayer || editLayer.type === "group") return null;
+    if (showPlayheadPath && pathTracksFor(animation.blocks, editLayer.id).length) {
+      const duration = Math.max(1, animation.duration);
+      return parsePath(
+        pathDAtTime(editLayer, animation.blocks, progress * duration, duration, progress),
+      );
+    }
+    return (editLayer[editingSide] as PathData) ?? null;
+  }, [animation, editLayer, editingSide, progress, showPlayheadPath]);
   const editOrigin = useMemo(
     () =>
       selectedFrameId === PAGE_ROOT_ID

@@ -37,11 +37,6 @@ type SessionAction =
 
 type SessionActions = Pick<EditorState, SessionAction>;
 const WORLD_GEOMETRY_TOOLS = new Set(["direct", "pen", "knife", "paint", "pencil"]);
-function motionPreviewToolState(state: EditorState): Partial<EditorState> {
-  return !state.isActionMode && WORLD_GEOMETRY_TOOLS.has(state.toolMode)
-    ? { toolMode: "select", selection: null, selectedPoints: [], selectedSubPaths: [] }
-    : {};
-}
 type SetEditorState = (
   update: Partial<EditorState> | ((state: EditorState) => Partial<EditorState>),
 ) => void;
@@ -172,18 +167,13 @@ export function createSessionActions(set: SetEditorState, get: () => EditorState
       set((state) => {
         const atEnd = state.progress >= 0.999;
         return !state.isPlaying && atEnd
-          ? { isPlaying: true, progress: 0, ...motionPreviewToolState(state) }
-          : {
-              isPlaying: !state.isPlaying,
-              ...(!state.isPlaying ? motionPreviewToolState(state) : {}),
-            };
+          ? { isPlaying: true, progress: 0 }
+          : { isPlaying: !state.isPlaying };
       }),
     setProgress: (progress) => {
       if (!Number.isFinite(progress)) return;
-      set((state) => ({
-        progress: Math.max(0, Math.min(1, progress)),
-        ...(progress > 0 ? motionPreviewToolState(state) : {}),
-      }));
+      // Point tools stay active while scrubbing: they edit the shape at the playhead.
+      set({ progress: Math.max(0, Math.min(1, progress)) });
     },
     setSpeed: (speed) => set({ speed }),
     toggleSlowMotion: () => set((state) => ({ isSlowMotion: !state.isSlowMotion })),
@@ -222,7 +212,6 @@ export function createSessionActions(set: SetEditorState, get: () => EditorState
         toolMode,
         ...(!state.isActionMode && WORLD_GEOMETRY_TOOLS.has(toolMode)
           ? {
-              progress: 0,
               isPlaying: false,
               editingSide: "from" as const,
               ...(state.editingSide === "to"

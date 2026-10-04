@@ -11,6 +11,7 @@ import { commitDocumentV2 } from "../documentRuntime";
 import {
   insertTimelineKeyframe,
   linkedTimelineKeyframe,
+  setTrackValueAt,
   timelineKeyframeRange,
 } from "../../shapeshifter/motion/timelineKeyframes";
 import { retimeTimelineBlocks } from "../../shapeshifter/motion/timelineRetiming";
@@ -19,6 +20,14 @@ import { planTimelinePaste } from "../../shapeshifter/motion/timelineClipboard";
 import { resolveTimelinePreviewRange } from "../../shapeshifter/motion/previewRange";
 import { mapLayerTimelines } from "../timelineLayerMapping";
 import { isTimelineNumberValid } from "../../shapeshifter/motion/timelineProperties";
+import {
+  pathKeyframeAtTime,
+  pathTracksFor,
+  playheadPathEditingActive,
+  seedPathKeyframe,
+  selectedPathLayer,
+  withBasePathGeometry,
+} from "../playheadPathEditing";
 
 type DocumentActionKey =
   | "addLayer"
@@ -35,6 +44,9 @@ type DocumentActionKey =
   | "moveTimelineBlocks"
   | "startTimelinePathEditing"
   | "beginTimelineMorphEditing"
+  | "syncPathEditingWithPlayhead"
+  | "ensurePathKeyframeAtPlayhead"
+  | "setPropertiesAtPlayhead"
   | "copyTimelineBlocks"
   | "pasteTimelineBlocks"
   | "setTimelinePreviewRange"
@@ -358,6 +370,8 @@ export function createDocumentActions(
         selectedSubPaths: [],
         toolMode: "direct",
         isPlaying: false,
+        // The edited shape is always the shape at the playhead.
+        progress: Math.max(0, Math.min(1, block.startTime / Math.max(1, state.animation.duration))),
         timelineCollapsed: false,
       });
     },
@@ -420,11 +434,103 @@ export function createDocumentActions(
         selectedSubPaths: [],
         toolMode: "direct",
         isPlaying: false,
+        progress: 0,
         timelineCollapsed: false,
         hasCanvasSelection: true,
         selectionKind: "layer",
       });
       return true;
+    },
+
+    syncPathEditingWithPlayhead: () => {
+      const state = get();
+      const layer = selectedPathLayer(state);
+      const tracks =
+        layer && playheadPathEditingActive(state, layer)
+          ? pathTracksFor(state.animation.blocks, layer.id)
+          : [];
+      const target = layer
+        ? pathKeyframeAtTime(tracks, state.progress * state.animation.duration)
+        : null;
+      if (layer && target) {
+        const patch = seedPathKeyframe(state, layer, target);
+        if (patch) set(patch);
+        return;
+      }
+      if (!state.isActionMode) return;
+      // Off a keyframe (or out of point editing): the base artwork owns the layer again.
+      set({
+        isActionMode: false,
+        editingSide: "from",
+        layers: withBasePathGeometry(state, state.selectedLayerId),
+        animation: state.animation,
+      });
+    },
+
+    ensurePathKeyframeAtPlayhead: () => {
+      const state = get();
+      const layer = selectedPathLayer(state);
+      if (!layer || !playheadPathEditingActive(state, layer)) return false;
+      const tracks = pathTracksFor(state.animation.blocks, layer.id);
+      if (!tracks.length) return false;
+      const time = state.progress * state.animation.duration;
+      if (pathKeyframeAtTime(tracks, time)) {
+        get().syncPathEditingWithPlayhead();
+        return true;
+      }
+      const cover = tracks.find((block) => time > block.startTime && time < block.endTime);
+      if (cover) {
+        if (!get().insertTimelineKeyframe(cover.id, time)) return false;
+      } else {
+        const first = tracks[0]!;
+        const last = tracks.at(-1)!;
+        const after = time > last.endTime;
+        const value = after ? last.toValue : first.fromValue;
+        const block: TimelineBlock = {
+          ...(after ? last : first),
+          id: generateId(),
+          fromValue: value,
+          toValue: value,
+          startTime: after ? last.endTime : time,
+          endTime: after ? time : first.startTime,
+        };
+        state.pushHistory();
+        set({
+          animation: { ...state.animation, blocks: [...state.animation.blocks, block] },
+          layers: updateLayerById(state.layers, layer.id, (item) => ({
+            ...item,
+            ...(item.timeline && { timeline: [...item.timeline, block] }),
+          })),
+          selectedBlockIds: [block.id],
+        });
+      }
+      get().syncPathEditingWithPlayhead();
+      return get().isActionMode;
+    },
+
+    setPropertiesAtPlayhead: (layerId, values, options) => {
+      const state = get();
+      const time = state.progress * state.animation.duration;
+      const unanimated: Record<string, TimelineBlock["fromValue"]> = {};
+      let blocks = state.animation.blocks;
+      let layers = state.layers;
+      for (const [propertyName, value] of Object.entries(values)) {
+        const id = generateId();
+        const apply = (list: TimelineBlock[]) =>
+          setTrackValueAt(list, layerId, propertyName, time, value, id);
+        const next = apply(blocks);
+        if (!next) {
+          unanimated[propertyName] = value;
+          continue;
+        }
+        blocks = next;
+        layers = mapLayerTimelines(layers, (list) => apply(list) ?? list);
+      }
+      if (blocks !== state.animation.blocks) {
+        if (options?.recordHistory !== false) state.pushHistory();
+        set({ animation: { ...state.animation, blocks }, layers });
+      }
+      return unanimated;
     },
 
     copyTimelineBlocks: (blockIds) => {

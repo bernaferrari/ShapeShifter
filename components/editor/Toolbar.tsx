@@ -1,62 +1,52 @@
 "use client";
 
 import React from "react";
-import {
-  Play,
-  Pause,
-  SkipBack,
-  Undo2,
-  Redo2,
-  Download,
-  Upload,
-  Plus,
-  Zap,
-  RotateCw,
-  Repeat,
-  Gauge,
-  ArrowLeftRight,
-  HelpCircle,
-  ChevronDown,
-  ArrowLeft,
-  Sparkles,
-  Scissors,
-  ChevronFirst,
-  Trash2,
-  X,
-  ChevronLeft,
-  ChevronRight,
-  Search,
-} from "lucide-react";
+import { ChevronDown, Pause, Play, Sparkles } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuGroup,
+  DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { toast } from "sonner";
+import { useTheme } from "@/components/theme-provider";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { DEMO_INFOS } from "@/lib/shapeshifter/demoProjects";
 import { ExportDialog } from "./ExportDialog";
-import { ThemeToggle } from "../ThemeToggle";
 import { DocumentSaveStatus, type DocumentAutosave } from "./DocumentSaveStatus";
 import { BooleanMenuItems } from "./BooleanOperations";
+
+export interface EditorPanelVisibility {
+  layers: boolean;
+  inspector: boolean;
+  timeline: boolean;
+  rulers: boolean;
+}
 
 interface ToolbarProps {
   onExport: (type: string) => void;
   onLoadSample: (index: number) => void;
   onTogglePlay: () => void;
-  onResetAnim: () => void;
   onOpenSVGImport: () => void;
   onShowHelp: () => void;
   onOpenCommand: () => void;
   onOpenAgentTools?: () => void;
   onOpenRecovery?: () => void;
+  onTogglePanel: (panel: keyof EditorPanelVisibility) => void;
+  panels: EditorPanelVisibility;
   autosave: DocumentAutosave;
   resetAllViews: () => void;
   isPlaying: boolean;
@@ -69,20 +59,23 @@ interface ToolbarProps {
   canRedo: boolean;
 }
 
-/** Quiet, neutral chrome. The bar recedes; the canvas is the hero.
- *  Dense path/boolean actions are collapsed into a single contextual "Edit" menu
- *  instead of a wall of always-visible buttons. */
+/**
+ * The top bar recedes: one main menu holds every document command, the title
+ * says where you are, and the only persistent actions are Play and Export.
+ */
 export function Toolbar({
   onExport,
   onLoadSample,
   onTogglePlay,
-  onResetAnim,
   onOpenSVGImport,
   onShowHelp,
   onOpenCommand,
   onOpenAgentTools,
   onOpenRecovery,
+  onTogglePanel,
+  panels,
   autosave,
+  resetAllViews,
   isPlaying,
   isActionMode,
   editingSide,
@@ -92,11 +85,160 @@ export function Toolbar({
   canUndo,
   canRedo,
 }: ToolbarProps) {
+  const vector = useEditorStore((state) => state.vector);
+  const closeActionMode = useEditorStore((state) => state.closeActionMode);
+
+  return (
+    <header
+      aria-label="Editor toolbar"
+      className="relative grid h-11 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b bg-background px-2 text-foreground"
+    >
+      <div className="flex min-w-0 items-center gap-1">
+        <MainMenu
+          onExport={onExport}
+          onLoadSample={onLoadSample}
+          onOpenSVGImport={onOpenSVGImport}
+          onShowHelp={onShowHelp}
+          onOpenCommand={onOpenCommand}
+          onOpenAgentTools={onOpenAgentTools}
+          onOpenRecovery={onOpenRecovery}
+          onTogglePanel={onTogglePanel}
+          panels={panels}
+          resetAllViews={resetAllViews}
+          isActionMode={isActionMode}
+          undo={undo}
+          redo={redo}
+          canUndo={canUndo}
+          canRedo={canRedo}
+        />
+        <div className="flex min-w-0 items-center gap-1.5 pl-1">
+          <span className="truncate text-[13px] font-medium tracking-tight">
+            {vector?.name || "Untitled"}
+          </span>
+          <DocumentSaveStatus autosave={autosave} />
+        </div>
+      </div>
+
+      {/* Center: only appears for the dedicated From/To morph editor. */}
+      <div className="flex items-center justify-center gap-2">
+        {isActionMode && (
+          <>
+            <div
+              role="radiogroup"
+              aria-label="Editing side"
+              className="flex items-center rounded-lg bg-muted p-0.5"
+            >
+              {(["from", "to"] as const).map((side) => (
+                <button
+                  key={side}
+                  type="button"
+                  role="radio"
+                  aria-checked={editingSide === side}
+                  onClick={() => setEditingSide(side)}
+                  className={cn(
+                    "h-7 rounded-md px-3 text-[12px] font-medium capitalize transition-colors",
+                    editingSide === side
+                      ? "bg-background text-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {side === "from" ? "Start" : "End"}
+                </button>
+              ))}
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-7 px-3 text-[12px]"
+              onClick={closeActionMode}
+              aria-label="Back to canvas"
+            >
+              Done
+            </Button>
+          </>
+        )}
+      </div>
+
+      <div className="flex items-center justify-end gap-1.5">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={cn(
+                  "size-8 text-muted-foreground hover:text-foreground",
+                  isPlaying && "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary",
+                )}
+                onClick={onTogglePlay}
+                aria-label={isPlaying ? "Pause" : "Play"}
+              />
+            }
+          >
+            {isPlaying ? (
+              <Pause className="size-4 fill-current" strokeWidth={0} />
+            ) : (
+              <Play className="size-4 fill-current" strokeWidth={0} />
+            )}
+          </TooltipTrigger>
+          <TooltipContent>
+            {isPlaying ? "Pause" : "Play"} <Kbd>Space</Kbd>
+          </TooltipContent>
+        </Tooltip>
+        <ExportDialog>
+          <Button size="sm" className="h-8 px-3.5 text-[12px] font-medium">
+            Export
+          </Button>
+        </ExportDialog>
+      </div>
+    </header>
+  );
+}
+
+function Kbd({ children }: { children: React.ReactNode }) {
+  return <span className="ml-1.5 text-muted-foreground opacity-80">{children}</span>;
+}
+
+function MainMenu({
+  onExport,
+  onLoadSample,
+  onOpenSVGImport,
+  onShowHelp,
+  onOpenCommand,
+  onOpenAgentTools,
+  onOpenRecovery,
+  onTogglePanel,
+  panels,
+  resetAllViews,
+  isActionMode,
+  undo,
+  redo,
+  canUndo,
+  canRedo,
+}: Pick<
+  ToolbarProps,
+  | "onExport"
+  | "onLoadSample"
+  | "onOpenSVGImport"
+  | "onShowHelp"
+  | "onOpenCommand"
+  | "onOpenAgentTools"
+  | "onOpenRecovery"
+  | "onTogglePanel"
+  | "panels"
+  | "resetAllViews"
+  | "isActionMode"
+  | "undo"
+  | "redo"
+  | "canUndo"
+  | "canRedo"
+>) {
+  const { theme, setTheme } = useTheme();
   const addLayer = useEditorStore((state) => state.addLayer);
   const reverseSelectedLayer = useEditorStore((state) => state.reverseSelectedLayer);
   const shiftSelectedLayer = useEditorStore((state) => state.shiftSelectedLayer);
   const autoFixSelectedLayer = useEditorStore((state) => state.autoFixSelectedLayer);
-  const closeActionMode = useEditorStore((state) => state.closeActionMode);
+  const previewPrepareForMorph = useEditorStore((state) => state.previewPrepareForMorph);
   const splitSelectedCommand = useEditorStore((state) => state.splitSelectedCommand);
   const setSelectedCommandAsFirst = useEditorStore((state) => state.setSelectedCommandAsFirst);
   const deleteSelectedPoint = useEditorStore((state) => state.deleteSelectedPoint);
@@ -105,354 +247,216 @@ export function Toolbar({
     (state) => state.extractSelectedSubPathToNewLayer,
   );
   const resetProject = useEditorStore((state) => state.resetProject);
-  const vector = useEditorStore((state) => state.vector);
   const isRepeating = useEditorStore((state) => state.isRepeating);
   const isSlowMotion = useEditorStore((state) => state.isSlowMotion);
   const toggleRepeating = useEditorStore((state) => state.toggleRepeating);
   const toggleSlowMotion = useEditorStore((state) => state.toggleSlowMotion);
 
-  const previewPrepareForMorph = useEditorStore((state) => state.previewPrepareForMorph);
   const handleAutoFix = () => {
     if (previewPrepareForMorph()) {
       toast.message("Review the morph in the inspector, then Apply or Cancel");
       return;
     }
-    if (autoFixSelectedLayer()) {
-      toast.success("Paths made compatible");
-    }
+    if (autoFixSelectedLayer()) toast.success("Paths made compatible");
   };
 
   return (
-    <header
-      aria-label="Editor toolbar"
-      className="relative flex h-12 shrink-0 items-center gap-0.5 overflow-x-auto border-b bg-card px-2 text-foreground [scrollbar-width:none]"
-    >
-      {/* Document identity stays compact and left-aligned, like an editor tab. */}
-      <div className="flex min-w-0 items-center gap-1.5 pr-1">
-        {isActionMode && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="text-muted-foreground hover:text-foreground"
-                  aria-label="Back to canvas"
-                  onClick={closeActionMode}
-                />
-              }
-            >
-              <ArrowLeft size={18} />
-            </TooltipTrigger>
-            <TooltipContent>Back to canvas (⌘W)</TooltipContent>
-          </Tooltip>
-        )}
-        <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-          <Sparkles size={13} />
-        </div>
-        <span className="hidden max-w-36 truncate text-[12px] font-medium tracking-tight sm:block">
-          {isActionMode ? "Path morphing" : vector?.name || "Untitled"}
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <button
+            type="button"
+            aria-label="Main menu"
+            className="flex h-8 items-center gap-1 rounded-md pl-1 pr-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-popup-open:bg-muted data-popup-open:text-foreground"
+          />
+        }
+      >
+        <span className="grid size-6 place-items-center rounded-md bg-primary text-primary-foreground">
+          <Sparkles className="size-3.5" />
         </span>
-      </div>
+        <ChevronDown className="size-3" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuItem onClick={onOpenCommand}>
+          Quick actions…
+          <DropdownMenuShortcut>⌘K</DropdownMenuShortcut>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
 
-      <div className="mx-1 h-4 w-px bg-border/80" />
-
-      {/* File */}
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <Button variant="ghost" size="sm" className="gap-1 px-2 text-[13px] font-medium" />
-          }
-        >
-          File <ChevronDown className="size-3.5 opacity-50" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-52">
-          <DropdownMenuItem
-            onClick={() => {
-              resetProject();
-              toast.success("New project");
-            }}
-          >
-            <Plus className="mr-2 size-4" /> New project
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={onOpenSVGImport}>
-            <Upload className="mr-2 size-4" /> Import SVG / XML / Project…
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => addLayer("path")}>
-            <Plus className="mr-2 size-4" /> Add layer
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => onExport("json")}>
-            <Download className="mr-2 size-4" /> Export project (.json)
-          </DropdownMenuItem>
-          {onOpenRecovery && (
-            <DropdownMenuItem onClick={onOpenRecovery}>Earlier autosaves…</DropdownMenuItem>
-          )}
-          {onOpenAgentTools && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={onOpenAgentTools}>Agent tools…</DropdownMenuItem>
-            </>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      {/* Edit — all the dense path/boolean actions collapsed here */}
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <Button variant="ghost" size="sm" className="gap-1 px-2 text-[13px] font-medium" />
-          }
-        >
-          Edit <ChevronDown className="size-3.5 opacity-50" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-56">
-          <DropdownMenuItem onClick={undo} disabled={!canUndo}>
-            <Undo2 className="mr-2 size-4" /> Undo
-            <span className="ml-auto text-xs text-muted-foreground">⌘Z</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={redo} disabled={!canRedo}>
-            <Redo2 className="mr-2 size-4" /> Redo
-            <span className="ml-auto text-xs text-muted-foreground">⇧⌘Z</span>
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={handleAutoFix}>
-            <Zap className="mr-2 size-4 text-amber-500" /> Auto fix compatibility
-            <span className="ml-auto text-xs text-muted-foreground">⇧F</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() => {
-              reverseSelectedLayer();
-              toast.success("Reversed");
-            }}
-          >
-            <RotateCw className="mr-2 size-4" /> Reverse points
-            <span className="ml-auto text-xs text-muted-foreground">⇧R</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => shiftSelectedLayer(1)}>
-            <ArrowLeftRight className="mr-2 size-4" /> Shift points forward
-            <span className="ml-auto text-xs text-muted-foreground">⇧S</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => shiftSelectedLayer(-1)}>
-            <ArrowLeftRight className="mr-2 size-4 -scale-x-100" /> Shift points back
-          </DropdownMenuItem>
-
-          {isActionMode && (
-            <>
-              <DropdownMenuSeparator />
-              <DropdownMenuGroup>
-                <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Selected command
-                </DropdownMenuLabel>
-                <DropdownMenuItem onClick={() => splitSelectedCommand()}>
-                  <Scissors size={16} className="mr-2" /> Split in half
-                  <span className="ml-auto text-xs text-muted-foreground">X</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setSelectedCommandAsFirst()}>
-                  <ChevronFirst size={16} className="mr-2" /> Set as first point
-                  <span className="ml-auto text-xs text-muted-foreground">F</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => deleteSelectedPoint()}>
-                  <Trash2 size={16} className="mr-2" /> Delete point(s)
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => deleteSelectedSubPath()}>
-                  <X size={16} className="mr-2" /> Delete subpath(s)
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
-            </>
-          )}
-
-          <DropdownMenuItem
-            onClick={() => extractSelectedSubPathToNewLayer?.()}
-            disabled={!extractSelectedSubPathToNewLayer}
-          >
-            <Scissors size={16} className="mr-2" /> Extract subpath to new layer
-          </DropdownMenuItem>
-
-          <DropdownMenuSeparator />
-          <DropdownMenuGroup>
-            <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              Combine selected paths
-            </DropdownMenuLabel>
-            <BooleanMenuItems />
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      {/* Samples */}
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <Button variant="ghost" size="sm" className="gap-1 px-2 text-[13px] font-medium" />
-          }
-        >
-          Samples <ChevronDown className="size-3.5 opacity-50" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-48">
-          {DEMO_INFOS.map((demo, index) => (
-            <DropdownMenuItem key={demo.id} onClick={() => onLoadSample(index)}>
-              {demo.title}
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>File</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-56">
+            <DropdownMenuItem
+              onClick={() => {
+                resetProject();
+                toast.success("New project");
+              }}
+            >
+              New project
             </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      {/* From / To — segmented, action mode only (shadcn Button) */}
-      {isActionMode && (
-        <>
-          <div className="mx-1 h-5 w-px bg-border" />
-          <div className="flex items-center rounded-md bg-muted p-0.5">
-            {(["from", "to"] as const).map((side) => (
-              <Button
-                key={side}
-                type="button"
-                size="xs"
-                variant="ghost"
-                onClick={() => setEditingSide(side)}
-                className={`h-6 gap-1 rounded-sm px-2.5 text-xs capitalize ${
-                  editingSide === side
-                    ? "bg-card text-foreground shadow-sm hover:bg-card"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {side === "from" ? <ChevronLeft size={14} /> : null}
-                {side}
-                {side === "to" ? <ChevronRight size={14} /> : null}
-              </Button>
-            ))}
-          </div>
-        </>
-      )}
-
-      <div className="flex-1" />
-
-      <DocumentSaveStatus autosave={autosave} />
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onOpenCommand}
-              aria-label="Search commands"
-            />
-          }
-        >
-          <Search className="size-4" />
-        </TooltipTrigger>
-        <TooltipContent>Search commands (⌘K / Ctrl+K)</TooltipContent>
-      </Tooltip>
-
-      {/* Transport stays icon-first; Export is the single primary action. */}
-      <div className="flex items-center gap-0.5">
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="text-muted-foreground hover:text-foreground"
-                onClick={onResetAnim}
-                aria-label="Reset animation"
-              />
-            }
-          >
-            <SkipBack className="size-4" />
-          </TooltipTrigger>
-          <TooltipContent>Reset to start</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className={cn(
-                  "text-muted-foreground hover:text-foreground",
-                  isPlaying && "bg-primary/10 text-primary hover:text-primary",
-                )}
-                onClick={onTogglePlay}
-                aria-label={isPlaying ? "Pause" : "Play"}
-              />
-            }
-          >
-            {isPlaying ? (
-              <Pause className="size-3.5 fill-current" />
-            ) : (
-              <Play className="ml-px size-3.5 fill-current" />
+            <DropdownMenuItem onClick={onOpenSVGImport}>
+              Import SVG, XML or project…
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onExport("json")}>Save project file</DropdownMenuItem>
+            {onOpenRecovery && (
+              <DropdownMenuItem onClick={onOpenRecovery}>Version history…</DropdownMenuItem>
             )}
-          </TooltipTrigger>
-          <TooltipContent>{isPlaying ? "Pause" : "Play"} (Space)</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className={cn(
-                  "text-muted-foreground hover:text-foreground",
-                  isRepeating && "bg-primary/10 text-primary hover:text-primary",
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>Edit</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-60">
+            <DropdownMenuItem onClick={undo} disabled={!canUndo}>
+              Undo
+              <DropdownMenuShortcut>⌘Z</DropdownMenuShortcut>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={redo} disabled={!canRedo}>
+              Redo
+              <DropdownMenuShortcut>⇧⌘Z</DropdownMenuShortcut>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => addLayer("path")}>New path layer</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => addLayer("group")}>New group</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>Path</DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-60">
+                <DropdownMenuItem onClick={handleAutoFix}>
+                  Make morph-compatible
+                  <DropdownMenuShortcut>⇧F</DropdownMenuShortcut>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    reverseSelectedLayer();
+                    toast.success("Reversed");
+                  }}
+                >
+                  Reverse direction
+                  <DropdownMenuShortcut>⇧R</DropdownMenuShortcut>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => shiftSelectedLayer(1)}>
+                  Shift start point forward
+                  <DropdownMenuShortcut>⇧S</DropdownMenuShortcut>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => shiftSelectedLayer(-1)}>
+                  Shift start point back
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => extractSelectedSubPathToNewLayer?.()}
+                  disabled={!extractSelectedSubPathToNewLayer}
+                >
+                  Extract subpath to layer
+                </DropdownMenuItem>
+                {isActionMode && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => splitSelectedCommand()}>
+                      Split segment
+                      <DropdownMenuShortcut>X</DropdownMenuShortcut>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setSelectedCommandAsFirst()}>
+                      Set as first point
+                      <DropdownMenuShortcut>F</DropdownMenuShortcut>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => deleteSelectedPoint()}>
+                      Delete points
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => deleteSelectedSubPath()}>
+                      Delete subpaths
+                    </DropdownMenuItem>
+                  </>
                 )}
-                onClick={toggleRepeating}
-                aria-label="Loop playback"
-                aria-pressed={isRepeating}
-              />
-            }
-          >
-            <Repeat className="size-4" />
-          </TooltipTrigger>
-          <TooltipContent>{isRepeating ? "Looping on" : "Loop off"}</TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className={cn(
-                  "text-muted-foreground hover:text-foreground",
-                  isSlowMotion && "bg-primary/10 text-primary hover:text-primary",
-                )}
-                onClick={toggleSlowMotion}
-                aria-label="Slow motion"
-                aria-pressed={isSlowMotion}
-              />
-            }
-          >
-            <Gauge className="size-4" />
-          </TooltipTrigger>
-          <TooltipContent>{isSlowMotion ? "Slow motion (0.25×)" : "Slow motion"}</TooltipContent>
-        </Tooltip>
-      </div>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>Combine</DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-60">
+                <BooleanMenuItems />
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
 
-      <div className="mx-1 h-4 w-px bg-border/80" />
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>View</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-56">
+            <DropdownMenuCheckboxItem
+              checked={panels.layers}
+              onCheckedChange={() => onTogglePanel("layers")}
+            >
+              Layers
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={panels.inspector}
+              onCheckedChange={() => onTogglePanel("inspector")}
+            >
+              Properties
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={panels.timeline}
+              onCheckedChange={() => onTogglePanel("timeline")}
+            >
+              Timeline
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={panels.rulers}
+              onCheckedChange={() => onTogglePanel("rulers")}
+            >
+              Rulers
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem checked={isRepeating} onCheckedChange={toggleRepeating}>
+              Loop playback
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem checked={isSlowMotion} onCheckedChange={toggleSlowMotion}>
+              Slow motion
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={resetAllViews}>
+              Zoom to fit
+              <DropdownMenuShortcut>⇧1</DropdownMenuShortcut>
+            </DropdownMenuItem>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
 
-      {/* Export */}
-      <ExportDialog>
-        <Button size="sm" className="gap-1.5 px-2.5 text-[12px] font-medium">
-          <Download className="size-3.5" /> Export
-        </Button>
-      </ExportDialog>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>Examples</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-52">
+            {DEMO_INFOS.map((demo, index) => (
+              <DropdownMenuItem key={demo.id} onClick={() => onLoadSample(index)}>
+                {demo.title}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
 
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-muted-foreground hover:text-foreground"
-              onClick={onShowHelp}
-              aria-label="Keyboard shortcuts"
-            />
-          }
-        >
-          <HelpCircle className="size-4" />
-        </TooltipTrigger>
-        <TooltipContent>Keyboard shortcuts</TooltipContent>
-      </Tooltip>
-
-      <ThemeToggle />
-    </header>
+        <DropdownMenuSeparator />
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>Theme</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-40">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="sr-only">Theme</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={theme}
+                onValueChange={(value) => setTheme(value as typeof theme)}
+              >
+                <DropdownMenuRadioItem value="light">Light</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="dark">Dark</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="system">System</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuItem onClick={onShowHelp}>
+          Keyboard shortcuts
+          <DropdownMenuShortcut>?</DropdownMenuShortcut>
+        </DropdownMenuItem>
+        {onOpenAgentTools && (
+          <DropdownMenuItem onClick={onOpenAgentTools}>Agent tools…</DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

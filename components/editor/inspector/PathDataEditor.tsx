@@ -77,13 +77,11 @@ export function PathDataEditor({
         spellCheck={false}
         className="min-h-20 w-full resize-y rounded-md border border-border bg-background p-2 font-mono text-[11px] leading-relaxed text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 aria-invalid:border-destructive"
       />
-      <p
-        id={descriptionId}
-        role={error ? "alert" : undefined}
-        className={`text-[10px] leading-relaxed ${error ? "text-destructive" : "text-muted-foreground"}`}
-      >
-        {error ?? "Commit on blur or Cmd/Ctrl+Enter. Escape cancels."}
-      </p>
+      {error && (
+        <p id={descriptionId} role="alert" className="text-[11px] leading-snug text-destructive">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

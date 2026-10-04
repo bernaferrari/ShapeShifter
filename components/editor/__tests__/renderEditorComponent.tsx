@@ -42,3 +42,28 @@ export function buttonWithText(container: ParentNode, text: string): HTMLButtonE
   }
   return match;
 }
+
+/** Opens a dropdown menu from its trigger and activates the item whose text starts with `itemText`. */
+export async function chooseMenuItem(trigger: Element, itemText: string) {
+  await act(async () => {
+    trigger.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }),
+    );
+    trigger.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 }));
+    trigger.dispatchEvent(
+      new PointerEvent("pointerup", { bubbles: true, button: 0, pointerType: "mouse" }),
+    );
+    (trigger as HTMLElement).click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  const item = Array.from(
+    document.body.querySelectorAll<HTMLElement>(
+      '[role="menuitem"],[role="menuitemcheckbox"],[role="menuitemradio"]',
+    ),
+  ).find((candidate) => candidate.textContent?.trim().startsWith(itemText));
+  if (!item) throw new Error(`Menu item not found: ${itemText}`);
+  await act(async () => {
+    item.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}

@@ -39,6 +39,10 @@ export interface LayerResizeSession {
   moved: boolean;
 }
 
+const ROTATE_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M6 14a6 6 0 1 0 2-8.5" fill="none" stroke="white" stroke-width="4" stroke-linecap="round"/><path d="M6 14a6 6 0 1 0 2-8.5" fill="none" stroke="black" stroke-width="1.6" stroke-linecap="round"/><path d="M4 3.5v4.5h4.5" fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 3.5v4.5h4.5" fill="none" stroke="black" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+)}") 12 12, crosshair`;
+
 export interface LayerRotateSession {
   center: Point;
   ownerOrigin: Point;
@@ -186,14 +190,7 @@ function WorldSelectionOverlayComponent({
       event.pointerId,
     );
   };
-  const topMiddle = worldPoint({ x: local.x + local.w / 2, y: local.y });
   const center = worldPoint({ x: local.x + local.w / 2, y: local.y + local.h / 2 });
-  const topDirection = { x: topMiddle.x - center.x, y: topMiddle.y - center.y };
-  const topDistance = Math.hypot(topDirection.x, topDirection.y) || 1;
-  const rotateHandle = {
-    x: topMiddle.x + (topDirection.x / topDistance) * worldPerPx * 18,
-    y: topMiddle.y + (topDirection.y / topDistance) * worldPerPx * 18,
-  };
   const beginRotate = (event: React.PointerEvent<SVGCircleElement>) => {
     if (!event.isPrimary || event.button !== 0 || !selection.canRotate) return;
     event.stopPropagation();
@@ -249,38 +246,29 @@ function WorldSelectionOverlayComponent({
         strokeWidth={1.5}
         vectorEffect="non-scaling-stroke"
       />
-      {selection.canRotate && (
-        <>
-          <line
-            x1={topMiddle.x}
-            y1={topMiddle.y}
-            x2={rotateHandle.x}
-            y2={rotateHandle.y}
-            stroke="var(--primary)"
-            strokeWidth={1}
-            vectorEffect="non-scaling-stroke"
-          />
-          <circle
-            cx={rotateHandle.x}
-            cy={rotateHandle.y}
-            r={worldPerPx * 10}
-            fill="transparent"
-            pointerEvents="all"
-            data-rotate-handle="true"
-            style={{ cursor: "grab", pointerEvents: "auto" }}
-            onPointerDown={beginRotate}
-          />
-          <circle
-            cx={rotateHandle.x}
-            cy={rotateHandle.y}
-            r={handleSize * 1.1}
-            fill="var(--background)"
-            stroke="var(--primary)"
-            strokeWidth={1.25}
-            vectorEffect="non-scaling-stroke"
-          />
-        </>
-      )}
+      {/* Figma: no rotation knob. Drag just outside a corner to rotate. */}
+      {selection.canRotate &&
+        (["nw", "ne", "se", "sw"] as const).map((corner) => {
+          const point = byHandle.get(corner);
+          if (!point) return null;
+          const dx = point.x - center.x;
+          const dy = point.y - center.y;
+          const length = Math.hypot(dx, dy) || 1;
+          const offset = worldPerPx * 12;
+          return (
+            <circle
+              key={`rotate-${corner}`}
+              cx={point.x + (dx / length) * offset}
+              cy={point.y + (dy / length) * offset}
+              r={worldPerPx * 11}
+              fill="transparent"
+              pointerEvents="all"
+              data-rotate-handle={corner}
+              style={{ cursor: ROTATE_CURSOR, pointerEvents: "auto" }}
+              onPointerDown={beginRotate}
+            />
+          );
+        })}
       {selection.items.length > 0 && (
         <>
           {edges.map(({ handle, start, end }) => {
@@ -320,17 +308,19 @@ function WorldSelectionOverlayComponent({
                 height={handleSize * 5}
                 fill="transparent"
               />
-              <rect
-                x={x - handleSize}
-                y={y - handleSize}
-                width={handleSize * 2}
-                height={handleSize * 2}
-                rx={worldPerPx}
-                fill="var(--background)"
-                stroke="var(--primary)"
-                strokeWidth={1.25}
-                vectorEffect="non-scaling-stroke"
-              />
+              {handle.length === 2 && (
+                <rect
+                  x={x - handleSize}
+                  y={y - handleSize}
+                  width={handleSize * 2}
+                  height={handleSize * 2}
+                  rx={worldPerPx}
+                  fill="var(--background)"
+                  stroke="var(--primary)"
+                  strokeWidth={1.25}
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
             </g>
           ))}
         </>

@@ -7,8 +7,10 @@ import { cn } from "@/lib/utils";
 import { gradientFromSolid } from "@/lib/shapeshifter/gradients";
 import { sharedValue } from "@/lib/shapeshifter/scene/inspectorSelection";
 import type { FillType, GradientType, Layer } from "@/lib/shapeshifter/types";
+import { useEditorStore } from "@/lib/store/editorStore";
 import { ColorRow, GradientEditor } from "./InspectorColorControls";
 import { NumberRow, Row, Section, Segmented, TextInput } from "./InspectorControls";
+import { useKeyframeToggles } from "./InspectorPanels";
 
 type StrokeCap = NonNullable<Layer["strokeLinecap"]>;
 type StrokeJoin = NonNullable<Layer["strokeLinejoin"]>;
@@ -156,7 +158,7 @@ function StrokeSettings({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
-        className="flex size-7 shrink-0 items-center justify-center rounded-[4px] bg-muted/65 text-muted-foreground transition-[background-color,color] hover:bg-muted hover:text-foreground"
+        className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         aria-label="Stroke settings"
         title="Stroke settings"
       >
@@ -166,10 +168,10 @@ function StrokeSettings({
         align="end"
         side="bottom"
         sideOffset={8}
-        className="w-80 gap-0 overflow-hidden rounded-xl p-0"
+        className="w-64 gap-0 overflow-hidden rounded-xl p-0"
       >
-        <div className="flex h-12 items-center justify-between border-b border-border px-4">
-          <span className="text-[13px] font-semibold">Stroke settings</span>
+        <div className="flex h-10 items-center justify-between border-b border-border pl-3 pr-1.5">
+          <span className="text-[12px] font-semibold">Stroke</span>
           <button
             type="button"
             onClick={() => setOpen(false)}
@@ -179,54 +181,7 @@ function StrokeSettings({
             <X className="size-4" />
           </button>
         </div>
-        <div className="space-y-3 p-4">
-          <div
-            className="grid grid-cols-3 rounded-lg bg-muted p-0.5"
-            role="tablist"
-            aria-label="Stroke settings mode"
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected="true"
-              className="h-8 rounded-md bg-background text-[12px] font-medium text-foreground shadow-sm"
-            >
-              Basic
-            </button>
-            {(["Dynamic", "Brush"] as const).map((label) => (
-              <button
-                key={label}
-                type="button"
-                role="tab"
-                disabled
-                aria-selected="false"
-                title={`${label} strokes are not supported by Android Vector Drawable`}
-                className="h-8 rounded-md text-[12px] text-muted-foreground disabled:cursor-not-allowed disabled:text-muted-foreground/50"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <p className="rounded-md bg-muted/55 px-2 py-1.5 text-[10px] leading-relaxed text-muted-foreground">
-            Android Vector Drawable supports Basic, centered strokes. Dynamic and Brush modes are
-            shown for orientation but cannot be exported.
-          </p>
-          <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-2">
-            <span className="text-[11px] text-muted-foreground">Style</span>
-            <div className="flex h-8 items-center gap-2 rounded-md border border-border bg-background px-2 text-[12px]">
-              <span className="h-px w-6 bg-foreground" />
-              Solid
-            </div>
-          </div>
-          <div className="grid grid-cols-[72px_minmax(0,1fr)] items-center gap-2">
-            <span className="text-[11px] text-muted-foreground">Alignment</span>
-            <div
-              className="flex h-8 items-center rounded-md border border-border bg-background px-2 text-[12px]"
-              title="Android Vector Drawable strokes are always centered on the path"
-            >
-              Center
-            </div>
-          </div>
+        <div className="space-y-3 p-3">
           <StrokeOptionGroup
             label="End points"
             value={layer.strokeLinecap ?? "butt"}
@@ -239,8 +194,8 @@ function StrokeSettings({
             options={joinOptions}
             onChange={(strokeLinejoin) => onChange({ strokeLinejoin })}
           />
-          <div className="flex items-center gap-2">
-            <span className="w-[72px] shrink-0 text-[11px] text-muted-foreground">Dash</span>
+          <div className="grid grid-cols-[64px_minmax(0,1fr)] items-center gap-2">
+            <span className="text-[11px] text-muted-foreground">Dash</span>
             <TextInput
               ariaLabel="Stroke dash pattern"
               value={layer.strokeDasharray ?? ""}
@@ -259,12 +214,16 @@ function StrokeSettings({
 export function LayerAppearanceSections({
   layer,
   selectedLayers,
+  count = 1,
   onChange,
 }: {
   layer: Layer;
   selectedLayers: Layer[];
+  count?: number;
   onChange: (patch: Partial<Layer>) => void;
 }) {
+  const keyframeFor = useKeyframeToggles(layer, count);
+  const blocks = useEditorStore((state) => state.animation.blocks);
   const fillKindValue = (item: Layer): "solid" | GradientType => item.fillGradient?.type ?? "solid";
   const fillKind = sharedValue(selectedLayers, fillKindValue, fillKindValue(layer));
   const fillColor = sharedValue(
@@ -297,6 +256,7 @@ export function LayerAppearanceSections({
     (item) => item.strokeWidth ?? 0,
     layer.strokeWidth ?? 0,
   );
+  const opacity = sharedValue(selectedLayers, (item) => item.alpha ?? 1, layer.alpha ?? 1);
   const trimStart = sharedValue(
     selectedLayers,
     (item) => item.trimPathStart ?? 0,
@@ -312,6 +272,12 @@ export function LayerAppearanceSections({
     (item) => item.trimPathOffset ?? 0,
     layer.trimPathOffset ?? 0,
   );
+  const trimAnimated = blocks.some(
+    (block) =>
+      String(block.layerId) === String(layer.id) && block.propertyName.startsWith("trimPath"),
+  );
+  const showFillRule =
+    fillRule.mixed || fillRule.value === "evenOdd" || (layer.from?.subPaths?.length ?? 0) > 1;
 
   const setFillKind = (kind: "solid" | GradientType) => {
     if (kind === "solid") {
@@ -327,23 +293,37 @@ export function LayerAppearanceSections({
 
   return (
     <>
-      <Section title="Fill">
-        <Row label="Type">
-          <Segmented<"solid" | GradientType>
-            value={fillKind.value}
-            mixed={fillKind.mixed}
-            onChange={setFillKind}
-            options={[
-              { value: "solid", label: "Solid" },
-              { value: "linear", label: "Linear" },
-              { value: "radial", label: "Radial" },
-            ]}
-          />
-        </Row>
+      <Section title="Appearance">
+        <NumberRow
+          label="Opacity"
+          value={Math.round(opacity.value * 100)}
+          mixed={opacity.mixed}
+          min={0}
+          max={100}
+          suffix="%"
+          onChange={(value) => onChange({ alpha: value / 100 })}
+          keyframe={keyframeFor("alpha")}
+        />
+      </Section>
+
+      <Section
+        title="Fill"
+        action={
+          <select
+            aria-label="Fill type"
+            value={fillKind.mixed ? "" : fillKind.value}
+            onChange={(event) => setFillKind(event.target.value as "solid" | GradientType)}
+            className="h-6 rounded-md bg-transparent px-1 text-[11px] text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {fillKind.mixed && <option value="">Mixed</option>}
+            <option value="solid">Solid</option>
+            <option value="linear">Linear</option>
+            <option value="radial">Radial</option>
+          </select>
+        }
+      >
         {fillKind.mixed ? (
-          <p className="rounded-md bg-muted/55 px-2 py-1.5 text-[10px] leading-relaxed text-muted-foreground">
-            Multiple fill types. Choose one above to apply it to the selection.
-          </p>
+          <p className="text-[11px] text-muted-foreground">Mixed fill types</p>
         ) : layer.fillGradient ? (
           <>
             <GradientEditor
@@ -358,73 +338,74 @@ export function LayerAppearanceSections({
                 onChange={(angle) => onChange({ fillGradient: { ...layer.fillGradient!, angle } })}
               />
             )}
-            <NumberRow
-              label="Opacity"
-              value={Math.round(fillAlpha.value * 100)}
-              mixed={fillAlpha.mixed}
-              min={0}
-              max={100}
-              suffix="%"
-              onChange={(value) => onChange({ fillAlpha: value / 100 })}
-            />
           </>
         ) : (
           <ColorRow
             label="Color"
             color={fillColor.value}
-            alpha={fillAlpha.value}
             mixed={fillColor.mixed}
-            alphaMixed={fillAlpha.mixed}
             onColor={(fillColor) => onChange({ fillColor })}
-            onAlpha={(fillAlpha) => onChange({ fillAlpha })}
+            keyframe={keyframeFor("fillColor")}
           />
         )}
-        <Row label="Rule">
-          <Segmented
-            value={fillRule.value}
-            mixed={fillRule.mixed}
-            onChange={(fillType) => onChange({ fillType: fillType as FillType })}
-            options={[
-              { value: "nonZero", label: "Non-zero" },
-              { value: "evenOdd", label: "Even-odd" },
-            ]}
-          />
-        </Row>
+        <NumberRow
+          label="Opacity"
+          value={Math.round(fillAlpha.value * 100)}
+          mixed={fillAlpha.mixed}
+          min={0}
+          max={100}
+          suffix="%"
+          onChange={(value) => onChange({ fillAlpha: value / 100 })}
+          keyframe={keyframeFor("fillAlpha")}
+        />
+        {showFillRule && (
+          <Row label="Rule">
+            <Segmented
+              value={fillRule.value}
+              mixed={fillRule.mixed}
+              onChange={(fillType) => onChange({ fillType: fillType as FillType })}
+              options={[
+                { value: "nonZero", label: "Non-zero" },
+                { value: "evenOdd", label: "Even-odd" },
+              ]}
+            />
+          </Row>
+        )}
       </Section>
 
-      <Section title="Stroke">
+      <Section title="Stroke" action={<StrokeSettings layer={layer} onChange={onChange} />}>
         <ColorRow
+          label="Color"
           color={strokeColor.value}
-          alpha={strokeAlpha.value}
           mixed={strokeColor.mixed}
-          alphaMixed={strokeAlpha.mixed}
           onColor={(strokeColor) => onChange({ strokeColor })}
-          onAlpha={(strokeAlpha) => onChange({ strokeAlpha })}
+          keyframe={keyframeFor("strokeColor")}
         />
-        <div className="flex items-center gap-1.5">
-          <div className="min-w-0 flex-1">
-            <NumberRow
-              label="Width"
-              value={strokeWidth.value}
-              mixed={strokeWidth.mixed}
-              min={0}
-              step={0.1}
-              onChange={(strokeWidth) => onChange({ strokeWidth })}
-            />
-          </div>
-          <StrokeSettings layer={layer} onChange={onChange} />
-        </div>
-        {layer.from?.subPaths && layer.from.subPaths.length > 1 && (
-          <p className="mt-1 text-[9px] leading-tight text-muted-foreground/60">
-            Applies to all {layer.from.subPaths.length} subpaths in this layer. Select a subpath in
-            Path commands, then use Edit → Extract to separate it.
-          </p>
-        )}
+        <NumberRow
+          label="Opacity"
+          value={Math.round(strokeAlpha.value * 100)}
+          mixed={strokeAlpha.mixed}
+          min={0}
+          max={100}
+          suffix="%"
+          onChange={(value) => onChange({ strokeAlpha: value / 100 })}
+          keyframe={keyframeFor("strokeAlpha")}
+        />
+        <NumberRow
+          label="Width"
+          value={strokeWidth.value}
+          mixed={strokeWidth.mixed}
+          min={0}
+          step={0.1}
+          onChange={(strokeWidth) => onChange({ strokeWidth })}
+          keyframe={keyframeFor("strokeWidth")}
+        />
       </Section>
 
       <Section
         title="Trim path"
         defaultOpen={
+          trimAnimated ||
           (layer.trimPathStart ?? 0) !== 0 ||
           (layer.trimPathEnd ?? 1) !== 1 ||
           (layer.trimPathOffset ?? 0) !== 0
@@ -438,6 +419,7 @@ export function LayerAppearanceSections({
           max={100}
           suffix="%"
           onChange={(value) => onChange({ trimPathStart: Math.max(0, Math.min(1, value / 100)) })}
+          keyframe={keyframeFor("trimPathStart")}
         />
         <NumberRow
           label="End"
@@ -447,6 +429,7 @@ export function LayerAppearanceSections({
           max={100}
           suffix="%"
           onChange={(value) => onChange({ trimPathEnd: Math.max(0, Math.min(1, value / 100)) })}
+          keyframe={keyframeFor("trimPathEnd")}
         />
         <NumberRow
           label="Offset"
@@ -454,6 +437,7 @@ export function LayerAppearanceSections({
           mixed={trimOffset.mixed}
           suffix="%"
           onChange={(value) => onChange({ trimPathOffset: value / 100 })}
+          keyframe={keyframeFor("trimPathOffset")}
         />
       </Section>
     </>

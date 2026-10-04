@@ -15,6 +15,8 @@ export interface CompactColorInputProps {
   side?: "top" | "right" | "bottom" | "left";
   align?: "start" | "center" | "end";
   mixed?: boolean;
+  /** Colors already used in the document, offered as one-click swatches. */
+  swatches?: string[];
 }
 
 export function CompactColorInput({
@@ -25,6 +27,7 @@ export function CompactColorInput({
   side = "top",
   align = "end",
   mixed = false,
+  swatches,
 }: CompactColorInputProps) {
   const hex = value.startsWith("#") ? value : `#${value}`;
   const [format, setFormat] = React.useState<ColorFormat>("HEX");
@@ -131,17 +134,14 @@ export function CompactColorInput({
 
   return (
     <span
-      className={cn(
-        "flex h-8 min-w-0 items-center gap-2 rounded-lg bg-muted/45 px-2 font-mono text-foreground uppercase transition-colors focus-within:ring-2 focus-within:ring-ring/35",
-        className,
-      )}
+      className={cn("flex h-full min-w-0 flex-1 items-center gap-1.5 text-foreground", className)}
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
     >
       <Popover>
         <PopoverTrigger
           aria-label={ariaLabel}
-          className="size-4.5 shrink-0 rounded-[4px] border border-border focus:ring-2 focus:ring-ring/35 focus:outline-none"
+          className="size-[18px] shrink-0 rounded-[4px] shadow-[inset_0_0_0_1px_var(--border)] focus:ring-2 focus:ring-ring focus:outline-none"
           style={
             mixed
               ? {
@@ -156,7 +156,7 @@ export function CompactColorInput({
           align={align}
           side={side}
           sideOffset={8}
-          className="w-[210px] rounded-xl border border-border bg-popover p-3 pb-2 text-popover-foreground shadow-2xl backdrop-blur-xl"
+          className="w-[240px] gap-0 rounded-xl p-3 text-popover-foreground"
           onClick={(event) => event.stopPropagation()}
           onPointerDown={(event) => event.stopPropagation()}
         >
@@ -181,10 +181,14 @@ export function CompactColorInput({
             handleBlur={commitInput}
             framed={false}
             compact
+            swatches={swatches}
+            onPick={(color) => {
+              onChange(color);
+              setInputText(color);
+            }}
           />
         </PopoverContent>
       </Popover>
-      <span className="text-muted-foreground">#</span>
       <input
         type="text"
         spellCheck={false}
@@ -194,7 +198,7 @@ export function CompactColorInput({
         onChange={(event) => handleTextChange(event.target.value)}
         onKeyDown={handleKeyDown}
         onBlur={commitInput}
-        className="h-full min-w-0 flex-1 bg-transparent p-0 font-mono text-[12px] text-foreground uppercase outline-none"
+        className="h-full min-w-0 flex-1 bg-transparent p-0 text-[11px] tabular-nums text-foreground uppercase outline-none"
       />
     </span>
   );

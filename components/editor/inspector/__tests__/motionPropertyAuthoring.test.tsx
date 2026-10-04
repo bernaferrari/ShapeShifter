@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { parsePath } from "@/lib/shapeshifter/pathUtils";
 import type { LayerType } from "@/lib/shapeshifter/types";
-import { MotionPanel } from "../InspectorPanels";
 import { Inspector } from "../../Inspector";
 import {
   click,
@@ -36,14 +35,14 @@ function layer(type: LayerType = "path") {
 }
 function mount(type: LayerType = "path") {
   const current = layer(type);
-  rendered = renderEditorComponent(
-    <MotionPanel
-      layer={current}
-      selectionCount={1}
-      onEditMorph={() => useEditorStore.getState().beginTimelineMorphEditing()}
-    />,
-  );
+  rendered = renderEditorComponent(<Inspector />);
   return current;
+}
+function openSection(title: string) {
+  const header = Array.from(rendered!.container.querySelectorAll("button[aria-expanded]")).find(
+    (candidate) => candidate.textContent === title,
+  ) as HTMLButtonElement;
+  if (header.getAttribute("aria-expanded") === "false") click(header);
 }
 function button(label: string) {
   const result = rendered!.container.querySelector<HTMLButtonElement>(
@@ -67,7 +66,7 @@ describe("supported motion authoring", () => {
       type: "path",
     });
     expect(state.isActionMode).toBe(true);
-    expect(rendered.container.textContent).toContain("Path keyframes");
+    expect(state.toolMode).toBe("direct");
   });
 
   it.each([
@@ -77,10 +76,9 @@ describe("supported motion authoring", () => {
     ["Trim start", "trimPathStart", 0],
     ["Trim end", "trimPathEnd", 1],
     ["Trim offset", "trimPathOffset", 0],
-    ["Pivot X", "pivotX", 0],
-    ["Pivot Y", "pivotY", 0],
-  ])("authors %s through the Motion UI", (label, property, base) => {
+  ])("authors %s from its inline keyframe toggle", (label, property, base) => {
     const current = mount();
+    if (property.startsWith("trimPath")) openSection("Trim path");
     click(button(`Animate ${label}`));
     const state = useEditorStore.getState();
     const track = state.animation.blocks.find((item) => item.id === state.selectedBlockIds[0]);
@@ -90,14 +88,12 @@ describe("supported motion authoring", () => {
       type: "number",
       fromValue: base,
     });
-    expect(
-      rendered!.container.querySelector(`input[aria-label="${label} to value"]`),
-    ).toBeInstanceOf(HTMLInputElement);
+    expect(button(`Remove ${label} animation`)).toBeInstanceOf(HTMLButtonElement);
   });
 
   it("offers transforms and pivots for groups, and only geometry for clip paths", () => {
     mount("group");
-    button("Animate Pivot X");
+    button("Animate Rotation center");
     expect(rendered!.container.querySelector('[aria-label="Animate Fill"]')).toBeNull();
     expect(rendered!.container.querySelector('[aria-label="Animate Opacity"]')).toBeNull();
     expect(rendered!.container.textContent).not.toContain("Vector morph");
@@ -109,51 +105,36 @@ describe("supported motion authoring", () => {
     expect(rendered!.container.querySelector('[aria-label="Animate Fill"]')).toBeNull();
   });
 
-  it("shows percent domains, rejects invalid opacity drafts and accepts exact fractional trim values", () => {
-    mount();
+  it("keys an animated property at the playhead when its field is edited", () => {
+    const current = mount();
     click(button("Animate Opacity"));
-    const input = () =>
-      rendered!.container.querySelector<HTMLInputElement>('input[aria-label="Opacity to value"]')!;
-    const edit = (field: HTMLInputElement, value: string) =>
-      React.act(() => {
-        field.focus();
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-          field,
-          value,
-        );
-        field.dispatchEvent(new Event("input", { bubbles: true }));
-      });
-    const enter = (field: HTMLInputElement) =>
-      React.act(() =>
-        field.dispatchEvent(
-          new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
-        ),
-      );
-    edit(input(), "101");
-    enter(input());
-    expect(input().getAttribute("aria-invalid")).toBe("true");
-    expect(rendered!.container.querySelector('[role="alert"]')?.textContent).toBe("Use 0–100 %.");
-    edit(input(), "37.125");
-    enter(input());
-    expect(
-      useEditorStore
-        .getState()
-        .animation.blocks.find(
-          (block) => block.id === useEditorStore.getState().selectedBlockIds[0],
-        )?.toValue,
-    ).toBe(0.37125);
-    click(button("Animate Trim end"));
-    const trim = rendered!.container.querySelector<HTMLInputElement>(
-      'input[aria-label="Trim end to value"]',
+    React.act(() => useEditorStore.getState().setProgress(0.5));
+    const opacity = rendered!.container.querySelector<HTMLInputElement>(
+      '[aria-label="Opacity"]:not([role="slider"])',
     )!;
-    edit(trim, "62.125");
-    enter(trim);
+    React.act(() => {
+      opacity.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        opacity,
+        "40",
+      );
+      opacity.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    React.act(() => opacity.blur());
+    const track = useEditorStore
+      .getState()
+      .animation.blocks.filter(
+        (block) => String(block.layerId) === String(current.id) && block.propertyName === "alpha",
+      )
+      .sort((a, b) => a.startTime - b.startTime);
+    const duration = useEditorStore.getState().animation.duration;
+    expect(track).toHaveLength(2);
+    expect(track[0]!.endTime).toBe(duration / 2);
+    expect(track[0]!.toValue).toBe(0.4);
+    expect(track[1]!.fromValue).toBe(0.4);
+    // The base value is untouched: the property is animated.
     expect(
-      useEditorStore
-        .getState()
-        .animation.blocks.find(
-          (block) => block.id === useEditorStore.getState().selectedBlockIds[0],
-        )?.toValue,
-    ).toBe(0.62125);
+      useEditorStore.getState().layers.find((layer) => layer.id === current.id)?.alpha ?? 1,
+    ).toBe(1);
   });
 });

@@ -1,8 +1,20 @@
 "use client";
 
-import { Grid3x3, RotateCcw } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ChevronDown } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface CanvasNavigationControlsProps {
   zoomPercent: number;
@@ -10,100 +22,101 @@ interface CanvasNavigationControlsProps {
   gridDivisions: number;
   onZoomOut: () => void;
   onZoomIn: () => void;
-  onCycleGrid: () => void;
+  onZoomToActualSize: () => void;
+  onSetGrid: (divisions: number) => void;
   onFitSelection: () => void;
   onReset: () => void;
+  showRulers?: boolean;
+  onToggleRulers?: () => void;
 }
 
-const iconButtonClass = "h-8 text-muted-foreground hover:bg-muted hover:text-foreground";
-
+/** A single quiet zoom readout; every view command lives in its menu. */
 export function CanvasNavigationControls({
   zoomPercent,
   showWorldControls,
   gridDivisions,
   onZoomOut,
   onZoomIn,
-  onCycleGrid,
+  onZoomToActualSize,
+  onSetGrid,
   onFitSelection,
   onReset,
+  showRulers,
+  onToggleRulers,
 }: CanvasNavigationControlsProps) {
   return (
     <div
       aria-label="Canvas navigation"
-      className="pointer-events-none absolute top-8 right-3 z-30 flex items-center gap-0.5 rounded-lg bg-card/95 p-1 [box-shadow:var(--elevation-floating)] backdrop-blur-md"
+      className="absolute bottom-3 right-3 z-30"
+      onContextMenu={(event) => event.stopPropagation()}
     >
-      <div className="pointer-events-auto flex items-center gap-0.5">
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          className={`${iconButtonClass} w-8 text-sm`}
-          onClick={onZoomOut}
-          aria-label="Zoom out"
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <button
+              type="button"
+              aria-label="Zoom options"
+              className="flex h-8 items-center gap-1 rounded-lg bg-card px-2.5 text-[11px] tabular-nums text-muted-foreground [box-shadow:var(--elevation-floating)] transition-colors hover:text-foreground data-popup-open:text-foreground"
+            />
+          }
         >
-          −
-        </Button>
-        <span className="min-w-[3rem] select-none px-0.5 text-center font-mono text-[11px] tabular-nums text-foreground">
           {Math.round(zoomPercent)}%
-        </span>
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          className={`${iconButtonClass} w-8 text-sm`}
-          onClick={onZoomIn}
-          aria-label="Zoom in"
-        >
-          +
-        </Button>
-        {showWorldControls && (
-          <>
-            <div className="mx-0.5 h-4 w-px bg-border" />
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    size="icon-xs"
-                    variant="ghost"
-                    className={`${iconButtonClass} w-auto gap-0.5 px-1.5 font-mono text-[10px]`}
-                    onClick={onCycleGrid}
-                    aria-label="Grid divisions"
+          <ChevronDown className="size-3" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="top" align="end" className="w-52">
+          <DropdownMenuItem onClick={onZoomIn}>
+            Zoom in
+            <DropdownMenuShortcut>+</DropdownMenuShortcut>
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onZoomOut}>
+            Zoom out
+            <DropdownMenuShortcut>−</DropdownMenuShortcut>
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onZoomToActualSize}>
+            Zoom to 100%
+            <DropdownMenuShortcut>0</DropdownMenuShortcut>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={onReset}>
+            Zoom to fit
+            <DropdownMenuShortcut>⇧1</DropdownMenuShortcut>
+          </DropdownMenuItem>
+          {showWorldControls && (
+            <DropdownMenuItem onClick={onFitSelection}>
+              Zoom to selection
+              <DropdownMenuShortcut>⇧2</DropdownMenuShortcut>
+            </DropdownMenuItem>
+          )}
+          {showWorldControls && (
+            <>
+              <DropdownMenuSeparator />
+              {onToggleRulers && (
+                <DropdownMenuCheckboxItem
+                  checked={Boolean(showRulers)}
+                  onCheckedChange={onToggleRulers}
+                >
+                  Rulers
+                </DropdownMenuCheckboxItem>
+              )}
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>Pixel grid</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-40">
+                  <DropdownMenuRadioGroup
+                    value={String(gridDivisions)}
+                    onValueChange={(value) => onSetGrid(Number(value))}
                   >
-                    <Grid3x3 className="size-3" />
-                    {gridDivisions}
-                  </Button>
-                }
-              />
-              <TooltipContent>
-                Grid: major every {gridDivisions} px · click to cycle 4/5/8
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    size="icon-xs"
-                    variant="ghost"
-                    className={`${iconButtonClass} w-auto px-1.5 text-[10px] font-medium`}
-                    onClick={onFitSelection}
-                    aria-label="Zoom to selection"
-                  >
-                    Fit
-                  </Button>
-                }
-              />
-              <TooltipContent>Zoom to selection (⇧2)</TooltipContent>
-            </Tooltip>
-          </>
-        )}
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          className={`${iconButtonClass} w-8`}
-          onClick={onReset}
-          aria-label="Reset canvas views"
-        >
-          <RotateCcw className="size-3.5" />
-        </Button>
-      </div>
+                    {[4, 5, 8].map((divisions) => (
+                      <DropdownMenuRadioItem key={divisions} value={String(divisions)}>
+                        Major every {divisions}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

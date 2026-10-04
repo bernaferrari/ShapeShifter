@@ -1,17 +1,11 @@
 "use client";
 
 import React from "react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { useInspectorView } from "../inspector/inspectorView";
 import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
-import type { InterpolatorName, TimelineBlock } from "@/lib/shapeshifter/types";
+import type { TimelineBlock } from "@/lib/shapeshifter/types";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { cn } from "@/lib/utils";
-import { LiveEasingCurve } from "./TimelineLiveState";
 import type { TimelineSnapTarget } from "./timelineTiming";
 import { useTimelineGesture } from "./useTimelineGesture";
 import { TimelineKeyframeEditor } from "./TimelineKeyframeEditor";
@@ -20,17 +14,6 @@ import {
   timelineKeyframeRange,
 } from "@/lib/shapeshifter/motion/timelineKeyframes";
 
-const INTERPOLATOR_OPTIONS: { value: InterpolatorName | string; label: string; hint: string }[] = [
-  { value: "FAST_OUT_SLOW_IN", label: "Standard", hint: "Smooth acceleration and settling" },
-  { value: "LINEAR_OUT_SLOW_IN", label: "Decelerate", hint: "Fast start, gentle finish" },
-  { value: "FAST_OUT_LINEAR_IN", label: "Accelerate", hint: "Gentle start, fast finish" },
-  {
-    value: "ACCELERATE_DECELERATE",
-    label: "Accelerate–decelerate",
-    hint: "Balanced start and finish",
-  },
-  { value: "LINEAR", label: "Linear", hint: "Constant speed" },
-];
 
 export function TimelineKeyframeDiamond({
   active,
@@ -80,7 +63,6 @@ export function TimelinePropertyBlock({
   onSnapChange?: (target: TimelineSnapTarget | null) => void;
 }) {
   const gesture = useTimelineGesture({ gridStep, snapping, onSnapChange });
-  const easingEditRef = React.useRef<{ changed: boolean } | null>(null);
   const [editingEdge, setEditingEdge] = React.useState<"start" | "end" | null>(null);
   const suppressClickRef = React.useRef(false);
   const label = propertyLabel(block.propertyName);
@@ -130,7 +112,7 @@ export function TimelinePropertyBlock({
   };
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-[1]">
+    <div className="group/segment pointer-events-none absolute inset-0 z-[1]">
       <button
         type="button"
         data-timeline-block-id={block.id}
@@ -138,7 +120,7 @@ export function TimelinePropertyBlock({
         aria-pressed={selected}
         className={cn(
           "pointer-events-auto absolute top-1/2 h-5 -translate-y-1/2 cursor-grab touch-none rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring active:cursor-grabbing",
-          selected ? "text-primary" : "text-primary/60 hover:text-primary",
+          selected ? "text-primary" : "text-primary/80 hover:text-primary",
         )}
         style={{ left: `${startPct}%`, width: `${Math.max(0, endPct - startPct)}%` }}
         title={`${label}: ${block.startTime}–${block.endTime} ms · Snap to keys and playhead · Alt-drag for precise timing`}
@@ -173,7 +155,10 @@ export function TimelinePropertyBlock({
       >
         <span
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-1/2 h-px bg-current"
+          className={cn(
+            "pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-current transition-opacity",
+            selected ? "opacity-100" : "opacity-60",
+          )}
         />
       </button>
       {(["start", "end"] as const).map((edge) => {
@@ -250,112 +235,65 @@ export function TimelinePropertyBlock({
                   setEditingEdge(edge);
                 }}
               >
-                <TimelineKeyframeDiamond active={selected} />
+                <TimelineKeyframeDiamond active={selected} size={9} />
               </button>
             }
           />
         );
       })}
-      {selected && (
-        <div
-          className="pointer-events-auto absolute -top-4 z-[3] -translate-x-1/2"
-          style={{ left: `${(startPct + endPct) / 2}%` }}
+      {/* Easing lives in the middle of the segment and only appears on hover (Figma). */}
+      <div
+        className="pointer-events-auto absolute top-1/2 z-[3] -translate-x-1/2 -translate-y-1/2"
+        style={{ left: `${(startPct + endPct) / 2}%` }}
+      >
+        <button
+          type="button"
+          className="grid size-5 place-items-center rounded-md border border-border bg-card text-primary opacity-0 shadow-sm outline-none transition-opacity hover:bg-muted focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover/segment:opacity-100"
+          title="Easing"
+          aria-label={`Edit ${label} easing`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            const store = useEditorStore.getState();
+            store.selectLayer(block.layerId);
+            store.selectBlocks([block.id]);
+            useInspectorView.getState().openEasing(block.id);
+          }}
         >
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <button
-                  type="button"
-                  className="flex size-5 items-center justify-center rounded-[3px] border border-border bg-card text-primary shadow-sm outline-none hover:border-primary/45 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-                  title={`Interpolator: ${INTERPOLATOR_OPTIONS.find((option) => option.value === interpolator)?.label ?? interpolator}`}
-                  aria-label={`Edit ${label} easing`}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) => event.stopPropagation()}
-                />
-              }
-            >
-              {interpolator === "LINEAR" ? (
-                <svg width="11" height="9" viewBox="0 0 12 10" fill="none" aria-hidden>
-                  <path
-                    d="M1.5 8.5 L10.5 1.5"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              ) : (
-                <svg width="11" height="9" viewBox="0 0 12 10" fill="none" aria-hidden>
-                  <path
-                    d="M1 8.5C3.5 8.5 4 1.5 11 1.5"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              )}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="center" className="w-56 text-xs" side="top">
-              <div className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                Easing
-              </div>
-              <div
-                className="flex justify-center border-b border-border/60 px-2 py-2"
-                onPointerDown={(event) => event.stopPropagation()}
-              >
-                <LiveEasingCurve
-                  block={block}
-                  size={88}
-                  points={interpolatorControlPoints(interpolator)}
-                  onEditStart={() => {
-                    easingEditRef.current = { changed: false };
-                  }}
-                  onEditEnd={() => {
-                    easingEditRef.current = null;
-                  }}
-                  onEditCancel={() => {
-                    if (easingEditRef.current?.changed)
-                      useEditorStore.getState().cancelLastHistoryTransaction();
-                    easingEditRef.current = null;
-                  }}
-                  onChange={([x1, y1, x2, y2]) => {
-                    const next = `cubic-bezier(${x1}, ${y1}, ${x2}, ${y2})`;
-                    if (next === block.interpolator) return;
-                    const session = easingEditRef.current;
-                    if (session && !session.changed) {
-                      useEditorStore.getState().pushHistory();
-                      session.changed = true;
-                    }
-                    useEditorStore
-                      .getState()
-                      .updateTimelineBlock(
-                        block.id,
-                        { interpolator: next },
-                        { recordHistory: !session },
-                      );
-                  }}
-                />
-              </div>
-              {INTERPOLATOR_OPTIONS.map((option) => (
-                <DropdownMenuItem
-                  key={option.value}
-                  className={cn(interpolator === option.value && "bg-primary/10 text-primary")}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    useEditorStore
-                      .getState()
-                      .updateTimelineBlock(block.id, { interpolator: option.value });
-                  }}
-                >
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span>{option.label}</span>
-                    <span className="text-[10px] text-muted-foreground">{option.hint}</span>
-                  </span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      )}
+          <EasingGlyph points={interpolatorControlPoints(interpolator)} size={11} />
+        </button>
+      </div>
     </div>
+  );
+}
+
+/** A tiny drawing of an easing curve, used for presets and the segment chip. */
+function EasingGlyph({
+  points,
+  size,
+  className,
+}: {
+  points: [number, number, number, number];
+  size: number;
+  className?: string;
+}) {
+  const [x1, y1, x2, y2] = points;
+  const p = (x: number, y: number) => `${1 + x * 10} ${11 - y * 10}`;
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 12 12"
+      fill="none"
+      aria-hidden
+      className={className}
+    >
+      <path
+        d={`M${p(0, 0)} C${p(x1, y1)} ${p(x2, y2)} ${p(1, 1)}`}
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }

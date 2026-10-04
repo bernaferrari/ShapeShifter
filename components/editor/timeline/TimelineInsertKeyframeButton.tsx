@@ -7,9 +7,11 @@ import { useEditorStore } from "@/lib/store/editorStore";
 export function TimelineInsertKeyframeButton({
   blockId,
   label = "Insert keyframe at playhead",
+  iconOnly = false,
 }: {
   blockId?: string;
   label?: string;
+  iconOnly?: boolean;
 }) {
   const progress = useEditorStore((state) => state.progress);
   const animation = useEditorStore((state) => state.animation);
@@ -61,10 +63,14 @@ export function TimelineInsertKeyframeButton({
           store.endHistoryGesture();
         }
       }}
-      className="flex h-6 shrink-0 items-center gap-1 rounded px-1.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-35"
+      className={
+        iconOnly
+          ? "grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-35"
+          : "flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-35"
+      }
     >
       <DiamondPlus className="size-3.5" />
-      <span>Keyframe</span>
+      {!iconOnly && <span>Keyframe</span>}
     </button>
   );
 }

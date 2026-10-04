@@ -3,25 +3,16 @@ import { useEditorStore } from "../editorStore";
 
 beforeEach(() => useEditorStore.getState().resetProject());
 describe("World geometry and motion context", () => {
-  it("edits base anchors at rest and returns to evaluated artwork when scrubbing", () => {
+  it("keeps vector editing and the playhead independent", () => {
     useEditorStore.setState({ progress: 0.5, isPlaying: true });
     useEditorStore.getState().setToolMode("direct");
     expect(useEditorStore.getState()).toMatchObject({
-      progress: 0,
+      progress: 0.5,
       isPlaying: false,
       toolMode: "direct",
     });
-    useEditorStore.setState({
-      selectedPoints: [
-        { layerId: 0, side: "from", subPathIndex: 0, commandIndex: 0, pointIndex: 0 },
-      ],
-    });
-    useEditorStore.getState().setProgress(0.5);
-    expect(useEditorStore.getState()).toMatchObject({
-      progress: 0.5,
-      toolMode: "select",
-      selectedPoints: [],
-    });
+    useEditorStore.getState().setProgress(0.25);
+    expect(useEditorStore.getState()).toMatchObject({ progress: 0.25, toolMode: "direct" });
   });
   it("keeps the explicit morph editing context when changing time", () => {
     useEditorStore.getState().startActionMode();
@@ -49,10 +40,10 @@ describe("World geometry and motion context", () => {
       selectedPoints: [],
     });
   });
-  it("starts playback with evaluated artwork and preserves selection-tool playhead positions", () => {
+  it("plays without changing the tool and preserves playhead positions", () => {
     useEditorStore.getState().setToolMode("pen");
     useEditorStore.getState().togglePlayback();
-    expect(useEditorStore.getState()).toMatchObject({ isPlaying: true, toolMode: "select" });
+    expect(useEditorStore.getState()).toMatchObject({ isPlaying: true, toolMode: "pen" });
     useEditorStore.getState().togglePlayback();
     useEditorStore.getState().setProgress(0.6);
     useEditorStore.getState().setToolMode("select");

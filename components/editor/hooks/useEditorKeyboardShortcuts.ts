@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useTimelineViewSettings } from "../timeline/timelineViewSettings";
 import { useEditorStore } from "@/lib/store/editorStore";
 
 type SpaceGestureWindow = Window & {
@@ -200,13 +201,31 @@ export function useEditorKeyboardShortcuts() {
         return;
       }
 
+      if (
+        (event.key === "," || event.key === "." || event.key === "<" || event.key === ">") &&
+        !command
+      ) {
+        event.preventDefault();
+        if (store.isPlaying) store.togglePlayback();
+        const frames =
+          (event.key === "," || event.key === "<" ? -1 : 1) * (event.shiftKey ? 10 : 1);
+        const duration = Math.max(1, store.animation.duration);
+        const time =
+          store.progress * duration + (frames * 1000) / useTimelineViewSettings.getState().fps;
+        store.setProgress(Math.max(0, Math.min(1, time / duration)));
+        return;
+      }
+
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
         event.preventDefault();
         const step = event.shiftKey ? 5 : 0.5;
         const dx = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
         const dy = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
         if (store.selectionKind === "frame") store.moveFrames(store.selectedFrameIds, dx, dy);
-        else if (store.selectedPoints.length > 0) store.translateSelectedPoints(dx, dy);
+        else if (store.selectedPoints.length > 0) {
+          store.ensurePathKeyframeAtPlayhead();
+          useEditorStore.getState().translateSelectedPoints(dx, dy);
+        }
         else if (store.selection) {
           const point = store.getCurrentSelectedPoint();
           if (point) store.updateSelectedPoint({ x: point.x + dx, y: point.y + dy });

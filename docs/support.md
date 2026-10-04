@@ -65,7 +65,7 @@ Static SVG and PDF apply the same trim geometry used by the preview. Native Andr
 
 ## Persistence and agent access
 
-Autosave and up to 20 retained checkpoints are browser-local. Save failures expose retry and backup actions; conflicting writes from another tab are detected. **File → Earlier autosaves** restores a checkpoint as one Undo step. Export project JSON for a portable backup.
+Autosave and up to 20 retained checkpoints are browser-local. Save failures expose retry and backup actions; conflicting writes from another tab are detected. **File → Version history** restores a checkpoint as one Undo step. Export project JSON for a portable backup.
 
 Seven WebMCP tools are registered where browser support is available. **File → Agent tools** provides inspection and atomic batch editing otherwise. Agent writes use explicit IDs and expected revisions; locked targets, stale revisions, playback, and active gestures reject competing edits. See [the agent guide](agent-editor.md).
 

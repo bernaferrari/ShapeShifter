@@ -4,43 +4,39 @@ import React from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  Maximize2,
-  Minimize2,
-  Trash2,
   ChevronRight,
-  MousePointerClick,
   Crop,
   Folder,
-  Spline,
-  Pencil,
+  Lock,
+  Maximize2,
+  Minimize2,
   RectangleHorizontal,
-  Activity,
+  Shapes,
+  Spline,
+  Trash2,
+  Unlock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PAGE_ROOT_ID, useEditorStore } from "@/lib/store/editorStore";
 import { changeCommandType, parsePath, updateCommandPoint } from "@/lib/shapeshifter/pathUtils";
 import type { Layer } from "@/lib/shapeshifter/types";
+import { layerAtTime } from "@/lib/shapeshifter/playheadResolve";
+import { getPathDataBounds } from "@/lib/shapeshifter/path/pathDataIO";
+
+const round2 = (value: number) => Math.round(value * 100) / 100;
+import { EasingPanel } from "./inspector/EasingPanel";
+import { useInspectorView } from "./inspector/inspectorView";
 import { PathCommandsList } from "./PathCommandsList";
 import {
   getInspectorSelectionBounds,
   resolveOwnedLayers,
 } from "@/lib/shapeshifter/scene/inspectorSelection";
-import { NumberRow, Row, Section, Segmented, TextInput } from "./inspector/InspectorControls";
+import { NumberRow, Section } from "./inspector/InspectorControls";
 import { LayerAppearanceSections } from "./inspector/LayerAppearanceSections";
-import {
-  FrameDesignPanel,
-  InspectorTabs,
-  LayerTransformSection,
-  MotionPanel,
-  type InspectorTab,
-} from "./inspector/InspectorPanels";
+import { FrameDesignPanel, LayerTransformSection } from "./inspector/InspectorPanels";
 import { MorphPrepareSection } from "./inspector/MorphPrepareSection";
 import { BooleanOperationsPanel } from "./BooleanOperations";
 import { PathDataEditor } from "./inspector/PathDataEditor";
-
-/* ------------------------------------------------------------------ */
-/* Field primitives — a small, consistent control system. */
-/* ------------------------------------------------------------------ */
 
 /* ------------------------------------------------------------------ */
 /* Inspector                                                          */
@@ -63,8 +59,23 @@ export function Inspector() {
   const translateSelectedLayer = useEditorStore((state) => state.translateSelectedLayer);
   const beginTimelineMorphEditing = useEditorStore((state) => state.beginTimelineMorphEditing);
   const animation = useEditorStore((state) => state.animation);
+  const easingBlockId = useInspectorView((state) => state.easingBlockId);
+  // Leave the easing view only when a different layer is selected.
+  React.useEffect(() => {
+    const view = useInspectorView.getState();
+    const owner = view.easingBlockId
+      ? useEditorStore
+          .getState()
+          .animation.blocks.find((block) => block.id === view.easingBlockId)?.layerId
+      : undefined;
+    if (owner !== undefined && String(owner) !== String(selectedLayerId)) view.close();
+  }, [selectedLayerId]);
+  // Values follow the playhead while paused/scrubbing (not every playback frame).
+  const pausedProgress = useEditorStore((state) => (state.isPlaying ? null : state.progress));
+  const lastProgress = React.useRef(0);
+  if (pausedProgress != null) lastProgress.current = pausedProgress;
+  const playheadMs = lastProgress.current * animation.duration;
   const selectedPoints = useEditorStore((state) => state.selectedPoints);
-  const selectedBlockId = useEditorStore((state) => state.selectedBlockIds[0]);
   const selectPoint = useEditorStore((state) => state.selectPoint);
 
   const toggleLayerLock = useEditorStore((state) => state.toggleLayerLock);
@@ -79,7 +90,6 @@ export function Inspector() {
   const duplicateFrame = useEditorStore((state) => state.duplicateFrame);
   const deleteFrame = useEditorStore((state) => state.deleteFrame);
   const updateVector = useEditorStore((state) => state.updateVector);
-  const setTimelineCollapsed = useEditorStore((state) => state.setTimelineCollapsed);
 
   const point = getCurrentSelectedPoint ? getCurrentSelectedPoint() : null;
   const currentLayer = layers.find((l) => l.id === selectedLayerId);
@@ -117,20 +127,76 @@ export function Inspector() {
       .filter((block) => String(block.layerId) === String(currentLayer?.id))
       .map((block) => block.propertyName),
   ).size;
-  const updateLayer = (patch: Partial<Layer>) => updateSelectedLayer(patch);
-  const setPath = (parsed: ReturnType<typeof parsePath>) =>
-    updateLayer(editingSide === "from" ? { from: parsed, pathData: parsed } : { to: parsed });
+  const single = multiCount <= 1 && Boolean(currentLayer);
+  /** Animated properties are keyed at the playhead; the rest edit the base value. */
+  const updateLayer = (input: Partial<Layer>) => {
+    if (!single || !currentLayer) {
+      updateSelectedLayer(input);
+      return;
+    }
+    let patch = input;
+    // Like Figma, rotate and scale around the shape's own center. Android's default
+    // center is the top-left corner, so set it the first time it would matter.
+    const transforms = "rotation" in patch || "scaleX" in patch || "scaleY" in patch;
+    const centerUnset =
+      (currentLayer.pivotX ?? 0) === 0 &&
+      (currentLayer.pivotY ?? 0) === 0 &&
+      !trackExists("pivotX") &&
+      !trackExists("pivotY");
+    if (transforms && centerUnset) {
+      const center = layerCenter(currentLayer);
+      if (center) patch = { ...patch, pivotX: center.x, pivotY: center.y };
+    }
+    const rest = useEditorStore
+      .getState()
+      .setPropertiesAtPlayhead(currentLayer.id, patch as Record<string, never>);
+    if (Object.keys(rest).length) updateSelectedLayer(rest as Partial<Layer>);
+  };
+  /** Center of the layer's own geometry, in the space its pivot is expressed in. */
+  function layerCenter(layer: Layer) {
+    if (layer.type === "group") {
+      if (!selectionBounds) return null;
+      return {
+        x: round2(selectionBounds.x + selectionBounds.w / 2 - (layer.translateX ?? 0)),
+        y: round2(selectionBounds.y + selectionBounds.h / 2 - (layer.translateY ?? 0)),
+      };
+    }
+    const box = getPathDataBounds(layer.from);
+    return box ? { x: round2(box.x + box.w / 2), y: round2(box.y + box.h / 2) } : null;
+  }
+  const liveLayer = React.useMemo(
+    () =>
+      currentLayer && single
+        ? layerAtTime(currentLayer, animation.blocks, playheadMs, animation.duration)
+        : currentLayer,
+    [animation.blocks, animation.duration, currentLayer, playheadMs, single],
+  );
+  const translateLayer = (dx: number, dy: number) => {
+    const animatedX = single && trackExists("translateX");
+    const animatedY = single && trackExists("translateY");
+    if (!liveLayer || (!animatedX && !animatedY)) {
+      translateSelectedLayer(dx, dy);
+      return;
+    }
+    updateLayer({
+      ...(dx !== 0 && { translateX: (liveLayer.translateX ?? 0) + dx }),
+      ...(dy !== 0 && { translateY: (liveLayer.translateY ?? 0) + dy }),
+    });
+  };
+  function trackExists(propertyName: string) {
+    return animation.blocks.some(
+      (block) =>
+        String(block.layerId) === String(currentLayer?.id) && block.propertyName === propertyName,
+    );
+  }
+  const setPath = (parsed: ReturnType<typeof parsePath>) => {
+    useEditorStore.getState().ensurePathKeyframeAtPlayhead();
+    const side = useEditorStore.getState().editingSide;
+    updateLayer(side === "from" ? { from: parsed, pathData: parsed } : { to: parsed });
+  };
 
   const [isCommandsFocused, setIsCommandsFocused] = React.useState(false);
   const [showPathData, setShowPathData] = React.useState(false);
-  const [activeTab, setActiveTab] = React.useState<InspectorTab>("design");
-  React.useEffect(() => {
-    if (selectedBlockId) setActiveTab("motion");
-  }, [selectedBlockId]);
-  const changeInspectorTab = (tab: InspectorTab) => {
-    setActiveTab(tab);
-    if (tab === "motion") setTimelineCollapsed(false);
-  };
 
   React.useEffect(() => {
     if (!isCommandsFocused) return;
@@ -139,71 +205,43 @@ export function Inspector() {
     return () => window.removeEventListener("keydown", onKey);
   }, [isCommandsFocused]);
 
-  /* ---- empty state ---- */
+  /* ---- nothing selected: document-level properties ---- */
   if (selectionKind === "none" || (selectionKind === "layer" && !currentLayer)) {
-    return (
-      <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-        <InspectorTabs value={activeTab} onChange={changeInspectorTab} />
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-          <div className="flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
-            <MousePointerClick size={24} />
-          </div>
-          <p className="max-w-[12rem] text-xs leading-relaxed text-muted-foreground">
-            Select a layer or point to edit its properties
-          </p>
-        </div>
-      </div>
-    );
+    return <DocumentPanel />;
   }
 
   if (selectionKind === "frame" && currentFrame) {
     return (
       <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-        <InspectorTabs value={activeTab} onChange={changeInspectorTab} />
-        <div className="flex h-13 items-center gap-2.5 border-b border-border px-3">
-          <div className="grid size-7 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground">
-            <RectangleHorizontal className="size-4" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[12px] font-semibold">
-              {selectedFrames.length > 1 ? `${selectedFrames.length} frames` : currentFrame.name}
-            </div>
-            <div className="text-[10px] text-muted-foreground">
-              {selectedFrames.length > 1
-                ? "Multiple artboards selected"
-                : `Frame · ${currentFrame.vector.width} × ${currentFrame.vector.height}`}
-            </div>
-          </div>
+        <InspectorHeader
+          icon={<RectangleHorizontal className="size-3.5" />}
+          title={selectedFrames.length > 1 ? `${selectedFrames.length} frames` : currentFrame.name}
+          subtitle={
+            selectedFrames.length > 1
+              ? "Frames"
+              : `Frame · ${currentFrame.vector.width} × ${currentFrame.vector.height}`
+          }
+        />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <FrameDesignPanel
+            frame={currentFrame}
+            selectedFrames={selectedFrames.length ? selectedFrames : [currentFrame]}
+            onRename={(name) => renameFrame(currentFrame.id, name)}
+            onMove={(dx, dy) =>
+              selectedFrames.length > 1
+                ? moveFrames(
+                    selectedFrames.map((frame) => frame.id),
+                    dx,
+                    dy,
+                  )
+                : moveFrame(currentFrame.id, dx, dy)
+            }
+            onResize={(width, height) => updateVector({ width, height })}
+            onDuplicate={duplicateFrame}
+            onDelete={() => deleteFrame(currentFrame.id)}
+            canDelete={frames.length > 1}
+          />
         </div>
-        {activeTab === "design" ? (
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <FrameDesignPanel
-              frame={currentFrame}
-              selectedFrames={selectedFrames.length ? selectedFrames : [currentFrame]}
-              onRename={(name) => renameFrame(currentFrame.id, name)}
-              onMove={(dx, dy) =>
-                selectedFrames.length > 1
-                  ? moveFrames(
-                      selectedFrames.map((frame) => frame.id),
-                      dx,
-                      dy,
-                    )
-                  : moveFrame(currentFrame.id, dx, dy)
-              }
-              onResize={(width, height) => updateVector({ width, height })}
-              onDuplicate={duplicateFrame}
-              onDelete={() => deleteFrame(currentFrame.id)}
-              canDelete={frames.length > 1}
-            />
-          </div>
-        ) : (
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground">
-            <Activity className="size-5" />
-            <p className="text-[11px] leading-relaxed">
-              Select a vector inside this frame to edit its motion.
-            </p>
-          </div>
-        )}
       </div>
     );
   }
@@ -253,13 +291,10 @@ export function Inspector() {
   if (isCommandsFocused) {
     return (
       <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-        <div className="flex h-14 items-center justify-between border-b border-border px-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="text-[13px] font-semibold">Path commands</span>
-            <span className="rounded bg-muted px-1.5 py-px font-mono text-[10px] text-muted-foreground">
-              d
-            </span>
-            <span className="truncate text-[11px] text-muted-foreground">{currentLayer.name}</span>
+        <div className="flex h-12 items-center justify-between border-b border-border pl-3 pr-2">
+          <div className="min-w-0">
+            <div className="text-[12px] font-semibold">Path commands</div>
+            <div className="truncate text-[11px] text-muted-foreground">{currentLayer.name}</div>
           </div>
           <Button
             size="icon-sm"
@@ -276,199 +311,341 @@ export function Inspector() {
     );
   }
 
-  const isGroup = currentLayer.type === "group";
-  const inspectorLayers = selectedLayers.length ? selectedLayers : [currentLayer];
-  const allPaths = inspectorLayers.every((layer) => layer.type !== "group");
+  const easingBlock =
+    easingBlockId && multiCount <= 1
+      ? animation.blocks.find(
+          (block) =>
+            block.id === easingBlockId && String(block.layerId) === String(currentLayer.id),
+        )
+      : undefined;
+  if (easingBlock)
+    return (
+      <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
+        <EasingPanel
+          block={easingBlock}
+          onBack={() => useInspectorView.getState().close()}
+        />
+      </div>
+    );
 
+  const isGroup = currentLayer.type === "group";
+  const isPathLike = currentLayer.type === "path" || currentLayer.type === "clipPath";
+  // Selection bounds come from base geometry; shift them by any animated translation.
+  const liveBounds =
+    selectionBounds && single && liveLayer
+      ? {
+          ...selectionBounds,
+          x: selectionBounds.x + (liveLayer.translateX ?? 0) - (currentLayer.translateX ?? 0),
+          y: selectionBounds.y + (liveLayer.translateY ?? 0) - (currentLayer.translateY ?? 0),
+        }
+      : selectionBounds;
+  const inspectorLayers = selectedLayers.length ? selectedLayers : [currentLayer];
+  const allPaths = inspectorLayers.every((layer) => layer.type === "path");
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-      <InspectorTabs value={activeTab} onChange={changeInspectorTab} />
-      {/* Header */}
-      <div className="flex h-13 items-center gap-2.5 border-b border-border px-3">
-        <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-          {currentLayer.type === "clipPath" ? (
-            <Crop size={16} />
+      <InspectorHeader
+        icon={
+          currentLayer.type === "clipPath" ? (
+            <Crop className="size-3.5" />
           ) : isGroup ? (
-            <Folder size={16} />
+            <Folder className="size-3.5" />
           ) : (
-            <Spline size={16} />
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[12px] font-semibold leading-tight">
-            {currentLayer.name}
-          </div>
-          <div className="mt-0.5 flex items-center gap-1 text-[10px] leading-none text-muted-foreground">
-            <span>
-              {isGroup ? "Group" : currentLayer.type === "clipPath" ? "Clip path" : "Vector path"}
-            </span>
-            <span aria-hidden="true">·</span>
-            <span>
-              {animatedPropertyCount > 0
-                ? `${animatedPropertyCount} animated ${animatedPropertyCount === 1 ? "property" : "properties"}`
-                : "Static"}
-            </span>
-          </div>
-        </div>
-        {(currentLayer.type === "path" || currentLayer.type === "clipPath") && (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={() => beginTimelineMorphEditing()}
-                  disabled={currentLayer.locked || multiCount > 1}
-                  aria-label="Edit start and end paths"
-                />
-              }
-            >
-              <Pencil size={17} />
-            </TooltipTrigger>
-            <TooltipContent>Edit start and end paths</TooltipContent>
-          </Tooltip>
-        )}
-      </div>
-
-      {activeTab === "motion" ? (
-        <>
-          <MorphPrepareSection />
-          <MotionPanel
-            layer={currentLayer}
-            selectionCount={multiCount}
-            onEditMorph={() => beginTimelineMorphEditing()}
-          />
-        </>
-      ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <LayerTransformSection
-            layer={currentLayer}
-            selectedLayers={selectedLayers.length ? selectedLayers : [currentLayer]}
-            bounds={selectionBounds}
-            count={multiCount}
-            onPatch={updateLayer}
-            onTranslate={translateSelectedLayer}
-            onToggleLock={() => toggleLayerLock(currentLayer.id)}
-          />
-          {/* Layer */}
-          {multiCount <= 1 && (
-            <Section title="Layer" defaultOpen={false}>
-              <Row label="Name">
-                <TextInput
-                  ariaLabel="Layer name"
-                  value={currentLayer.name}
-                  onChange={(v) => updateLayer({ name: v })}
-                />
-              </Row>
-              <Row label="Type">
-                <Segmented
+            <Spline className="size-3.5" />
+          )
+        }
+        title={multiCount > 1 ? `${multiCount} layers` : currentLayer.name}
+        onRename={multiCount > 1 ? undefined : (name) => updateLayer({ name })}
+        subtitle={
+          multiCount > 1 ? (
+            "Mixed selection"
+          ) : (
+            <span className="flex items-center gap-1">
+              {isPathLike ? (
+                <select
+                  aria-label="Layer type"
                   value={currentLayer.type}
-                  onChange={(v) => updateLayer({ type: v as Layer["type"] })}
-                  options={[
-                    { value: "path", label: "Path" },
-                    { value: "clipPath", label: "Clip" },
-                    { value: "group", label: "Group" },
-                  ]}
-                />
-              </Row>
-            </Section>
-          )}
-
-          {allPaths && (
-            <>
-              <LayerAppearanceSections
-                layer={currentLayer}
-                selectedLayers={inspectorLayers}
-                onChange={updateLayer}
-              />
-              {/* Path — raw command list is the densest, most technical part of the
-                panel (Figma never shows this by default); collapsed until asked for. */}
-              {multiCount <= 1 && (
-                <Section
-                  title="Path"
-                  defaultOpen={false}
-                  action={
+                  onChange={(event) => updateLayer({ type: event.target.value as Layer["type"] })}
+                  className="-ml-1 rounded bg-transparent px-0.5 text-[11px] text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="path">Path</option>
+                  <option value="clipPath">Mask</option>
+                </select>
+              ) : (
+                <span>Group</span>
+              )}
+              {animatedPropertyCount > 0 && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="text-primary">{animatedPropertyCount} animated</span>
+                </>
+              )}
+            </span>
+          )
+        }
+        actions={
+          <>
+            {isPathLike && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
                     <Button
-                      size="icon-xs"
+                      size="icon-sm"
                       variant="ghost"
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={() => setIsCommandsFocused(true)}
-                      aria-label="Focus path commands"
-                    >
-                      <Maximize2 className="size-3.5" />
-                    </Button>
+                      className="size-7 text-muted-foreground hover:text-foreground"
+                      onClick={() => beginTimelineMorphEditing()}
+                      disabled={currentLayer.locked || multiCount > 1}
+                      aria-label="Edit start and end paths"
+                    />
                   }
                 >
-                  <div className="overflow-hidden rounded-md border border-border">
-                    {commandsList("max-h-72")}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowPathData((s) => !s)}
-                    className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
-                  >
-                    <ChevronRight
-                      className={cn("size-3.5 transition-transform", showPathData && "rotate-90")}
-                    />
-                    SVG path data
-                  </button>
-                  {showPathData && (
-                    <PathDataEditor
-                      key={`${selectedFrameId}:${String(selectedLayerId)}:${editingSide}`}
-                      path={currentLayer[editingSide] ?? currentLayer.from}
-                      onCommit={setPath}
-                    />
-                  )}
-                </Section>
-              )}
-
-              <BooleanOperationsPanel />
-            </>
-          )}
-
-          {/* Selected point(s) - supports lasso multi-select */}
-          {(selection || (selectedPoints && selectedPoints.length > 0)) && (
-            <Section
-              title={
-                selectedPoints && selectedPoints.length > 1
-                  ? `Selected points (${selectedPoints.length})`
-                  : "Selected point"
-              }
-            >
-              {selectedPoints && selectedPoints.length > 1 ? (
-                <p className="text-[10px] text-muted-foreground mb-1">
-                  Batch edit via drag or delete (lasso).
-                </p>
-              ) : (
-                <div className="grid grid-cols-2 gap-2">
-                  <NumberRow
-                    label="X"
-                    value={point?.x ?? 0}
-                    step={0.1}
-                    onChange={(v) => updateSelectedPoint({ x: v, y: point?.y ?? 0 })}
-                  />
-                  <NumberRow
-                    label="Y"
-                    value={point?.y ?? 0}
-                    step={0.1}
-                    onChange={(v) => updateSelectedPoint({ x: point?.x ?? 0, y: v })}
-                  />
-                </div>
-              )}
+                  <Shapes className="size-3.5" />
+                </TooltipTrigger>
+                <TooltipContent>Morph: edit start and end shapes</TooltipContent>
+              </Tooltip>
+            )}
+            {multiCount <= 1 && (
               <Button
+                size="icon-sm"
                 variant="ghost"
-                size="sm"
-                className="mt-1 h-8 w-full justify-start gap-1.5 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-                onClick={() => deleteSelectedPoint()}
+                className={cn(
+                  "size-7 text-muted-foreground hover:text-foreground",
+                  currentLayer.locked && "text-foreground",
+                )}
+                onClick={() => toggleLayerLock(currentLayer.id)}
+                aria-label={currentLayer.locked ? "Unlock layer" : "Lock layer"}
+                aria-pressed={Boolean(currentLayer.locked)}
+                title={currentLayer.locked ? "Unlock layer" : "Lock layer"}
               >
-                <Trash2 className="size-3.5" /> Delete{" "}
-                {selectedPoints && selectedPoints.length > 1 ? "points" : "point"}
+                {currentLayer.locked ? (
+                  <Lock className="size-3.5" />
+                ) : (
+                  <Unlock className="size-3.5" />
+                )}
               </Button>
-            </Section>
-          )}
+            )}
+          </>
+        }
+      />
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <MorphPrepareSection />
+        {multiCount > 1 && allPaths && <BooleanOperationsPanel />}
+        <LayerTransformSection
+          layer={liveLayer!}
+          selectedLayers={single ? [liveLayer!] : inspectorLayers}
+          bounds={liveBounds}
+          count={multiCount}
+          onPatch={updateLayer}
+          onTranslate={translateLayer}
+          size={
+            isPathLike
+              ? {
+                  layer: currentLayer,
+                  selectedLayers: inspectorLayers,
+                  bounds: selectionBounds,
+                  progressMs: playheadMs,
+                }
+              : undefined
+          }
+        />
+
+        {allPaths && (
+          <LayerAppearanceSections
+            layer={liveLayer!}
+            selectedLayers={single ? [liveLayer!] : inspectorLayers}
+            count={multiCount}
+            onChange={updateLayer}
+          />
+        )}
+
+        {/* The raw command list is the most technical part of the panel; collapsed until asked for. */}
+        {isPathLike && multiCount <= 1 && (
+          <Section
+            title="Path"
+            defaultOpen={currentLayer.type === "clipPath"}
+            action={
+              <>
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => setIsCommandsFocused(true)}
+                  aria-label="Focus path commands"
+                  title="Expand path commands"
+                >
+                  <Maximize2 className="size-3.5" />
+                </Button>
+              </>
+            }
+          >
+            <div className="overflow-hidden rounded-md border border-border">
+              {commandsList("max-h-72")}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowPathData((s) => !s)}
+              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+            >
+              <ChevronRight
+                className={cn("size-3.5 transition-transform", showPathData && "rotate-90")}
+              />
+              SVG path data
+            </button>
+            {showPathData && (
+              <PathDataEditor
+                key={`${selectedFrameId}:${String(selectedLayerId)}:${editingSide}`}
+                path={currentLayer[editingSide] ?? currentLayer.from}
+                onCommit={setPath}
+              />
+            )}
+          </Section>
+        )}
+
+        {/* Selected point(s) - supports lasso multi-select */}
+        {(selection || (selectedPoints && selectedPoints.length > 0)) && (
+          <Section
+            title={
+              selectedPoints && selectedPoints.length > 1
+                ? `${selectedPoints.length} points`
+                : "Point"
+            }
+            action={
+              <button
+                type="button"
+                className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => deleteSelectedPoint()}
+                aria-label={
+                  selectedPoints && selectedPoints.length > 1 ? "Delete points" : "Delete point"
+                }
+                title="Delete"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            }
+          >
+            {(!selectedPoints || selectedPoints.length <= 1) && (
+              <div className="grid grid-cols-2 gap-1.5">
+                <NumberRow
+                  label="X"
+                  compact
+                  value={point?.x ?? 0}
+                  step={0.1}
+                  onChange={(v) => {
+                    useEditorStore.getState().ensurePathKeyframeAtPlayhead();
+                    updateSelectedPoint({ x: v, y: point?.y ?? 0 });
+                  }}
+                />
+                <NumberRow
+                  label="Y"
+                  compact
+                  value={point?.y ?? 0}
+                  step={0.1}
+                  onChange={(v) => {
+                    useEditorStore.getState().ensurePathKeyframeAtPlayhead();
+                    updateSelectedPoint({ x: point?.x ?? 0, y: v });
+                  }}
+                />
+              </div>
+            )}
+          </Section>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InspectorHeader({
+  icon,
+  title,
+  subtitle,
+  actions,
+  onRename,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle: React.ReactNode;
+  actions?: React.ReactNode;
+  onRename?: (name: string) => void;
+}) {
+  const [draft, setDraft] = React.useState(title);
+  React.useEffect(() => setDraft(title), [title]);
+  const commit = () => {
+    const next = draft.trim();
+    if (next && next !== title) onRename?.(next);
+    else setDraft(title);
+  };
+  return (
+    <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border pl-3 pr-2">
+      <div className="grid size-6 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground">
+        {icon}
+      </div>
+      <div className="min-w-0 flex-1">
+        {onRename ? (
+          <input
+            aria-label="Name"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={commit}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+              if (event.key === "Escape") {
+                setDraft(title);
+                requestAnimationFrame(() => (event.target as HTMLInputElement).blur());
+              }
+              event.stopPropagation();
+            }}
+            className="-ml-1 h-5 w-full truncate rounded px-1 text-[12px] font-semibold leading-tight outline-none hover:bg-muted focus:bg-background focus:ring-1 focus:ring-primary"
+          />
+        ) : (
+          <div className="truncate text-[12px] font-semibold leading-tight">{title}</div>
+        )}
+        <div className="mt-0.5 truncate text-[11px] leading-none text-muted-foreground">
+          {subtitle}
         </div>
-      )}
+      </div>
+      {actions && <div className="flex shrink-0 items-center">{actions}</div>}
+    </div>
+  );
+}
+
+/** With nothing selected the panel shows document-level controls instead of an empty void. */
+function DocumentPanel() {
+  const duration = useEditorStore((state) => state.animation.duration);
+  const setAnimationDuration = useEditorStore((state) => state.setAnimationDuration);
+  const isRepeating = useEditorStore((state) => state.isRepeating);
+  const toggleRepeating = useEditorStore((state) => state.toggleRepeating);
+  const vector = useEditorStore((state) => state.vector);
+  return (
+    <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
+      <InspectorHeader
+        icon={<RectangleHorizontal className="size-3.5" />}
+        title={vector?.name || "Document"}
+        subtitle="Nothing selected"
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <Section title="Animation">
+          <NumberRow
+            label="Duration"
+            value={duration}
+            min={100}
+            step={10}
+            suffix="ms"
+            onChange={(value) => setAnimationDuration(Math.max(100, Math.round(value)))}
+          />
+          <label className="flex h-7 items-center justify-between text-[11px] text-muted-foreground">
+            Loop playback
+            <input
+              type="checkbox"
+              className="size-3.5 accent-primary"
+              checked={isRepeating}
+              onChange={toggleRepeating}
+            />
+          </label>
+        </Section>
+        <div className="space-y-2 px-3 py-4 text-[11px] leading-relaxed text-muted-foreground">
+          <p>Select a layer to edit it. Click ◇ next to any property to animate it.</p>
+        </div>
+      </div>
     </div>
   );
 }

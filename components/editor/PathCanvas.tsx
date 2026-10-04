@@ -173,7 +173,12 @@ export const PathCanvas = React.memo(function PathCanvas({
     }
     return pathToString(targetPathData);
   }, [side, currentLayer, targetPathData, progress]);
-  const fallbackStroke = side === "to" ? "var(--destructive)" : "var(--primary)";
+  const fallbackStroke = "var(--primary)";
+  const ghostPath = useMemo(() => {
+    if (!currentLayer?.to || side === "preview") return "";
+    const other = side === "from" ? currentLayer.to : currentLayer.from;
+    return other ? pathToString(other) : "";
+  }, [currentLayer, side]);
   const hasExplicitStroke = Boolean(currentLayer?.strokeColor);
   const hasExplicitFill = Boolean(currentLayer?.fillColor);
   const strokeWidth =
@@ -321,7 +326,9 @@ export const PathCanvas = React.memo(function PathCanvas({
       onPointerUp={handleSvgPointerUp}
       onDoubleClick={handleCanvasDoubleClick}
       role="img"
-      aria-label={`${side} path canvas — interactive vector editor (pan/zoom, handles, lasso, paint, direct). Keyboard: V/P/D/L/B or bottom palette.`}
+      aria-label={
+        side === "preview" ? "Morph preview" : side === "from" ? "Start shape" : "End shape"
+      }
     >
       <defs>
         <pattern
@@ -382,7 +389,7 @@ export const PathCanvas = React.memo(function PathCanvas({
         <text
           x={artboard.x}
           y={artboard.y - rulerOffset * 2.8}
-          fill="#0d99ff"
+          fill="var(--primary)"
           fontSize={Math.min(Math.max(viewBox.w * 0.011, 0.38), 0.58)}
           fontFamily="Inter, ui-sans-serif, system-ui, sans-serif"
           fontWeight={500}
@@ -455,10 +462,10 @@ export const PathCanvas = React.memo(function PathCanvas({
           y={Math.min(boxSelect.start.y, boxSelect.current.y)}
           width={Math.abs(boxSelect.current.x - boxSelect.start.x)}
           height={Math.abs(boxSelect.current.y - boxSelect.start.y)}
-          stroke="#0d99ff"
+          stroke="var(--primary)"
           strokeWidth={Math.max(ruler.strokeWidth, 0.04)}
           strokeDasharray={`${Math.max(viewBox.w * 0.01, 0.35)} ${Math.max(viewBox.w * 0.006, 0.2)}`}
-          fill="#0d99ff"
+          fill="var(--primary)"
           fillOpacity="0.08"
           opacity="0.9"
           vectorEffect="non-scaling-stroke"
@@ -519,29 +526,25 @@ export const PathCanvas = React.memo(function PathCanvas({
         </g>
       ) : (
         <g clipPath={`url(#${gridId}-artboard-clip)`}>
-          {/* Subtle body/silhouette treatment for the main path (inspired by reference image arrow) */}
-          {side === "from" && currentLayer && (
+          {/* Onion skin: the other end of the morph, so both shapes can be lined up. */}
+          {ghostPath && (
             <path
-              d={displayPath}
-              fill="none"
-              stroke="#e5e5e5"
-              strokeOpacity={0.6}
-              strokeWidth={strokeWidth + 2.5}
-              strokeLinecap={currentLayer.strokeLinecap ?? "butt"}
-              strokeLinejoin={currentLayer.strokeLinejoin ?? "miter"}
-              strokeMiterlimit={currentLayer.strokeMiterLimit ?? 4}
-              fillRule={currentLayer.fillType === "evenOdd" ? "evenodd" : "nonzero"}
+              d={ghostPath}
+              fill="var(--primary)"
+              fillOpacity={0.06}
+              stroke="var(--primary)"
+              strokeOpacity={0.55}
+              strokeWidth={Math.max(strokeWidth, 1)}
+              strokeDasharray="3 2"
+              vectorEffect="non-scaling-stroke"
+              fillRule={currentLayer?.fillType === "evenOdd" ? "evenodd" : "nonzero"}
               pointerEvents="none"
             />
           )}
           {currentLayer && (
             <path
               d={displayPath}
-              className={
-                side === "from"
-                  ? "drop-shadow-sm"
-                  : "opacity-85 drop-shadow-sm [stroke-dasharray:4_3]"
-              }
+              className="drop-shadow-sm"
               fill={
                 currentLayer.fillGradient
                   ? `url(#${gridId}-fill-grad)`
@@ -557,9 +560,7 @@ export const PathCanvas = React.memo(function PathCanvas({
               strokeDasharray={
                 currentLayer.strokeDasharray && currentLayer.strokeDasharray !== "none"
                   ? currentLayer.strokeDasharray
-                  : side === "to"
-                    ? "4 3"
-                    : undefined
+                  : undefined
               }
               fillRule={currentLayer.fillType === "evenOdd" ? "evenodd" : "nonzero"}
             />
@@ -608,7 +609,7 @@ export const PathCanvas = React.memo(function PathCanvas({
           transform={side === "preview" ? selectedPreviewTransform : undefined}
           clipPath={overlayClipPath}
           fill="none"
-          stroke="#0d99ff"
+          stroke="var(--primary)"
           strokeWidth={selectionStrokeWidth}
           vectorEffect="non-scaling-stroke"
           pointerEvents="none"
@@ -633,7 +634,7 @@ export const PathCanvas = React.memo(function PathCanvas({
                 <path
                   d={pathToString(subPathPath)}
                   fill="none"
-                  stroke="#0d99ff"
+                  stroke="var(--primary)"
                   strokeWidth={Math.max(selectionStrokeWidth * 1.25, 0.08)}
                   vectorEffect="non-scaling-stroke"
                 />
@@ -643,7 +644,7 @@ export const PathCanvas = React.memo(function PathCanvas({
                   width={labelWidth}
                   height={labelHeight}
                   rx={Math.max(labelSize * 0.2, 0.04)}
-                  fill="#0d99ff"
+                  fill="var(--primary)"
                   opacity="0.96"
                 />
                 <text
@@ -673,7 +674,7 @@ export const PathCanvas = React.memo(function PathCanvas({
               y1={rotationHandle.anchorY}
               x2={rotationHandle.x}
               y2={rotationHandle.y}
-              stroke="#0d99ff"
+              stroke="var(--primary)"
               strokeWidth={selectionStrokeWidth}
               vectorEffect="non-scaling-stroke"
               pointerEvents="none"
@@ -684,7 +685,7 @@ export const PathCanvas = React.memo(function PathCanvas({
               r={selectionHandleRadius * 0.92}
               className="cursor-grab"
               fill="#ffffff"
-              stroke="#0d99ff"
+              stroke="var(--primary)"
               strokeWidth={selectionStrokeWidth}
               vectorEffect="non-scaling-stroke"
               onPointerDown={handleRotatePointerDown}
@@ -732,7 +733,7 @@ export const PathCanvas = React.memo(function PathCanvas({
             transform={selectedPreviewTransform}
             clipPath={overlayClipPath}
             fill="#ffffff"
-            stroke="#0d99ff"
+            stroke="var(--primary)"
             strokeWidth={selectionStrokeWidth}
             vectorEffect="non-scaling-stroke"
             onPointerDown={(event) => handleResizePointerDown(event, handle.id)}
@@ -759,7 +760,7 @@ export const PathCanvas = React.memo(function PathCanvas({
               <path
                 d={segment.d}
                 fill="none"
-                stroke="#0d99ff"
+                stroke="var(--primary)"
                 strokeWidth={Math.max(selectionStrokeWidth * 0.72, 0.055)}
                 vectorEffect="non-scaling-stroke"
                 pointerEvents="none"
@@ -771,7 +772,7 @@ export const PathCanvas = React.memo(function PathCanvas({
                 r={Math.max(selectionHandleRadius * 0.58, 0.14)}
                 className="cursor-copy"
                 fill="#ffffff"
-                stroke="#0d99ff"
+                stroke="var(--primary)"
                 strokeWidth={Math.max(selectionStrokeWidth * 0.9, 0.06)}
                 onPointerDown={(event) => handleSegmentMidpointPointerDown(event, segment)}
                 data-segment="1"
@@ -790,7 +791,7 @@ export const PathCanvas = React.memo(function PathCanvas({
         <polyline
           points={lassoPointsRef.current.map((pt) => `${pt.x},${pt.y}`).join(" ")}
           fill="none"
-          stroke="#0d99ff"
+          stroke="var(--primary)"
           strokeWidth={Math.max(viewBox.w * 0.0015, 0.05)}
           strokeDasharray={`${Math.max(viewBox.w * 0.004, 0.12)} ${Math.max(viewBox.w * 0.002, 0.06)}`}
           vectorEffect="non-scaling-stroke"
@@ -832,7 +833,7 @@ export const PathCanvas = React.memo(function PathCanvas({
               transform={worldMatrix}
               fill={fillC}
               fillOpacity={fillA}
-              stroke="#0d99ff"
+              stroke="var(--primary)"
               strokeWidth={sw}
               strokeDasharray={`${sw * 2.5} ${sw * 1.2}`}
               vectorEffect="non-scaling-stroke"
@@ -856,7 +857,7 @@ export const PathCanvas = React.memo(function PathCanvas({
             const r = isHandle
               ? Math.max(viewBox.w * 0.006, 0.16)
               : Math.max(viewBox.w * 0.008, 0.22);
-            const fill = selected ? "#0d99ff" : "#ffffff";
+            const fill = selected ? "var(--primary)" : "#ffffff";
             const strokeW = Math.max(viewBox.w * 0.0022, 0.08);
 
             return (
@@ -871,7 +872,7 @@ export const PathCanvas = React.memo(function PathCanvas({
                   cx={point.x}
                   cy={point.y}
                   r={r * 2}
-                  fill="#0d99ff"
+                  fill="var(--primary)"
                   pointerEvents="none"
                   className={selected ? "opacity-20" : "opacity-0 group-hover:opacity-15"}
                 />
@@ -882,7 +883,7 @@ export const PathCanvas = React.memo(function PathCanvas({
                     y1={command.points[2]?.y ?? point.y}
                     x2={point.x}
                     y2={point.y}
-                    stroke="#0d99ff"
+                    stroke="var(--primary)"
                     strokeWidth={Math.max(viewBox.w * 0.0015, 0.05)}
                     strokeDasharray={`${Math.max(viewBox.w * 0.004, 0.12)} ${Math.max(viewBox.w * 0.003, 0.09)}`}
                     vectorEffect="non-scaling-stroke"
@@ -898,7 +899,7 @@ export const PathCanvas = React.memo(function PathCanvas({
                     r={r}
                     className="cursor-grab transition-[fill,stroke] duration-100"
                     fill={fill}
-                    stroke="#0d99ff"
+                    stroke="var(--primary)"
                     strokeWidth={strokeW}
                     vectorEffect="non-scaling-stroke"
                     onPointerDown={(e) =>
@@ -916,7 +917,7 @@ export const PathCanvas = React.memo(function PathCanvas({
                     rx={Math.max(r * 0.14, 0.015)}
                     className="cursor-grab transition-[fill,stroke] duration-100"
                     fill={fill}
-                    stroke="#0d99ff"
+                    stroke="var(--primary)"
                     strokeWidth={strokeW}
                     onPointerDown={(e) =>
                       handlePointerDown(e, subPathIndex, commandIndex, pointIndex)

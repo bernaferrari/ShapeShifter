@@ -44,7 +44,7 @@ export function LayerOwnerRow({
       aria-expanded={expanded}
       aria-selected={selected}
       className={cn(
-        "group flex h-8 items-center px-1.5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring transition-[background-color,box-shadow] duration-150",
+        "group flex h-8 items-center pl-1.5 pr-1.5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring transition-[background-color,box-shadow] duration-150",
         selected && "bg-primary/14 text-foreground",
         dropActive && "bg-primary/10 ring-1 ring-inset ring-primary",
       )}
@@ -66,7 +66,7 @@ export function LayerOwnerRow({
       <button
         type="button"
         tabIndex={-1}
-        className="flex min-w-0 flex-1 items-center gap-2 px-1 text-left text-[11px] font-medium disabled:cursor-default"
+        className="flex min-w-0 flex-1 items-center gap-2 px-1 text-left text-[12px] font-medium disabled:cursor-default"
         onClick={(event) => {
           if (selectable) onSelect(event.shiftKey);
           event.currentTarget.closest<HTMLElement>('[role="treeitem"]')?.focus();

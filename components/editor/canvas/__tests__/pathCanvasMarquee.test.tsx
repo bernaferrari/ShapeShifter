@@ -322,7 +322,7 @@ describe("PathCanvas world-matrix hit testing", () => {
     // The overlay path must repeat the same matrix(...) transform the artwork
     // renders with; pre-fix it drew raw local coords untransformed.
     const overlay = Array.from(svg!.querySelectorAll("path")).find(
-      (candidate) => candidate.getAttribute("stroke") === "#0d99ff",
+      (candidate) => candidate.getAttribute("stroke") === "var(--primary)",
     );
     expect(overlay).toBeDefined();
     expect(overlay!.getAttribute("transform")).toBe("matrix(1 0 0 1 40 0)");

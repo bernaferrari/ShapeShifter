@@ -175,6 +175,21 @@ export function useWorldPointEditing({
       const dx = local.x - drag.origin.x;
       const dy = local.y - drag.origin.y;
       if (!movedRef.current && Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9) return false;
+      if (!movedRef.current && !state.isActionMode && state.ensurePathKeyframeAtPlayhead()) {
+        // The first move between keyframes created a keyframe at the playhead; edit it.
+        const seeded = useEditorStore.getState();
+        const layer = seeded.layers.find(
+          (candidate) => String(candidate.id) === String(drag.selection.layerId),
+        );
+        const source =
+          seeded.editingSide === "from" ? (layer?.pathData ?? layer?.from) : layer?.to;
+        if (!source || seeded.editingSide !== drag.selection.side) {
+          endLiveGesture(drag.marker);
+          dragRef.current = null;
+          return false;
+        }
+        drag.path = source;
+      }
       // Apply an absolute local-space delta to the frozen gesture geometry. It
       // neither accumulates rounding error nor distorts rotated/scaled parents.
       const updated = translatePathPoints(drag.path, drag.points, dx, dy);
