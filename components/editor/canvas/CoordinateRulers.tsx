@@ -81,7 +81,7 @@ export const CoordinateRulers = memo(function CoordinateRulers({
         width={width}
         height={20}
         viewBox={`0 0 ${width} 20`}
-        className="absolute left-0 top-0 h-5 w-full overflow-hidden border-b border-white/10 bg-[#252525]/95 text-white/50 shadow-sm"
+        className="absolute left-0 top-0 h-5 w-full overflow-hidden border-b bg-card/95 text-muted-foreground"
       >
         {xTicks.map((tick, index) => (
           <g key={`${tick.value}-${index}`} transform={`translate(${tick.position} 0)`}>
@@ -109,7 +109,7 @@ export const CoordinateRulers = memo(function CoordinateRulers({
         width={20}
         height={height}
         viewBox={`0 0 20 ${height}`}
-        className="absolute left-0 top-0 h-full w-5 overflow-hidden border-r border-white/10 bg-[#252525]/95 text-white/50 shadow-sm"
+        className="absolute left-0 top-0 h-full w-5 overflow-hidden border-r bg-card/95 text-muted-foreground"
       >
         {yTicks.map((tick, index) => (
           <g key={`${tick.value}-${index}`} transform={`translate(0 ${tick.position})`}>
@@ -135,7 +135,7 @@ export const CoordinateRulers = memo(function CoordinateRulers({
         ))}
       </svg>
       <div
-        className="absolute left-0 top-0 grid size-5 place-items-center border-b border-r border-white/10 bg-[#252525] text-[7px] font-semibold uppercase tracking-tight text-white/45"
+        className="absolute left-0 top-0 grid size-5 place-items-center border-b border-r bg-card text-[8px] font-medium uppercase tracking-wide text-muted-foreground"
         title={`${scopeLabel} coordinate origin`}
       >
         {scopeLabel.slice(0, 1)}

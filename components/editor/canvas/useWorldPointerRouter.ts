@@ -25,6 +25,7 @@ interface WorldPointerRouterOptions {
   snapStep: number;
   editOrigin: Point | null;
   editWorldMatrix?: AffineMatrix | null;
+  editLayerLocked?: boolean;
   editPathPresent: boolean;
   layers: Layer[];
   selectedLayerId: string | number;
@@ -38,13 +39,19 @@ interface WorldPointerRouterOptions {
   updateWorldPan: (clientX: number, clientY: number) => boolean;
   finishWorldPan: () => void;
   cancelWorldPan: () => void;
+  startShapeDrawing?: (point: Point, bypassSnap: boolean) => boolean;
+  startPenPath?: (point: Point, bypassSnap: boolean) => boolean;
+  updateShapeDrawing?: (point: Point, modifiers: PointerModifiers) => boolean;
+  finishShapeDrawing?: () => boolean;
+  cancelShapeDrawing?: () => void;
   penDragRef: React.RefObject<unknown>;
   penPointerDown: (point: Point) => void;
   penPointerDrag: (point: Point) => void;
   penPointerUp: () => void;
+  penPointerCancel?: () => void;
   applyWorldPaint: (point: Point) => void;
   hitWorldAnchor: (point: Point) => Selection | null;
-  startWorldPointEditing: (selection: Selection) => void;
+  startWorldPointEditing: (selection: Selection, additive?: boolean) => void;
   updateWorldPointEditing: (point: Point, bypassSnap: boolean) => boolean;
   finishWorldPointEditing: () => boolean;
   cancelWorldPointEditing: () => void;
@@ -125,6 +132,14 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
         return;
       }
       if (!point) return;
+      if (options.startPenPath?.(point, event.metaKey || event.ctrlKey)) {
+        capturePointer(options.svgRef.current, event.pointerId);
+        return;
+      }
+      if (options.startShapeDrawing?.(point, event.metaKey || event.ctrlKey)) {
+        capturePointer(options.svgRef.current, event.pointerId);
+        return;
+      }
 
       const ownerPoint = {
         x: point.x - (options.editOrigin?.x ?? 0),
@@ -147,12 +162,13 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
           : rawLocal;
 
       if (options.toolMode === "pen") {
-        if (!options.editPathPresent || !options.editOrigin) return;
+        if (options.editLayerLocked || !options.editPathPresent || !options.editOrigin) return;
         options.penPointerDown(snappedLocal);
         capturePointer(options.svgRef.current, event.pointerId);
         return;
       }
       if (options.toolMode === "paint") {
+        if (options.editLayerLocked) return;
         if (!options.editOrigin) {
           const frameId = options.hitArtboard(point);
           if (frameId) options.selectFrame(frameId);
@@ -162,6 +178,7 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
         return;
       }
       if (options.toolMode === "knife") {
+        if (options.editLayerLocked) return;
         if (!options.editOrigin) {
           const frameId = options.hitArtboard(point);
           if (frameId) options.selectFrame(frameId);
@@ -178,7 +195,7 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
       if (options.toolMode === "direct" && options.editPathPresent && options.editOrigin) {
         const anchor = options.hitWorldAnchor(point);
         if (anchor) {
-          options.startWorldPointEditing(anchor);
+          options.startWorldPointEditing(anchor, event.shiftKey);
           options.clearPendingObjectDrag();
           capturePointer(options.svgRef.current, event.pointerId);
           return;
@@ -280,6 +297,14 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
       if (!point) return;
       const bypassSnap = event.metaKey || event.ctrlKey;
 
+      if (
+        options.updateShapeDrawing?.(point, {
+          shift: event.shiftKey,
+          alt: event.altKey,
+          bypassSnap,
+        })
+      )
+        return;
       if (options.updateFrameResize(point, !options.snapToGrid || bypassSnap)) return;
       options.updatePaintPreview(point);
       if (options.updateWorldPointEditing(point, bypassSnap)) return;
@@ -314,6 +339,10 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
 
   const handlePointerUp = React.useCallback(
     (event: React.PointerEvent) => {
+      if (options.finishShapeDrawing?.()) {
+        releasePointer(options.svgRef.current, event.pointerId);
+        return;
+      }
       const objectDrag = options.hasObjectDrag();
       const frameResize = options.hasFrameResize();
       const layerTransform = options.hasLayerTransform();
@@ -358,6 +387,8 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
   const handlePointerCancel = React.useCallback(
     (event: React.PointerEvent) => {
       options.cancelObjectDrag();
+      options.cancelShapeDrawing?.();
+      options.penPointerCancel?.();
       options.cancelLayerTransform();
       options.cancelFrameResize();
       options.cancelWorldPointEditing();

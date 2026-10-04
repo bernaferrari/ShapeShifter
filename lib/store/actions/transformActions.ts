@@ -1,4 +1,8 @@
-import { getPathDataBounds, scalePathToBounds, updatePoint } from "../../shapeshifter/pathUtils";
+import {
+  getPathDataBounds,
+  scalePathToBounds,
+  translatePathPoints,
+} from "../../shapeshifter/pathUtils";
 import { recordTranslationAtProgress } from "../../shapeshifter/motion/recordTranslation";
 import { PAGE_ROOT_ID } from "../../shapeshifter/scene/owners";
 import type { Layer, PathData } from "../../shapeshifter/types";
@@ -38,13 +42,18 @@ export function createTransformActions(
       if (layer.locked) return;
       const targetPath = editingSide === "from" ? layer.from : endOf(layer);
 
-      const updatedPath = updatePoint(
+      const original =
+        targetPath.subPaths[selection.subPathIndex]?.commands[selection.commandIndex]?.points[
+          selection.pointIndex
+        ];
+      if (!original) return;
+      const updatedPath = translatePathPoints(
         targetPath,
-        selection.subPathIndex,
-        selection.commandIndex,
-        selection.pointIndex,
-        newPoint,
+        [selection],
+        newPoint.x - original.x,
+        newPoint.y - original.y,
       );
+      if (updatedPath === targetPath) return;
 
       const newLayers = [...layers];
       if (editingSide === "from") {
@@ -68,24 +77,14 @@ export function createTransformActions(
 
       const layer = layers[layerIndex];
       if (layer.locked) return;
-      let targetPath = editingSide === "from" ? layer.from : endOf(layer);
-
-      // Apply delta to every selected point (uniform translate for batch drag)
-      for (const sel of selectedPoints) {
-        const cmd = targetPath.subPaths[sel.subPathIndex]?.commands[sel.commandIndex];
-        if (!cmd) continue;
-        const currentPt = cmd.points[sel.pointIndex];
-        if (!currentPt) continue;
-
-        const newPt = { x: currentPt.x + dx, y: currentPt.y + dy };
-        targetPath = updatePoint(
-          targetPath,
-          sel.subPathIndex,
-          sel.commandIndex,
-          sel.pointIndex,
-          newPt,
-        );
-      }
+      const targetPath = translatePathPoints(
+        editingSide === "from" ? layer.from : endOf(layer),
+        selectedPoints.filter(
+          (point) => String(point.layerId) === String(layer.id) && point.side === editingSide,
+        ),
+        dx,
+        dy,
+      );
 
       const newLayers = [...layers];
       if (editingSide === "from") {

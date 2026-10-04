@@ -11,7 +11,6 @@ import {
   parsePath,
   pathToString,
 } from "./pathUtils";
-import { capabilityFor } from "./formatCapabilities";
 import { layerTransformToMatrix, transformPointWithMatrix } from "./scene/layerTransform";
 import type {
   AnimationState,
@@ -69,12 +68,6 @@ const PATH_PROPERTIES = new Set([
   "trimPathEnd",
   "trimPathOffset",
 ]);
-
-const TRACK_CAPABILITY_BY_PROPERTY: Record<string, "trimPath" | undefined> = {
-  trimPathStart: "trimPath",
-  trimPathEnd: "trimPath",
-  trimPathOffset: "trimPath",
-};
 
 const xml = (value: string | number) =>
   String(value)
@@ -534,19 +527,6 @@ ${body}
         severity: "warning",
         code: "PROPERTY_UNSUPPORTED",
         message: `Android VectorDrawable does not support ${block.propertyName}.`,
-        layerId: String(layer.id),
-        propertyName: block.propertyName,
-      });
-      continue;
-    }
-    const trackCapability = TRACK_CAPABILITY_BY_PROPERTY[block.propertyName];
-    const capability = trackCapability ? capabilityFor("avd", trackCapability) : undefined;
-    if (capability && !capability.supported) {
-      diagnostics.push({
-        severity: trackCapability === "trimPath" ? "error" : "warning",
-        code: "UNSUPPORTED_TRACK_FOR_FORMAT",
-        message:
-          `AnimatedVectorDrawable cannot represent animated ${block.propertyName}. ${capability.note ?? ""}`.trim(),
         layerId: String(layer.id),
         propertyName: block.propertyName,
       });

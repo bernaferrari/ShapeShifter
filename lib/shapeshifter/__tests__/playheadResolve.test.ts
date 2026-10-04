@@ -36,6 +36,19 @@ function makeBlock(overrides: Partial<TimelineBlock> = {}): TimelineBlock {
 }
 
 describe("numberAtTime", () => {
+  it("retains Android numeric anticipation and overshoot while holding endpoint values outside the segment", () => {
+    const layer = makeLayer();
+    const overshoot = makeBlock({ interpolator: "cubic-bezier(0.3, 1.4, 0.7, 1.4)" });
+    const anticipation = makeBlock({ interpolator: "cubic-bezier(0.3, -0.4, 0.7, -0.4)" });
+    expect(numberAtTime(layer, [overshoot], "translateX", 700, 1000)).toBeGreaterThan(100);
+    expect(numberAtTime(layer, [anticipation], "translateX", 300, 1000)).toBeLessThan(0);
+    for (const block of [overshoot, anticipation]) {
+      expect(numberAtTime(layer, [block], "translateX", -1, 1000)).toBe(0);
+      expect(numberAtTime(layer, [block], "translateX", 0, 1000)).toBe(0);
+      expect(numberAtTime(layer, [block], "translateX", 1000, 1000)).toBe(100);
+      expect(numberAtTime(layer, [block], "translateX", 1001, 1000)).toBe(100);
+    }
+  });
   it("returns the layer's own field value when there are zero blocks for the property", () => {
     const layer = makeLayer({ translateX: 42 });
     expect(numberAtTime(layer, [], "translateX", 500, 1000)).toBe(42);
@@ -247,6 +260,25 @@ describe("colorAtTime", () => {
 });
 
 describe("pathDAtTime", () => {
+  it("refreshes cached path endpoints after track values or fallback geometry change", () => {
+    const layer = makeLayer();
+    const block = makeBlock({
+      propertyName: "pathData",
+      fromValue: "M0 0 L10 0",
+      toValue: "M0 0 L20 0",
+      interpolator: "LINEAR",
+    });
+    const blocks = [block];
+    expect(pathDAtTime(layer, blocks, 500, 1000, 0.5)).toContain("15 0");
+    block.toValue = "M0 0 L40 0";
+    expect(pathDAtTime(layer, blocks, 500, 1000, 0.5)).toContain("25 0");
+    block.fromValue = "";
+    block.toValue = "";
+    layer.from = parsePath("M0 0 L30 0");
+    expect(pathDAtTime(layer, blocks, 500, 1000, 0.5)).toContain("30 0");
+    layer.from = parsePath("M0 0 L50 0");
+    expect(pathDAtTime(layer, blocks, 500, 1000, 0.5)).toContain("50 0");
+  });
   it("returns pathToString(from) for a static (non-morphing) layer with no pathData blocks", () => {
     const from = parsePath("M0,0 L10,10");
     const layer = makeLayer({ from });

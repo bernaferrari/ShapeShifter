@@ -6,19 +6,38 @@ import {
   type AffineMatrix,
 } from "../scene/layerTransform";
 import { createLayerTreeModel } from "../scene/layerHierarchy";
-import { dominantColor } from "../gradients";
+import { dominantColor, normalizeStops } from "../gradients";
 import { parseEditorColor } from "../playheadResolve";
 import { normalizePathData } from "../pathUtils";
-import type { Layer, Point } from "../types";
+import { trimPathData } from "../path/pathTrim";
+import type { Layer, PathData, Point } from "../types";
 import type { ExportOptions } from "./types";
 
-/**
- * Minimal professional PDF vector exporter (kus/24t PDF roundtrips).
- * Pure TS, no deps: outputs valid PDF 1.4 with path geometry + basic styles preserved.
- * Uses current pathData ?? from + groups flattened for max compatibility.
- * Error tolerant: skips bad paths.
- */
-export function exportPDF(layers: Layer[], options: ExportOptions = {}): string {
+export interface PdfExportOptions extends ExportOptions {
+  rootAlpha?: number;
+}
+
+export interface PdfExportDiagnostic {
+  severity: "warning";
+  code: string;
+  layerId?: string | number;
+  message: string;
+}
+
+export interface PdfExportResult {
+  pdf: string;
+  diagnostics: PdfExportDiagnostic[];
+}
+
+/** PDF 1.4 vector output of the base scene, with ordered clips and paint styles. */
+export function exportPDF(layers: Layer[], options: PdfExportOptions = {}): string {
+  return exportPDFWithDiagnostics(layers, options).pdf;
+}
+
+export function exportPDFWithDiagnostics(
+  layers: Layer[],
+  options: PdfExportOptions = {},
+): PdfExportResult {
   const { width = 512, height = 512, viewBoxWidth = 48, viewBoxHeight = 48 } = options;
   const vw = viewBoxWidth || 48;
   const vh = viewBoxHeight || 48;
@@ -37,16 +56,27 @@ export function exportPDF(layers: Layer[], options: ExportOptions = {}): string 
   const py = (y: number) => (topY - y * scale).toFixed(2);
 
   const contentOps: string[] = [];
+  const diagnostics: PdfExportDiagnostic[] = [];
+  const alphaStates = new Map<string, { name: string; fill: number; stroke: number }>();
+  const emit = (value: string) => contentOps.push(value);
+  const clampAlpha = (value: number | undefined) =>
+    Number.isFinite(value) ? Math.max(0, Math.min(1, value!)) : 1;
+  const applyAlpha = (fill: number, stroke: number) => {
+    if (fill === 1 && stroke === 1) return;
+    const key = `${fill.toFixed(6)}:${stroke.toFixed(6)}`;
+    let state = alphaStates.get(key);
+    if (!state) {
+      state = { name: `GS${alphaStates.size + 1}`, fill, stroke };
+      alphaStates.set(key, state);
+    }
+    emit(`/${state.name} gs`);
+  };
 
-  const addPath = (layer: Layer, matrix: AffineMatrix) => {
-    if (!layer.pathData && !layer.from) return;
-    const pathData = layer.pathData ?? layer.from;
-    if (!pathData?.subPaths?.length || layer.type === "group") return;
+  const emitGeometry = (pathData: PathData, matrix: AffineMatrix) => {
     // Normalize once: elliptical arcs flatten to cubic Béziers and S/T
     // shorthands expand to C/Q, so every remaining command maps onto an
     // exact PDF operator (m/l/c/h). No command kind is silently dropped.
     const normalized = normalizePathData(pathData);
-    const emit = (s: string) => contentOps.push(s);
     let cur: Point | null = null;
     let started = false;
 
@@ -107,6 +137,19 @@ export function exportPDF(layers: Layer[], options: ExportOptions = {}): string 
         }
       }
     }
+    return normalized;
+  };
+
+  const addPath = (layer: Layer, matrix: AffineMatrix, inheritedAlpha: number) => {
+    const pathData = trimPathData(
+      layer.pathData ?? layer.from,
+      layer.trimPathStart ?? 0,
+      layer.trimPathEnd ?? 1,
+      layer.trimPathOffset ?? 0,
+    );
+    if (!pathData?.subPaths?.length || layer.type === "group") return;
+    emit("q");
+    emitGeometry(pathData, matrix);
 
     // Style: fill then stroke (PDF paint order). PDF axial/radial shadings are heavy;
     // approximate a gradient with its dominant stop color.
@@ -115,23 +158,87 @@ export function exportPDF(layers: Layer[], options: ExportOptions = {}): string 
       : layer.fillColor && layer.fillColor !== "none"
         ? layer.fillColor
         : null;
-    const stroke = layer.strokeColor || null;
+    if (layer.fillGradient) {
+      diagnostics.push({
+        severity: "warning",
+        code: "GRADIENT_APPROXIMATED",
+        layerId: layer.id,
+        message: `PDF replaces the gradient on "${layer.name}" with a representative solid color.`,
+      });
+    }
+    const strokeWidth = layer.strokeWidth ?? 1;
+    const stroke =
+      layer.strokeColor &&
+      layer.strokeColor.toLowerCase() !== "none" &&
+      Number.isFinite(strokeWidth) &&
+      strokeWidth > 0
+        ? layer.strokeColor
+        : null;
     const det = Math.abs(matrix.a * matrix.d - matrix.b * matrix.c);
-    const sw = Math.max(0.1, (layer.strokeWidth ?? 1) * scale * Math.sqrt(det || 1));
+    const strokeScale = scale * Math.sqrt(det || 1);
+    const sw = strokeWidth * strokeScale;
+    const f = fill ? (parseEditorColor(fill) ?? { r: 0, g: 0, b: 0, a: 255 }) : null;
+    const s = stroke ? (parseEditorColor(stroke) ?? { r: 0, g: 0, b: 0, a: 255 }) : null;
+    const alpha = clampAlpha(inheritedAlpha) * clampAlpha(layer.alpha);
+    const gradientStopAlpha = layer.fillGradient
+      ? Math.max(
+          ...normalizeStops(layer.fillGradient.stops)
+            .filter((stop) => stop.color === fill)
+            .map((stop) => stop.opacity ?? 1),
+          0,
+        )
+      : 1;
+    applyAlpha(
+      clampAlpha(alpha * clampAlpha(layer.fillAlpha) * ((f?.a ?? 255) / 255) * gradientStopAlpha),
+      clampAlpha(alpha * clampAlpha(layer.strokeAlpha) * ((s?.a ?? 255) / 255)),
+    );
     if (fill) {
-      // simple rgb (ignore alpha for minimal PDF). Colors arrive as CSS hex,
-      // rgb() or named forms from imports; parseEditorColor resolves all of
-      // them, so unknown formats fall back to black instead of NaN channels.
-      const f = parseEditorColor(fill) ?? { r: 0, g: 0, b: 0, a: 0 };
-      emit(`${(f.r / 255).toFixed(3)} ${(f.g / 255).toFixed(3)} ${(f.b / 255).toFixed(3)} rg`);
-      emit("f");
+      emit(`${(f!.r / 255).toFixed(3)} ${(f!.g / 255).toFixed(3)} ${(f!.b / 255).toFixed(3)} rg`);
     }
     if (stroke) {
-      const s = parseEditorColor(stroke) ?? { r: 0, g: 0, b: 0, a: 0 };
-      emit(`${(s.r / 255).toFixed(3)} ${(s.g / 255).toFixed(3)} ${(s.b / 255).toFixed(3)} RG`);
+      emit(`${(s!.r / 255).toFixed(3)} ${(s!.g / 255).toFixed(3)} ${(s!.b / 255).toFixed(3)} RG`);
       emit(`${sw.toFixed(2)} w`);
-      emit("S");
+      emit(`${layer.strokeLinecap === "round" ? 1 : layer.strokeLinecap === "square" ? 2 : 0} J`);
+      emit(`${layer.strokeLinejoin === "round" ? 1 : layer.strokeLinejoin === "bevel" ? 2 : 0} j`);
+      emit(`${Math.max(1, layer.strokeMiterLimit ?? 4)} M`);
+      if (layer.strokeDasharray) {
+        const values = layer.strokeDasharray
+          .trim()
+          .split(/[\s,]+/)
+          .map(Number);
+        if (
+          values.every((value) => Number.isFinite(value) && value >= 0) &&
+          values.some((value) => value > 0)
+        )
+          emit(`[${values.map((value) => (value * strokeScale).toFixed(4)).join(" ")}] 0 d`);
+        else
+          diagnostics.push({
+            severity: "warning",
+            code: "INVALID_STROKE_DASHES",
+            layerId: layer.id,
+            message: `PDF skipped an invalid stroke dash pattern on "${layer.name}".`,
+          });
+      }
+      const columnX = Math.hypot(matrix.a, matrix.b);
+      const columnY = Math.hypot(matrix.c, matrix.d);
+      if (
+        Math.abs(columnX - columnY) > 1e-6 ||
+        Math.abs(matrix.a * matrix.c + matrix.b * matrix.d) > 1e-6
+      )
+        diagnostics.push({
+          severity: "warning",
+          code: "NON_UNIFORM_STROKE_APPROXIMATED",
+          layerId: layer.id,
+          message: `PDF approximates stroke scaling on "${layer.name}" under a non-uniform transform.`,
+        });
     }
+    // PDF paint operators consume the current path. A separate f then S would
+    // leave S with no geometry and silently lose every fill-and-stroke outline.
+    const evenOdd = layer.fillType === "evenOdd";
+    emit(
+      fill && stroke ? (evenOdd ? "B*" : "B") : fill ? (evenOdd ? "f*" : "f") : stroke ? "S" : "n",
+    );
+    emit("Q");
   };
 
   // Depth-first traversal composing each node's Android-style transform
@@ -141,25 +248,48 @@ export function exportPDF(layers: Layer[], options: ExportOptions = {}): string 
   // parentId links that imports produce, so both representations traverse
   // identically (group transforms/hiding apply either way).
   const tree = createLayerTreeModel(layers);
-  const walk = (layer: Layer, matrix: AffineMatrix = IDENTITY_AFFINE) => {
-    if (layer.type === "clipPath") {
-      // PDF has no clip concept in this minimal exporter; warn rather than
-      // silently export clipped artwork unclipped.
-      console.warn(
-        `[pdf] Clip path "${layer.name}" was skipped: PDF export does not support clipping.`,
-      );
-      return;
-    }
+  if (
+    clampAlpha(options.rootAlpha) !== 1 &&
+    tree.allLayers.filter(
+      (layer) =>
+        layer.type === "path" &&
+        layer.visible !== false &&
+        tree.ancestorsOf(layer.id).every((ancestor) => ancestor.visible !== false),
+    ).length > 1
+  )
+    diagnostics.push({
+      severity: "warning",
+      code: "ROOT_ALPHA_APPROXIMATED",
+      message:
+        "PDF applies drawable alpha to each path; overlapping translucent paths may differ from Android's whole-drawable compositing.",
+    });
+  const walk = (
+    layer: Layer,
+    matrix: AffineMatrix = IDENTITY_AFFINE,
+    inheritedAlpha = clampAlpha(options.rootAlpha),
+  ) => {
     if (layer.visible === false) return;
     const composed = multiplyAffine(matrix, layerTransformToMatrix(layer));
+    if (layer.type === "clipPath") {
+      emitGeometry(layer.pathData ?? layer.from, composed);
+      emit(layer.fillType === "evenOdd" ? "W* n" : "W n");
+      return;
+    }
     const children = tree.childrenOf(layer);
-    if (children.length > 0) children.forEach((child) => walk(child, composed));
-    else addPath(layer, composed);
+    if (children.length > 0) {
+      emit("q");
+      children.forEach((child) => walk(child, composed, inheritedAlpha * clampAlpha(layer.alpha)));
+      emit("Q");
+    } else addPath(layer, composed, inheritedAlpha);
   };
   tree.roots.forEach((layer) => walk(layer));
 
   const content = contentOps.join("\n  ");
   const stream = `q\n  ${content}\nQ`;
+  const states = [...alphaStates.values()];
+  const alphaResources = states.length
+    ? `/ExtGState<<${states.map((state, index) => `/${state.name} ${index + 5} 0 R`).join(" ")}>>`
+    : "";
 
   // Hand-rolled minimal PDF (valid, viewable in any reader; no xobject bloat).
   // Objects are serialized sequentially while accumulating their real byte
@@ -168,15 +298,18 @@ export function exportPDF(layers: Layer[], options: ExportOptions = {}): string 
   const objects = [
     "<</Type/Catalog/Pages 2 0 R>>",
     "<</Type/Pages/Kids[3 0 R]/Count 1>>",
-    `<</Type/Page/Parent 2 0 R/MediaBox[0 0 ${pdfW} ${pdfH}]/Contents 4 0 R/Resources<</ProcSet[/PDF]>>>>`,
+    `<</Type/Page/Parent 2 0 R/MediaBox[0 0 ${pdfW} ${pdfH}]/Contents 4 0 R/Resources<</ProcSet[/PDF]${alphaResources}>>>>`,
     `<</Length ${stream.length}>>stream\n${stream}\nendstream`,
+    ...states.map(
+      (state) => `<</Type/ExtGState/ca ${state.fill.toFixed(6)}/CA ${state.stroke.toFixed(6)}>>`,
+    ),
   ];
 
   let pdf = "%PDF-1.4\n";
   const offsets: number[] = [];
   objects.forEach((body, index) => {
     offsets.push(pdf.length);
-    pdf += `${index + 1} 0 obj${body}endobj\n`;
+    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
   });
 
   const startxref = pdf.length;
@@ -185,5 +318,5 @@ export function exportPDF(layers: Layer[], options: ExportOptions = {}): string 
     pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
   }
   pdf += `trailer<</Size ${objects.length + 1}/Root 1 0 R>>\nstartxref\n${startxref}\n%%EOF\n`;
-  return pdf;
+  return { pdf, diagnostics };
 }

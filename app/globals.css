@@ -65,7 +65,7 @@
   --card-foreground: oklch(0.21 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.21 0 0);
-  --primary: oklch(0.647 0.183 251.5); /* #0D99FF Figma selection blue */
+  --primary: oklch(0.55 0.155 251.5); /* readable white labels on filled controls */
   --primary-foreground: oklch(0.99 0 0);
   --secondary: oklch(0.968 0 0);
   --secondary-foreground: oklch(0.27 0 0);
@@ -85,7 +85,7 @@
   --radius: 0.5rem; /* precise, not cozy */
   --sidebar: oklch(1 0 0);
   --sidebar-foreground: oklch(0.21 0 0);
-  --sidebar-primary: oklch(0.647 0.183 251.5);
+  --sidebar-primary: oklch(0.55 0.155 251.5);
   --sidebar-primary-foreground: oklch(0.99 0 0);
   --sidebar-accent: oklch(0.962 0 0);
   --sidebar-accent-foreground: oklch(0.27 0 0);
@@ -101,7 +101,7 @@
   --card-foreground: oklch(0.97 0 0);
   --popover: oklch(0.225 0 0);
   --popover-foreground: oklch(0.97 0 0);
-  --primary: oklch(0.647 0.183 251.5); /* same blue accent */
+  --primary: oklch(0.55 0.155 251.5);
   --primary-foreground: oklch(0.99 0 0);
   --secondary: oklch(0.28 0 0);
   --secondary-foreground: oklch(0.97 0 0);
@@ -120,7 +120,7 @@
   --chart-5: oklch(0.269 0 0);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.97 0 0);
-  --sidebar-primary: oklch(0.647 0.183 251.5);
+  --sidebar-primary: oklch(0.55 0.155 251.5);
   --sidebar-primary-foreground: oklch(0.99 0 0);
   --sidebar-accent: oklch(0.29 0 0);
   --sidebar-accent-foreground: oklch(0.97 0 0);
@@ -189,6 +189,12 @@ body {
   textarea,
   select {
     font-size: 16px !important;
+  }
+
+  [role="toolbar"] [data-slot="button"],
+  header [data-slot="button"] {
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 

@@ -9,8 +9,9 @@ import { useEditorStore } from "@/lib/store/editorStore";
 import { cn } from "@/lib/utils";
 import { TimelineKeyframeDiamond, TimelinePropertyBlock } from "./TimelinePropertyBlock";
 import type { TimelineProjection, TimelineRow } from "./timelineProjection";
+import { shiftTimelineItems } from "./timelineTiming";
 
-const ROW_SELECTED = "bg-[#0C8CE9]/20";
+const ROW_SELECTED = "bg-primary/10";
 const ROW_LAYER_HEIGHT = 30;
 const ROW_PROPERTY_HEIGHT = 28;
 const OBJECT_CLIP_HEIGHT = 18;
@@ -28,7 +29,7 @@ function ReadonlyPropertyRail({ block, duration }: { block: TimelineBlock; durat
   return (
     <div className="pointer-events-none absolute inset-0">
       <div
-        className="absolute top-1/2 h-px -translate-y-1/2 bg-white/12"
+        className="absolute top-1/2 h-px -translate-y-1/2 bg-muted-foreground/35"
         style={{ left: `${start}%`, width: `${Math.max(1.2, end - start)}%` }}
       />
       {[start, end].map((position, index) => (
@@ -49,11 +50,15 @@ function TimelineObjectClip({
   duration,
   selected,
   interactive,
+  gridStep,
+  keyboardStep,
 }: {
   span: ObjectSpan;
   duration: number;
   selected: boolean;
   interactive: boolean;
+  gridStep: number;
+  keyboardStep: number;
 }) {
   const dragRef = React.useRef<DragSession | null>(null);
   const left = (span.start / duration) * 100;
@@ -74,19 +79,25 @@ function TimelineObjectClip({
   };
 
   return (
-    <div
+    <button
+      type="button"
+      tabIndex={interactive ? 0 : -1}
+      data-timeline-block-id={primaryId}
+      aria-label={`Path animation from ${span.start} to ${span.end} milliseconds`}
+      aria-pressed={selected}
       className={cn(
-        "absolute top-1/2 z-[1] flex -translate-y-1/2 items-center justify-center overflow-hidden rounded-sm border",
+        "absolute top-1/2 z-[1] flex -translate-y-1/2 items-center justify-center overflow-hidden rounded-sm border touch-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring",
         interactive ? "cursor-grab active:cursor-grabbing" : "pointer-events-none",
         selected
-          ? "border-[#0C8CE9]/45 bg-[#0C8CE9] shadow-[0_0_0_1px_rgba(12,140,233,0.2)]"
-          : "border-white/[0.08] bg-[#555555] hover:bg-[#5C5C5C]",
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-border bg-muted text-muted-foreground hover:bg-accent",
       )}
       style={{ left: `${left}%`, width: `${width}%`, height: OBJECT_CLIP_HEIGHT }}
-      title={`Path · ${span.start}–${span.end}ms`}
+      title={`Path · ${span.start}–${span.end} ms · Alt-drag for precise timing`}
       onPointerDown={
         interactive
           ? (event) => {
+              if (event.button !== 0) return;
               event.stopPropagation();
               event.currentTarget.setPointerCapture?.(event.pointerId);
               dragRef.current = {
@@ -98,7 +109,9 @@ function TimelineObjectClip({
                   originalEnd: block.endTime,
                 })),
               };
-              useEditorStore.getState().selectBlocks(span.blocks.map((block) => block.id));
+              const store = useEditorStore.getState();
+              if (span.blocks[0]) store.selectLayer(span.blocks[0].layerId);
+              store.selectBlocks(span.blocks.map((block) => block.id));
             }
           : undefined
       }
@@ -108,20 +121,15 @@ function TimelineObjectClip({
         const track = event.currentTarget.closest("[data-timeline-row]") as HTMLElement | null;
         const trackWidth = Math.max(1, track?.getBoundingClientRect().width ?? 300);
         const deltaTime = ((event.clientX - session.startX) / trackWidth) * duration;
-        let shift = deltaTime;
-        for (const item of session.items) {
-          const itemDuration = item.originalEnd - item.originalStart;
-          const proposed = item.originalStart + shift;
-          if (proposed < 0) shift = -item.originalStart;
-          if (proposed > duration - itemDuration) {
-            shift = duration - itemDuration - item.originalStart;
-          }
-        }
+        const shift = shiftTimelineItems(
+          session.items,
+          deltaTime,
+          duration,
+          event.altKey,
+          gridStep,
+        );
         const nextItems = session.items.map((item) => {
-          const itemDuration = item.originalEnd - item.originalStart;
-          const snappedStart = Math.round((item.originalStart + shift) / 50) * 50;
-          const startTime = Math.max(0, Math.min(duration - itemDuration, snappedStart));
-          return { item, startTime, endTime: startTime + itemDuration };
+          return { item, startTime: item.originalStart + shift, endTime: item.originalEnd + shift };
         });
         const store = useEditorStore.getState();
         if (
@@ -143,23 +151,54 @@ function TimelineObjectClip({
       onClick={(event) => {
         event.stopPropagation();
         if (span.blocks.length) {
-          useEditorStore.getState().selectBlocks(span.blocks.map((block) => block.id));
+          const store = useEditorStore.getState();
+          store.selectLayer(span.blocks[0]!.layerId);
+          store.selectBlocks(span.blocks.map((block) => block.id));
         }
       }}
+      onKeyDown={(event) => {
+        if (
+          !interactive ||
+          !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)
+        )
+          return;
+        event.preventDefault();
+        if (event.key === "ArrowUp" || event.key === "ArrowDown") return;
+        const items = span.blocks.map((block) => ({
+          originalStart: block.startTime,
+          originalEnd: block.endTime,
+        }));
+        const shift = shiftTimelineItems(
+          items,
+          (event.key === "ArrowLeft" ? -1 : 1) * keyboardStep * (event.shiftKey ? 10 : 1),
+          duration,
+          false,
+          keyboardStep,
+        );
+        if (!shift) return;
+        const store = useEditorStore.getState();
+        store.pushHistory();
+        for (const block of span.blocks)
+          store.updateTimelineBlock(
+            block.id,
+            { startTime: block.startTime + shift, endTime: block.endTime + shift },
+            { recordHistory: false },
+          );
+      }}
     >
-      <span className="pointer-events-none absolute inset-y-[2px] left-[2.5px] w-[1.5px] rounded-full bg-white/35" />
-      <span className="pointer-events-none absolute inset-y-[2px] right-[2.5px] w-[1.5px] rounded-full bg-white/35" />
+      <span className="pointer-events-none absolute inset-y-[2px] left-[2.5px] w-[1.5px] rounded-full bg-current opacity-40" />
+      <span className="pointer-events-none absolute inset-y-[2px] right-[2.5px] w-[1.5px] rounded-full bg-current opacity-40" />
       {width > 12 && (
         <span
           className={cn(
             "pointer-events-none truncate px-2 text-[9px] font-medium",
-            selected ? "text-white/95" : "text-white/50",
+            selected ? "text-primary-foreground" : "text-muted-foreground",
           )}
         >
           Path
         </span>
       )}
-    </div>
+    </button>
   );
 }
 
@@ -167,7 +206,10 @@ interface TimelineTracksPaneProps {
   rows: TimelineRow[];
   blocksForLayer: TimelineProjection["blocksForLayer"];
   blocksForProperty: TimelineProjection["blocksForProperty"];
-  rulerMajorCount: number;
+  contentWidth: number;
+  majorStep: number;
+  gridStep: number;
+  keyboardStep: number;
   empty: boolean;
   emptyHintDismissed: boolean;
   onDismissEmptyHint: () => void;
@@ -181,7 +223,10 @@ export function TimelineTracksPane({
   rows,
   blocksForLayer,
   blocksForProperty,
-  rulerMajorCount,
+  contentWidth,
+  majorStep,
+  gridStep,
+  keyboardStep,
   empty,
   emptyHintDismissed,
   onDismissEmptyHint,
@@ -200,39 +245,36 @@ export function TimelineTracksPane({
   return (
     <div
       ref={scrollRef}
-      className="relative min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-[#242424]"
+      className="relative min-h-0 min-w-0 flex-1 overflow-auto bg-background"
+      aria-label="Animation tracks"
       onScroll={onScroll}
     >
       <div
+        data-timeline-content
         className="relative min-h-full"
-        style={
-          empty
-            ? undefined
-            : {
-                backgroundImage: `repeating-linear-gradient(
-                  90deg,
-                  transparent 0,
-                  transparent calc(${100 / rulerMajorCount}% - 1px),
-                  rgba(255,255,255,0.035) calc(${100 / rulerMajorCount}% - 1px),
-                  rgba(255,255,255,0.035) calc(${100 / rulerMajorCount}%)
-                )`,
-              }
-        }
+        style={{
+          width: contentWidth,
+          minWidth: "100%",
+          ...(!empty && {
+            backgroundImage: "linear-gradient(to right, var(--border) 1px, transparent 1px)",
+            backgroundSize: `${(contentWidth * majorStep) / Math.max(1, animation.duration)}px 100%`,
+          }),
+        }}
       >
         {empty && !emptyHintDismissed && (
           <div className="absolute inset-0 z-[5] flex items-center justify-center p-6">
-            <div className="relative w-full max-w-[300px] rounded-xl border border-white/10 bg-[#2C2C2C]/95 px-5 py-4 text-center shadow-lg">
+            <div className="relative w-full max-w-[300px] rounded-lg border border-border bg-card px-5 py-4 text-center shadow-sm">
               <button
                 type="button"
-                className="absolute right-2 top-2 grid size-7 place-items-center rounded-md text-white/40 hover:bg-white/10 hover:text-white/80"
+                className="absolute right-2 top-2 grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
                 aria-label="Dismiss"
                 onClick={onDismissEmptyHint}
               >
                 <X className="size-3.5" />
               </button>
-              <div className="text-[13px] font-medium text-white/90">No animations yet</div>
-              <div className="mt-1.5 text-[12px] leading-relaxed text-white/45">
-                Select a layer and animate a property, or use a layer menu.
+              <div className="text-[13px] font-medium text-foreground">No animations yet</div>
+              <div className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
+                Select a layer, open Motion, and choose a property to animate.
               </div>
             </div>
           </div>
@@ -245,8 +287,8 @@ export function TimelineTracksPane({
                 key={row.key}
                 data-timeline-row
                 className={cn(
-                  "relative border-b border-white/[0.03]",
-                  row.frameId === selectedFrameId && "bg-white/[0.025]",
+                  "relative border-b border-border/50",
+                  row.frameId === selectedFrameId && "bg-muted/35",
                 )}
                 style={{ height: ROW_LAYER_HEIGHT }}
                 onClick={() => useEditorStore.getState().selectFrame(row.frameId)}
@@ -305,16 +347,17 @@ export function TimelineTracksPane({
               key={row.key}
               data-timeline-row
               className={cn(
-                "relative border-b border-white/[0.03]",
+                "relative border-b border-border/50",
                 propertySelected || objectSelected ? ROW_SELECTED : "bg-transparent",
-                row.kind === "property" && !propertySelected && "hover:bg-white/[0.02]",
-                isObject && !objectSelected && "hover:bg-white/[0.02]",
+                row.kind === "property" && !propertySelected && "hover:bg-muted/35",
+                isObject && !objectSelected && "hover:bg-muted/35",
               )}
               style={{ height: isObject ? ROW_LAYER_HEIGHT : ROW_PROPERTY_HEIGHT }}
               onClick={() => {
                 const store = useEditorStore.getState();
                 if (row.frameId !== store.selectedFrameId) store.selectFrame(row.frameId);
                 if (row.kind === "property") {
+                  store.selectLayer(row.layer.id);
                   store.selectBlocks(propertyBlocks.map((block) => block.id));
                 } else {
                   store.selectLayer(row.layer.id);
@@ -340,6 +383,8 @@ export function TimelineTracksPane({
                       block={block}
                       duration={duration}
                       selected={selectedBlockIds.includes(block.id)}
+                      gridStep={gridStep}
+                      keyboardStep={keyboardStep}
                     />
                   ) : (
                     <ReadonlyPropertyRail key={block.id} block={block} duration={duration} />
@@ -355,6 +400,8 @@ export function TimelineTracksPane({
                       objectSpan.blocks.some((block) => selectedBlockIds.includes(block.id)))
                   }
                   interactive={row.frameId === selectedFrameId && objectSpan.blocks.length > 0}
+                  gridStep={gridStep}
+                  keyboardStep={keyboardStep}
                 />
               )}
             </div>

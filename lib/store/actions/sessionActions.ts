@@ -36,6 +36,12 @@ type SessionAction =
   | "cutLayers";
 
 type SessionActions = Pick<EditorState, SessionAction>;
+const WORLD_GEOMETRY_TOOLS = new Set(["direct", "pen", "knife", "paint", "pencil"]);
+function motionPreviewToolState(state: EditorState): Partial<EditorState> {
+  return !state.isActionMode && WORLD_GEOMETRY_TOOLS.has(state.toolMode)
+    ? { toolMode: "select", selection: null, selectedPoints: [], selectedSubPaths: [] }
+    : {};
+}
 type SetEditorState = (
   update: Partial<EditorState> | ((state: EditorState) => Partial<EditorState>),
 ) => void;
@@ -113,7 +119,9 @@ function removeRequestedSubtrees(
       : state.rootHiddenLayerIds;
   const activeFrame = nextFrames.find((frame) => frame.id === state.selectedFrameId);
   const nextLayers =
-    state.selectedFrameId === PAGE_ROOT_ID ? nextRoot.layers : (activeFrame?.layers ?? state.layers);
+    state.selectedFrameId === PAGE_ROOT_ID
+      ? nextRoot.layers
+      : (activeFrame?.layers ?? state.layers);
   const nextAnimation =
     state.selectedFrameId === PAGE_ROOT_ID
       ? nextRoot.animation
@@ -164,10 +172,19 @@ export function createSessionActions(set: SetEditorState, get: () => EditorState
       set((state) => {
         const atEnd = state.progress >= 0.999;
         return !state.isPlaying && atEnd
-          ? { isPlaying: true, progress: 0 }
-          : { isPlaying: !state.isPlaying };
+          ? { isPlaying: true, progress: 0, ...motionPreviewToolState(state) }
+          : {
+              isPlaying: !state.isPlaying,
+              ...(!state.isPlaying ? motionPreviewToolState(state) : {}),
+            };
       }),
-    setProgress: (progress) => set({ progress: Math.max(0, Math.min(1, progress)) }),
+    setProgress: (progress) => {
+      if (!Number.isFinite(progress)) return;
+      set((state) => ({
+        progress: Math.max(0, Math.min(1, progress)),
+        ...(progress > 0 ? motionPreviewToolState(state) : {}),
+      }));
+    },
     setSpeed: (speed) => set({ speed }),
     toggleSlowMotion: () => set((state) => ({ isSlowMotion: !state.isSlowMotion })),
     toggleRepeating: () => set((state) => ({ isRepeating: !state.isRepeating })),
@@ -200,7 +217,23 @@ export function createSessionActions(set: SetEditorState, get: () => EditorState
     toggleTimelineCollapsed: () =>
       set((state) => ({ timelineCollapsed: !state.timelineCollapsed })),
     setTimelineCollapsed: (timelineCollapsed) => set({ timelineCollapsed }),
-    setToolMode: (toolMode) => set({ toolMode }),
+    setToolMode: (toolMode) =>
+      set((state) => ({
+        toolMode,
+        ...(!state.isActionMode && WORLD_GEOMETRY_TOOLS.has(toolMode)
+          ? {
+              progress: 0,
+              isPlaying: false,
+              editingSide: "from" as const,
+              ...(state.editingSide === "to"
+                ? { selectedPoints: [], selectedSubPaths: [], selection: null }
+                : {}),
+            }
+          : {}),
+        ...(!state.isActionMode && toolMode === "select"
+          ? { selection: null, selectedPoints: [], selectedSubPaths: [] }
+          : {}),
+      })),
     setCursorType: (cursorType) => set({ cursorType }),
     setHoveredItem: (hoveredItem) => set({ hoveredItem }),
     startDrag: (type, startX, startY) =>

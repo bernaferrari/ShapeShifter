@@ -15,6 +15,34 @@ describe("project import pipeline", () => {
     useEditorStore.getState().resetProject();
   });
 
+  it("undoes VectorDrawable geometry and root metadata together", () => {
+    const before = useEditorStore.getState();
+    const originalLayerIds = before.layers.map((layer) => layer.id);
+    const originalVector = structuredClone(before.vector);
+    const historyLength = before.history.length;
+    importEditorText(
+      "wide.xml",
+      `<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="80dp" android:height="40dp" android:viewportWidth="160" android:viewportHeight="80" android:alpha="0.6"><path android:name="imported" android:fillColor="#ff0000" android:pathData="M0 0 L160 80"/></vector>`,
+    );
+    const imported = useEditorStore.getState();
+    expect(imported.history).toHaveLength(historyLength + 1);
+    expect(imported.vector).toMatchObject({
+      width: 80,
+      height: 40,
+      viewportWidth: 160,
+      viewportHeight: 80,
+      alpha: 0.6,
+    });
+    expect(imported.layers).toHaveLength(originalLayerIds.length + 1);
+    imported.undo();
+    const { id: _projectionId, ...originalMetadata } = originalVector;
+    expect(useEditorStore.getState().vector).toMatchObject(originalMetadata);
+    expect(useEditorStore.getState().layers.map((layer) => layer.id)).toEqual(originalLayerIds);
+    useEditorStore.getState().redo();
+    expect(useEditorStore.getState().layers).toHaveLength(originalLayerIds.length + 1);
+    expect(useEditorStore.getState().vector.viewportWidth).toBe(160);
+  });
+
   it("round-trips every frame, animation owner, and page-root vector through documentV2", () => {
     const store = useEditorStore.getState();
     const firstFrameId = store.frames[0].id;

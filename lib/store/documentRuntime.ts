@@ -57,6 +57,8 @@ export function historySessionFromEditor(state: EditorState): HistorySession {
     selectedLayerId: state.selectedLayerId,
     selectedLayerIds: [...state.selectedLayerIds],
     selectedLayerRefs: state.selectedLayerRefs.map((ref) => ({ ...ref })),
+    selectedBlockIds: [...state.selectedBlockIds],
+    isActionMode: state.isActionMode,
     selection: state.selection ? structuredClone(state.selection) : null,
     selectedPoints: state.selectedPoints.map((point) => structuredClone(point)),
     selectedSubPaths: state.selectedSubPaths.map((subpath) => structuredClone(subpath)),
@@ -84,6 +86,9 @@ export function restoreHistoryEntry(state: EditorState, entry: HistoryEntry): Pa
     ? (projected.rootLayers ?? [])
     : (frames.find((frame) => frame.id === selectedFrameId)?.layers ?? projected.layers ?? []);
   const frame = frames.find((item) => item.id === selectedFrameId);
+  const animation = restoringPageRoot
+    ? structuredClone(snapshot.rootAnimation)
+    : (frame?.animation ?? projected.animation);
   return {
     ...projected,
     documentV2: entry.documentV2,
@@ -96,9 +101,7 @@ export function restoreHistoryEntry(state: EditorState, entry: HistoryEntry): Pa
     vector: restoringPageRoot
       ? structuredClone(snapshot.rootVector)
       : (frame?.vector ?? projected.vector),
-    animation: restoringPageRoot
-      ? structuredClone(snapshot.rootAnimation)
-      : (frame?.animation ?? projected.animation),
+    animation,
     hiddenLayerIds: restoringPageRoot
       ? [...snapshot.rootHiddenLayerIds]
       : (frame?.hiddenLayerIds ?? projected.hiddenLayerIds),
@@ -106,9 +109,21 @@ export function restoreHistoryEntry(state: EditorState, entry: HistoryEntry): Pa
     // undo): keep whatever the user had instead of refitting to the document.
     worldViewport: state.worldViewport,
     detailViewport: state.detailViewport,
+    // Undo restores authored motion while the user's playhead stays where they
+    // were editing. Pause before previewing the restored pose.
+    progress: state.progress,
+    isPlaying: false,
+    // Restored authored state invalidates any pointer session's ownership token.
+    dragState: null,
     selectedLayerId: session.selectedLayerId,
     selectedLayerIds: [...session.selectedLayerIds],
     selectedLayerRefs: session.selectedLayerRefs.map((ref) => ({ ...ref })),
+    selectedBlockIds: (session.selectedBlockIds ?? state.selectedBlockIds).filter((id) =>
+      animation?.blocks.some((block) => block.id === id),
+    ),
+    isActionMode:
+      (session.isActionMode ?? state.isActionMode) &&
+      layers.some((layer) => String(layer.id) === String(session.selectedLayerId)),
     selection: session.selection ? structuredClone(session.selection) : null,
     selectedPoints: session.selectedPoints.map((point) => structuredClone(point)),
     selectedSubPaths: session.selectedSubPaths.map((subpath) => structuredClone(subpath)),

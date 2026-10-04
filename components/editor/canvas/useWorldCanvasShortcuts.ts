@@ -1,6 +1,8 @@
 "use client";
+import { useEditorStore } from "@/lib/store/editorStore";
 
 import React from "react";
+import { isEditorShortcutBlocked } from "../hooks/useEditorKeyboardShortcuts";
 
 interface WorldCanvasShortcutOptions {
   enabled: boolean;
@@ -26,13 +28,6 @@ interface WorldCanvasShortcutOptions {
   fitWorldToSelection: () => void;
   resetWorldZoom: () => void;
   zoomWorldAtCenter: (factor: number) => void;
-}
-
-function isTextEntryTarget(target: EventTarget | null) {
-  const element = target instanceof HTMLElement ? target : null;
-  return (
-    element?.tagName === "INPUT" || element?.tagName === "TEXTAREA" || element?.isContentEditable
-  );
 }
 
 /** Owns freeform-canvas keyboard semantics and gesture cancellation order. */
@@ -65,7 +60,7 @@ export function useWorldCanvasShortcuts({
     if (!enabled) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isTextEntryTarget(event.target)) return;
+      if (isEditorShortcutBlocked(event)) return;
 
       if (
         (event.key === "Escape" || event.key === "Enter") &&
@@ -73,6 +68,7 @@ export function useWorldCanvasShortcuts({
       ) {
         event.preventDefault();
         finishPen();
+        useEditorStore.getState().setToolMode("select");
         return;
       }
 

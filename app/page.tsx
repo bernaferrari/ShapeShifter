@@ -21,7 +21,7 @@ import { Onboarding } from "@/components/editor/Onboarding";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { cn } from "@/lib/utils";
 import {
-  isEditableTarget,
+  isEditorShortcutBlocked,
   useEditorKeyboardShortcuts,
 } from "@/components/editor/hooks/useEditorKeyboardShortcuts";
 import { useEditorPlayback } from "@/components/editor/hooks/useEditorPlayback";
@@ -29,6 +29,9 @@ import { useDocumentAutosave } from "@/components/editor/hooks/useDocumentAutosa
 import { useProjectImport } from "@/components/editor/project/useProjectImport";
 import { useProjectExport } from "@/components/editor/project/useProjectExport";
 import { EditorCommandPalette, EditorHelpDialog } from "@/components/editor/EditorDialogs";
+import { AgentToolsDialog } from "@/components/editor/AgentToolsDialog";
+import { RecoveryHistoryDialog } from "@/components/editor/RecoveryHistoryDialog";
+import { registerEditorAgentTools } from "@/lib/agent/browserTools";
 
 // Below this viewport width the fixed w-80 inspector + timeline get cramped, so
 // the inspector auto-collapses into a toggle (Figma-style responsive degrade).
@@ -36,7 +39,7 @@ const NARROW_BREAKPOINT = 1100;
 
 export default function ShapeShifter2026() {
   useEditorKeyboardShortcuts();
-  useDocumentAutosave();
+  const autosave = useDocumentAutosave();
   const playbackActive = useEditorPlayback();
   const {
     inputRef: fileInputRef,
@@ -74,6 +77,9 @@ export default function ShapeShifter2026() {
   // === COMMAND PALETTE STATE (moved inside for correctness) ===
   const [commandOpen, setCommandOpen] = React.useState(false);
   const [helpOpen, setHelpOpen] = React.useState(false);
+  const [agentOpen, setAgentOpen] = React.useState(false);
+  const [recoveryOpen, setRecoveryOpen] = React.useState(false);
+  React.useEffect(() => registerEditorAgentTools(document, navigator), []);
 
   // === PANEL COLLAPSE / RESPONSIVE STATE ===
   // User intent (persisted). The actual inspector visibility also folds in the
@@ -142,7 +148,7 @@ export default function ShapeShifter2026() {
 
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (isEditableTarget(e.target)) return;
+      if (isEditorShortcutBlocked(e)) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setCommandOpen((open) => !open);
@@ -175,6 +181,12 @@ export default function ShapeShifter2026() {
 
   return (
     <div className="relative flex h-dvh flex-col bg-background text-foreground" {...dragHandlers}>
+      <a
+        href="#editor-canvas"
+        className="sr-only z-50 rounded-md bg-card px-4 py-2 focus:not-sr-only focus:absolute focus:left-2 focus:top-2"
+      >
+        Skip to canvas
+      </a>
       {/* File Drag-and-Drop Overlay — pro Figma drop target polish (dashed target + refined elevation) */}
       {isDraggingFile && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-background/80 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
@@ -205,6 +217,10 @@ export default function ShapeShifter2026() {
         onResetAnim={resetAnim}
         onOpenSVGImport={openSVGImport}
         onShowHelp={() => setHelpOpen(true)}
+        onOpenCommand={() => setCommandOpen(true)}
+        onOpenAgentTools={() => setAgentOpen(true)}
+        onOpenRecovery={() => setRecoveryOpen(true)}
+        autosave={autosave}
         resetAllViews={resetAllViews}
         isPlaying={isPlaying}
         isActionMode={isActionMode}
@@ -220,7 +236,11 @@ export default function ShapeShifter2026() {
           not a canvas-only panel trapped between the sidebars. */}
       <div className="relative min-h-0 flex-1 overflow-hidden bg-muted">
         <ResizablePanelGroup orientation="vertical" className="min-h-0">
-          <ResizablePanel id="workspace" minSize={54} defaultSize={timelineCollapsed ? 100 : 72}>
+          <ResizablePanel
+            id="workspace"
+            minSize="54%"
+            defaultSize={timelineCollapsed ? "100%" : "72%"}
+          >
             <div className="relative flex h-full min-h-0 overflow-hidden">
               {!layersHidden && (
                 <LayersPanel
@@ -232,7 +252,12 @@ export default function ShapeShifter2026() {
                   }
                 />
               )}
-              <main className="relative flex min-w-0 flex-1 overflow-hidden">
+              <main
+                id="editor-canvas"
+                tabIndex={-1}
+                aria-label="Editor canvas"
+                className="relative flex min-w-0 flex-1 overflow-hidden"
+              >
                 <CanvasArea
                   resetFrom={resetFrom}
                   resetPreview={resetPreview}
@@ -247,19 +272,21 @@ export default function ShapeShifter2026() {
                 <Onboarding />
               </main>
 
-              <aside
-                className={cn(
-                  "flex h-full shrink-0 flex-col overflow-hidden border-l bg-sidebar shadow-xs",
-                  inspectorHidden ? "w-0 border-l-0 opacity-0" : "w-72 opacity-100",
-                  isNarrow &&
-                    !inspectorHidden &&
-                    "absolute inset-y-0 right-0 z-40 shadow-[-8px_0_24px_rgba(0,0,0,0.16)]",
-                )}
-              >
-                <div className="flex h-full w-72 flex-col">
-                  <Inspector />
-                </div>
-              </aside>
+              {!inspectorHidden && (
+                <aside
+                  className={cn(
+                    "flex h-full shrink-0 flex-col overflow-hidden border-l bg-sidebar shadow-xs",
+                    "w-72",
+                    isNarrow &&
+                      !inspectorHidden &&
+                      "absolute inset-y-0 right-0 z-40 shadow-[-8px_0_24px_rgba(0,0,0,0.16)]",
+                  )}
+                >
+                  <div className="flex h-full w-72 flex-col">
+                    <Inspector />
+                  </div>
+                </aside>
+              )}
 
               {layersHidden && (
                 <button
@@ -295,7 +322,7 @@ export default function ShapeShifter2026() {
           {!timelineCollapsed && (
             <>
               <ResizableHandle className="bg-border/80" />
-              <ResizablePanel id="timeline" minSize={16} defaultSize={25}>
+              <ResizablePanel id="timeline" minSize="16%" defaultSize="28%">
                 <LayerTimeline onCollapse={toggleTimeline} />
               </ResizablePanel>
             </>
@@ -330,12 +357,31 @@ export default function ShapeShifter2026() {
       />
 
       <EditorHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
+      <AgentToolsDialog open={agentOpen} onOpenChange={setAgentOpen} />
+      <RecoveryHistoryDialog
+        open={recoveryOpen}
+        onOpenChange={setRecoveryOpen}
+        onRestore={autosave.restoreCheckpoint}
+      />
       <EditorCommandPalette
         open={commandOpen}
         onOpenChange={setCommandOpen}
         onOpenHelp={() => setHelpOpen(true)}
         onLoadSample={loadSample}
         onExport={handleExport}
+        onOpenImport={openSVGImport}
+        onToggleLayers={() =>
+          isNarrow
+            ? setNarrowPanel((panel) => (panel === "layers" ? null : "layers"))
+            : toggleLayers()
+        }
+        onToggleInspector={() =>
+          isNarrow
+            ? setNarrowPanel((panel) => (panel === "inspector" ? null : "inspector"))
+            : toggleInspector()
+        }
+        onToggleTimeline={toggleTimeline}
+        onResetViews={resetAllViews}
       />
     </div>
   );

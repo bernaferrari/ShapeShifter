@@ -45,7 +45,7 @@ const TRACK_CAPABILITIES: TrackCapability[] = [
 ];
 
 const STATIC_NOTES = [
-  "Static target: exports the artwork at its current state without animation tracks.",
+  "Static target: exports base artwork without animation tracks or playhead changes.",
 ];
 
 function staticProfile(id: ExportFormatId, label: string, notes: string[]): FormatProfile {
@@ -63,9 +63,6 @@ const vectorProfile = staticProfile("vector", "VectorDrawable XML", STATIC_NOTES
 
 const pdfProfile = staticProfile("pdf", "PDF document", STATIC_NOTES);
 
-const TRIM_PATH_AVD_NOTE =
-  "AnimatedVectorDrawable has no trim path animator, so animated trim tracks cannot be represented.";
-
 const avdProfile: FormatProfile = {
   id: "avd",
   label: "AnimatedVectorDrawable",
@@ -80,7 +77,10 @@ const avdProfile: FormatProfile = {
     },
     color: { supported: true },
     alpha: { supported: true },
-    trimPath: { supported: false, note: TRIM_PATH_AVD_NOTE },
+    trimPath: {
+      supported: true,
+      note: "Trim start, end, and offset animate as float objectAnimator properties on path targets.",
+    },
     translation: { supported: true },
     rotation: { supported: true },
     scale: { supported: true },

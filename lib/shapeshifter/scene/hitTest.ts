@@ -37,7 +37,11 @@ export function hitTestOwnedLayers(
         if (
           !clip?.path ||
           !inverseClip ||
-          !isPointInPath(transformPointWithMatrix(ownerPoint, inverseClip), clip.path)
+          !isPointInPath(
+            transformPointWithMatrix(ownerPoint, inverseClip),
+            clip.path,
+            clip.fillType ?? "nonZero",
+          )
         ) {
           clipped = true;
           break;
@@ -53,7 +57,7 @@ export function hitTestOwnedLayers(
         return { ownerId: owner.ownerId, layerId: node.id };
       }
       if (node.stroke && node.strokeWidth > 0) {
-        const tolerance = (strokeTolerance + node.strokeWidth / 2) / minimumScale(node.worldMatrix);
+        const tolerance = strokeTolerance / minimumScale(node.worldMatrix) + node.strokeWidth / 2;
         if (distanceToPath(local, node.path) <= tolerance) {
           return { ownerId: owner.ownerId, layerId: node.id };
         }

@@ -92,7 +92,7 @@ describe("format capability matrix", () => {
     const expected: Record<ExportFormatId, Partial<Record<TrackCapability, boolean>>> = {
       vector: allUnsupported,
       pdf: allUnsupported,
-      avd: { trimPath: false },
+      avd: {},
       svg: { ...allUnsupported, pathMorph: true },
       lottie: { trimPath: false },
     };
@@ -142,40 +142,36 @@ describe("capability helpers", () => {
     const first = capabilityFor("avd", "trimPath");
     const second = capabilityFor("avd", "trimPath");
     expect(second).toEqual(first);
-    expect(first.supported).toBe(false);
+    expect(first.supported).toBe(true);
 
     expect(formatSupports("lottie", "pathMorph")).toBe(true);
     expect(formatSupports("vector", "translation")).toBe(false);
     // Inputs unchanged by queries.
-    expect(CAPABILITY_MATRIX.avd.capabilities.trimPath.supported).toBe(false);
+    expect(CAPABILITY_MATRIX.avd.capabilities.trimPath.supported).toBe(true);
   });
 });
 
-describe("android compiler UNSUPPORTED_TRACK_FOR_FORMAT diagnostics", () => {
-  it("errors on animated trim tracks for AVD export", () => {
-    const bundle = compileAndroidArtboard(
-      avdInputWithTracks([
-        { id: "trim", propertyName: "trimPathStart", fromValue: 0, toValue: 0.5 },
-      ]),
-    );
-    const diagnostic = bundle.diagnostics.find(
-      (entry) => entry.code === "UNSUPPORTED_TRACK_FOR_FORMAT",
-    );
-    expect(diagnostic).toBeDefined();
-    expect(diagnostic?.severity).toBe("error");
-    expect(diagnostic?.propertyName).toBe("trimPathStart");
-    expect(diagnostic?.layerId).toBe("heart");
-  });
+describe("Android native trim animation capabilities", () => {
+  it.each(["trimPathStart", "trimPathEnd", "trimPathOffset"])(
+    "exports %s through a native float animator",
+    (propertyName) => {
+      const bundle = compileAndroidArtboard(
+        avdInputWithTracks([{ id: "trim", propertyName, fromValue: 0.125, toValue: 0.875 }]),
+      );
+      expect(bundle.diagnostics.some((entry) => entry.severity === "error")).toBe(false);
+      const animator = bundle.files.find((file) => file.path.startsWith("res/animator/"));
+      expect(animator?.content).toContain(`android:propertyName="${propertyName}"`);
+      expect(animator?.content).toContain('android:valueType="floatType"');
+      expect(animator?.content).toContain('android:valueFrom="0.125"');
+      expect(animator?.content).toContain('android:valueTo="0.875"');
+      expect(bundle.files.some((file) => file.path.endsWith("_animated.xml"))).toBe(true);
+    },
+  );
 
-  it("warns on other unsupported tracks but still compiles remaining ones", () => {
-    // trimPath is currently the only unsupported AVD track in the matrix; pin
-    // that invariant so a future matrix edit forces this test to be revisited.
-    expect(formatSupports("avd", "trimPath")).toBe(false);
+  it("recognizes all declared native AVD track capabilities", () => {
     for (const track of TRACK_CAPABILITIES) {
-      if (track !== "trimPath") expect(formatSupports("avd", track)).toBe(true);
+      expect(formatSupports("avd", track)).toBe(true);
     }
-
-    // Sanity: supported tracks produce no capability diagnostics.
     const clean = compileAndroidArtboard(
       avdInputWithTracks([{ id: "move", propertyName: "translateX", fromValue: 1, toValue: 4 }]),
     );

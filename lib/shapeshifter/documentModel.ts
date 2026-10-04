@@ -128,6 +128,22 @@ function addGeometryVersion(document: DocumentV2, id: string, pathData: Layer["f
   return id;
 }
 
+/** Legacy block strings have no command IDs; derive durable IDs from their endpoint. */
+function addTimelineGeometryVersion(document: DocumentV2, id: string, value: string): string {
+  const parsed = parsePath(value);
+  const pathData = {
+    ...parsed,
+    subPaths: parsed.subPaths.map((subPath, subPathIndex) => ({
+      ...subPath,
+      commands: subPath.commands.map((command, commandIndex) => ({
+        ...command,
+        id: scopedId("command", id, `${subPathIndex}:${commandIndex}`),
+      })),
+    })),
+  };
+  return addGeometryVersion(document, id, pathData);
+}
+
 function addMorphMapping(
   document: DocumentV2,
   id: string,
@@ -256,18 +272,18 @@ function addOwner(
       const toId = scopedId("keyframe", ownerId, `${block.id}:to`);
       const fromGeometryId =
         valueType === "path" && typeof block.fromValue === "string"
-          ? addGeometryVersion(
+          ? addTimelineGeometryVersion(
               document,
               scopedId("geometry", ownerId, `${block.id}:from`),
-              parsePath(block.fromValue),
+              block.fromValue,
             )
           : undefined;
       const toGeometryId =
         valueType === "path" && typeof block.toValue === "string"
-          ? addGeometryVersion(
+          ? addTimelineGeometryVersion(
               document,
               scopedId("geometry", ownerId, `${block.id}:to`),
-              parsePath(block.toValue),
+              block.toValue,
             )
           : undefined;
       const mappingId =
@@ -465,7 +481,13 @@ function clipAnimation(
       });
     }
   }
-  return { id: clip.id, name: clip.name, duration: clip.duration, blocks };
+  const ownerPrefix = scopedId("clip", clip.frameId ?? "page", "");
+  // The migration adapter scopes clip IDs once. Returning that scoped ID as a
+  // legacy animation ID would encode it again on every undo/import round trip.
+  const animationId = clip.id.startsWith(ownerPrefix)
+    ? decodeURIComponent(clip.id.slice(ownerPrefix.length))
+    : clip.id;
+  return { id: animationId, name: clip.name, duration: clip.duration, blocks };
 }
 
 export function legacySnapshotFromDocumentV2(document: DocumentV2): LegacyDocumentSnapshot {

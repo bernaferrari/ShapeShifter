@@ -8,7 +8,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ["lib/**/*.test.ts", "components/**/*.test.tsx"],
+    include: ["lib/**/*.test.ts", "components/**/*.test.{ts,tsx}"],
     environment: "node",
   },
 });

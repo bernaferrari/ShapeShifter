@@ -1,8 +1,6 @@
-import type { Command, PathData, Point } from "../types";
-import { generateId } from "../ids";
+import type { PathData, Point, FillType } from "../types";
 import { arcToBeziers } from "../geometry";
-
-const clonePath = (path: PathData): PathData => structuredClone(path);
+import type { AffineMatrix } from "../scene/layerTransform";
 
 function pointInPolygon(point: Point, polygon: Point[]): boolean {
   if (polygon.length < 3) return false;
@@ -112,70 +110,26 @@ export function pathToPolygons(path: PathData, steps = 12): Point[][] {
   return polygons;
 }
 
-function polygonsToPathData(polygons: Point[][]): PathData {
-  return {
-    subPaths: polygons
-      .filter((polygon) => polygon.length >= 3)
-      .map((polygon) => {
-        const commands: Command[] = [
-          { id: generateId(), type: "M", points: [{ ...polygon[0] }] },
-          ...polygon
-            .slice(1)
-            .map((point): Command => ({ id: generateId(), type: "L", points: [{ ...point }] })),
-          { id: generateId(), type: "Z", points: [] },
-        ];
-        return { commands };
-      }),
-  };
-}
-
 export type BooleanOp = "union" | "subtract" | "intersect" | "exclude";
+export interface BooleanOptions {
+  firstMatrix?: AffineMatrix;
+  secondMatrix?: AffineMatrix;
+  firstFillType?: FillType;
+  secondFillType?: FillType;
+}
+export const BOOLEAN_OPERATIONS_ENABLED = true;
 
-/** Destructive Boolean commands stay off until a curve-capable clipper exists. */
-export const BOOLEAN_OPERATIONS_ENABLED = false;
-
-/**
- * Containment-aware boolean operations for closed paths. Disjoint paths are exact; partially
- * intersecting boundaries intentionally use conservative fallbacks until a full clipping kernel
- * is introduced.
- */
-export function booleanCombine(operation: BooleanOp, first: PathData, second: PathData): PathData {
-  const firstPolygons = pathToPolygons(first);
-  const secondPolygons = pathToPolygons(second);
-  if (firstPolygons.length === 0) return clonePath(second);
-  if (secondPolygons.length === 0) return clonePath(first);
-
-  const firstPolygon = firstPolygons[0];
-  const secondPolygon = secondPolygons[0];
-  const firstInsideSecond = firstPolygon.every((point) => pointInPolygon(point, secondPolygon));
-  const secondInsideFirst = secondPolygon.every((point) => pointInPolygon(point, firstPolygon));
-  let result: Point[][];
-
-  if (operation === "union") {
-    result = firstInsideSecond
-      ? [secondPolygon]
-      : secondInsideFirst
-        ? [firstPolygon]
-        : [...firstPolygons, ...secondPolygons];
-  } else if (operation === "subtract") {
-    result = secondInsideFirst
-      ? [firstPolygon, secondPolygon.slice().reverse()]
-      : firstInsideSecond
-        ? []
-        : [firstPolygon];
-  } else if (operation === "intersect") {
-    // Unsupported partial overlap must not impersonate the first operand.
-    result = firstInsideSecond ? [firstPolygon] : secondInsideFirst ? [secondPolygon] : [];
-  } else {
-    result =
-      firstInsideSecond || secondInsideFirst
-        ? [firstPolygon, secondPolygon.slice().reverse()]
-        : [...firstPolygons, ...secondPolygons];
-  }
-
-  // Empty is a valid result (disjoint intersect, contained subtract). Never
-  // substitute the first operand — that silently damages artwork.
-  return polygonsToPathData(result);
+/** Load the curve kernel only when an explicit authoring operation needs it. */
+export async function booleanCombine(
+  operation: BooleanOp,
+  first: PathData,
+  second: PathData,
+  options: BooleanOptions = {},
+): Promise<PathData> {
+  if (!["union", "subtract", "intersect", "exclude"].includes(operation))
+    throw new Error("Choose a valid combine operation.");
+  const { combineCurveAreasAsync } = await import("./curveBooleanClient");
+  return combineCurveAreasAsync(operation, first, second, options);
 }
 
 export function isPointInFillRegion(point: Point, path: PathData): boolean {

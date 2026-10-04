@@ -46,7 +46,7 @@ function downloadContent(content: BlobPart, type: string, fileName: string) {
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export function useProjectExport() {
@@ -70,7 +70,7 @@ export function useProjectExport() {
       const blocking = exported.androidDiagnostics.filter(
         (diagnostic) => diagnostic.severity === "error",
       );
-      if (exportType === "avd" && blocking.length > 0) {
+      if ((exportType === "avd" || exportType === "vector") && blocking.length > 0) {
         toast.error("Android export needs attention", { description: blocking[0]!.message });
         return;
       }
@@ -85,17 +85,22 @@ export function useProjectExport() {
       const warnings = summarizeAndroidWarnings(exported.androidDiagnostics);
       if (warnings) {
         const warningLabel = warnings.count === 1 ? "warning" : "warnings";
-        toast.warning(`Exported ${exportType.toUpperCase()} with ${warnings.count} ${warningLabel}`, {
-          description:
-            exportType === "avd"
-              ? `${warnings.description} Full details are in SHAPESHIFTER_EXPORT.txt.`
-              : warnings.description,
-        });
+        toast.warning(
+          `Exported ${exportType.toUpperCase()} with ${warnings.count} ${warningLabel}`,
+          {
+            description:
+              exportType === "avd"
+                ? `${warnings.description} Full details are in SHAPESHIFTER_EXPORT.txt.`
+                : warnings.description,
+          },
+        );
         return;
       }
-      if (exported.staticDiagnostics.length) {
-        toast.warning("Static SVG exported with warning", {
-          description: exported.staticDiagnostics.map((diagnostic) => diagnostic.message).join(" "),
+      if (exported.staticDiagnostics.length || exported.formatDiagnostics.length) {
+        toast.warning(`${exportType.toUpperCase()} exported with warning`, {
+          description: [...exported.staticDiagnostics, ...exported.formatDiagnostics]
+            .map((diagnostic) => diagnostic.message)
+            .join(" "),
         });
         return;
       }

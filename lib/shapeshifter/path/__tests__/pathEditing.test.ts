@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { changeCommandType } from "../pathEditing";
+import { changeCommandType, translatePathPoints } from "../pathEditing";
 import { parsePath, pathToString } from "../pathDataIO";
 
 const roundTrip = (d: string) => pathToString(parsePath(d));
@@ -82,5 +82,83 @@ describe("changeCommandType", () => {
       const end = parsePath(d).subPaths[0].commands[1].points.at(-1)!;
       expect(end, `type ${type} endpoint`).toEqual({ x: 24, y: 26 });
     }
+  });
+});
+
+describe("anchor and tangent translation", () => {
+  const point = (commandIndex: number, pointIndex: number) => ({
+    subPathIndex: 0,
+    commandIndex,
+    pointIndex,
+  });
+  const curve = () => parsePath("M0 0 C3 0 7 0 10 0 C13 0 17 0 20 0");
+  it("moves both attached cubic handles while preserving unselected tangent offsets", () => {
+    const source = curve();
+    const moved = translatePathPoints(source, [point(1, 2)], 2, 3);
+    expect(moved.subPaths[0].commands[1].points).toEqual([
+      { x: 3, y: 0 },
+      { x: 9, y: 3 },
+      { x: 12, y: 3 },
+    ]);
+    expect(moved.subPaths[0].commands[2].points).toEqual([
+      { x: 15, y: 3 },
+      { x: 17, y: 0 },
+      { x: 20, y: 0 },
+    ]);
+    expect(source.subPaths[0].commands[1].points[2]).toEqual({ x: 10, y: 0 });
+  });
+  it("moves the first anchor's outgoing handle and leaves direct handle editing independent", () => {
+    const first = translatePathPoints(curve(), [point(0, 0)], 2, 3);
+    expect(first.subPaths[0].commands[1].points).toEqual([
+      { x: 5, y: 3 },
+      { x: 7, y: 0 },
+      { x: 10, y: 0 },
+    ]);
+    const control = translatePathPoints(curve(), [point(1, 0)], 2, 3);
+    expect(control.subPaths[0].commands[0].points[0]).toEqual({ x: 0, y: 0 });
+    expect(control.subPaths[0].commands[1].points).toEqual([
+      { x: 5, y: 3 },
+      { x: 7, y: 0 },
+      { x: 10, y: 0 },
+    ]);
+  });
+  it("deduplicates handles explicitly selected alongside their anchors and neighboring anchors", () => {
+    const moved = translatePathPoints(
+      curve(),
+      [point(0, 0), point(1, 2), point(1, 0), point(1, 1), point(2, 0), point(1, 2)],
+      2,
+      3,
+    );
+    expect(moved.subPaths[0].commands[1].points).toEqual([
+      { x: 5, y: 3 },
+      { x: 9, y: 3 },
+      { x: 12, y: 3 },
+    ]);
+    expect(moved.subPaths[0].commands[2].points[0]).toEqual({ x: 15, y: 3 });
+  });
+  it.each([0, 2])(
+    "keeps both copies of a closed curve's seam anchor and its handles together from command %s",
+    (index) => {
+      const closed = parsePath("M0 0 C3 0 7 0 10 0 C7 5 3 5 0 0 Z");
+      const moved = translatePathPoints(closed, [point(index, index === 0 ? 0 : 2)], 2, 3);
+      expect(moved.subPaths[0].commands[0].points[0]).toEqual({ x: 2, y: 3 });
+      expect(moved.subPaths[0].commands[1].points[0]).toEqual({ x: 5, y: 3 });
+      expect(moved.subPaths[0].commands[2].points[1]).toEqual({ x: 5, y: 8 });
+      expect(moved.subPaths[0].commands[2].points[2]).toEqual({ x: 2, y: 3 });
+    },
+  );
+  it("keeps a plain Z edge's previous anchor independent", () => {
+    const closed = parsePath("M0 0 C3 0 7 0 10 0 Z");
+    const moved = translatePathPoints(closed, [point(0, 0)], 2, 3);
+    expect(moved.subPaths[0].commands[1].points[1]).toEqual({ x: 7, y: 0 });
+    expect(moved.subPaths[0].commands[1].points[2]).toEqual({ x: 10, y: 0 });
+  });
+  it("translates a shared quadratic handle once when both endpoints are selected", () => {
+    const source = parsePath("M0 0 Q5 5 10 0");
+    const moved = translatePathPoints(source, [point(0, 0), point(1, 1)], 2, 3);
+    expect(moved.subPaths[0].commands[1].points).toEqual([
+      { x: 7, y: 8 },
+      { x: 12, y: 3 },
+    ]);
   });
 });

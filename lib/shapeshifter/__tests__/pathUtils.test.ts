@@ -571,63 +571,69 @@ describe("pathUtils", () => {
     });
   });
 
-  describe("booleanCombine (kbv real ops post-21g stub, DESIGN 67dd105e)", () => {
-    it("union on overlapping rects yields multiple subpaths (concat fallback for overlap)", () => {
+  describe("booleanCombine", () => {
+    it("traces one exterior for overlapping rectangles", async () => {
       const r1 = parsePath("M 0 0 L 10 0 L 10 10 L 0 10 Z");
       const r2 = parsePath("M 5 5 L 15 5 L 15 15 L 5 15 Z");
-      const res = booleanCombine("union", r1, r2);
-      expect(res.subPaths.length).toBeGreaterThanOrEqual(1);
-      // commands increased or preserved
+      const res = await booleanCombine("union", r1, r2);
+      expect(res.subPaths).toHaveLength(1);
       expect(countPathPoints(res)).toBeGreaterThan(4);
+      expect(isPointInFillRegion({ x: 2, y: 2 }, res)).toBe(true);
+      expect(isPointInFillRegion({ x: 7, y: 7 }, res)).toBe(true);
+      expect(isPointInFillRegion({ x: 12, y: 12 }, res)).toBe(true);
+      expect(isPointInFillRegion({ x: 12, y: 2 }, res)).toBe(false);
     });
 
-    it("subtract contained inner produces hole (2 subs, reverse inner)", () => {
+    it("subtracts a contained rectangle as a hole", async () => {
       const outer = parsePath("M 0 0 L 20 0 L 20 20 L 0 20 Z");
       const inner = parsePath("M 5 5 L 10 5 L 10 10 L 5 10 Z");
-      const res = booleanCombine("subtract", outer, inner);
-      expect(res.subPaths.length).toBe(2);
-      // outer has 5 cmds (M+4L+Z? wait Ls), inner reversed present
-      expect(res.subPaths[0].commands.length).toBeGreaterThan(4);
-      expect(res.subPaths[1].commands.length).toBeGreaterThan(4);
+      const res = await booleanCombine("subtract", outer, inner);
+      expect(res.subPaths).toHaveLength(2);
+      expect(isPointInFillRegion({ x: 2, y: 2 }, res)).toBe(true);
+      expect(isPointInFillRegion({ x: 7, y: 7 }, res)).toBe(false);
     });
 
-    it("intersect contained returns the inner", () => {
+    it("intersects a containing rectangle to the inner region", async () => {
       const outer = parsePath("M 0 0 L 20 0 L 20 20 L 0 20 Z");
       const inner = parsePath("M 5 5 L 10 5 L 10 10 L 5 10 Z");
-      const res = booleanCombine("intersect", outer, inner);
-      expect(res.subPaths.length).toBe(1);
-      // rough bbox inclusion check via point counts
-      expect(countPathPoints(res)).toBeLessThanOrEqual(countPathPoints(inner) + 2);
+      const res = await booleanCombine("intersect", outer, inner);
+      expect(res.subPaths).toHaveLength(1);
+      expect(isPointInFillRegion({ x: 7, y: 7 }, res)).toBe(true);
+      expect(isPointInFillRegion({ x: 2, y: 2 }, res)).toBe(false);
     });
 
-    it("exclude on contained yields ring-like (2 subs reversed)", () => {
+    it("excludes a contained rectangle as a ring", async () => {
       const outer = parsePath("M 0 0 L 20 0 L 20 20 L 0 20 Z");
       const inner = parsePath("M 5 5 L 10 5 L 10 10 L 5 10 Z");
-      const res = booleanCombine("exclude", outer, inner);
-      expect(res.subPaths.length).toBe(2);
+      const res = await booleanCombine("exclude", outer, inner);
+      expect(res.subPaths).toHaveLength(2);
+      expect(isPointInFillRegion({ x: 2, y: 2 }, res)).toBe(true);
+      expect(isPointInFillRegion({ x: 7, y: 7 }, res)).toBe(false);
+      expect(isPointInFillRegion({ x: 21, y: 2 }, res)).toBe(false);
     });
 
-    // vn7 k88 deep harden: edge coverage for booleans (self-intersect approx, complex overlap, precision)
-    it("union on self-intersect bowtie approx (current containment fallback)", () => {
-      // Self-intersect not fully resolved by containment; expect >=1 sub (no crash, safe)
+    it("resolves a self-intersecting bowtie into its filled lobes", async () => {
       const bow = parsePath("M 0 0 L 10 10 L 0 10 L 10 0 Z");
-      const res = booleanCombine("union", bow, bow);
-      expect(res.subPaths.length).toBeGreaterThanOrEqual(1);
+      const res = await booleanCombine("union", bow, bow);
+      expect(isPointInFillRegion({ x: 5, y: 2 }, res)).toBe(true);
+      expect(isPointInFillRegion({ x: 5, y: 8 }, res)).toBe(true);
+      expect(isPointInFillRegion({ x: 2, y: 5 }, res)).toBe(false);
     });
 
-    it("subtract on crossing overlap (complex boundary) stays conservative", () => {
+    it("returns empty when a containing diamond is subtracted from a square", async () => {
       const a = parsePath("M 0 0 L 10 0 L 10 10 L 0 10 Z");
-      const b = parsePath("M 5 -5 L 15 5 L 5 15 L -5 5 Z"); // crosses
-      const res = booleanCombine("subtract", a, b);
-      expect(res.subPaths.length).toBeGreaterThanOrEqual(1);
-      expect(countPathPoints(res)).toBeGreaterThan(0);
+      const b = parsePath("M 5 -5 L 15 5 L 5 15 L -5 5 Z");
+      const res = await booleanCombine("subtract", a, b);
+      expect(res.subPaths).toHaveLength(0);
     });
 
-    it("intersect precision near-boundary (float)", () => {
+    it("preserves fractional geometry near an intersection boundary", async () => {
       const outer = parsePath("M 0 0 L 20 0 L 20 20 L 0 20 Z");
       const inner = parsePath("M 5.0001 5.0001 L 10 5 L 10 10 L 5 10 Z");
-      const res = booleanCombine("intersect", outer, inner);
-      expect(res.subPaths.length).toBe(1);
+      const res = await booleanCombine("intersect", outer, inner);
+      expect(res.subPaths).toHaveLength(1);
+      expect(isPointInFillRegion({ x: 5.00015, y: 5.00015 }, res)).toBe(true);
+      expect(isPointInFillRegion({ x: 5.00002, y: 5.00015 }, res)).toBe(false);
     });
   });
 
@@ -660,17 +666,25 @@ describe("pathUtils", () => {
       expect(hit).not.toBeNull();
     });
 
-    it("collect long-path + boolean perf (simple RAF target proxy, <16ms target)", () => {
-      // Exercises projection/boolean paths + long data (perf coverage for lasso/knife on complex)
+    it("combines a long self-intersecting path with a disjoint rectangle", async () => {
       const long = parsePath(
         "M 0 0 " +
           Array.from({ length: 120 }, (_, i) => `L ${i % 40} ${Math.sin(i) * 5}`).join(" ") +
           " Z",
       );
-      const t0 = performance.now();
-      const _ = booleanCombine("union", long, parsePath("M 10 10 L 20 10 L 20 20 L 10 20 Z"));
-      const dt = performance.now() - t0;
-      expect(dt).toBeLessThan(50); // loose for CI; real 60fps in RAF path
+      const result = await booleanCombine(
+        "union",
+        long,
+        parsePath("M 10 10 L 20 10 L 20 20 L 10 20 Z"),
+      );
+      expect(isPointInFillRegion({ x: 15, y: 15 }, result)).toBe(true);
+      expect(
+        result.subPaths.every((subpath) =>
+          subpath.commands.every((command) =>
+            command.points.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y)),
+          ),
+        ),
+      ).toBe(true);
     });
   });
 

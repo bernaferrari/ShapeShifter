@@ -33,7 +33,16 @@ function NumberRowHarness({ kind }: { kind: "layer" | "vector" }) {
 function scrub(slider: Element, deltas: number[]) {
   React.act(() => {
     slider.dispatchEvent(
-      new PointerEvent("pointerdown", { bubbles: true, cancelable: true, clientX: 10, pointerId: 1 }),
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 10,
+        pointerId: 1,
+        button: 0,
+        buttons: 1,
+        isPrimary: true,
+        pointerType: "mouse",
+      }),
     );
   });
   for (const delta of deltas) {
@@ -44,6 +53,10 @@ function scrub(slider: Element, deltas: number[]) {
           cancelable: true,
           clientX: 10 + delta,
           pointerId: 1,
+          button: 0,
+          buttons: 1,
+          isPrimary: true,
+          pointerType: "mouse",
         }),
       );
     });
@@ -55,6 +68,9 @@ function scrub(slider: Element, deltas: number[]) {
         cancelable: true,
         clientX: 10 + deltas.at(-1)!,
         pointerId: 1,
+        button: 0,
+        isPrimary: true,
+        pointerType: "mouse",
       }),
     );
   });
@@ -105,5 +121,16 @@ describe("NumberRow history", () => {
       useEditorStore.getState().undo();
     });
     expect(useEditorStore.getState().vector.width).toBe(startWidth);
+  });
+
+  it("keeps the displayed value live when scrubbing a focused numeric field", () => {
+    const layer = useEditorStore.getState().layers[0]!;
+    useEditorStore.getState().selectLayer(layer.id);
+    rendered = renderEditorComponent(<NumberRowHarness kind="layer" />);
+    const input = rendered.container.querySelector("input")!;
+    React.act(() => input.focus());
+    scrub(rendered.container.querySelector('[role="slider"]')!, [10]);
+    expect(input.value).toBe(String(useEditorStore.getState().layers[0]!.translateX));
+    expect(useEditorStore.getState().historyGestureActive).toBe(false);
   });
 });

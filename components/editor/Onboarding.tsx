@@ -19,7 +19,7 @@ const TIPS: Tip[] = [
     title: "Pick a tool",
     body: (
       <>
-        The palette on the left holds Move, Pen, Lasso &amp; Paint. Press{" "}
+        The palette below holds Move, Vector, Pen, Lasso &amp; Paint. Press{" "}
         <kbd className="rounded bg-muted px-1 font-mono text-[10px]">V</kbd> /{" "}
         <kbd className="rounded bg-muted px-1 font-mono text-[10px]">P</kbd> to switch fast.
       </>
@@ -91,7 +91,7 @@ export function Onboarding() {
       role="dialog"
       aria-label="Getting started"
       className={cn(
-        "pointer-events-auto absolute bottom-4 right-4 z-40 w-72 rounded-xl border border-border bg-card/95 p-3.5 shadow-lg shadow-black/10 backdrop-blur-md",
+        "pointer-events-auto absolute bottom-16 right-4 z-40 w-72 max-w-[calc(100%-2rem)] rounded-xl border border-border bg-card/95 p-3.5 shadow-lg shadow-black/10 backdrop-blur-md",
         "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 dark:shadow-black/40",
       )}
     >

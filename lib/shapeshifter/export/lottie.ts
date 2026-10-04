@@ -1,10 +1,11 @@
-import { dominantColor } from "../gradients";
+import { dominantColor, normalizeStops } from "../gradients";
 import { arcToBeziers } from "../geometry";
 import { INTERPOLATOR_CURVES } from "../interpolators";
-import { numberAtTime } from "../playheadResolve";
+import { colorAtTime, numberAtTime, parseEditorColor } from "../playheadResolve";
 import { createLayerTreeModel } from "../scene/layerHierarchy";
 import type { AnimationState, Layer, PathData, TimelineBlock, VectorMetadata } from "../types";
 import { vectorCoordinateSize } from "../vectorSpace";
+import { normalizePathData, parsePath } from "../pathUtils";
 
 const LOTTIE_CANVAS_SIZE = 512;
 
@@ -29,15 +30,24 @@ function lottieProjection(
  * (converted to cubic via arcToBeziers), and line segments.
  */
 function hexToLottieRgba(hex: string, alpha = 1): [number, number, number, number] {
-  const m = hex.match(/^#?([0-9a-f]{3,8})$/i);
-  if (!m) return [0, 0, 0, alpha];
-  let h = m[1];
-  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
-  const r = parseInt(h.slice(0, 2), 16) / 255;
-  const g = parseInt(h.slice(2, 4), 16) / 255;
-  const b = parseInt(h.slice(4, 6), 16) / 255;
-  const embeddedAlpha = h.length >= 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1;
-  return [r, g, b, embeddedAlpha * alpha];
+  const color = parseEditorColor(hex);
+  if (!color) return [0, 0, 0, alpha];
+  return [color.r / 255, color.g / 255, color.b / 255, (color.a / 255) * alpha];
+}
+
+function paintAlpha(color: string, alpha = 1) {
+  return Math.max(0, Math.min(1, alpha * ((parseEditorColor(color)?.a ?? 255) / 255)));
+}
+
+function gradientAlpha(layer: Layer) {
+  if (!layer.fillGradient) return 1;
+  const color = dominantColor(layer.fillGradient);
+  return Math.max(
+    ...normalizeStops(layer.fillGradient.stops)
+      .filter((stop) => stop.color === color)
+      .map((stop) => stop.opacity ?? 1),
+    0,
+  );
 }
 
 export function exportLottie(
@@ -61,7 +71,7 @@ export function exportLottie(
     // disjoint outlines (donut rings, glyph counters) into a single polyline.
     const contours: { v: number[][]; i: number[][]; o: number[][]; c: boolean }[] = [];
 
-    for (const sp of path.subPaths) {
+    for (const sp of normalizePathData(path).subPaths) {
       const verts: number[][] = [];
       const inT: number[][] = [];
       const outT: number[][] = [];
@@ -194,21 +204,25 @@ export function exportLottie(
 
   // Additional contours are exported as extra animated shapes so every
   // subpath stays a separate closed/open outline in the composition.
-  const extraShapes = fromContours.slice(1).map((contour, index) => {
-    const toContour = toContours[index + 1] ?? fallbackContour();
-    padPair(contour, toContour);
-    return {
-      ty: "sh",
-      nm: `Path ${index + 2}`,
-      ks: {
-        a: 1,
-        k: [
-          { t: 0, s: [contour] },
-          { t: op, s: [toContour] },
-        ],
-      },
-    };
-  });
+  const extraShapes = Array.from(
+    { length: Math.max(fromContours.length, toContours.length) - 1 },
+    (_, index) => {
+      const contour = fromContours[index + 1] ?? fallbackContour();
+      const toContour = toContours[index + 1] ?? fallbackContour();
+      padPair(contour, toContour);
+      return {
+        ty: "sh",
+        nm: `Path ${index + 2}`,
+        ks: {
+          a: 1,
+          k: [
+            { t: 0, s: [contour], e: [structuredClone(toContour)], ...lottieBezier("LINEAR") },
+            { t: op, s: [toContour] },
+          ],
+        },
+      };
+    },
+  );
 
   return {
     v: "5.9.0",
@@ -227,11 +241,15 @@ export function exportLottie(
         ty: 4,
         nm: "Morph Shape",
         sr: 1,
+        ip: 0,
+        op,
+        st: 0,
         ks: {
           p: { a: 0, k: [projection.offsetX, projection.offsetY] },
           r: { a: 0, k: 0 },
           s: { a: 0, k: [100, 100] },
           o: { a: 0, k: 100 },
+          a: { a: 0, k: [0, 0] },
         },
         shapes: [
           {
@@ -244,18 +262,24 @@ export function exportLottie(
                 ks: {
                   a: 1,
                   k: [
-                    { t: 0, s: [fromShape] },
+                    {
+                      t: 0,
+                      s: [fromShape],
+                      e: [structuredClone(toShape)],
+                      ...lottieBezier("LINEAR"),
+                    },
                     { t: op, s: [toShape] },
                   ],
                 },
               },
               ...extraShapes,
-              ...(layer?.strokeColor
+              ...(layer?.strokeColor && layer.strokeColor !== "none" && (layer.strokeWidth ?? 2) > 0
                 ? [
                     {
                       ty: "st",
                       nm: "Stroke",
                       c: { a: 0, k: hexToLottieRgba(layer.strokeColor, layer.strokeAlpha ?? 1) },
+                      o: { a: 0, k: paintAlpha(layer.strokeColor, layer.strokeAlpha ?? 1) * 100 },
                       w: { a: 0, k: (layer.strokeWidth ?? 2) * sx },
                       lc:
                         layer.strokeLinecap === "round"
@@ -271,16 +295,19 @@ export function exportLottie(
                             : 1,
                     },
                   ]
-                : [
-                    {
-                      ty: "st",
-                      nm: "Stroke",
-                      c: { a: 0, k: [0.25, 0.45, 0.95, 1] },
-                      w: { a: 0, k: 5 },
-                      lc: 2,
-                      lj: 2,
-                    },
-                  ]),
+                : layer
+                  ? []
+                  : [
+                      {
+                        ty: "st",
+                        nm: "Stroke",
+                        c: { a: 0, k: [0.25, 0.45, 0.95, 1] },
+                        o: { a: 0, k: 100 },
+                        w: { a: 0, k: 5 },
+                        lc: 2,
+                        lj: 2,
+                      },
+                    ]),
               ...(layer?.fillGradient
                 ? [
                     // Lottie gradient fills are complex; approximate with the dominant stop.
@@ -288,31 +315,44 @@ export function exportLottie(
                       ty: "fl",
                       nm: "Fill",
                       c: { a: 0, k: hexToLottieRgba(dominantColor(layer.fillGradient), 1) },
-                      o: { a: 0, k: (layer.fillAlpha ?? 1) * 100 },
+                      o: {
+                        a: 0,
+                        k:
+                          paintAlpha(
+                            dominantColor(layer.fillGradient),
+                            (layer.fillAlpha ?? 1) * gradientAlpha(layer),
+                          ) * 100,
+                      },
+                      r: layer.fillType === "evenOdd" ? 2 : 1,
                     },
                   ]
-                : layer?.fillColor
+                : layer?.fillColor && layer.fillColor !== "none"
                   ? [
                       {
                         ty: "fl",
                         nm: "Fill",
                         c: { a: 0, k: hexToLottieRgba(layer.fillColor, 1) },
-                        o: { a: 0, k: (layer.fillAlpha ?? 1) * 100 },
+                        o: { a: 0, k: paintAlpha(layer.fillColor, layer.fillAlpha ?? 1) * 100 },
+                        r: layer.fillType === "evenOdd" ? 2 : 1,
                       },
                     ]
-                  : [
-                      {
-                        ty: "fl",
-                        nm: "Fill",
-                        c: { a: 0, k: [0.2, 0.35, 0.85, 0.15] },
-                        o: { a: 0, k: 100 },
-                      },
-                    ]),
+                  : layer
+                    ? []
+                    : [
+                        {
+                          ty: "fl",
+                          nm: "Fill",
+                          c: { a: 0, k: [0.2, 0.35, 0.85, 0.15] },
+                          o: { a: 0, k: 15 },
+                        },
+                      ]),
               {
                 ty: "tr",
                 p: { a: 0, k: [0, 0] },
                 r: { a: 0, k: 0 },
-                s: { a: 0, k: [1, 1] },
+                s: { a: 0, k: [100, 100] },
+                a: { a: 0, k: [0, 0] },
+                o: { a: 0, k: 100 },
               },
             ],
           },
@@ -324,13 +364,21 @@ export function exportLottie(
 
 function flattenLottieLayers(layers: Layer[]): Layer[] {
   const tree = createLayerTreeModel(layers);
+  const ordered: Layer[] = [];
+  const visit = (layer: Layer) => {
+    ordered.push(layer);
+    tree.childrenOf(layer).forEach(visit);
+  };
+  tree.roots.forEach(visit);
 
   // Documents are commonly stored as a flat layer list. Looking only at
   // `children` treats a flat child of a hidden group as a visible root, which
   // both leaks hidden artwork and loses the parent relationship in Lottie.
   // Normalize each item through the shared hierarchy model instead.
-  return tree.allLayers.flatMap((layer) => {
+  return ordered.flatMap((layer) => {
     const ancestors = tree.ancestorsOf(layer.id);
+    if (layer.visible === false || ancestors.some((ancestor) => ancestor.visible === false))
+      return [];
     if (layer.type === "clipPath") {
       // Lottie mattes need a separate track-matte layer pair this exporter
       // does not build; say so instead of silently unclipping the artwork.
@@ -339,13 +387,12 @@ function flattenLottieLayers(layers: Layer[]): Layer[] {
       );
       return [];
     }
+    const geometry = layer.pathData ?? layer.from;
     if (
-      !layer.from ||
-      layer.visible === false ||
-      ancestors.some((ancestor) => ancestor.visible === false)
-    ) {
+      !geometry ||
+      (layer.type === "path" && !geometry.subPaths.some((subPath) => subPath.commands.length > 0))
+    )
       return [];
-    }
 
     const parent = ancestors[0];
     return [{ ...layer, parentId: parent?.id ?? null }];
@@ -362,9 +409,8 @@ export interface LottieDocumentOptions {
 }
 
 function lottieBezier(interpolator?: string) {
-  const named = interpolator
-    ? INTERPOLATOR_CURVES[interpolator as keyof typeof INTERPOLATOR_CURVES]
-    : undefined;
+  const resolved = interpolator || "ACCELERATE_DECELERATE";
+  const named = INTERPOLATOR_CURVES[resolved as keyof typeof INTERPOLATOR_CURVES];
   const values = named ?? interpolator?.match(/[-+]?(?:\d*\.)?\d+/g)?.map(Number);
   if (!values || values.length < 4) return undefined;
   const [x1, y1, x2, y2] = values;
@@ -396,19 +442,31 @@ function numberAnimation(
   };
   return {
     a: 1,
-    k: [
-      ...blocks.map((block) => ({
-        t: Math.max(0, block.startTime * millisecondsToFrame),
-        s: [transform(number(block.fromValue, initial))],
-        e: [transform(number(block.toValue, initial))],
-        ...lottieBezier(block.interpolator),
-      })),
-      {
-        t: Math.max(0, blocks.at(-1)!.endTime * millisecondsToFrame),
-        s: [transform(number(blocks.at(-1)!.toValue, initial))],
-      },
-    ],
-  } as any;
+    k: segmentKeyframes(blocks, millisecondsToFrame, (value) => [
+      transform(number(value, initial)),
+    ]),
+  };
+}
+
+/** A completed animator holds during gaps; each authored endpoint gets its own keyframe. */
+function segmentKeyframes(
+  blocks: TimelineBlock[],
+  millisecondsToFrame: number,
+  value: (source: string | number) => unknown[],
+) {
+  const keys = new Map<number, Record<string, unknown>>();
+  for (const block of blocks) {
+    const start = Math.max(0, block.startTime * millisecondsToFrame);
+    const end = Math.max(start, block.endTime * millisecondsToFrame);
+    keys.set(start, {
+      t: start,
+      s: value(block.fromValue),
+      e: value(block.toValue),
+      ...lottieBezier(block.interpolator),
+    });
+    keys.set(end, { t: end, s: value(block.toValue), h: 1 });
+  }
+  return [...keys.values()].sort((left, right) => Number(left.t) - Number(right.t));
 }
 
 /**
@@ -422,6 +480,7 @@ function scaleAnimation(
   yBlocks: TimelineBlock[],
   initialXPercent: number,
   initialYPercent: number,
+  millisecondsToFrame: number,
 ): { a: 0 | 1; k: [number, number] | Array<Record<string, unknown>> } {
   if (!xBlocks.length && !yBlocks.length) return { a: 0, k: [initialXPercent, initialYPercent] };
 
@@ -461,12 +520,13 @@ function scaleAnimation(
     a: 1,
     k: [
       ...times.slice(0, -1).map((t, index) => ({
-        t,
-        s: [samples[index]],
-        e: [samples[index + 1]],
+        t: t * millisecondsToFrame,
+        s: samples[index],
+        e: samples[index + 1],
         ...easingAt(t),
+        ...(!blocks.some((block) => block.startTime <= t && t < block.endTime) ? { h: 1 } : {}),
       })),
-      { t: times.at(-1)!, s: [samples.at(-1)!] },
+      { t: times.at(-1)! * millisecondsToFrame, s: samples.at(-1)! },
     ],
   };
 }
@@ -480,18 +540,69 @@ function colorAnimation(
   if (!blocks.length) return { a: 0, k: hexToLottieRgba(initial, alpha) };
   return {
     a: 1,
-    k: [
-      ...blocks.map((block) => ({
-        t: Math.max(0, block.startTime * millisecondsToFrame),
-        s: [hexToLottieRgba(String(block.fromValue), alpha)],
-        e: [hexToLottieRgba(String(block.toValue), alpha)],
-        ...lottieBezier(block.interpolator),
-      })),
-      {
-        t: Math.max(0, blocks.at(-1)!.endTime * millisecondsToFrame),
-        s: [hexToLottieRgba(String(blocks.at(-1)!.toValue), alpha)],
-      },
-    ],
+    k: segmentKeyframes(blocks, millisecondsToFrame, (value) =>
+      hexToLottieRgba(String(value), alpha),
+    ),
+  };
+}
+
+/** Lottie color alpha is ignored by players; transparency belongs on the paint opacity. */
+function styleOpacity(
+  layer: Layer,
+  animation: AnimationState | undefined,
+  kind: "fill" | "stroke",
+  millisecondsToFrame: number,
+) {
+  const alphaProperty = `${kind}Alpha`;
+  const colorProperty = `${kind}Color`;
+  const alphaBlocks = blocksFor(animation, layer.id, alphaProperty);
+  const colorBlocks =
+    kind === "fill" && layer.fillGradient ? [] : blocksFor(animation, layer.id, colorProperty);
+  const color =
+    kind === "fill" && layer.fillGradient
+      ? dominantColor(layer.fillGradient)
+      : (layer[kind === "fill" ? "fillColor" : "strokeColor"] ?? "transparent");
+  const stopAlpha = kind === "fill" ? gradientAlpha(layer) : 1;
+  const alpha = layer[kind === "fill" ? "fillAlpha" : "strokeAlpha"] ?? 1;
+  if (!colorBlocks.length)
+    return numberAnimation(
+      alphaBlocks,
+      paintAlpha(color, alpha * stopAlpha) * 100,
+      millisecondsToFrame,
+      (value) => paintAlpha(color, value * stopAlpha) * 100,
+    );
+  if (!alphaBlocks.length)
+    return {
+      a: 1,
+      k: segmentKeyframes(colorBlocks, millisecondsToFrame, (value) => [
+        paintAlpha(String(value), alpha * stopAlpha) * 100,
+      ]),
+    };
+
+  // The product of independent alpha curves is not itself a cubic Bézier.
+  // Sample it at output-frame boundaries through the shared scene evaluator.
+  const lastMs = Math.max(...[...alphaBlocks, ...colorBlocks].map((block) => block.endTime));
+  const times = new Set<number>([0, lastMs * millisecondsToFrame]);
+  for (let frame = 1; frame < lastMs * millisecondsToFrame; frame++) times.add(frame);
+  for (const block of [...alphaBlocks, ...colorBlocks]) {
+    times.add(block.startTime * millisecondsToFrame);
+    times.add(block.endTime * millisecondsToFrame);
+  }
+  const samples = [...times]
+    .sort((a, b) => a - b)
+    .map((frame) => {
+      const ms = frame / millisecondsToFrame;
+      const evaluatedAlpha = numberAtTime(layer, alphaBlocks, alphaProperty, ms, lastMs, alpha);
+      const evaluatedColor = colorAtTime(layer, colorBlocks, colorProperty, ms, lastMs, color);
+      return { t: frame, s: [paintAlpha(evaluatedColor, evaluatedAlpha * stopAlpha) * 100] };
+    });
+  return {
+    a: 1,
+    k: samples.map((sample, index) =>
+      index === samples.length - 1
+        ? sample
+        : { ...sample, e: samples[index + 1].s, ...lottieBezier("LINEAR") },
+    ),
   };
 }
 
@@ -510,17 +621,18 @@ export function exportLottieDocument(
       ? options
       : (options.duration ?? Math.max(0.001, (sourceAnimation?.duration ?? 1200) / 1000));
   const sourceVector = typeof options === "number" ? undefined : options.vector;
+  const tree = createLayerTreeModel(layers);
   const projection = lottieProjection(sourceVector);
   const exportableLayers = flattenLottieLayers(layers);
   const emptyPath: PathData = { subPaths: [{ commands: [] }] };
 
   if (exportableLayers.length === 0) {
-    return exportLottie(emptyPath, emptyPath, name, duration);
+    return { ...exportLottie(emptyPath, emptyPath, name, duration), layers: [] };
   }
 
   const base = exportLottie(
-    exportableLayers[0].from,
-    exportableLayers[0].to ?? exportableLayers[0].from,
+    exportableLayers[0].pathData ?? exportableLayers[0].from,
+    exportableLayers[0].to ?? exportableLayers[0].pathData ?? exportableLayers[0].from,
     name,
     duration,
     exportableLayers[0],
@@ -534,118 +646,274 @@ export function exportLottieDocument(
   return {
     ...base,
     nm: name,
-    layers: exportableLayers.map((layer, index) => {
-      const parentIndex = layer.parentId == null ? undefined : indices.get(String(layer.parentId));
-      const isGroup = layer.type === "group" || layer.type === "vector";
-      const single = exportLottie(
-        layer.from,
-        layer.to ?? layer.from,
-        layer.name,
-        duration,
-        layer,
-        sourceVector,
-      ).layers[0];
-      const rootOffset = parentIndex == null ? [projection.offsetX, projection.offsetY] : [0, 0];
-      const translateX = layer.translateX ?? 0;
-      const translateY = layer.translateY ?? 0;
-      const translateXBlocks = blocksFor(sourceAnimation, layer.id, "translateX");
-      const translateYBlocks = blocksFor(sourceAnimation, layer.id, "translateY");
-      const shapes = isGroup
-        ? []
-        : single.shapes.map((shape: { ty?: string; it?: Array<Record<string, unknown>> }) =>
-            shape.ty !== "gr" || !shape.it
-              ? shape
-              : {
-                  ...shape,
-                  it: shape.it.map((item) => {
-                    if (item.ty === "fl") {
-                      return {
-                        ...item,
-                        c: colorAnimation(
-                          blocksFor(sourceAnimation, layer.id, "fillColor"),
-                          layer.fillColor ?? "#00000000",
-                          1,
-                          millisecondsToFrame,
-                        ),
-                        o: numberAnimation(
-                          blocksFor(sourceAnimation, layer.id, "fillAlpha"),
-                          (layer.fillAlpha ?? 1) * 100,
-                          millisecondsToFrame,
-                          (value) => value * 100,
-                        ),
-                      };
-                    }
-                    if (item.ty === "st") {
-                      return {
-                        ...item,
-                        c: colorAnimation(
-                          blocksFor(sourceAnimation, layer.id, "strokeColor"),
-                          layer.strokeColor ?? "#00000000",
-                          1,
-                          millisecondsToFrame,
-                        ),
-                        o: numberAnimation(
-                          blocksFor(sourceAnimation, layer.id, "strokeAlpha"),
-                          (layer.strokeAlpha ?? 1) * 100,
-                          millisecondsToFrame,
-                          (value) => value * 100,
-                        ),
-                      };
-                    }
-                    return item;
+    layers: exportableLayers
+      .map((layer, index) => {
+        const parentIndex =
+          layer.parentId == null ? undefined : indices.get(String(layer.parentId));
+        const isGroup = layer.type === "group" || layer.type === "vector";
+        const single = exportLottie(
+          layer.pathData ?? layer.from,
+          layer.to ?? layer.pathData ?? layer.from,
+          layer.name,
+          duration,
+          layer,
+          sourceVector,
+        ).layers[0];
+        const rootOffset = parentIndex == null ? [projection.offsetX, projection.offsetY] : [0, 0];
+        const translateX = layer.translateX ?? 0;
+        const translateY = layer.translateY ?? 0;
+        const pivotX = layer.pivotX ?? 0;
+        const pivotY = layer.pivotY ?? 0;
+        const inheritedOpacity =
+          (sourceVector?.alpha ?? 1) *
+          tree
+            .ancestorsOf(layer.id)
+            .reduce((opacity, ancestor) => opacity * (ancestor.alpha ?? 1), 1);
+        const translateXBlocks = blocksFor(sourceAnimation, layer.id, "translateX");
+        const translateYBlocks = blocksFor(sourceAnimation, layer.id, "translateY");
+        const pathBlocks = blocksFor(sourceAnimation, layer.id, "pathData");
+        const blockShapes = pathBlocks.map((block) =>
+          exportLottie(
+            parsePath(String(block.fromValue)),
+            parsePath(String(block.toValue)),
+            layer.name,
+            duration,
+            layer,
+            sourceVector,
+          ).layers[0].shapes[0].it.filter((item: { ty: string }) => item.ty === "sh"),
+        );
+        const shapes = isGroup
+          ? []
+          : single.shapes.map((shape: { ty?: string; it?: Array<Record<string, unknown>> }) =>
+              shape.ty !== "gr" || !shape.it
+                ? shape
+                : {
+                    ...shape,
+                    it: shape.it.map((item, shapeIndex) => {
+                      if (item.ty === "sh" && pathBlocks.length) {
+                        const keysByTime = new Map<number, Record<string, unknown>>();
+                        pathBlocks.forEach((block, blockIndex) => {
+                          const keys = blockShapes[blockIndex][shapeIndex]?.ks?.k;
+                          if (!keys) return;
+                          const start = block.startTime * millisecondsToFrame;
+                          const end = block.endTime * millisecondsToFrame;
+                          keysByTime.set(start, {
+                            t: start,
+                            s: keys[0].s,
+                            e: structuredClone(keys[1].s),
+                            ...lottieBezier(block.interpolator),
+                          });
+                          keysByTime.set(end, { t: end, s: keys[1].s, h: 1 });
+                        });
+                        return {
+                          ...item,
+                          ks: {
+                            a: 1,
+                            k: [...keysByTime.values()].sort(
+                              (left, right) => Number(left.t) - Number(right.t),
+                            ),
+                          },
+                        };
+                      }
+                      if (item.ty === "fl") {
+                        return {
+                          ...item,
+                          c: colorAnimation(
+                            layer.fillGradient
+                              ? []
+                              : blocksFor(sourceAnimation, layer.id, "fillColor"),
+                            layer.fillGradient
+                              ? dominantColor(layer.fillGradient)
+                              : (layer.fillColor ?? "#00000000"),
+                            1,
+                            millisecondsToFrame,
+                          ),
+                          o: styleOpacity(layer, sourceAnimation, "fill", millisecondsToFrame),
+                        };
+                      }
+                      if (item.ty === "st") {
+                        return {
+                          ...item,
+                          c: colorAnimation(
+                            blocksFor(sourceAnimation, layer.id, "strokeColor"),
+                            layer.strokeColor ?? "#00000000",
+                            1,
+                            millisecondsToFrame,
+                          ),
+                          o: styleOpacity(layer, sourceAnimation, "stroke", millisecondsToFrame),
+                        };
+                      }
+                      return item;
+                    }),
+                  },
+            );
+        return {
+          ...single,
+          ind: index + 1,
+          nm: layer.name,
+          ...(parentIndex != null ? { parent: parentIndex } : {}),
+          ...(isGroup ? { ty: 3, shapes: [] } : { shapes }),
+          ks: {
+            ...single.ks,
+            p: {
+              a: translateXBlocks.length || translateYBlocks.length ? 1 : 0,
+              ...(translateXBlocks.length || translateYBlocks.length
+                ? {
+                    s: true,
+                    x: numberAnimation(
+                      translateXBlocks,
+                      rootOffset[0] + (translateX + pivotX) * sx,
+                      millisecondsToFrame,
+                      (value) => rootOffset[0] + (value + pivotX) * sx,
+                    ),
+                    y: numberAnimation(
+                      translateYBlocks,
+                      rootOffset[1] + (translateY + pivotY) * sy,
+                      millisecondsToFrame,
+                      (value) => rootOffset[1] + (value + pivotY) * sy,
+                    ),
+                  }
+                : {
+                    k: [
+                      rootOffset[0] + (translateX + pivotX) * sx,
+                      rootOffset[1] + (translateY + pivotY) * sy,
+                    ],
                   }),
-                },
-          );
-      return {
-        ...single,
-        ind: index + 1,
-        nm: layer.name,
-        ...(parentIndex != null ? { parent: parentIndex } : {}),
-        ...(isGroup ? { ty: 3, shapes: [] } : { shapes }),
-        ks: {
-          ...single.ks,
-          p: {
-            a: translateXBlocks.length || translateYBlocks.length ? 1 : 0,
-            ...(translateXBlocks.length || translateYBlocks.length
-              ? {
-                  s: true,
-                  x: numberAnimation(
-                    translateXBlocks,
-                    rootOffset[0] + translateX * sx,
-                    millisecondsToFrame,
-                    (value) => rootOffset[0] + value * sx,
-                  ),
-                  y: numberAnimation(
-                    translateYBlocks,
-                    rootOffset[1] + translateY * sy,
-                    millisecondsToFrame,
-                    (value) => rootOffset[1] + value * sy,
-                  ),
-                }
-              : { k: [rootOffset[0] + translateX * sx, rootOffset[1] + translateY * sy] }),
+            },
+            a: { a: 0, k: [pivotX * sx, pivotY * sy] },
+            r: numberAnimation(
+              blocksFor(sourceAnimation, layer.id, "rotation"),
+              layer.rotation ?? 0,
+              millisecondsToFrame,
+            ),
+            s: scaleAnimation(
+              blocksFor(sourceAnimation, layer.id, "scaleX"),
+              blocksFor(sourceAnimation, layer.id, "scaleY"),
+              (layer.scaleX ?? 1) * 100,
+              (layer.scaleY ?? 1) * 100,
+              millisecondsToFrame,
+            ),
+            o: numberAnimation(
+              blocksFor(sourceAnimation, layer.id, "alpha"),
+              (layer.alpha ?? 1) * 100 * inheritedOpacity,
+              millisecondsToFrame,
+              (value) => value * 100 * inheritedOpacity,
+            ),
           },
-          a: { a: 0, k: [(layer.pivotX ?? 0) * sx, (layer.pivotY ?? 0) * sy] },
-          r: numberAnimation(
-            blocksFor(sourceAnimation, layer.id, "rotation"),
-            layer.rotation ?? 0,
-            millisecondsToFrame,
-          ),
-          s: scaleAnimation(
-            blocksFor(sourceAnimation, layer.id, "scaleX"),
-            blocksFor(sourceAnimation, layer.id, "scaleY"),
-            (layer.scaleX ?? 1) * 100,
-            (layer.scaleY ?? 1) * 100,
-          ),
-          o: numberAnimation(
-            blocksFor(sourceAnimation, layer.id, "alpha"),
-            (layer.alpha ?? 1) * 100,
-            millisecondsToFrame,
-            (value) => value * 100,
-          ),
-        },
-      };
-    }),
+        };
+      })
+      .reverse(),
   };
+}
+
+export interface LottieExportDiagnostic {
+  severity: "warning";
+  code: string;
+  layerId?: string | number;
+  propertyName?: string;
+  message: string;
+}
+
+/** Returns document-specific fidelity warnings alongside the interoperable JSON. */
+export function exportLottieDocumentWithDiagnostics(
+  layers: Layer[],
+  name: string,
+  options: number | LottieDocumentOptions = 1.2,
+) {
+  const tree = createLayerTreeModel(layers);
+  const diagnostics: LottieExportDiagnostic[] = [];
+  const animation = typeof options === "number" ? undefined : options.animation;
+  const visible = new Set(
+    tree.allLayers
+      .filter(
+        (layer) =>
+          layer.visible !== false &&
+          tree.ancestorsOf(layer.id).every((ancestor) => ancestor.visible !== false),
+      )
+      .map((layer) => String(layer.id)),
+  );
+  for (const layer of tree.allLayers) {
+    if (!visible.has(String(layer.id))) continue;
+    if (layer.type === "clipPath")
+      diagnostics.push({
+        severity: "warning",
+        code: "CLIPPING_UNSUPPORTED",
+        layerId: layer.id,
+        message: `Lottie omits clip path "${layer.name}"; clipped artwork may appear outside its mask.`,
+      });
+    if (layer.fillGradient)
+      diagnostics.push({
+        severity: "warning",
+        code: "GRADIENT_APPROXIMATED",
+        layerId: layer.id,
+        message: `Lottie replaces the gradient on "${layer.name}" with a representative solid color.`,
+      });
+    if ((layer.trimPathStart ?? 0) !== 0 || (layer.trimPathEnd ?? 1) !== 1)
+      diagnostics.push({
+        severity: "warning",
+        code: "TRIM_UNSUPPORTED",
+        layerId: layer.id,
+        message: `Lottie omits the static trim path on "${layer.name}".`,
+      });
+  }
+  const supported = new Set([
+    "pathData",
+    "translateX",
+    "translateY",
+    "rotation",
+    "scaleX",
+    "scaleY",
+    "alpha",
+    "fillColor",
+    "strokeColor",
+    "fillAlpha",
+    "strokeAlpha",
+  ]);
+  for (const block of animation?.blocks ?? []) {
+    if (!visible.has(String(block.layerId))) continue;
+    const layer = tree.allLayers.find(
+      (candidate) => String(candidate.id) === String(block.layerId),
+    );
+    if (
+      !supported.has(block.propertyName) ||
+      (block.propertyName === "alpha" && (layer?.type === "group" || layer?.type === "vector")) ||
+      (block.propertyName === "fillColor" && layer?.fillGradient)
+    )
+      diagnostics.push({
+        severity: "warning",
+        code: "TRACK_UNSUPPORTED",
+        layerId: block.layerId,
+        propertyName: block.propertyName,
+        message: `Lottie omits ${block.propertyName} animation on "${layer?.name ?? block.layerId}".`,
+      });
+    else if (!block.interpolator || block.interpolator === "ACCELERATE_DECELERATE")
+      diagnostics.push({
+        severity: "warning",
+        code: "EASING_APPROXIMATED",
+        layerId: block.layerId,
+        propertyName: block.propertyName,
+        message: `Lottie approximates Android's cosine easing on "${layer?.name ?? block.layerId}" with a cubic Bézier.`,
+      });
+  }
+  if (
+    typeof options !== "number" &&
+    (options.vector?.alpha ?? 1) !== 1 &&
+    tree.allLayers.filter((layer) => layer.type === "path" && visible.has(String(layer.id)))
+      .length > 1
+  )
+    diagnostics.push({
+      severity: "warning",
+      code: "ROOT_ALPHA_APPROXIMATED",
+      message:
+        "Lottie applies drawable alpha to each layer; overlapping translucent artwork may differ from Android's whole-drawable compositing.",
+    });
+  if (typeof options !== "number" && options.vector?.tint)
+    diagnostics.push({
+      severity: "warning",
+      code: "ROOT_TINT_UNSUPPORTED",
+      message: "Lottie omits the Android drawable tint.",
+    });
+  return { lottie: exportLottieDocument(layers, name, options), diagnostics };
 }
 
 export function downloadLottie(from: PathData, to: PathData, layerName: string, layer?: Layer) {

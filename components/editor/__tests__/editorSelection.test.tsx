@@ -89,6 +89,7 @@ describe("editor selection contracts", () => {
     expect(block).toBeDefined();
     expect(state.selectedBlockIds).toEqual([block!.id]);
     expect(state.timelineCollapsed).toBe(false);
+    expect(buttonWithText(rendered.container, "motion").getAttribute("aria-selected")).toBe("true");
   });
 
   it("removes an active transform animation from its keyframe control", () => {

@@ -12,6 +12,15 @@ import {
   RotateCw,
   Waypoints,
   Zap,
+  Scissors,
+  Undo2,
+  Redo2,
+  Upload,
+  Maximize,
+  PanelLeft,
+  PanelRight,
+  PanelBottom,
+  FolderPlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -43,8 +52,10 @@ const SHORTCUT_SECTIONS = [
       ["V", "Move / Select"],
       ["A / D", "Vector / Direct"],
       ["P", "Pen"],
+      ["R / O", "Rectangle / Ellipse"],
       ["L", "Lasso"],
       ["B", "Paint / Fill"],
+      ["K", "Add point"],
     ],
   },
   {
@@ -57,6 +68,7 @@ const SHORTCUT_SECTIONS = [
       ["X", "Split command"],
       ["Delete / ⌫", "Remove selected points"],
       ["Arrows (+Shift)", "Nudge fine / coarse"],
+      ["⌘D / Ctrl+D", "Duplicate selected layers"],
     ],
   },
   {
@@ -68,6 +80,8 @@ const SHORTCUT_SECTIONS = [
       ["⇧1 / ⇧2", "Fit all / Fit selection"],
       ["Esc / Enter", "Clear selection / finish pen path"],
       ["⌘W", "Close Action Mode"],
+      ["Alt + timeline drag", "Adjust timing in milliseconds"],
+      ["Layer arrows / F2", "Navigate layers / Rename"],
     ],
   },
 ] as const;
@@ -130,6 +144,11 @@ interface EditorCommandPaletteProps {
   onOpenHelp: () => void;
   onLoadSample: (index: number) => void;
   onExport: (type: EditorExportType) => void;
+  onOpenImport: () => void;
+  onToggleLayers: () => void;
+  onToggleInspector: () => void;
+  onToggleTimeline: () => void;
+  onResetViews: () => void;
 }
 
 export function EditorCommandPalette({
@@ -138,16 +157,24 @@ export function EditorCommandPalette({
   onOpenHelp,
   onLoadSample,
   onExport,
+  onOpenImport,
+  onToggleLayers,
+  onToggleInspector,
+  onToggleTimeline,
+  onResetViews,
 }: EditorCommandPaletteProps) {
+  const canUndo = useEditorStore((state) => state.canUndo);
+  const canRedo = useEditorStore((state) => state.canRedo);
+  const hasSelection = useEditorStore(
+    (state) => state.selectionKind === "layer" && state.hasCanvasSelection,
+  );
+  const isPlaying = useEditorStore((state) => state.isPlaying);
   const run = (action: () => void) => {
     action();
     onOpenChange(false);
   };
-  const setTool = (tool: "select" | "pen" | "direct" | "pencil" | "paint", message: string) =>
-    run(() => {
-      useEditorStore.getState().setToolMode(tool);
-      toast.success(message);
-    });
+  const setTool = (tool: "select" | "pen" | "direct" | "pencil" | "paint" | "knife") =>
+    run(() => useEditorStore.getState().setToolMode(tool));
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
@@ -155,25 +182,76 @@ export function EditorCommandPalette({
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
         <CommandGroup heading="Tools">
-          <CommandItem onSelect={() => setTool("select", "Move / Select tool")}>
+          <CommandItem onSelect={() => setTool("select")}>
             <MousePointer2 className="mr-2 size-4" /> Move / Select
             <CommandShortcut>V</CommandShortcut>
           </CommandItem>
-          <CommandItem onSelect={() => setTool("pen", "Pen tool selected")}>
+          <CommandItem onSelect={() => setTool("pen")}>
             <PenTool className="mr-2 size-4" /> Pen
             <CommandShortcut>P</CommandShortcut>
           </CommandItem>
-          <CommandItem onSelect={() => setTool("direct", "Direct tool selected")}>
-            <Waypoints className="mr-2 size-4" /> Direct / Bend
-            <CommandShortcut>D</CommandShortcut>
+          <CommandItem
+            keywords={["direct", "anchor", "bezier", "points"]}
+            onSelect={() => setTool("direct")}
+          >
+            <Waypoints className="mr-2 size-4" /> Vector / Edit points
+            <CommandShortcut>A</CommandShortcut>
           </CommandItem>
-          <CommandItem onSelect={() => setTool("pencil", "Lasso tool selected")}>
+          <CommandItem onSelect={() => setTool("pencil")}>
             <Lasso className="mr-2 size-4" /> Lasso
             <CommandShortcut>L</CommandShortcut>
           </CommandItem>
-          <CommandItem onSelect={() => setTool("paint", "Paint tool selected")}>
+          <CommandItem onSelect={() => setTool("paint")}>
             <PaintBucket className="mr-2 size-4" /> Paint / Fill
             <CommandShortcut>B</CommandShortcut>
+          </CommandItem>
+          <CommandItem onSelect={() => setTool("knife")}>
+            <Scissors className="mr-2 size-4" /> Add point
+            <CommandShortcut>K</CommandShortcut>
+          </CommandItem>
+        </CommandGroup>
+        <CommandGroup heading="Document">
+          <CommandItem onSelect={() => run(onOpenImport)}>
+            <Upload className="mr-2 size-4" /> Import SVG, XML, or project…
+          </CommandItem>
+          <CommandItem
+            disabled={!canUndo}
+            onSelect={() => run(() => useEditorStore.getState().undo())}
+          >
+            <Undo2 className="mr-2 size-4" /> Undo<CommandShortcut>⌘Z</CommandShortcut>
+          </CommandItem>
+          <CommandItem
+            disabled={!canRedo}
+            onSelect={() => run(() => useEditorStore.getState().redo())}
+          >
+            <Redo2 className="mr-2 size-4" /> Redo<CommandShortcut>⇧⌘Z</CommandShortcut>
+          </CommandItem>
+          <CommandItem
+            disabled={!hasSelection}
+            onSelect={() =>
+              run(() => {
+                const store = useEditorStore.getState();
+                store.copyLayers(
+                  store.selectedLayerIds.length ? store.selectedLayerIds : [store.selectedLayerId],
+                );
+                store.pasteLayers();
+              })
+            }
+          >
+            Duplicate selected layers<CommandShortcut>⌘D</CommandShortcut>
+          </CommandItem>
+          <CommandItem
+            disabled={!hasSelection}
+            onSelect={() => run(() => useEditorStore.getState().groupSelectedLayers())}
+          >
+            <FolderPlus className="mr-2 size-4" /> Group selected layers
+            <CommandShortcut>⌘G</CommandShortcut>
+          </CommandItem>
+          <CommandItem
+            disabled={!hasSelection}
+            onSelect={() => run(() => useEditorStore.getState().ungroupSelectedLayer())}
+          >
+            Ungroup selected layer<CommandShortcut>⇧⌘G</CommandShortcut>
           </CommandItem>
         </CommandGroup>
         <CommandGroup heading="Actions">
@@ -186,22 +264,37 @@ export function EditorCommandPalette({
             <HelpCircle className="mr-2 size-4" /> Show keyboard shortcuts
           </CommandItem>
           <CommandItem onSelect={() => run(() => useEditorStore.getState().togglePlayback())}>
-            <Play className="mr-2 size-4" /> Toggle playback
+            <Play className="mr-2 size-4" /> {isPlaying ? "Pause animation" : "Play animation"}
             <CommandShortcut>Space</CommandShortcut>
           </CommandItem>
-          <CommandItem onSelect={() => run(() => useEditorStore.getState().autoFixSelectedLayer())}>
-            <Zap className="mr-2 size-4" /> Auto Fix
+          <CommandItem
+            disabled={!hasSelection}
+            onSelect={() =>
+              run(() => {
+                const store = useEditorStore.getState();
+                if (store.previewPrepareForMorph())
+                  toast.message("Review the morph in the inspector, then Apply or Cancel");
+                else if (store.autoFixSelectedLayer()) toast.success("Paths made compatible");
+              })
+            }
+          >
+            <Zap className="mr-2 size-4" /> Prepare paths for morph
             <CommandShortcut>⇧F</CommandShortcut>
           </CommandItem>
-          <CommandItem onSelect={() => run(() => useEditorStore.getState().reverseSelectedLayer())}>
+          <CommandItem
+            disabled={!hasSelection}
+            onSelect={() => run(() => useEditorStore.getState().reverseSelectedLayer())}
+          >
             <RotateCw className="mr-2 size-4" /> Reverse path
             <CommandShortcut>⇧R</CommandShortcut>
           </CommandItem>
-          <CommandItem onSelect={() => run(() => useEditorStore.getState().shiftSelectedLayer(1))}>
+          <CommandItem
+            disabled={!hasSelection}
+            onSelect={() => run(() => useEditorStore.getState().shiftSelectedLayer(1))}
+          >
             <ArrowLeftRight className="mr-2 size-4" /> Shift points
             <CommandShortcut>⇧S</CommandShortcut>
           </CommandItem>
-          <CommandItem disabled>Union selected layers (unavailable)</CommandItem>
           <CommandItem
             onSelect={() =>
               run(() => {
@@ -225,8 +318,23 @@ export function EditorCommandPalette({
             Clear timeline block selection
           </CommandItem>
         </CommandGroup>
-        <CommandGroup heading="Recent">
-          {DEMO_INFOS.slice(0, 4).map((demo, index) => (
+        <CommandGroup heading="View">
+          <CommandItem onSelect={() => run(() => useEditorStore.getState().fitWorldToFrames())}>
+            <Maximize className="mr-2 size-4" /> Fit all frames<CommandShortcut>⇧1</CommandShortcut>
+          </CommandItem>
+          <CommandItem onSelect={() => run(onResetViews)}>Reset canvas views</CommandItem>
+          <CommandItem onSelect={() => run(onToggleLayers)}>
+            <PanelLeft className="mr-2 size-4" /> Toggle layers panel
+          </CommandItem>
+          <CommandItem onSelect={() => run(onToggleInspector)}>
+            <PanelRight className="mr-2 size-4" /> Toggle inspector
+          </CommandItem>
+          <CommandItem onSelect={() => run(onToggleTimeline)}>
+            <PanelBottom className="mr-2 size-4" /> Toggle timeline
+          </CommandItem>
+        </CommandGroup>
+        <CommandGroup heading="Samples">
+          {DEMO_INFOS.map((demo, index) => (
             <CommandItem key={demo.id} onSelect={() => run(() => onLoadSample(index))}>
               {demo.title}
             </CommandItem>

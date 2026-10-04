@@ -1,14 +1,38 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { serializeLiveProject } from "@/lib/store/exportDocument";
 import { useEditorStore } from "@/lib/store/editorStore";
+import { AutosaveConflictError, readAutosave, writeAutosave } from "@/lib/store/localRecovery";
+export { readAutosave } from "@/lib/store/localRecovery";
 
-const DB_NAME = "shapeshifter";
-const STORE_NAME = "autosave";
-const KEY = "document";
 export const AUTOSAVE_DEBOUNCE_MS = 400;
+
+export type DocumentAutosaveStatus =
+  | "restoring"
+  | "saving"
+  | "saved"
+  | "error"
+  | "paused"
+  | "conflict";
+
+export interface DocumentAutosaveState {
+  status: DocumentAutosaveStatus;
+  /** Time of the last completed IndexedDB transaction, never the queued write. */
+  savedAt: number | null;
+  error: string | null;
+}
+
+export interface DocumentAutosave extends DocumentAutosaveState {
+  retry(): void;
+  restoreCheckpoint(payload: unknown): Promise<void>;
+}
+
+/** Native commits keep durable identities, so every persisted field participates. */
+export function autosaveSignature(payload: unknown): string | undefined {
+  return JSON.stringify(payload);
+}
 
 type AutosaveState = ReturnType<typeof useEditorStore.getState>;
 export type AutosaveStateToken = Pick<
@@ -70,6 +94,10 @@ export interface CoalescingAutosaveWriter<T> {
  */
 export function createCoalescingAutosaveWriter<T>(
   write: (value: T) => Promise<void>,
+  callbacks: {
+    onSuccess?: (value: T) => void;
+    onError?: (error: unknown, value: T) => void;
+  } = {},
 ): CoalescingAutosaveWriter<T> {
   let pending: { value: T } | null = null;
   let active: Promise<void> | null = null;
@@ -82,8 +110,11 @@ export function createCoalescingAutosaveWriter<T>(
         pending = null;
         try {
           await write(next.value);
-        } catch {
-          // Quota / private mode — keep the editor usable and try a later snapshot.
+          callbacks.onSuccess?.(next.value);
+        } catch (error) {
+          // A failed transaction must remain observable. Retry on an explicit
+          // request or a later edit, rather than spinning against a full quota.
+          callbacks.onError?.(error, next.value);
         }
       }
     })().finally(() => {
@@ -111,6 +142,8 @@ export interface DebouncedAutosaveScheduler {
    */
   preserveStoredSnapshot(): void;
   schedule(): void;
+  /** Capture pending edits immediately, including an explicit failed-write retry. */
+  flush(options?: { force?: boolean }): void;
   dispose(): void;
 }
 
@@ -122,6 +155,9 @@ export interface DebouncedAutosaveScheduler {
 export function createDebouncedAutosaveScheduler(options: {
   snapshot: () => unknown;
   enqueue: (payload: unknown) => void;
+  onCaptured?: (signature: string) => void;
+  onUnchanged?: (payload: unknown) => void;
+  onError?: (error: unknown) => void;
   delay?: number;
 }): DebouncedAutosaveScheduler {
   const delay = options.delay ?? AUTOSAVE_DEBOUNCE_MS;
@@ -137,24 +173,29 @@ export function createDebouncedAutosaveScheduler(options: {
     timer = null;
   };
 
-  const capture = () => {
+  const capture = (force = false) => {
     timer = null;
     if (!hydrated || disposed || preserveStoredSnapshot) return;
     try {
       const payload = options.snapshot();
-      const signature = JSON.stringify(payload);
-      if (typeof signature !== "string" || signature === lastEnqueuedSignature) return;
+      const signature = autosaveSignature(payload);
+      if (typeof signature !== "string") return;
+      options.onCaptured?.(signature);
+      if (!force && signature === lastEnqueuedSignature) {
+        options.onUnchanged?.(payload);
+        return;
+      }
       lastEnqueuedSignature = signature;
       options.enqueue(payload);
-    } catch {
-      // A corrupt live snapshot should never make the editor unusable.
+    } catch (error) {
+      options.onError?.(error);
     }
   };
 
   const schedule = () => {
     if (!hydrated || disposed || preserveStoredSnapshot) return;
     clearTimer();
-    timer = setTimeout(capture, delay);
+    timer = setTimeout(() => capture(), delay);
   };
 
   return {
@@ -177,60 +218,16 @@ export function createDebouncedAutosaveScheduler(options: {
       clearTimer();
     },
     schedule,
+    flush(options) {
+      clearTimer();
+      capture(options?.force);
+    },
     dispose() {
       disposed = true;
       clearTimer();
     },
   };
 }
-
-function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains(STORE_NAME)) {
-        request.result.createObjectStore(STORE_NAME);
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function writeAutosave(payload: unknown) {
-  let db: IDBDatabase | null = null;
-  try {
-    db = await openDb();
-    await new Promise<void>((resolve, reject) => {
-      const tx = db!.transaction(STORE_NAME, "readwrite");
-      tx.objectStore(STORE_NAME).put(payload, KEY);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-      tx.onabort = () => reject(tx.error);
-    });
-  } finally {
-    db?.close();
-  }
-}
-
-export async function readAutosave(): Promise<unknown | null> {
-  let db: IDBDatabase | null = null;
-  try {
-    db = await openDb();
-    const value = await new Promise<unknown>((resolve, reject) => {
-      const tx = db!.transaction(STORE_NAME, "readonly");
-      const request = tx.objectStore(STORE_NAME).get(KEY);
-      request.onsuccess = () => resolve(request.result ?? null);
-      request.onerror = () => reject(request.error);
-      tx.onabort = () => reject(tx.error);
-    });
-    return value ?? null;
-  } finally {
-    db?.close();
-  }
-}
-
-const autosaveWriter = createCoalescingAutosaveWriter(writeAutosave);
 
 function autosaveText(payload: unknown): string | null {
   if (typeof payload === "string") return payload;
@@ -272,7 +269,7 @@ function discardHydrationHistory() {
 }
 
 /** Debounced IndexedDB write of the flushed live project. */
-export function useDocumentAutosave() {
+export function useDocumentAutosave(): DocumentAutosave {
   const layers = useEditorStore((state) => state.layers);
   const animation = useEditorStore((state) => state.animation);
   const frames = useEditorStore((state) => state.frames);
@@ -286,15 +283,93 @@ export function useDocumentAutosave() {
   const lastFlushedState = useRef<AutosaveStateToken | null>(null);
   const schedulerRef = useRef<DebouncedAutosaveScheduler | null>(null);
   const recoveryNoticeShown = useRef(false);
+  const hydrationReady = useRef(false);
+  const savingPaused = useRef(false);
+  const lastSavedSignature = useRef<string | null>(null);
+  const storedSignature = useRef<string | null>(null);
+  const forceCheckpoint = useRef(false);
+  const latestEnqueuedSignature = useRef<string | null>(null);
+  const latestCapturedSignature = useRef<string | null>(null);
+  const [saveState, setSaveState] = useState<DocumentAutosaveState>({
+    status: "restoring",
+    savedAt: null,
+    error: null,
+  });
+  type PendingAutosave = {
+    payload: unknown;
+    signature: string;
+  };
+  const writerRef = useRef<CoalescingAutosaveWriter<PendingAutosave> | null>(null);
+  if (!writerRef.current) {
+    writerRef.current = createCoalescingAutosaveWriter(
+      (snapshot) =>
+        writeAutosave(snapshot.payload, storedSignature.current, forceCheckpoint.current),
+      {
+        onSuccess(snapshot) {
+          forceCheckpoint.current = false;
+          storedSignature.current = snapshot.signature;
+          lastSavedSignature.current = snapshot.signature;
+          const isCurrent =
+            latestEnqueuedSignature.current === snapshot.signature &&
+            latestCapturedSignature.current === snapshot.signature &&
+            sameAutosaveState(
+              lastFlushedState.current,
+              autosaveStateToken(useEditorStore.getState()),
+            );
+          setSaveState((current) => ({
+            ...current,
+            savedAt: Date.now(),
+            ...(isCurrent ? { status: "saved", error: null } : {}),
+          }));
+        },
+        onError(error, snapshot) {
+          if (latestEnqueuedSignature.current !== snapshot.signature) return;
+          if (error instanceof AutosaveConflictError) {
+            savingPaused.current = true;
+            schedulerRef.current?.preserveStoredSnapshot();
+          }
+          setSaveState((current) => ({
+            ...current,
+            status: error instanceof AutosaveConflictError ? "conflict" : "error",
+            error: error instanceof Error ? error.message : "Local autosave could not complete.",
+          }));
+        },
+      },
+    );
+  }
 
   if (!schedulerRef.current) {
     schedulerRef.current = createDebouncedAutosaveScheduler({
       snapshot: () => {
-        const payload = serializeLiveProject();
-        lastFlushedState.current = autosaveStateToken(useEditorStore.getState());
-        return payload;
+        return serializeLiveProject();
       },
-      enqueue: (payload) => autosaveWriter.enqueue(payload),
+      onCaptured: (signature) => {
+        lastFlushedState.current = autosaveStateToken(useEditorStore.getState());
+        latestCapturedSignature.current = signature;
+      },
+      enqueue: (payload) => {
+        const signature = latestCapturedSignature.current!;
+        latestEnqueuedSignature.current = signature;
+        setSaveState((current) => ({ ...current, status: "saving", error: null }));
+        writerRef.current!.enqueue({
+          payload,
+          signature,
+        });
+      },
+      onUnchanged: () => {
+        // A flush may replace owner projections without changing document data.
+        // Only a previously committed signature can be presented as saved.
+        if (latestCapturedSignature.current === lastSavedSignature.current) {
+          setSaveState((current) => ({ ...current, status: "saved", error: null }));
+        }
+      },
+      onError: (error) => {
+        setSaveState((current) => ({
+          ...current,
+          status: "error",
+          error: error instanceof Error ? error.message : "The project could not be saved.",
+        }));
+      },
     });
   }
 
@@ -310,6 +385,8 @@ export function useDocumentAutosave() {
     void (async () => {
       try {
         const payload = await readAutosave();
+        if (!cancelled)
+          storedSignature.current = payload == null ? null : (autosaveSignature(payload) ?? null);
         if (
           !cancelled &&
           payload !== null &&
@@ -338,7 +415,15 @@ export function useDocumentAutosave() {
       } finally {
         if (!cancelled) {
           if (preserveStoredSnapshot) {
+            savingPaused.current = true;
+            hydrationReady.current = true;
             scheduler.preserveStoredSnapshot();
+            setSaveState((current) => ({
+              ...current,
+              status: "paused",
+              error:
+                "The previous autosave is preserved for recovery. Download a project backup to keep new edits.",
+            }));
             if (!recoveryNoticeShown.current) {
               recoveryNoticeShown.current = true;
               toast.warning("Autosave preserved for recovery", {
@@ -347,6 +432,9 @@ export function useDocumentAutosave() {
               });
             }
           } else {
+            savingPaused.current = false;
+            hydrationReady.current = true;
+            setSaveState((current) => ({ ...current, status: "saving", error: null }));
             scheduler.markHydrated();
           }
         }
@@ -371,6 +459,9 @@ export function useDocumentAutosave() {
       documentV2,
     };
     if (sameAutosaveState(lastFlushedState.current, currentState)) return;
+    if (hydrationReady.current && !savingPaused.current) {
+      setSaveState((current) => ({ ...current, status: "saving", error: null }));
+    }
     scheduler.schedule();
   }, [
     animation,
@@ -386,5 +477,66 @@ export function useDocumentAutosave() {
     vector,
   ]);
 
-  useEffect(() => () => scheduler.dispose(), [scheduler]);
+  useEffect(() => {
+    const flush = () => scheduler.flush();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      // Capture before cancelling the timer; dropping it would discard the last
+      // 400ms of work whenever the editor unmounts.
+      flush();
+      scheduler.dispose();
+    };
+  }, [scheduler]);
+
+  const retry = useCallback(() => {
+    if (!hydrationReady.current || savingPaused.current) return;
+    scheduler.flush({ force: true });
+  }, [scheduler]);
+
+  const restoreCheckpoint = useCallback(
+    async (payload: unknown) => {
+      await writerRef.current!.whenIdle();
+      const wasPaused = savingPaused.current;
+      savingPaused.current = true;
+      scheduler.preserveStoredSnapshot();
+      let restored = false;
+      try {
+        // Rebase the explicit restore on the latest disk copy. The next atomic
+        // transaction retains that copy even if another tab wrote it recently.
+        const current = await readAutosave();
+        const text = autosaveText(payload);
+        if (!text) throw new Error("This checkpoint does not contain a project.");
+        const { importEditorText } = await import("@/components/editor/project/useProjectImport");
+        importEditorText("recovery.shapeshifter", text);
+        restored = true;
+        storedSignature.current = current == null ? null : (autosaveSignature(current) ?? null);
+        forceCheckpoint.current = true;
+        savingPaused.current = false;
+        hydrationReady.current = true;
+        scheduler.markHydrated();
+        scheduler.flush({ force: true });
+        const restoredSignature = latestCapturedSignature.current;
+        await writerRef.current!.whenIdle();
+        if (lastSavedSignature.current !== restoredSignature)
+          throw new Error(
+            "The checkpoint is open, but could not be saved. Download a project backup.",
+          );
+      } catch (error) {
+        if (!restored) {
+          savingPaused.current = wasPaused;
+          if (!wasPaused) scheduler.markHydrated();
+        }
+        throw error;
+      }
+    },
+    [scheduler],
+  );
+
+  return { ...saveState, retry, restoreCheckpoint };
 }

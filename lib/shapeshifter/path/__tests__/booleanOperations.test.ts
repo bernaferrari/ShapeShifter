@@ -12,6 +12,8 @@
 import { describe, expect, it } from "vitest";
 import { parsePath } from "../pathDataIO";
 import { booleanCombine, isPointInFillRegion, pathToPolygons } from "../booleanOperations";
+import { primitivePath } from "../../primitiveShapes";
+import { isPointInPath } from "../pathGeometry";
 
 describe("pathToPolygons", () => {
   it("flattens A commands via arcParams instead of pushing only the endpoint", () => {
@@ -55,10 +57,10 @@ describe("isPointInFillRegion (paint bucket)", () => {
 });
 
 describe("booleanCombine", () => {
-  it("detects containment of an arc circle inside a square for subtract", () => {
+  it("detects containment of an arc circle inside a square for subtract", async () => {
     const square = parsePath("M-5 -5 L29 -5 L29 29 L-5 29 Z");
     const circle = parsePath("M12 2 A10 10 0 1 1 11.99 2 Z");
-    const result = booleanCombine("subtract", square, circle);
+    const result = await booleanCombine("subtract", square, circle);
     // Square minus centered circle → two subpaths (outer + reversed hole).
     expect(result.subPaths).toHaveLength(2);
     // The hole boundary must be sampled around the full circle, not a chord.
@@ -66,24 +68,70 @@ describe("booleanCombine", () => {
     expect(holeCommands).toBeGreaterThan(4);
   });
 
-  it("unions disjoint shapes exactly", () => {
+  it("unions disjoint shapes exactly", async () => {
     const first = parsePath("M0 0 L10 0 L10 10 L0 10 Z");
     const second = parsePath("M20 20 L30 20 L30 30 L20 30 Z");
-    const result = booleanCombine("union", first, second);
+    const result = await booleanCombine("union", first, second);
     expect(result.subPaths).toHaveLength(2);
   });
 
-  it("returns empty for a disjoint intersection instead of the first operand", () => {
+  it("returns empty for a disjoint intersection instead of the first operand", async () => {
     const first = parsePath("M0 0 L10 0 L10 10 L0 10 Z");
     const second = parsePath("M20 20 L30 20 L30 30 L20 30 Z");
-    const result = booleanCombine("intersect", first, second);
+    const result = await booleanCombine("intersect", first, second);
     expect(result.subPaths).toHaveLength(0);
   });
 
-  it("returns empty when subtracting a containing shape from a contained shape", () => {
+  it("returns empty when subtracting a containing shape from a contained shape", async () => {
     const inner = parsePath("M5 5 L10 5 L10 10 L5 10 Z");
     const outer = parsePath("M0 0 L20 0 L20 20 L0 20 Z");
-    const result = booleanCombine("subtract", inner, outer);
+    const result = await booleanCombine("subtract", inner, outer);
     expect(result.subPaths).toHaveLength(0);
+  });
+});
+
+describe("curve Boolean fidelity", () => {
+  const circle = (x: number, radius = 10) =>
+    parsePath(
+      primitivePath("ellipse", { x: x - radius, y: -radius, w: radius * 2, h: radius * 2 }),
+    );
+  it.each(["union", "subtract", "intersect", "exclude"] as const)(
+    "traces partly overlapping cubic circles for %s without flattening",
+    async (operation) => {
+      const a = circle(0),
+        b = circle(10);
+      const result = await booleanCombine(operation, a, b);
+      const contains = (x: number) => isPointInPath({ x, y: 0 }, result, "nonZero");
+      expect(contains(-5)).toBe(
+        operation === "union" || operation === "subtract" || operation === "exclude",
+      );
+      expect(contains(5)).toBe(operation === "union" || operation === "intersect");
+      expect(contains(15)).toBe(operation === "union" || operation === "exclude");
+      expect(isPointInPath({ x: 5, y: 14 }, result)).toBe(false);
+      expect(
+        result.subPaths
+          .flatMap((contour) => contour.commands)
+          .some((command) => command.type === "C"),
+      ).toBe(true);
+      expect(result.subPaths.every((contour) => contour.commands.at(-1)?.type === "Z")).toBe(true);
+    },
+  );
+  it("preserves evenodd holes and a separate island as nonzero output", async () => {
+    const outer = circle(0, 12),
+      hole = circle(0, 5),
+      island = circle(0, 2);
+    const ring = { subPaths: [...outer.subPaths, ...hole.subPaths] };
+    const result = await booleanCombine("union", ring, island, { firstFillType: "evenOdd" });
+    expect(isPointInPath({ x: 0, y: 0 }, result, "nonZero")).toBe(true);
+    expect(isPointInPath({ x: 3, y: 0 }, result, "nonZero")).toBe(false);
+    expect(isPointInPath({ x: 8, y: 0 }, result, "nonZero")).toBe(true);
+    expect(isPointInPath({ x: 20, y: 0 }, result, "nonZero")).toBe(false);
+    expect(result.subPaths).toHaveLength(3);
+  });
+  it("handles empty mathematical areas without substituting an operand", async () => {
+    const a = circle(0),
+      b = circle(40);
+    expect((await booleanCombine("intersect", a, b)).subPaths).toHaveLength(0);
+    expect((await booleanCombine("subtract", a, a)).subPaths).toHaveLength(0);
   });
 });

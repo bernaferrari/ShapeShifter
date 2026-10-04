@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { generateId } from "@/lib/shapeshifter/ids";
 import type { Command, PathData } from "@/lib/shapeshifter/types";
 import { useEditorStore } from "@/lib/store/editorStore";
+import { beginLiveGesture, endLiveGesture, ownsLiveGesture } from "@/lib/store/liveGesture";
 
 interface PenDragSession {
   subIdx: number;
@@ -12,6 +13,22 @@ interface PenDragSession {
   isMove: boolean;
   c1: { x: number; y: number };
   pendingOutgoing: { x: number; y: number } | null;
+  marker: ReturnType<typeof beginLiveGesture>;
+  ownerId: string;
+  layerId: string | number;
+  historyEntry: ReturnType<typeof useEditorStore.getState>["history"][number] | undefined;
+}
+function penDragSession(
+  data: Omit<PenDragSession, "marker" | "ownerId" | "layerId" | "historyEntry">,
+): PenDragSession {
+  const state = useEditorStore.getState();
+  return {
+    ...data,
+    marker: beginLiveGesture("world-pen", data.anchorLocal),
+    ownerId: state.selectedFrameId,
+    layerId: state.selectedLayerId,
+    historyEntry: state.history.at(-1),
+  };
 }
 
 export function useWorldPen({
@@ -26,12 +43,21 @@ export function useWorldPen({
   commit: (path: PathData, recordHistory?: boolean) => void;
 }) {
   const activeSubpathRef = useRef<number | null>(null);
+  const scopeRef = useRef<{
+    ownerId: string;
+    layerId: string | number;
+    side: "from" | "to";
+  } | null>(null);
+  const finishedAtRef = useRef(0);
   const outgoingRef = useRef<{ x: number; y: number } | null>(null);
   const dragRef = useRef<PenDragSession | null>(null);
   const [preview, setPreview] = useState<{ x: number; y: number } | null>(null);
 
   const finish = useCallback(() => {
+    if (activeSubpathRef.current != null) finishedAtRef.current = Date.now();
+    endLiveGesture(dragRef.current?.marker);
     activeSubpathRef.current = null;
+    scopeRef.current = null;
     outgoingRef.current = null;
     dragRef.current = null;
     setPreview(null);
@@ -56,6 +82,7 @@ export function useWorldPen({
           subpath.commands.push({ id: generateId(), type: "Z", points: [] } as Command);
           finish();
           commit(nextPath, false);
+          useEditorStore.getState().setToolMode("select");
           return;
         }
 
@@ -66,6 +93,7 @@ export function useWorldPen({
           Math.hypot(local.x - lastAnchor.x, local.y - lastAnchor.y) <= closeTolerance
         ) {
           finish();
+          useEditorStore.getState().setToolMode("select");
           return;
         }
 
@@ -77,14 +105,14 @@ export function useWorldPen({
           : { id: generateId(), type: "L", points: [{ ...local }] };
         useEditorStore.getState().pushHistory();
         subpath.commands.push(command);
-        dragRef.current = {
+        dragRef.current = penDragSession({
           subIdx: active,
           cmdIdx: subpath.commands.length - 1,
           anchorLocal: { ...local },
           isMove: false,
           c1,
           pendingOutgoing: null,
-        };
+        });
         outgoingRef.current = null;
         commit(nextPath, false);
         return;
@@ -95,15 +123,21 @@ export function useWorldPen({
         commands: [{ id: generateId(), type: "M", points: [{ ...local }] } as Command],
       });
       const subIdx = nextPath.subPaths.length - 1;
+      const state = useEditorStore.getState();
+      scopeRef.current = {
+        ownerId: state.selectedFrameId,
+        layerId: state.selectedLayerId,
+        side: state.editingSide,
+      };
       activeSubpathRef.current = subIdx;
-      dragRef.current = {
+      dragRef.current = penDragSession({
         subIdx,
         cmdIdx: 0,
         anchorLocal: { ...local },
         isMove: true,
         c1: { ...local },
         pendingOutgoing: null,
-      };
+      });
       outgoingRef.current = null;
       commit(nextPath, false);
     },
@@ -114,6 +148,17 @@ export function useWorldPen({
     (local: { x: number; y: number }) => {
       const session = dragRef.current;
       if (!session || !path) return;
+      const state = useEditorStore.getState();
+      if (
+        !ownsLiveGesture(session.marker) ||
+        state.selectedFrameId !== session.ownerId ||
+        String(state.selectedLayerId) !== String(session.layerId) ||
+        state.history.at(-1) !== session.historyEntry
+      ) {
+        endLiveGesture(session.marker);
+        dragRef.current = null;
+        return;
+      }
       const nextPath: PathData = structuredClone(path);
       const command = nextPath.subPaths[session.subIdx]?.commands[session.cmdIdx];
       if (!command) return;
@@ -136,12 +181,64 @@ export function useWorldPen({
   const pointerUp = useCallback(() => {
     const session = dragRef.current;
     if (!session) return;
-    outgoingRef.current = session.pendingOutgoing;
+    outgoingRef.current = ownsLiveGesture(session.marker) ? session.pendingOutgoing : null;
+    endLiveGesture(session.marker);
     dragRef.current = null;
   }, []);
+  const beginPath = useCallback((anchor: { x: number; y: number }) => {
+    const state = useEditorStore.getState();
+    scopeRef.current = {
+      ownerId: state.selectedFrameId,
+      layerId: state.selectedLayerId,
+      side: state.editingSide,
+    };
+    activeSubpathRef.current = 0;
+    outgoingRef.current = null;
+    dragRef.current = penDragSession({
+      subIdx: 0,
+      cmdIdx: 0,
+      anchorLocal: anchor,
+      isMove: true,
+      c1: anchor,
+      pendingOutgoing: null,
+    });
+  }, []);
+  const cancelPointer = useCallback(() => {
+    const session = dragRef.current;
+    if (!session) return;
+    const state = useEditorStore.getState();
+    if (
+      ownsLiveGesture(session.marker) &&
+      state.selectedFrameId === session.ownerId &&
+      state.history.at(-1) === session.historyEntry
+    )
+      state.cancelLastHistoryTransaction();
+    endLiveGesture(session.marker);
+    dragRef.current = null;
+    activeSubpathRef.current = null;
+    scopeRef.current = null;
+    outgoingRef.current = null;
+    setPreview(null);
+  }, []);
+  useEffect(() => cancelPointer, [cancelPointer]);
+  useEffect(
+    () =>
+      useEditorStore.subscribe((state, previous) => {
+        if (activeSubpathRef.current == null || state.documentV2 === previous.documentV2) return;
+        // Undo, Redo and transaction cancellation restore the exact saved graph.
+        // Ordinary Pen commits create a new graph and keep construction active.
+        const restored = [...previous.history, ...previous.future].some(
+          (entry) => entry.documentV2 === state.documentV2,
+        );
+        if (restored) finish();
+      }),
+    [finish],
+  );
 
   return {
     activeSubpathRef,
+    scopeRef,
+    finishedAtRef,
     dragRef,
     preview,
     setPreview,
@@ -149,5 +246,7 @@ export function useWorldPen({
     pointerDown,
     pointerDrag,
     pointerUp,
+    cancelPointer,
+    beginPath,
   };
 }

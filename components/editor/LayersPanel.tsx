@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { toast } from "sonner";
 import {
   ChevronRight,
   Crop,
@@ -29,6 +30,8 @@ import { createLayerTreeModel, type LayerPlacement } from "@/lib/shapeshifter/sc
 import type { Layer, TimelineBlock } from "@/lib/shapeshifter/types";
 import { cn } from "@/lib/utils";
 import { LayerOwnerRow } from "./layers/LayerOwnerRow";
+import { resolveOwnerDocument } from "@/lib/store/cloneSubtree";
+import { layerReparentIssue } from "@/lib/store/commands/reparentLayer";
 
 function LayerIcon({ type }: { type: Layer["type"] }) {
   if (type === "group") return <Folder className="size-3.5" />;
@@ -93,6 +96,11 @@ export function LayersPanel({
   const [renameDraft, setRenameDraft] = React.useState("");
   const [draggedLayer, setDraggedLayer] = React.useState<DraggedLayer | null>(null);
   const [dropTarget, setDropTarget] = React.useState<LayerDropTarget | null>(null);
+  const [focusedKey, setFocusedKey] = React.useState<string | null>(null);
+  const rangeAnchorRef = React.useRef<string | null>(null);
+  const renameCancelledRef = React.useRef(false);
+  const typeaheadRef = React.useRef({ text: "", at: 0 });
+  const treeRef = React.useRef<HTMLDivElement>(null);
   const expandTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const expandTargetRef = React.useRef<string | null>(null);
 
@@ -102,6 +110,13 @@ export function LayersPanel({
     },
     [],
   );
+
+  React.useEffect(() => {
+    const tree = treeRef.current;
+    if (tree && !tree.querySelector('[role="treeitem"][tabindex="0"]')) {
+      setFocusedKey(tree.querySelector<HTMLElement>("[data-tree-key]")?.dataset.treeKey ?? null);
+    }
+  });
 
   const owners = React.useMemo<LayerOwner[]>(
     () => [
@@ -190,12 +205,14 @@ export function LayersPanel({
   };
 
   const beginRename = (ownerId: string, layer: Layer) => {
+    renameCancelledRef.current = false;
     selectLayer(ownerId, layer.id, false);
     setRenamingKey(`${ownerId}:${String(layer.id)}`);
     setRenameDraft(layer.name || "Layer");
   };
 
   const commitRename = (ownerId: string, layer: Layer) => {
+    if (renameCancelledRef.current) return;
     renameOwnedLayer(ownerId, layer.id, renameDraft);
     setRenamingKey(null);
   };
@@ -214,9 +231,33 @@ export function LayersPanel({
       ) &&
       selectedLayerRefs.every((ref) => ref.ownerId === layerRef.ownerId);
     if (!isSelectedSiblingSet) selectLayerRefs([layerRef]);
-    return targetOwnerId === PAGE_ROOT_ID
-      ? moveSelectedLayersToRoot({ placement })
-      : moveSelectedLayersToFrame(targetOwnerId, { placement });
+    const moved =
+      targetOwnerId === PAGE_ROOT_ID
+        ? moveSelectedLayersToRoot({ placement })
+        : moveSelectedLayersToFrame(targetOwnerId, { placement });
+    if (!moved)
+      toast.warning("Layer not moved", {
+        description:
+          "The layer is locked, inherits animated groups or masks, or the destination changes its appearance. Move the containing group onto the frame to preserve the artwork.",
+      });
+    return moved;
+  };
+
+  const reparentLayer = (ownerId: string, layerId: string | number, placement: LayerPlacement) => {
+    const state = useEditorStore.getState();
+    const owner = resolveOwnerDocument(state, ownerId);
+    const hidden =
+      ownerId === state.selectedFrameId
+        ? state.hiddenLayerIds
+        : ownerId === PAGE_ROOT_ID
+          ? state.rootHiddenLayerIds
+          : (state.frames.find((frame) => frame.id === ownerId)?.hiddenLayerIds ?? []);
+    const issue = layerReparentIssue(owner.layers, owner.animation, hidden, layerId, placement);
+    if (issue) {
+      toast.warning("Layer not moved", { description: issue });
+      return false;
+    }
+    return reparentOwnedLayer(ownerId, layerId, placement);
   };
 
   const moveDraggedLayer = (targetOwnerId: string, placement?: LayerPlacement) => {
@@ -260,6 +301,7 @@ export function LayersPanel({
       const key = `${owner.id}:${String(layer.id)}`;
       const children = tree.childrenOf(layer);
       const expandable = children.length > 0;
+      const canContainLayers = layer.type === "group";
       const expanded = normalizedQuery.length > 0 || !collapsedGroups.has(key);
       const selected = selectionKind === "layer" && selectedKeys.has(key);
       const animated = owner.blocks.some((block) => String(block.layerId) === String(layer.id));
@@ -273,6 +315,18 @@ export function LayersPanel({
         <React.Fragment key={key}>
           <div
             role="treeitem"
+            data-tree-key={key}
+            data-owner-id={owner.id}
+            data-layer-id={String(layer.id)}
+            data-tree-label={layer.name || "Layer"}
+            tabIndex={
+              (focusedKey ??
+                (selectedLayerRefs.length
+                  ? `${selectedLayerRefs.at(-1)!.ownerId}:${String(selectedLayerRefs.at(-1)!.layerId)}`
+                  : `owner:${owners[0]?.id}`)) === key
+                ? 0
+                : -1
+            }
             aria-level={depth + 2}
             aria-selected={selected}
             aria-expanded={expandable ? expanded : undefined}
@@ -292,7 +346,7 @@ export function LayersPanel({
               event.dataTransfer.dropEffect = "move";
               const bounds = event.currentTarget.getBoundingClientRect();
               const ratio = bounds.height ? (event.clientY - bounds.top) / bounds.height : 0.5;
-              const position: DropPosition = expandable
+              const position: DropPosition = canContainLayers
                 ? ratio < 0.25
                   ? "before"
                   : ratio > 0.75
@@ -302,7 +356,7 @@ export function LayersPanel({
                   ? "before"
                   : "after";
               setDropTarget({ ownerId: owner.id, layerId: layer.id, position });
-              if (position === "inside" && expandable) scheduleGroupExpand(key);
+              if (position === "inside" && canContainLayers) scheduleGroupExpand(key);
               else if (expandTimerRef.current) {
                 clearTimeout(expandTimerRef.current);
                 expandTimerRef.current = null;
@@ -313,22 +367,23 @@ export function LayersPanel({
               event.preventDefault();
               event.stopPropagation();
               if (!draggedLayer) return;
-              const position = activeDropPosition ?? (expandable ? "inside" : "after");
-              const parentId = position === "inside" ? layer.id : (layer.parentId ?? null);
+              const position = activeDropPosition ?? (canContainLayers ? "inside" : "after");
+              const parentId =
+                position === "inside" ? layer.id : (tree.ancestorsOf(layer.id)[0]?.id ?? null);
               const target = {
                 parentId,
                 ...(position === "before" ? { beforeId: layer.id } : {}),
                 ...(position === "after" ? { afterId: layer.id } : {}),
               };
               if (draggedLayer.ownerId === owner.id) {
-                reparentOwnedLayer(owner.id, draggedLayer.layerId, target);
+                reparentLayer(owner.id, draggedLayer.layerId, target);
               } else {
                 moveDraggedLayer(owner.id, target);
               }
               clearLayerDrag();
             }}
             className={cn(
-              "group relative flex h-8 items-center gap-1 pr-1.5 text-[11px] outline-none",
+              "group relative flex h-8 items-center gap-1 pr-1.5 text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
               selected
                 ? "bg-primary/14 text-foreground"
                 : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
@@ -347,6 +402,8 @@ export function LayersPanel({
               type="button"
               className="grid size-5 shrink-0 place-items-center rounded hover:bg-muted disabled:opacity-0"
               disabled={!expandable}
+              tabIndex={-1}
+              data-tree-toggle=""
               onClick={() => toggleSetValue(setCollapsedGroups, key)}
               aria-label={expanded ? `Collapse ${layer.name}` : `Expand ${layer.name}`}
             >
@@ -365,8 +422,15 @@ export function LayersPanel({
                 onFocus={(event) => event.currentTarget.select()}
                 onBlur={() => commitRename(owner.id, layer)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") commitRename(owner.id, layer);
-                  if (event.key === "Escape") setRenamingKey(null);
+                  if (event.key === "Enter" || event.key === "Escape") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (event.key === "Escape") {
+                      renameCancelledRef.current = true;
+                      setRenamingKey(null);
+                    } else commitRename(owner.id, layer);
+                    event.currentTarget.closest<HTMLElement>('[role="treeitem"]')?.focus();
+                  }
                 }}
                 onClick={(event) => event.stopPropagation()}
                 className="h-6 min-w-0 flex-1 rounded border border-primary bg-background px-1.5 text-[12px] text-foreground outline-none ring-2 ring-primary/15"
@@ -375,8 +439,13 @@ export function LayersPanel({
             ) : (
               <button
                 type="button"
+                tabIndex={-1}
                 className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch text-left"
-                onClick={(event) => selectLayer(owner.id, layer.id, event.shiftKey)}
+                onClick={(event) => {
+                  rangeAnchorRef.current = key;
+                  selectLayer(owner.id, layer.id, event.shiftKey);
+                  event.currentTarget.closest<HTMLElement>('[role="treeitem"]')?.focus();
+                }}
                 onDoubleClick={() => beginRename(owner.id, layer)}
                 onKeyDown={(event) => {
                   if (event.key === "F2") {
@@ -401,6 +470,8 @@ export function LayersPanel({
                   render={
                     <button
                       type="button"
+                      data-tree-menu=""
+                      tabIndex={selected ? 0 : -1}
                       className={cn(
                         "grid size-6 place-items-center rounded text-muted-foreground/55 hover:bg-muted hover:text-foreground focus-visible:opacity-100",
                         selected
@@ -432,6 +503,7 @@ export function LayersPanel({
               </DropdownMenu>
               <button
                 type="button"
+                tabIndex={selected ? 0 : -1}
                 className={cn(
                   "grid size-6 place-items-center rounded text-muted-foreground/55 hover:bg-muted hover:text-foreground focus-visible:opacity-100",
                   layer.locked
@@ -445,6 +517,7 @@ export function LayersPanel({
               </button>
               <button
                 type="button"
+                tabIndex={selected ? 0 : -1}
                 className={cn(
                   "grid size-6 place-items-center rounded text-muted-foreground/55 hover:bg-muted hover:text-foreground focus-visible:opacity-100",
                   layer.visible === false
@@ -478,6 +551,118 @@ export function LayersPanel({
         (layer.name || "Layer").toLocaleLowerCase().includes(normalizedQuery),
       ),
   );
+
+  const handleTreeKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (
+      event.defaultPrevented ||
+      event.nativeEvent.isComposing ||
+      (event.target as Element).closest("input,textarea,[contenteditable=true],[role=menu]")
+    )
+      return;
+    // Embedded buttons own activation and focus navigation. A bubbling Space
+    // or Enter must not become a tree selection and cancel the native click.
+    if ((event.target as Element).closest("button,[role=button],a[href]")) return;
+    const current = (event.target as Element).closest<HTMLElement>('[role="treeitem"]');
+    if (!current) return;
+    const rows = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="treeitem"]'));
+    const index = rows.indexOf(current);
+    const level = Number(current.getAttribute("aria-level"));
+    const selectRow = (row: HTMLElement, additive = false) => {
+      const owner = owners.find((candidate) => candidate.id === row.dataset.ownerId);
+      if (!owner) return;
+      const layer = owner.layers.find((candidate) => String(candidate.id) === row.dataset.layerId);
+      if (layer) selectLayer(owner.id, layer.id, additive);
+      else if (owner.id !== PAGE_ROOT_ID) selectFrameRow(owner.id, additive);
+    };
+    const focusRow = (row: HTMLElement | undefined, select = true) => {
+      if (!row) return;
+      row.focus();
+      row.scrollIntoView?.({ block: "nearest" });
+      if (!select) return;
+      if (event.shiftKey && row.dataset.layerId) {
+        const anchor = rows.findIndex(
+          (candidate) => candidate.dataset.treeKey === rangeAnchorRef.current,
+        );
+        const end = rows.indexOf(row);
+        const start = anchor < 0 ? index : anchor;
+        selectLayerRefs(
+          rows
+            .slice(Math.min(start, end), Math.max(start, end) + 1)
+            .filter((candidate) => candidate.dataset.layerId)
+            .map((candidate) => ({
+              ownerId: candidate.dataset.ownerId!,
+              layerId: candidate.dataset.layerId!,
+            })),
+        );
+      } else {
+        rangeAnchorRef.current = row.dataset.treeKey ?? null;
+        selectRow(row);
+      }
+    };
+    switch (event.key) {
+      case "ArrowDown":
+        focusRow(rows[Math.min(index + 1, rows.length - 1)]);
+        break;
+      case "ArrowUp":
+        focusRow(rows[Math.max(index - 1, 0)]);
+        break;
+      case "Home":
+        focusRow(rows[0]);
+        break;
+      case "End":
+        focusRow(rows.at(-1));
+        break;
+      case "ArrowRight":
+        if (current.getAttribute("aria-expanded") === "false")
+          current.querySelector<HTMLButtonElement>("[data-tree-toggle]")?.click();
+        else if (Number(rows[index + 1]?.getAttribute("aria-level")) > level)
+          focusRow(rows[index + 1]);
+        break;
+      case "ArrowLeft":
+        if (current.getAttribute("aria-expanded") === "true")
+          current.querySelector<HTMLButtonElement>("[data-tree-toggle]")?.click();
+        else
+          focusRow(
+            rows
+              .slice(0, index)
+              .reverse()
+              .find((row) => Number(row.getAttribute("aria-level")) < level),
+          );
+        break;
+      case "Enter":
+      case " ":
+        rangeAnchorRef.current = current.dataset.treeKey ?? null;
+        selectRow(current, event.shiftKey || event.metaKey || event.ctrlKey);
+        break;
+      case "F2": {
+        const owner = owners.find((candidate) => candidate.id === current.dataset.ownerId);
+        const layer = owner?.layers.find(
+          (candidate) => String(candidate.id) === current.dataset.layerId,
+        );
+        if (owner && layer) beginRename(owner.id, layer);
+        break;
+      }
+      case "F10":
+        if (!event.shiftKey) return;
+        current.querySelector<HTMLButtonElement>("[data-tree-menu]")?.click();
+        break;
+      default: {
+        if (event.key.length !== 1 || event.metaKey || event.ctrlKey || event.altKey) return;
+        const now = Date.now();
+        const text =
+          (now - typeaheadRef.current.at < 700 ? typeaheadRef.current.text : "") +
+          event.key.toLocaleLowerCase();
+        typeaheadRef.current = { text, at: now };
+        focusRow(
+          [...rows.slice(index + 1), ...rows.slice(0, index + 1)].find((row) =>
+            row.dataset.treeLabel?.toLocaleLowerCase().startsWith(text),
+          ),
+        );
+      }
+    }
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
   return (
     <aside
@@ -529,13 +714,33 @@ export function LayersPanel({
           />
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto py-1" role="tree" aria-label="Layers">
+      <div
+        className="min-h-0 flex-1 overflow-y-auto py-1"
+        role="tree"
+        aria-label="Layers"
+        ref={treeRef}
+        onKeyDown={handleTreeKeyDown}
+        onFocusCapture={(event) => {
+          const row = (event.target as Element).closest<HTMLElement>("[data-tree-key]");
+          if (row) setFocusedKey(row.dataset.treeKey ?? null);
+        }}
+      >
         {visibleOwners.map((owner) => {
           const expanded = normalizedQuery.length > 0 || !collapsedOwners.has(owner.id);
           const frameSelected = selectionKind === "frame" && selectedFrameIds.includes(owner.id);
           return (
             <div key={owner.id}>
               <LayerOwnerRow
+                treeKey={`owner:${owner.id}`}
+                ownerId={owner.id}
+                tabIndex={
+                  (focusedKey ??
+                    (selectedLayerRefs.length
+                      ? `${selectedLayerRefs.at(-1)!.ownerId}:${String(selectedLayerRefs.at(-1)!.layerId)}`
+                      : `owner:${visibleOwners[0]?.id}`)) === `owner:${owner.id}`
+                    ? 0
+                    : -1
+                }
                 name={owner.name}
                 dimensions={owner.dimensions}
                 expanded={expanded}
@@ -559,7 +764,7 @@ export function LayersPanel({
                   event.preventDefault();
                   if (!draggedLayer) return;
                   if (draggedLayer.ownerId === owner.id) {
-                    reparentOwnedLayer(owner.id, draggedLayer.layerId, { parentId: null });
+                    reparentLayer(owner.id, draggedLayer.layerId, { parentId: null });
                   } else {
                     moveDraggedLayer(owner.id);
                   }

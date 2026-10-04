@@ -187,19 +187,13 @@ describe("recordTranslationAtProgress", () => {
       ],
     };
 
-    const { animation } = recordTranslationAtProgress(
-      [layer],
-      withGap,
-      [layer.id],
-      0.4,
-      42,
-      ["translateX"],
-    );
+    const { animation } = recordTranslationAtProgress([layer], withGap, [layer.id], 0.4, 42, [
+      "translateX",
+    ]);
     const blocks = animation.blocks
       .filter(
         (candidate) =>
-          String(candidate.layerId) === String(layer.id) &&
-          candidate.propertyName === "translateX",
+          String(candidate.layerId) === String(layer.id) && candidate.propertyName === "translateX",
       )
       .sort((a, b) => a.startTime - b.startTime);
 
@@ -219,5 +213,76 @@ describe("recordTranslationAtProgress", () => {
     expect(blocks[2]!.id).toBe("block-tail");
     expect(blocks[2]!.startTime).toBe(500);
     expect(blocks[2]!.endTime).toBe(1000);
+  });
+});
+
+describe("precise transform recording", () => {
+  const layer = makeLayer({ translateX: 99 });
+  const block = (
+    id: string,
+    startTime: number,
+    endTime: number,
+    fromValue: number,
+    toValue: number,
+  ) => ({
+    id,
+    layerId: layer.id,
+    propertyName: "translateX",
+    type: "number" as const,
+    startTime,
+    endTime,
+    fromValue,
+    toValue,
+    interpolator: "LINEAR",
+  });
+  const record = (blocks: AnimationState["blocks"], ms: number) =>
+    recordTranslationAtProgress(
+      [layer],
+      { ...makeAnimation(), blocks },
+      [layer.id],
+      ms / 1000,
+      42,
+      ["translateX"],
+      { exactPlayhead: true },
+    ).animation;
+
+  it.each([10, 989.1666666666666])(
+    "records the actual value at %s ms without changing neighboring endpoints",
+    (ms) => {
+      const animation = record([block("track", 0, 1000, 10, 20)], ms);
+      expect(numberAtTime(layer, animation.blocks, "translateX", ms, 1000)).toBeCloseTo(99, 8);
+      expect(numberAtTime(layer, animation.blocks, "translateX", 0, 1000)).toBe(10);
+      expect(numberAtTime(layer, animation.blocks, "translateX", 1000, 1000)).toBe(20);
+    },
+  );
+
+  it("updates both sides of a continuous key at an existing boundary", () => {
+    const animation = record(
+      [block("left", 0, 300, 0, 10), block("right", 300, 1000, 10, 20)],
+      300,
+    );
+    expect(animation.blocks[0]!.toValue).toBe(99);
+    expect(animation.blocks[1]!.fromValue).toBe(99);
+    expect(numberAtTime(layer, animation.blocks, "translateX", 300, 1000)).toBe(99);
+  });
+
+  it("preserves deliberate discontinuity at a shared animator time", () => {
+    const animation = record(
+      [block("left", 0, 300, 0, 10), block("right", 300, 1000, 20, 30)],
+      300,
+    );
+    expect(animation.blocks[0]!.toValue).toBe(10);
+    expect(animation.blocks[1]!.fromValue).toBe(99);
+  });
+
+  it.each([90, 400, 800])("records a precise pose at %s ms outside authored segments", (ms) => {
+    const authored = [block("first", 200, 300, 10, 20), block("last", 500, 600, 30, 40)];
+    const animation = record(authored, ms);
+    expect(numberAtTime(layer, animation.blocks, "translateX", ms, 1000)).toBeCloseTo(99, 8);
+    expect(
+      animation.blocks.filter((candidate) => ["first", "last"].includes(candidate.id)),
+    ).toEqual(authored);
+    expect(numberAtTime(layer, animation.blocks, "translateX", 200, 1000)).toBe(10);
+    expect(numberAtTime(layer, animation.blocks, "translateX", 600, 1000)).toBe(40);
   });
 });

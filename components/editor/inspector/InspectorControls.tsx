@@ -116,20 +116,63 @@ export function NumberRow({
   // While the field is focused we keep the raw keystrokes so typing "2." or a
   // trailing zero isn't reformatted mid-edit. Display always uses a "." decimal
   // separator (an <input type=number> would otherwise render the OS locale's
-  // comma, e.g. "2,4" on pt-BR), and we parse both "." and "," on input.
+  // comma, e.g. "2,4" on pt-BR), and we accept both "." and "," on commit.
   const [draft, setDraft] = React.useState<string | null>(null);
+  const draftRef = React.useRef<string | null>(null);
   const display = draft ?? (mixed ? "" : Number.isFinite(value) ? String(value) : "0");
 
-  const clamp = (n: number) => {
+  const clamp = (n: number, quantize = true) => {
     let next = n;
+    if (quantize && step) next = Number((Math.round(next / step) * step).toFixed(10));
     if (min !== undefined) next = Math.max(min, next);
     if (max !== undefined) next = Math.min(max, next);
-    if (step) next = Math.round(next / step) * step;
-    return Number(next.toFixed(4));
+    return next;
+  };
+
+  const inputProps = {
+    onFocus: (event: React.FocusEvent<HTMLInputElement>) => {
+      const next = mixed ? "" : Number.isFinite(value) ? String(value) : "0";
+      draftRef.current = next;
+      setDraft(next);
+      event.currentTarget.select();
+    },
+    onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
+      draftRef.current = event.target.value;
+      setDraft(event.target.value);
+    },
+    onBlur: () => {
+      const raw = draftRef.current?.trim();
+      draftRef.current = null;
+      setDraft(null);
+      if (!raw) return;
+      // A draft can be incomplete ("-", "2.") while typing. Only a finite
+      // decimal is committed, and the scrub step never rounds typed precision.
+      const normalized = raw.replace(",", ".");
+      if (!/^[+-]?(?:\d+\.?\d*|\.\d+)$/.test(normalized)) return;
+      const number = Number(normalized);
+      if (!Number.isFinite(number)) return;
+      const next = clamp(number, false);
+      if (mixed || next !== value) onChange(next);
+    },
+    onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (event.key !== "Enter" && event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === "Escape") {
+        draftRef.current = null;
+        setDraft(null);
+      }
+      event.currentTarget.blur();
+    },
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
+    if (!e.isPrimary || e.button !== 0) return;
     e.preventDefault();
+    // Scrubbing takes over from the text draft so the visible number follows
+    // each adjustment instead of remaining frozen at the last focused value.
+    draftRef.current = null;
+    setDraft(null);
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     } catch {}
@@ -142,12 +185,19 @@ export function NumberRow({
     onChange(clamp(scrub.current.startVal + dx * (step || 1) * 0.5));
   };
   const onPointerUp = (e: React.PointerEvent) => {
+    if (!scrub.current) return;
+    scrub.current = null;
     try {
       (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     } catch {}
-    scrub.current = null;
     useEditorStore.getState().endHistoryGesture();
   };
+  React.useEffect(
+    () => () => {
+      if (scrub.current) useEditorStore.getState().endHistoryGesture();
+    },
+    [],
+  );
 
   if (compact) {
     return (
@@ -164,6 +214,7 @@ export function NumberRow({
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
+          onLostPointerCapture={onPointerUp}
           onKeyDown={(event) => {
             if (!["ArrowLeft", "ArrowRight", "ArrowDown", "ArrowUp"].includes(event.key)) return;
             event.preventDefault();
@@ -179,20 +230,7 @@ export function NumberRow({
           aria-label={label}
           value={display}
           placeholder={mixed ? "Mixed" : undefined}
-          onFocus={() => {
-            useEditorStore.getState().beginHistoryGesture();
-            setDraft(mixed ? "" : Number.isFinite(value) ? String(value) : "0");
-          }}
-          onChange={(event) => {
-            const raw = event.target.value;
-            setDraft(raw);
-            const number = Number(raw.replace(",", "."));
-            if (Number.isFinite(number)) onChange(clamp(number));
-          }}
-          onBlur={() => {
-            setDraft(null);
-            useEditorStore.getState().endHistoryGesture();
-          }}
+          {...inputProps}
           className={cn(
             fieldBase,
             "pl-7 font-mono tabular-nums",
@@ -245,6 +283,7 @@ export function NumberRow({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onLostPointerCapture={onPointerUp}
         onKeyDown={(event) => {
           if (
             event.key !== "ArrowLeft" &&
@@ -267,20 +306,7 @@ export function NumberRow({
           aria-label={label}
           value={display}
           placeholder={mixed ? "Mixed" : undefined}
-          onFocus={() => {
-            useEditorStore.getState().beginHistoryGesture();
-            setDraft(mixed ? "" : Number.isFinite(value) ? String(value) : "0");
-          }}
-          onChange={(e) => {
-            const raw = e.target.value;
-            setDraft(raw);
-            const n = Number(raw.replace(",", "."));
-            if (Number.isFinite(n)) onChange(clamp(n));
-          }}
-          onBlur={() => {
-            setDraft(null);
-            useEditorStore.getState().endHistoryGesture();
-          }}
+          {...inputProps}
           className={cn(
             fieldBase,
             "font-mono tabular-nums",

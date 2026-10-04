@@ -60,6 +60,36 @@ const snapshot = (): LegacyDocumentSnapshot => ({
 });
 
 describe("DocumentV2 migration adapter", () => {
+  it("keeps native graph and timeline endpoint command identities stable across no-op commits", () => {
+    const original = snapshot();
+    original.frames[0]!.animation.blocks.push({
+      id: "morph",
+      layerId: "glyph",
+      propertyName: "pathData",
+      type: "path",
+      fromValue: "M0 0 L10 10 M20 20 L30 30",
+      toValue: "M1 1 L11 11 M21 21 L31 31",
+      startTime: 0,
+      endTime: 600,
+    });
+    const first = createDocumentV2FromLegacy(original);
+    const second = createDocumentV2FromLegacy(original);
+    expect(second).toEqual(first);
+    const endpointIds = Object.values(first.keyframes)
+      .filter((frame) => frame.legacyBlockId === "morph")
+      .map((frame) => frame.geometryVersionId!);
+    const commandIds = endpointIds.flatMap((id) =>
+      first.geometryVersions[id]!.pathData.subPaths.flatMap((subPath) =>
+        subPath.commands.map((command) => command.id),
+      ),
+    );
+    expect(new Set(commandIds).size).toBe(commandIds.length);
+    expect(commandIds.every((id) => id.startsWith("command:"))).toBe(true);
+    const glyph = Object.values(first.nodes).find((node) => node.name === "glyph")!;
+    expect(
+      first.geometryVersions[glyph.fromGeometryVersionId!]!.pathData.subPaths[0]!.commands[0]!.id,
+    ).toBe(original.frames[0]!.layers[1]!.from.subPaths[0]!.commands[0]!.id);
+  });
   it("normalizes page, artboards, hierarchy, geometry and animation tracks", () => {
     const document = createDocumentV2FromLegacy(snapshot());
 
@@ -97,6 +127,29 @@ describe("DocumentV2 migration adapter", () => {
       startTime: 100,
       endTime: 500,
     });
+    expect(restored.frames[0]?.animation.id).toBe(original.frames[0]?.animation.id);
+    expect(restored.rootAnimation.id).toBe(original.rootAnimation.id);
+  });
+
+  it("does not grow scoped clip IDs or drift the native graph through repeated history round trips", () => {
+    const original = snapshot();
+    original.frames[0]!.animation.id = "motion:enter/fast";
+    original.frames[0]!.animation.blocks.push({
+      id: "morph",
+      layerId: "glyph",
+      propertyName: "pathData",
+      type: "path",
+      fromValue: "M0 0 L10 10",
+      toValue: "M1 1 L11 11",
+      startTime: 0,
+      endTime: 600,
+    });
+    const baseline = JSON.stringify(createDocumentV2FromLegacy(original));
+    let document = createDocumentV2FromLegacy(original);
+    for (let index = 0; index < 10; index++) {
+      document = createDocumentV2FromLegacy(legacySnapshotFromDocumentV2(document));
+      expect(JSON.stringify(document)).toBe(baseline);
+    }
   });
 
   it("preserves Android metadata, stable target names, and independent morph endpoints", () => {

@@ -8,11 +8,17 @@ import { useEditorStore } from "@/lib/store/editorStore";
 import type { CanvasFrame } from "@/lib/store/editorStore";
 import type { Layer } from "@/lib/shapeshifter/types";
 import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
+import { timelinePropertiesForLayer } from "@/lib/shapeshifter/motion/timelineProperties";
 import {
   sharedValue,
   type InspectorSelectionBounds,
 } from "@/lib/shapeshifter/scene/inspectorSelection";
 import { NumberRow, Row, Section, TextInput } from "./InspectorControls";
+import { MotionBlockEditor } from "./MotionBlockEditor";
+import {
+  TimelineClipboardControls,
+  handleTimelineClipboardShortcut,
+} from "../timeline/TimelineClipboardControls";
 
 export type InspectorTab = "design" | "motion";
 
@@ -402,18 +408,14 @@ export function MotionPanel({
   const addTimelineBlock = useEditorStore((state) => state.addTimelineBlock);
   const removeTimelineProperty = useEditorStore((state) => state.removeTimelineProperty);
   const selectBlocks = useEditorStore((state) => state.selectBlocks);
+  const selectedBlockIds = useEditorStore((state) => state.selectedBlockIds);
+  const duration = useEditorStore((state) => state.animation.duration);
   const layerBlocks = blocks.filter((block) => String(block.layerId) === String(layer.id));
+  const selectedBlocks = layerBlocks.filter((block) => selectedBlockIds.includes(block.id));
   const propertyNames = Array.from(
     new Set([
       ...layerBlocks.map((block) => block.propertyName),
-      "translateX",
-      "translateY",
-      "rotation",
-      "scaleX",
-      "scaleY",
-      "fillColor",
-      "strokeColor",
-      "strokeWidth",
+      ...timelinePropertiesForLayer(layer.type),
     ]),
   );
 
@@ -431,22 +433,39 @@ export function MotionPanel({
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <Section title="Vector morph">
-        <button
-          type="button"
-          onClick={onEditMorph}
-          className="flex h-8 w-full items-center gap-2 rounded-[4px] bg-muted/65 px-2 text-left text-[11px] text-foreground transition-colors hover:bg-muted"
-        >
-          <Pencil className="size-3.5 text-muted-foreground" />
-          <span className="flex-1">Start and end paths</span>
-          <span className="text-[10px] text-muted-foreground">Edit</span>
-        </button>
-        <p className="text-[10px] leading-relaxed text-muted-foreground">
-          Define both geometries for the vector morph.
-        </p>
-      </Section>
+    <div className="min-h-0 flex-1 overflow-y-auto" onKeyDown={handleTimelineClipboardShortcut}>
+      <TimelineClipboardControls />
+      {selectedBlocks.map((block) => (
+        <MotionBlockEditor
+          key={block.id}
+          block={block}
+          duration={duration}
+          onEditMorph={onEditMorph}
+        />
+      ))}
+      {(layer.type === "path" || layer.type === "clipPath") && (
+        <Section title="Vector morph">
+          <button
+            type="button"
+            onClick={onEditMorph}
+            disabled={layer.locked}
+            className="flex h-8 w-full items-center gap-2 rounded-[4px] bg-muted/65 px-2 text-left text-[11px] text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+          >
+            <Pencil className="size-3.5 text-muted-foreground" />
+            <span className="flex-1">Start and end paths</span>
+            <span className="text-[10px] text-muted-foreground">Edit</span>
+          </button>
+          <p className="text-[10px] leading-relaxed text-muted-foreground">
+            Edit the selected path segment, or create a path track for this layer.
+          </p>
+        </Section>
+      )}
       <Section title="Animations">
+        {(layer.type === "group" || layer.type === "vector") && (
+          <p className="text-[10px] leading-relaxed text-muted-foreground">
+            Animate child opacity for fades in Android exports.
+          </p>
+        )}
         <div className="space-y-1">
           {propertyNames.map((propertyName) => {
             const matches = layerBlocks.filter((block) => block.propertyName === propertyName);
@@ -461,12 +480,13 @@ export function MotionPanel({
               >
                 <button
                   type="button"
+                  disabled={layer.locked}
                   onClick={() =>
                     active
                       ? selectBlocks(matches.map((block) => block.id))
                       : addTimelineBlock(layer.id, propertyName)
                   }
-                  className="flex h-full min-w-0 flex-1 items-center gap-2 px-2 text-left text-[11px]"
+                  className="flex h-full min-w-0 flex-1 items-center gap-2 px-2 text-left text-[11px] disabled:opacity-50"
                   aria-label={
                     active
                       ? `Edit ${propertyLabel(propertyName)} animation`

@@ -45,11 +45,23 @@ export function WorldFrameChrome({
   const selectionKind = useEditorStore((state) => state.selectionKind);
   const hasCanvasSelection = useEditorStore((state) => state.hasCanvasSelection);
   const selectFrame = useEditorStore((state) => state.selectFrame);
-  const selectFrames = useEditorStore((state) => state.selectFrames);
-  const deselectAll = useEditorStore((state) => state.deselectAll);
   const renameFrame = useEditorStore((state) => state.renameFrame);
   const deleteFrame = useEditorStore((state) => state.deleteFrame);
   const [renamingFrameId, setRenamingFrameId] = useState<string | null>(null);
+
+  const selectTitle = (frameId: string, additive: boolean) => {
+    const state = useEditorStore.getState();
+    const next = additive
+      ? state.selectedFrameIds.includes(frameId)
+        ? state.selectedFrameIds.filter((id) => id !== frameId)
+        : [...state.selectedFrameIds, frameId]
+      : state.selectedFrameIds.length > 1 && state.selectedFrameIds.includes(frameId)
+        ? state.selectedFrameIds
+        : [frameId];
+    if (next.length) state.selectFrames(next, frameId);
+    else state.deselectAll();
+    return next;
+  };
 
   const screenRect = (frame: CanvasFrame) => {
     const bounds = frameBounds(frame);
@@ -139,22 +151,14 @@ export function WorldFrameChrome({
                           : "text-muted-foreground hover:text-foreground",
                     )}
                     title="Click to select frame · double-click to rename frame"
+                    aria-label={`Select frame ${frame.name}`}
+                    aria-pressed={selected}
                     onPointerDown={(event) => {
-                      if (event.button !== 0) return;
+                      if (!event.isPrimary || event.button !== 0) return;
                       event.stopPropagation();
                       const additive = event.shiftKey;
-                      const next = additive
-                        ? selectedFrameIds.includes(frame.id)
-                          ? selectedFrameIds.filter((id) => id !== frame.id)
-                          : [...selectedFrameIds, frame.id]
-                        : selectedFrameIds.length > 1 && selectedFrameIds.includes(frame.id)
-                          ? selectedFrameIds
-                          : [frame.id];
-                      if (next.length === 0) {
-                        deselectAll();
-                        return;
-                      }
-                      selectFrames(next, frame.id);
+                      const next = selectTitle(frame.id, additive);
+                      if (!next.length) return;
                       if (!additive) {
                         event.preventDefault();
                         onStartDrag(event.clientX, event.clientY, next);
@@ -164,6 +168,15 @@ export function WorldFrameChrome({
                           // Native capture may already have been released.
                         }
                       }
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      if (!event.repeat) selectTitle(frame.id, event.shiftKey);
+                    }}
+                    onClick={(event) => {
+                      if (event.detail === 0) selectTitle(frame.id, event.shiftKey);
                     }}
                     onDoubleClick={(event) => {
                       event.preventDefault();

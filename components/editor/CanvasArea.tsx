@@ -14,6 +14,7 @@ import { useArtboardDrag } from "./canvas/useArtboardDrag";
 import { getCanvasFrameBounds, useWorldCamera } from "./canvas/useWorldCamera";
 import { useWorldObjectSelection } from "./canvas/useWorldObjectSelection";
 import { useWorldPen } from "./canvas/useWorldPen";
+import { useWorldPenCreation } from "./canvas/useWorldPenCreation";
 import { useWorldSceneModel } from "./canvas/useWorldSceneModel";
 import { useWorldMarquee } from "./canvas/useWorldMarquee";
 import { useWorldLasso } from "./canvas/useWorldLasso";
@@ -25,6 +26,7 @@ import { useWorldPan } from "./canvas/useWorldPan";
 import { useWorldPointerPreview } from "./canvas/useWorldPointerPreview";
 import { useWorldCanvasShortcuts } from "./canvas/useWorldCanvasShortcuts";
 import { useWorldPointerRouter } from "./canvas/useWorldPointerRouter";
+import { useWorldShapeDrawing } from "./canvas/useWorldShapeDrawing";
 import {
   WorldBezierHandles,
   WorldFrameResizeHandles,
@@ -179,11 +181,13 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   });
   const editLayerTx = editLayerTranslation.x;
   const editLayerTy = editLayerTranslation.y;
-  const editWorldMatrix = useMemo(() => {
+  const editSceneNode = useMemo(() => {
     if (!editLayer) return null;
     const scene = evaluateAndroidScene(layers, animation, progress, true);
-    return scene.nodesById.get(String(editLayer.id))?.worldMatrix ?? null;
+    return scene.nodesById.get(String(editLayer.id)) ?? null;
   }, [animation, editLayer, layers, progress]);
+  const editWorldMatrix = editSceneNode?.worldMatrix ?? null;
+  const editLayerLocked = editSceneNode?.locked ?? editLayer?.locked ?? false;
 
   // Dynamic paint bucket cursor tinted with current selected color (for CSS cursor)
   const paintBucketCursor = React.useMemo(() => {
@@ -256,6 +260,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     ownerOrigin: editOrigin,
     layerTranslation: editLayerTranslation,
     worldMatrix: editWorldMatrix,
+    locked: editLayerLocked,
     layerId: selectedLayerId,
     editingSide,
     hitRadius: Math.max(anchorR * 2.8, worldPerPx * 10),
@@ -391,6 +396,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
 
   const {
     activeSubpathRef: penActiveSubpathRef,
+    scopeRef: penScopeRef,
+    finishedAtRef: penFinishedAtRef,
     dragRef: penDragRef,
     preview: penPreview,
     setPreview: setPenPreview,
@@ -398,11 +405,19 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     pointerDown: penPointerDown,
     pointerDrag: penPointerDrag,
     pointerUp: penPointerUp,
+    cancelPointer: penPointerCancel,
+    beginPath: beginPenPath,
   } = useWorldPen({
     path: editPath,
     snapStep: editSnap,
     worldPerPixel: worldPerPx,
     commit: commitEditPath,
+  });
+  const startWorldPenPath = useWorldPenCreation({
+    activeSubpathRef: penActiveSubpathRef,
+    beginPath: beginPenPath,
+    hitArtboard,
+    snapStep: editSnap,
   });
   const {
     hoveredFrameId,
@@ -426,8 +441,15 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   });
 
   useEffect(() => {
+    if (
+      toolMode === "pen" &&
+      penScopeRef.current?.ownerId === selectedFrameId &&
+      String(penScopeRef.current.layerId) === String(selectedLayerId) &&
+      penScopeRef.current.side === editingSide
+    )
+      return;
     finishPen();
-  }, [toolMode, selectedFrameId, editingSide, finishPen]);
+  }, [toolMode, selectedFrameId, selectedLayerId, editingSide, finishPen, penScopeRef]);
 
   // Paint bucket: fill the focused frame's vector if the click lands in its fill region.
   const applyWorldPaint = useCallback(
@@ -446,12 +468,22 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     [editLayer, editPath, updateSelectedLayer, currentFillColor],
   );
 
+  const shapeDrawing = useWorldShapeDrawing({
+    hitArtboard,
+    snapStep: editSnap,
+    worldPerPixel: worldPerPx,
+  });
   const {
     handlePointerDown: handleWorldPointerDown,
     handlePointerMove: handleWorldPointerMove,
     handlePointerUp: handleWorldPointerUp,
     handlePointerCancel: handleWorldPointerCancel,
   } = useWorldPointerRouter({
+    startPenPath: startWorldPenPath,
+    startShapeDrawing: shapeDrawing.start,
+    updateShapeDrawing: shapeDrawing.update,
+    finishShapeDrawing: shapeDrawing.finish,
+    cancelShapeDrawing: shapeDrawing.cancel,
     svgRef: worldSvgRef,
     worldPointFromEvent,
     toolMode,
@@ -460,6 +492,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     snapStep: editSnap,
     editOrigin,
     editWorldMatrix,
+    editLayerLocked,
     editPathPresent: Boolean(editPath),
     layers,
     selectedLayerId,
@@ -477,6 +510,7 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
     penPointerDown,
     penPointerDrag,
     penPointerUp,
+    penPointerCancel,
     applyWorldPaint,
     hitWorldAnchor,
     startWorldPointEditing,
@@ -527,10 +561,15 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
   // canvas (Figma-style "enter frame"), no separate edit screen.
   const handleWorldDoubleClick = useCallback(
     (e: React.MouseEvent) => {
+      if (Date.now() - penFinishedAtRef.current < 400) {
+        e.preventDefault();
+        return;
+      }
       // Double-click finishes an in-progress pen path
       if (toolMode === "pen" && penActiveSubpathRef.current != null) {
         e.preventDefault();
         finishPen();
+        setToolMode("select");
         return;
       }
       const p = worldPointFromEvent(e.clientX, e.clientY);
@@ -703,7 +742,10 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                           ? "grabbing"
                           : toolMode === "paint"
                             ? paintBucketCursor
-                            : toolMode === "pen" || toolMode === "pencil"
+                            : toolMode === "pen" ||
+                                toolMode === "pencil" ||
+                                toolMode === "rectangle" ||
+                                toolMode === "ellipse"
                               ? "crosshair"
                               : hoveredLayerKey
                                 ? "move"
@@ -861,6 +903,8 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       }
                       activeOrigin={editOrigin}
                       activeLayers={layers}
+                      animation={animation}
+                      progress={progress}
                       activeLayerIds={activeSelectedLayerIds}
                       selectedOwnerCount={selectedLayerOwnerCount}
                       documentBounds={documentSelectionBounds}
@@ -869,6 +913,17 @@ export function CanvasArea({ resetFrom, resetPreview, resetTo, resetAllViews }: 
                       onResizeStart={startLayerResize}
                       onRotateStart={startLayerRotate}
                     />
+                    {shapeDrawing.preview && (
+                      <path
+                        d={shapeDrawing.preview.d}
+                        transform={`translate(${shapeDrawing.preview.origin.x} ${shapeDrawing.preview.origin.y})`}
+                        fill="var(--primary)"
+                        fillOpacity={0.15}
+                        stroke="var(--primary)"
+                        strokeWidth={worldPerPx}
+                        pointerEvents="none"
+                      />
+                    )}
                   </svg>
                 ) : (
                   <PathCanvas

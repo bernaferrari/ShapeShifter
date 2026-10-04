@@ -5,6 +5,13 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "sonner";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "ShapeShifter — Vector & Motion Editor",
+  description:
+    "Draw vectors, refine path morphs, and animate Android assets with precise property tracks.",
+};
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 

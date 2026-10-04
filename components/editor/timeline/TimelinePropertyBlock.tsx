@@ -7,34 +7,29 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { INTERPOLATOR_CURVES } from "@/lib/shapeshifter/interpolators";
 import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
 import type { InterpolatorName, TimelineBlock } from "@/lib/shapeshifter/types";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { cn } from "@/lib/utils";
 import { LiveEasingCurve } from "./TimelineLiveState";
-
-const FIGMA_BLUE = "#0C8CE9";
-const SNAP_MS = 50;
+import { snapTimeOffset } from "./timelineTiming";
+import {
+  interpolatorControlPoints,
+  timelineBlockStartRange,
+  timelineKeyframeRange,
+} from "@/lib/shapeshifter/motion/timelineKeyframes";
 
 const INTERPOLATOR_OPTIONS: { value: InterpolatorName | string; label: string; hint: string }[] = [
-  { value: "FAST_OUT_SLOW_IN", label: "Standard", hint: "fast_out_slow_in" },
-  { value: "LINEAR_OUT_SLOW_IN", label: "Decelerate", hint: "linear_out_slow_in" },
-  { value: "FAST_OUT_LINEAR_IN", label: "Accelerate", hint: "fast_out_linear_in" },
-  { value: "ACCELERATE_DECELERATE", label: "Accelerate–decelerate", hint: "accelerate_decelerate" },
-  { value: "LINEAR", label: "Linear", hint: "linear" },
+  { value: "FAST_OUT_SLOW_IN", label: "Standard", hint: "Smooth acceleration and settling" },
+  { value: "LINEAR_OUT_SLOW_IN", label: "Decelerate", hint: "Fast start, gentle finish" },
+  { value: "FAST_OUT_LINEAR_IN", label: "Accelerate", hint: "Gentle start, fast finish" },
+  {
+    value: "ACCELERATE_DECELERATE",
+    label: "Accelerate–decelerate",
+    hint: "Balanced start and finish",
+  },
+  { value: "LINEAR", label: "Linear", hint: "Constant speed" },
 ];
-
-function curvePointsFor(interpolator: string | undefined): [number, number, number, number] {
-  if (interpolator && interpolator in INTERPOLATOR_CURVES) {
-    return INTERPOLATOR_CURVES[interpolator as InterpolatorName];
-  }
-  const match = interpolator?.match(
-    /cubic-bezier\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/i,
-  );
-  if (match) return [Number(match[1]), Number(match[2]), Number(match[3]), Number(match[4])];
-  return INTERPOLATOR_CURVES.FAST_OUT_SLOW_IN;
-}
 
 export function TimelineKeyframeDiamond({
   active,
@@ -49,16 +44,16 @@ export function TimelineKeyframeDiamond({
     <span
       className={cn(
         "block shrink-0 rotate-45 rounded-[0.5px] border border-solid transition-colors",
-        active ? "bg-[#0C8CE9]" : "bg-[#2C2C2C] hover:bg-[#0C8CE9]/20",
+        active ? "bg-primary" : "bg-card hover:bg-primary/20",
         className,
       )}
       style={{
         width: size,
         height: size,
         boxSizing: "border-box",
-        borderColor: FIGMA_BLUE,
+        borderColor: "var(--primary)",
         borderWidth: 1.25,
-        backgroundColor: active ? FIGMA_BLUE : undefined,
+        backgroundColor: active ? "var(--primary)" : undefined,
         transformOrigin: "center center",
       }}
       aria-hidden
@@ -71,6 +66,7 @@ type DragSession = {
   originalStart: number;
   originalEnd: number;
   historyRecorded: boolean;
+  moved: boolean;
 };
 
 type ResizeSession = DragSession & { edge: "start" | "end" };
@@ -80,24 +76,25 @@ function trackWidth(element: HTMLElement): number {
   return Math.max(1, track?.getBoundingClientRect().width ?? 300);
 }
 
-function snap(value: number): number {
-  return Math.round(value / SNAP_MS) * SNAP_MS;
-}
-
 export function TimelinePropertyBlock({
   block,
   duration,
   selected,
+  gridStep = 50,
+  keyboardStep = 1,
 }: {
   block: TimelineBlock;
   duration: number;
   selected: boolean;
+  gridStep?: number;
+  keyboardStep?: number;
 }) {
   const dragRef = React.useRef<DragSession | null>(null);
   const resizeRef = React.useRef<ResizeSession | null>(null);
-  const easingEditRef = React.useRef(false);
+  const easingEditRef = React.useRef<{ changed: boolean } | null>(null);
+  const suppressClickRef = React.useRef(false);
   const label = propertyLabel(block.propertyName);
-  const interpolator = block.interpolator || "FAST_OUT_SLOW_IN";
+  const interpolator = block.interpolator || "ACCELERATE_DECELERATE";
   const startPct = (block.startTime / duration) * 100;
   const endPct = (block.endTime / duration) * 100;
 
@@ -123,6 +120,7 @@ export function TimelinePropertyBlock({
   };
 
   const handleDragStart = (event: React.PointerEvent) => {
+    if (event.button !== 0) return;
     event.stopPropagation();
     event.currentTarget.setPointerCapture?.(event.pointerId);
     dragRef.current = {
@@ -130,8 +128,14 @@ export function TimelinePropertyBlock({
       originalStart: block.startTime,
       originalEnd: block.endTime,
       historyRecorded: false,
+      moved: false,
     };
-    useEditorStore.getState().selectBlocks([block.id]);
+    suppressClickRef.current = false;
+    const store = useEditorStore.getState();
+    if (String(store.selectedLayerId) !== String(block.layerId) || store.selectionKind !== "layer")
+      store.selectLayer(block.layerId);
+    if (event.shiftKey || event.metaKey || event.ctrlKey) store.toggleBlockSelection(block.id);
+    else store.selectBlocks([block.id]);
   };
 
   const handleDragMove = (event: React.PointerEvent) => {
@@ -140,29 +144,32 @@ export function TimelinePropertyBlock({
     const deltaTime =
       ((event.clientX - session.startX) / trackWidth(event.currentTarget as HTMLElement)) *
       duration;
-    const blockDuration = session.originalEnd - session.originalStart;
+    const [min, max] = timelineBlockStartRange(
+      useEditorStore.getState().animation.blocks,
+      block,
+      duration,
+    );
     const nextStart = Math.max(
-      0,
-      Math.min(duration - blockDuration, snap(session.originalStart + deltaTime)),
+      min,
+      Math.min(max, session.originalStart + snapTimeOffset(deltaTime, event.altKey, gridStep)),
     );
     if (nextStart === block.startTime) return;
+    session.moved = true;
     recordGestureHistory(session);
     useEditorStore
       .getState()
-      .updateTimelineBlock(
-        block.id,
-        { startTime: nextStart, endTime: nextStart + blockDuration },
-        { recordHistory: false },
-      );
+      .moveTimelineBlock(block.id, nextStart - block.startTime, { recordHistory: false });
   };
 
   const endDrag = (event: React.PointerEvent, cancelled = false) => {
     const session = dragRef.current;
     dragRef.current = null;
+    suppressClickRef.current = Boolean(session?.moved);
     finishPointerGesture(event, session, cancelled);
   };
 
   const handleResizeStart = (edge: "start" | "end") => (event: React.PointerEvent) => {
+    if (event.button !== 0) return;
     event.stopPropagation();
     event.currentTarget.setPointerCapture?.(event.pointerId);
     resizeRef.current = {
@@ -171,8 +178,13 @@ export function TimelinePropertyBlock({
       originalStart: block.startTime,
       originalEnd: block.endTime,
       historyRecorded: false,
+      moved: false,
     };
-    useEditorStore.getState().selectBlocks([block.id]);
+    suppressClickRef.current = false;
+    const store = useEditorStore.getState();
+    if (String(store.selectedLayerId) !== String(block.layerId) || store.selectionKind !== "layer")
+      store.selectLayer(block.layerId);
+    store.selectBlocks([block.id]);
   };
 
   const handleResizeMove = (event: React.PointerEvent) => {
@@ -181,59 +193,84 @@ export function TimelinePropertyBlock({
     const deltaTime =
       ((event.clientX - session.startX) / trackWidth(event.currentTarget as HTMLElement)) *
       duration;
-    const nextStart =
-      session.edge === "start"
-        ? Math.max(
-            0,
-            Math.min(session.originalEnd - SNAP_MS, snap(session.originalStart + deltaTime)),
-          )
-        : session.originalStart;
-    const nextEnd =
-      session.edge === "end"
-        ? Math.max(
-            session.originalStart + SNAP_MS,
-            Math.min(duration, snap(session.originalEnd + deltaTime)),
-          )
-        : session.originalEnd;
-    if (nextStart === block.startTime && nextEnd === block.endTime) return;
+    const [min, max] = timelineKeyframeRange(
+      useEditorStore.getState().animation.blocks,
+      block,
+      session.edge,
+      duration,
+    );
+    const original = session.edge === "start" ? session.originalStart : session.originalEnd;
+    const time = Math.max(
+      min,
+      Math.min(max, original + snapTimeOffset(deltaTime, event.altKey, gridStep)),
+    );
+    if (time === (session.edge === "start" ? block.startTime : block.endTime)) return;
+    session.moved = true;
     recordGestureHistory(session);
     useEditorStore
       .getState()
-      .updateTimelineBlock(
-        block.id,
-        { startTime: nextStart, endTime: nextEnd },
-        { recordHistory: false },
-      );
+      .updateTimelineKeyframe(block.id, session.edge, { time }, { recordHistory: false });
   };
 
   const endResize = (event: React.PointerEvent, cancelled = false) => {
     const session = resizeRef.current;
     resizeRef.current = null;
+    suppressClickRef.current = Boolean(session?.moved);
     finishPointerGesture(event, session, cancelled);
   };
 
   const jumpTo = (milliseconds: number) => {
-    useEditorStore.getState().setProgress(Math.max(0, Math.min(1, milliseconds / duration)));
+    const store = useEditorStore.getState();
+    if (store.isPlaying) store.togglePlayback();
+    store.setProgress(Math.max(0, Math.min(1, milliseconds / duration)));
   };
 
   return (
     <div className="pointer-events-none absolute inset-0 z-[1]">
-      <div
+      <button
+        type="button"
+        data-timeline-block-id={block.id}
+        aria-label={`Select ${label} animation from ${block.startTime} to ${block.endTime} milliseconds`}
+        aria-pressed={selected}
         className={cn(
-          "pointer-events-auto absolute top-1/2 h-px -translate-y-1/2 cursor-grab active:cursor-grabbing",
-          selected ? "bg-[#0C8CE9]/55" : "bg-[#0C8CE9]/35 hover:bg-[#0C8CE9]/50",
+          "pointer-events-auto absolute top-1/2 h-5 -translate-y-1/2 cursor-grab touch-none rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring active:cursor-grabbing",
+          selected ? "text-primary" : "text-primary/60 hover:text-primary",
         )}
         style={{ left: `${startPct}%`, width: `${Math.max(0, endPct - startPct)}%` }}
-        title={`${label}: ${block.startTime}–${block.endTime}ms`}
+        title={`${label}: ${block.startTime}–${block.endTime} ms · Alt-drag for precise timing`}
         onPointerDown={handleDragStart}
         onPointerMove={handleDragMove}
         onPointerUp={(event) => endDrag(event)}
         onPointerCancel={(event) => endDrag(event, true)}
         onClick={(event) => {
           event.stopPropagation();
-          useEditorStore.getState().toggleBlockSelection(block.id);
+          if (suppressClickRef.current) {
+            suppressClickRef.current = false;
+            return;
+          }
+          if (event.detail === 0) {
+            const store = useEditorStore.getState();
+            store.selectLayer(block.layerId);
+            store.selectBlocks([block.id]);
+          }
         }}
-      />
+        onKeyDown={(event) => {
+          if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+          event.preventDefault();
+          if (event.key === "ArrowUp" || event.key === "ArrowDown") return;
+          useEditorStore
+            .getState()
+            .moveTimelineBlock(
+              block.id,
+              (event.key === "ArrowLeft" ? -1 : 1) * keyboardStep * (event.shiftKey ? 10 : 1),
+            );
+        }}
+      >
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-1/2 h-px bg-current"
+        />
+      </button>
       {(["start", "end"] as const).map((edge) => {
         const milliseconds = edge === "start" ? block.startTime : block.endTime;
         return (
@@ -242,9 +279,9 @@ export function TimelinePropertyBlock({
             type="button"
             data-timeline-keyframe-block-id={block.id}
             data-timeline-keyframe-edge={edge}
-            className="pointer-events-auto absolute top-1/2 z-10 flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center p-0"
+            className="pointer-events-auto absolute top-1/2 z-10 flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize touch-none items-center justify-center rounded-sm p-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
             style={{ left: `${edge === "start" ? startPct : endPct}%` }}
-            title={`Keyframe @ ${milliseconds}ms`}
+            title={`Keyframe @ ${milliseconds} ms · Alt-drag for precise timing · Arrow keys to nudge`}
             aria-label={`${label} ${edge} keyframe at ${milliseconds} milliseconds`}
             onPointerDown={handleResizeStart(edge)}
             onPointerMove={handleResizeMove}
@@ -252,8 +289,33 @@ export function TimelinePropertyBlock({
             onPointerCancel={(event) => endResize(event, true)}
             onClick={(event) => {
               event.stopPropagation();
-              useEditorStore.getState().selectBlocks([block.id]);
+              if (suppressClickRef.current) {
+                suppressClickRef.current = false;
+                return;
+              }
+              const store = useEditorStore.getState();
+              store.selectLayer(block.layerId);
+              store.selectBlocks([block.id]);
               jumpTo(milliseconds);
+            }}
+            onKeyDown={(event) => {
+              if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+              event.preventDefault();
+              if (event.key === "ArrowUp" || event.key === "ArrowDown") return;
+              const direction = event.key === "ArrowLeft" ? -1 : 1;
+              const [min, max] = timelineKeyframeRange(
+                useEditorStore.getState().animation.blocks,
+                block,
+                edge,
+                duration,
+              );
+              const time = Math.max(
+                min,
+                Math.min(max, milliseconds + direction * keyboardStep * (event.shiftKey ? 10 : 1)),
+              );
+              if (time !== milliseconds)
+                useEditorStore.getState().updateTimelineKeyframe(block.id, edge, { time });
+              jumpTo(time);
             }}
             onDoubleClick={(event) => {
               event.preventDefault();
@@ -275,7 +337,7 @@ export function TimelinePropertyBlock({
               render={
                 <button
                   type="button"
-                  className="flex size-4 items-center justify-center rounded-[3px] border border-white/12 bg-[#2C2C2C] text-[#0C8CE9] shadow-sm outline-none hover:border-[#0C8CE9]/45 hover:bg-[#333] active:scale-[0.96]"
+                  className="flex size-5 items-center justify-center rounded-[3px] border border-border bg-card text-primary shadow-sm outline-none hover:border-primary/45 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
                   title={`Interpolator: ${INTERPOLATOR_OPTIONS.find((option) => option.value === interpolator)?.label ?? interpolator}`}
                   aria-label={`Edit ${label} easing`}
                   onPointerDown={(event) => event.stopPropagation()}
@@ -312,27 +374,34 @@ export function TimelinePropertyBlock({
                 onPointerDown={(event) => event.stopPropagation()}
               >
                 <LiveEasingCurve
+                  block={block}
                   size={88}
-                  points={curvePointsFor(interpolator)}
+                  points={interpolatorControlPoints(interpolator)}
                   onEditStart={() => {
-                    useEditorStore.getState().pushHistory();
-                    easingEditRef.current = true;
+                    easingEditRef.current = { changed: false };
                   }}
                   onEditEnd={() => {
-                    easingEditRef.current = false;
+                    easingEditRef.current = null;
                   }}
                   onEditCancel={() => {
-                    if (easingEditRef.current)
+                    if (easingEditRef.current?.changed)
                       useEditorStore.getState().cancelLastHistoryTransaction();
-                    easingEditRef.current = false;
+                    easingEditRef.current = null;
                   }}
                   onChange={([x1, y1, x2, y2]) => {
+                    const next = `cubic-bezier(${x1}, ${y1}, ${x2}, ${y2})`;
+                    if (next === block.interpolator) return;
+                    const session = easingEditRef.current;
+                    if (session && !session.changed) {
+                      useEditorStore.getState().pushHistory();
+                      session.changed = true;
+                    }
                     useEditorStore
                       .getState()
                       .updateTimelineBlock(
                         block.id,
-                        { interpolator: `cubic-bezier(${x1}, ${y1}, ${x2}, ${y2})` },
-                        { recordHistory: !easingEditRef.current },
+                        { interpolator: next },
+                        { recordHistory: !session },
                       );
                   }}
                 />
@@ -350,9 +419,7 @@ export function TimelinePropertyBlock({
                 >
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span>{option.label}</span>
-                    <span className="font-mono text-[10px] text-muted-foreground/80">
-                      {option.hint}
-                    </span>
+                    <span className="text-[10px] text-muted-foreground">{option.hint}</span>
                   </span>
                 </DropdownMenuItem>
               ))}

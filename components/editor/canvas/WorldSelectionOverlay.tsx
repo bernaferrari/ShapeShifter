@@ -1,10 +1,22 @@
 "use client";
 
 import React, { memo, useMemo } from "react";
-import { getAccuratePathBounds } from "@/lib/shapeshifter/pathUtils";
-import type { Layer, PathData, Point } from "@/lib/shapeshifter/types";
+import type { AnimationState, Layer, PathData, Point } from "@/lib/shapeshifter/types";
 import type { SceneRect } from "@/lib/shapeshifter/scene/selection";
-import { transformLayerRect } from "@/lib/shapeshifter/scene/layerTransform";
+import {
+  inverseAffine,
+  transformPointWithMatrix,
+  type AffineMatrix,
+} from "@/lib/shapeshifter/scene/layerTransform";
+import type { EvaluatedTransform } from "@/lib/shapeshifter/scene/evaluate";
+import { buildWorldTransformSelection } from "./worldLayerTransforms";
+
+export interface FrozenLayerTransform {
+  id: string | number;
+  transform: EvaluatedTransform;
+  worldMatrix: AffineMatrix;
+  parentMatrix: AffineMatrix;
+}
 
 export type LayerResizeHandle = "nw" | "ne" | "sw" | "se" | "e" | "w" | "n" | "s";
 
@@ -12,6 +24,9 @@ export interface LayerResizeSession {
   handle: LayerResizeHandle;
   origin: SceneRect;
   grabOffset: Point;
+  coordinateMatrix?: AffineMatrix;
+  ownerOrigin?: Point;
+  preserveAspect?: boolean;
   items: Array<{
     id: string | number;
     origFrom: PathData;
@@ -19,6 +34,7 @@ export interface LayerResizeSession {
     origin: SceneRect;
     frameOrigin?: SceneRect;
     baseTranslate?: Point;
+    evaluated?: FrozenLayerTransform;
   }>;
   moved: boolean;
 }
@@ -27,6 +43,7 @@ export interface LayerRotateSession {
   center: Point;
   ownerOrigin: Point;
   startAngle: number;
+  coordinateMatrix?: AffineMatrix;
   baseTransforms: Array<{
     id: string | number;
     rotation: number;
@@ -34,6 +51,7 @@ export interface LayerRotateSession {
     translateY: number;
     pivotX: number;
     pivotY: number;
+    evaluated?: FrozenLayerTransform;
   }>;
   moved: boolean;
 }
@@ -42,6 +60,8 @@ interface WorldSelectionOverlayProps {
   visible: boolean;
   activeOrigin: Point | null;
   activeLayers: Layer[];
+  animation?: AnimationState;
+  progress?: number;
   activeLayerIds: Array<string | number>;
   selectedOwnerCount: number;
   documentBounds: SceneRect | null;
@@ -51,21 +71,25 @@ interface WorldSelectionOverlayProps {
   onRotateStart: (session: LayerRotateSession, pointerId: number) => void;
 }
 
-const HANDLE_CURSORS: Record<LayerResizeHandle, string> = {
-  nw: "nwse-resize",
-  ne: "nesw-resize",
-  sw: "nesw-resize",
-  se: "nwse-resize",
-  n: "ns-resize",
-  s: "ns-resize",
-  w: "ew-resize",
-  e: "ew-resize",
-};
+function resizeCursor(handle: LayerResizeHandle, matrix: AffineMatrix) {
+  const x = handle.includes("w") ? -1 : handle.includes("e") ? 1 : 0;
+  const y = handle.includes("n") ? -1 : handle.includes("s") ? 1 : 0;
+  const xLength = Math.hypot(matrix.a, matrix.b) || 1;
+  const yLength = Math.hypot(matrix.c, matrix.d) || 1;
+  const direction = {
+    x: (matrix.a / xLength) * x + (matrix.c / yLength) * y,
+    y: (matrix.b / xLength) * x + (matrix.d / yLength) * y,
+  };
+  const step = Math.round((Math.atan2(direction.y, direction.x) * 4) / Math.PI);
+  return ["ew-resize", "nwse-resize", "ns-resize", "nesw-resize"][((step % 4) + 4) % 4]!;
+}
 
 function WorldSelectionOverlayComponent({
   visible,
   activeOrigin,
   activeLayers,
+  animation,
+  progress = 0,
   activeLayerIds,
   selectedOwnerCount,
   documentBounds,
@@ -76,46 +100,8 @@ function WorldSelectionOverlayComponent({
 }: WorldSelectionOverlayProps) {
   const selection = useMemo(() => {
     if (!activeOrigin || selectedOwnerCount > 1 || activeLayerIds.length === 0) return null;
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    const items: Array<{
-      layer: Layer;
-      bounds: SceneRect;
-      displayBounds: SceneRect;
-      translate: Point;
-    }> = [];
-    const selected = new Set(activeLayerIds.map(String));
-    for (const layer of activeLayers) {
-      if (!selected.has(String(layer.id)) || layer.type === "group") continue;
-      const bounds = getAccuratePathBounds((layer.pathData ?? layer.from) as PathData);
-      if (!bounds) continue;
-      const translate = {
-        x: Number(layer.translateX) || 0,
-        y: Number(layer.translateY) || 0,
-      };
-      const displayBounds = transformLayerRect(
-        { x: bounds.x, y: bounds.y, w: bounds.w, h: bounds.h },
-        layer,
-      );
-      items.push({ layer, bounds, displayBounds, translate });
-      minX = Math.min(minX, displayBounds.x);
-      minY = Math.min(minY, displayBounds.y);
-      maxX = Math.max(maxX, displayBounds.x + displayBounds.w);
-      maxY = Math.max(maxY, displayBounds.y + displayBounds.h);
-    }
-    if (!Number.isFinite(minX)) return null;
-    return {
-      items,
-      localBounds: {
-        x: minX,
-        y: minY,
-        w: Math.max(0.01, maxX - minX),
-        h: Math.max(0.01, maxY - minY),
-      },
-    };
-  }, [activeLayerIds, activeLayers, activeOrigin, selectedOwnerCount]);
+    return buildWorldTransformSelection(activeLayers, activeLayerIds, animation, progress);
+  }, [activeLayerIds, activeLayers, activeOrigin, selectedOwnerCount, animation, progress]);
 
   if (!visible) return null;
   if (selectedOwnerCount > 1) {
@@ -126,7 +112,7 @@ function WorldSelectionOverlayComponent({
         width={Math.max(0.01, documentBounds.w)}
         height={Math.max(0.01, documentBounds.h)}
         fill="none"
-        stroke="#0d99ff"
+        stroke="var(--primary)"
         strokeWidth={1.5}
         vectorEffect="non-scaling-stroke"
         pointerEvents="none"
@@ -135,52 +121,34 @@ function WorldSelectionOverlayComponent({
   }
   if (!selection || !activeOrigin) return null;
 
-  const local = selection.localBounds;
-  const world = {
-    x: activeOrigin.x + local.x,
-    y: activeOrigin.y + local.y,
-    w: local.w,
-    h: local.h,
+  const local = selection.bounds;
+  const worldPoint = (point: Point) => {
+    const ownerPoint = transformPointWithMatrix(point, selection.coordinateMatrix);
+    return { x: activeOrigin.x + ownerPoint.x, y: activeOrigin.y + ownerPoint.y };
   };
   const handleSize = worldPerPx * 3;
-  const edgeHitSize = worldPerPx * 5;
-  const canResize = selection.items.every(
-    ({ layer }) =>
-      Math.abs((layer.scaleX ?? 1) - 1) < 1e-9 &&
-      Math.abs((layer.scaleY ?? 1) - 1) < 1e-9 &&
-      Math.abs(layer.rotation ?? 0) < 1e-9,
-  );
-  const handles: Array<{
-    handle: LayerResizeHandle;
-    x: number;
-    y: number;
-  }> = [
-    { handle: "nw", x: world.x, y: world.y },
-    { handle: "ne", x: world.x + world.w, y: world.y },
-    { handle: "sw", x: world.x, y: world.y + world.h },
-    { handle: "se", x: world.x + world.w, y: world.y + world.h },
-    { handle: "n", x: world.x + world.w / 2, y: world.y },
-    { handle: "s", x: world.x + world.w / 2, y: world.y + world.h },
-    { handle: "w", x: world.x, y: world.y + world.h / 2 },
-    { handle: "e", x: world.x + world.w, y: world.y + world.h / 2 },
-  ];
+  const handles = (
+    [
+      { handle: "nw", x: local.x, y: local.y },
+      { handle: "ne", x: local.x + local.w, y: local.y },
+      { handle: "sw", x: local.x, y: local.y + local.h },
+      { handle: "se", x: local.x + local.w, y: local.y + local.h },
+      { handle: "n", x: local.x + local.w / 2, y: local.y },
+      { handle: "s", x: local.x + local.w / 2, y: local.y + local.h },
+      { handle: "w", x: local.x, y: local.y + local.h / 2 },
+      { handle: "e", x: local.x + local.w, y: local.y + local.h / 2 },
+    ] satisfies Array<{ handle: LayerResizeHandle; x: number; y: number }>
+  ).map((handle) => ({ ...handle, ...worldPoint(handle) }));
   const freezeItems = (): LayerResizeSession["items"] =>
-    selection.items
-      .filter(({ layer }) => !layer.locked)
-      .map(({ layer, bounds, translate }) => ({
-        id: layer.id,
-        origFrom: structuredClone((layer.from ?? layer.pathData) as PathData),
-        origTo: layer.to ? structuredClone(layer.to as PathData) : null,
-        origin: { ...bounds },
-        frameOrigin: {
-          x: bounds.x + translate.x,
-          y: bounds.y + translate.y,
-          w: bounds.w,
-          h: bounds.h,
-        },
-        baseTranslate: { ...translate },
-      }));
+    selection.items.map(({ node, localBounds, evaluated }) => ({
+      id: node.id,
+      origFrom: node.layer.from,
+      origTo: node.layer.to ?? null,
+      origin: localBounds,
+      evaluated,
+    }));
   const beginResize = (event: React.PointerEvent<SVGElement>, handle: LayerResizeHandle) => {
+    if (!event.isPrimary || event.button !== 0 || !selection.items.length) return;
     event.stopPropagation();
     event.preventDefault();
     const corner = {
@@ -196,138 +164,177 @@ function WorldSelectionOverlayComponent({
           : local.y + local.h / 2,
     };
     const pointer = worldPointFromClient(event.clientX, event.clientY);
+    const inverse = inverseAffine(selection.coordinateMatrix);
+    if (!inverse) return;
     const localPointer = pointer
-      ? { x: pointer.x - activeOrigin.x, y: pointer.y - activeOrigin.y }
+      ? transformPointWithMatrix(
+          { x: pointer.x - activeOrigin.x, y: pointer.y - activeOrigin.y },
+          inverse,
+        )
       : corner;
     onResizeStart(
       {
         handle,
-        origin: { ...local },
-        grabOffset: {
-          x: localPointer.x - corner.x,
-          y: localPointer.y - corner.y,
-        },
+        origin: local,
+        ownerOrigin: activeOrigin,
+        coordinateMatrix: selection.coordinateMatrix,
+        preserveAspect: selection.preserveAspect,
+        grabOffset: { x: localPointer.x - corner.x, y: localPointer.y - corner.y },
         items: freezeItems(),
         moved: false,
       },
       event.pointerId,
     );
   };
+  const topMiddle = worldPoint({ x: local.x + local.w / 2, y: local.y });
+  const center = worldPoint({ x: local.x + local.w / 2, y: local.y + local.h / 2 });
+  const topDirection = { x: topMiddle.x - center.x, y: topMiddle.y - center.y };
+  const topDistance = Math.hypot(topDirection.x, topDirection.y) || 1;
   const rotateHandle = {
-    x: world.x + world.w / 2,
-    y: world.y - worldPerPx * 18,
+    x: topMiddle.x + (topDirection.x / topDistance) * worldPerPx * 18,
+    y: topMiddle.y + (topDirection.y / topDistance) * worldPerPx * 18,
   };
   const beginRotate = (event: React.PointerEvent<SVGCircleElement>) => {
+    if (!event.isPrimary || event.button !== 0 || !selection.canRotate) return;
     event.stopPropagation();
     event.preventDefault();
     const pointer = worldPointFromClient(event.clientX, event.clientY);
-    if (!pointer) return;
-    const center = { x: world.x + world.w / 2, y: world.y + world.h / 2 };
+    const inverse = inverseAffine(selection.rotationMatrix);
+    if (!pointer || !inverse) return;
+    const localPointer = transformPointWithMatrix(
+      { x: pointer.x - activeOrigin.x, y: pointer.y - activeOrigin.y },
+      inverse,
+    );
+    const localCenter = transformPointWithMatrix(
+      { x: center.x - activeOrigin.x, y: center.y - activeOrigin.y },
+      inverse,
+    );
     onRotateStart(
       {
         center,
-        startAngle: (Math.atan2(pointer.y - center.y, pointer.x - center.x) * 180) / Math.PI,
+        coordinateMatrix: selection.rotationMatrix,
+        startAngle:
+          (Math.atan2(localPointer.y - localCenter.y, localPointer.x - localCenter.x) * 180) /
+          Math.PI,
         ownerOrigin: activeOrigin,
-        baseTransforms: selection.items.map(({ layer }) => ({
-          id: layer.id,
-          rotation: Number(layer.rotation) || 0,
-          translateX: Number(layer.translateX) || 0,
-          translateY: Number(layer.translateY) || 0,
-          pivotX: Number(layer.pivotX) || 0,
-          pivotY: Number(layer.pivotY) || 0,
+        baseTransforms: selection.items.map(({ node, evaluated }) => ({
+          id: node.id,
+          ...evaluated.transform,
+          evaluated,
         })),
         moved: false,
       },
       event.pointerId,
     );
   };
-
+  const matrix = selection.coordinateMatrix;
+  const outlineTransform = `matrix(${matrix.a} ${matrix.b} ${matrix.c} ${matrix.d} ${matrix.e + activeOrigin.x} ${matrix.f + activeOrigin.y})`;
+  const byHandle = new Map(handles.map((handle) => [handle.handle, handle]));
+  const edges = [
+    { handle: "n" as const, start: "nw" as const, end: "ne" as const },
+    { handle: "s" as const, start: "sw" as const, end: "se" as const },
+    { handle: "w" as const, start: "nw" as const, end: "sw" as const },
+    { handle: "e" as const, start: "ne" as const, end: "se" as const },
+  ];
   return (
-    <g pointerEvents="none">
+    <g pointerEvents="none" data-selection-frame="true">
       <rect
-        x={world.x}
-        y={world.y}
-        width={world.w}
-        height={world.h}
+        x={local.x}
+        y={local.y}
+        width={local.w}
+        height={local.h}
+        transform={outlineTransform}
         fill="none"
-        stroke="#0d99ff"
+        stroke="var(--primary)"
         strokeWidth={1.5}
         vectorEffect="non-scaling-stroke"
       />
-      <line
-        x1={rotateHandle.x}
-        y1={world.y}
-        x2={rotateHandle.x}
-        y2={rotateHandle.y}
-        stroke="#0d99ff"
-        strokeWidth={1}
-        vectorEffect="non-scaling-stroke"
-      />
-      <circle
-        cx={rotateHandle.x}
-        cy={rotateHandle.y}
-        r={handleSize * 1.1}
-        fill="#ffffff"
-        stroke="#0d99ff"
-        strokeWidth={1.25}
-        vectorEffect="non-scaling-stroke"
-        pointerEvents="all"
-        style={{ cursor: "grab", pointerEvents: "auto" }}
-        onPointerDown={beginRotate}
-      />
-      {canResize &&
-        handles
-          .filter(({ handle }) => handle.length === 1)
-          .map(({ handle }) => {
-            const edge =
-              handle === "n"
-                ? { x1: world.x, y1: world.y, x2: world.x + world.w, y2: world.y }
-                : handle === "s"
-                  ? {
-                      x1: world.x,
-                      y1: world.y + world.h,
-                      x2: world.x + world.w,
-                      y2: world.y + world.h,
-                    }
-                  : handle === "w"
-                    ? { x1: world.x, y1: world.y, x2: world.x, y2: world.y + world.h }
-                    : {
-                        x1: world.x + world.w,
-                        y1: world.y,
-                        x2: world.x + world.w,
-                        y2: world.y + world.h,
-                      };
+      {selection.canRotate && (
+        <>
+          <line
+            x1={topMiddle.x}
+            y1={topMiddle.y}
+            x2={rotateHandle.x}
+            y2={rotateHandle.y}
+            stroke="var(--primary)"
+            strokeWidth={1}
+            vectorEffect="non-scaling-stroke"
+          />
+          <circle
+            cx={rotateHandle.x}
+            cy={rotateHandle.y}
+            r={worldPerPx * 10}
+            fill="transparent"
+            pointerEvents="all"
+            data-rotate-handle="true"
+            style={{ cursor: "grab", pointerEvents: "auto" }}
+            onPointerDown={beginRotate}
+          />
+          <circle
+            cx={rotateHandle.x}
+            cy={rotateHandle.y}
+            r={handleSize * 1.1}
+            fill="var(--background)"
+            stroke="var(--primary)"
+            strokeWidth={1.25}
+            vectorEffect="non-scaling-stroke"
+          />
+        </>
+      )}
+      {selection.items.length > 0 && (
+        <>
+          {edges.map(({ handle, start, end }) => {
+            const from = byHandle.get(start)!;
+            const to = byHandle.get(end)!;
             return (
               <line
                 key={`hit-${handle}`}
-                {...edge}
+                x1={from.x}
+                y1={from.y}
+                x2={to.x}
+                y2={to.y}
                 stroke="transparent"
-                strokeWidth={edgeHitSize * 2}
+                strokeWidth={10}
                 pointerEvents="stroke"
                 vectorEffect="non-scaling-stroke"
-                style={{ cursor: HANDLE_CURSORS[handle], pointerEvents: "stroke" }}
+                style={{
+                  cursor: resizeCursor(handle, selection.coordinateMatrix),
+                  pointerEvents: "stroke",
+                }}
                 onPointerDown={(event) => beginResize(event, handle)}
               />
             );
           })}
-      {canResize &&
-        handles.map(({ handle, x, y }) => (
-          <rect
-            key={handle}
-            x={x - handleSize}
-            y={y - handleSize}
-            width={handleSize * 2}
-            height={handleSize * 2}
-            rx={worldPerPx}
-            fill="#ffffff"
-            stroke="#0d99ff"
-            strokeWidth={1.25}
-            vectorEffect="non-scaling-stroke"
-            pointerEvents="all"
-            style={{ cursor: HANDLE_CURSORS[handle], pointerEvents: "auto" }}
-            onPointerDown={(event) => beginResize(event, handle)}
-          />
-        ))}
+          {handles.map(({ handle, x, y }) => (
+            <g
+              key={handle}
+              pointerEvents="all"
+              style={{ cursor: resizeCursor(handle, selection.coordinateMatrix) }}
+              data-resize-handle={handle}
+              onPointerDown={(event) => beginResize(event, handle)}
+            >
+              <rect
+                x={x - handleSize * 2.5}
+                y={y - handleSize * 2.5}
+                width={handleSize * 5}
+                height={handleSize * 5}
+                fill="transparent"
+              />
+              <rect
+                x={x - handleSize}
+                y={y - handleSize}
+                width={handleSize * 2}
+                height={handleSize * 2}
+                rx={worldPerPx}
+                fill="var(--background)"
+                stroke="var(--primary)"
+                strokeWidth={1.25}
+                vectorEffect="non-scaling-stroke"
+              />
+            </g>
+          ))}
+        </>
+      )}
     </g>
   );
 }

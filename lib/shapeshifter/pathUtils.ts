@@ -61,6 +61,7 @@ export {
   splitCommandInHalf,
   splitPointNear,
   translatePath,
+  translatePathPoints,
   updateCommandPoint,
   updatePoint,
 } from "./path/pathEditing";

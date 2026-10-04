@@ -212,22 +212,29 @@ export function importEditorText(fileName: string, text: string): ImportSummary 
   const layers =
     vectorDrawable?.layers ?? importLayersFromSvg(text, fileName.replace(/\.[^.]+$/, ""));
   if (!layers.length) throw new Error("No path data found in file");
-  store.importLayers(layers);
-  if (vectorDrawable) {
-    store.updateVector({
-      name: fileName.replace(/\.[^.]+$/, "") || store.vector.name,
-      width: vectorDrawable.width,
-      height: vectorDrawable.height,
-      viewportWidth: vectorDrawable.viewportWidth,
-      viewportHeight: vectorDrawable.viewportHeight,
-      widthUnit: vectorDrawable.widthUnit,
-      heightUnit: vectorDrawable.heightUnit,
-      alpha: vectorDrawable.alpha,
-      tint: vectorDrawable.tint,
-      tintMode: vectorDrawable.tintMode,
-      autoMirrored: vectorDrawable.autoMirrored,
-      minSdk: vectorDrawable.minSdk,
-    });
+  // Geometry and Android root metadata belong to one user action. Undoing only
+  // the dimensions first would leave imported paths in the previous viewport.
+  store.beginHistoryGesture();
+  try {
+    store.importLayers(layers);
+    if (vectorDrawable) {
+      store.updateVector({
+        name: fileName.replace(/\.[^.]+$/, "") || store.vector.name,
+        width: vectorDrawable.width,
+        height: vectorDrawable.height,
+        viewportWidth: vectorDrawable.viewportWidth,
+        viewportHeight: vectorDrawable.viewportHeight,
+        widthUnit: vectorDrawable.widthUnit,
+        heightUnit: vectorDrawable.heightUnit,
+        alpha: vectorDrawable.alpha,
+        tint: vectorDrawable.tint,
+        tintMode: vectorDrawable.tintMode,
+        autoMirrored: vectorDrawable.autoMirrored,
+        minSdk: vectorDrawable.minSdk,
+      });
+    }
+  } finally {
+    store.endHistoryGesture();
   }
   return {
     title: `Imported ${layers.length} layer(s)`,

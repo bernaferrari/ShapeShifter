@@ -2,6 +2,10 @@
 
 import { useEffect } from "react";
 import { useEditorStore } from "@/lib/store/editorStore";
+import {
+  advancePlaybackTime,
+  resolveTimelinePreviewRange,
+} from "@/lib/shapeshifter/motion/previewRange";
 
 /** Runs the playhead only while playback is active, avoiding an idle RAF loop. */
 export function useEditorPlayback() {
@@ -18,17 +22,21 @@ export function useEditorPlayback() {
       previousTime = time;
       const duration = Math.max(1, store.animation.duration);
       const speed = store.isSlowMotion ? 0.25 : store.speed;
-      const nextProgress = store.progress + (elapsed * speed) / duration;
-
-      if (nextProgress >= 1) {
-        if (store.isRepeating) store.setProgress(nextProgress % 1);
-        else {
-          store.setProgress(1);
-          store.togglePlayback();
-        }
-      } else {
-        store.setProgress(nextProgress);
-      }
+      const range = resolveTimelinePreviewRange(
+        store.timelinePreviewRange,
+        store.selectedFrameId,
+        duration,
+      );
+      const next = advancePlaybackTime(
+        store.progress * duration,
+        elapsed,
+        speed,
+        duration,
+        range,
+        store.isRepeating,
+      );
+      store.setProgress(next.time / duration);
+      if (next.finished) store.togglePlayback();
 
       frameId = requestAnimationFrame(tick);
     };

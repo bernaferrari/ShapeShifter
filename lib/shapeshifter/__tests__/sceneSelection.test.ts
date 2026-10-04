@@ -66,4 +66,68 @@ describe("document-wide scene selection", () => {
     ];
     expect(collectOwnedLayersInRect(hiddenOwners, { x: -1, y: -1, w: 20, h: 20 })).toEqual([]);
   });
+
+  it("bounds selected groups by visible transformed descendants without duplicating marquee hits", () => {
+    const group = {
+      ...layer("group"),
+      type: "group" as const,
+      translateX: 20,
+      scaleX: 2,
+      scaleY: 3,
+      from: { subPaths: [] },
+    };
+    const child = { ...layer("child", 5), parentId: group.id };
+    const owner = { ownerId: "frame", origin: { x: 100, y: 50 }, layers: [group, child] };
+    expect(unionOwnedLayerBounds([owner], [{ ownerId: "frame", layerId: "group" }])).toEqual({
+      x: 130,
+      y: 50,
+      w: 20,
+      h: 30,
+    });
+    expect(collectOwnedLayersInRect([owner], { x: 129, y: 49, w: 22, h: 32 })).toEqual([
+      { ownerId: "frame", layerId: "child" },
+    ]);
+  });
+
+  it("keeps children of locked groups out of marquee while still bounding an explicit selection", () => {
+    const group = {
+      ...layer("group"),
+      type: "group" as const,
+      locked: true,
+      from: { subPaths: [] },
+    };
+    const child = { ...layer("child"), parentId: group.id };
+    const owner = { ownerId: "frame", origin: { x: 0, y: 0 }, layers: [group, child] };
+    expect(collectOwnedLayersInRect([owner], { x: -1, y: -1, w: 12, h: 12 })).toEqual([]);
+    expect(unionOwnedLayerBounds([owner], [{ ownerId: "frame", layerId: child.id }])).toEqual({
+      x: 0,
+      y: 0,
+      w: 10,
+      h: 10,
+    });
+  });
+
+  it("bounds native strokes along each axis under an anisotropic rotated hierarchy", () => {
+    const group = {
+      ...layer("group"),
+      type: "group" as const,
+      scaleX: 2,
+      scaleY: 1,
+      from: { subPaths: [] },
+    };
+    const child = {
+      ...layer("child"),
+      parentId: group.id,
+      rotation: 45,
+      strokeColor: "#000000",
+      strokeWidth: 2,
+      strokeLinejoin: "round" as const,
+    };
+    const owner = { ownerId: "frame", origin: { x: 0, y: 0 }, layers: [group, child] };
+    const bounds = unionOwnedLayerBounds([owner], [{ ownerId: "frame", layerId: child.id }])!;
+    expect(bounds.x).toBeCloseTo(-10 * Math.SQRT2 - 2);
+    expect(bounds.y).toBeCloseTo(-1);
+    expect(bounds.w).toBeCloseTo(20 * Math.SQRT2 + 4);
+    expect(bounds.h).toBeCloseTo(10 * Math.SQRT2 + 2);
+  });
 });

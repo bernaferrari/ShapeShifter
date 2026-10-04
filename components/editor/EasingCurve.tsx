@@ -42,10 +42,13 @@ export function EasingCurve({
   const svgRef = React.useRef<SVGSVGElement>(null);
   const dragging = React.useRef<1 | 2 | null>(null);
   const editable = Boolean(onChange);
+  const minY = Math.min(editable ? -0.4 : 0, y1, y2);
+  const maxY = Math.max(editable ? 1.4 : 1, y1, y2);
+  const yRange = maxY - minY;
 
   // SVG y grows downward, so flip the curve vertically (1 - y).
   const px = (x: number) => pad + x * span;
-  const py = (y: number) => pad + (1 - y) * span;
+  const py = (y: number) => pad + ((maxY - y) / yRange) * span;
 
   const d = `M ${px(0)} ${py(0)} C ${px(x1)} ${py(y1)}, ${px(x2)} ${py(y2)}, ${px(1)} ${py(1)}`;
 
@@ -73,7 +76,7 @@ export function EasingCurve({
     dot = { x: px(p), y: py(by) };
   }
 
-  const round = (n: number) => Math.round(n * 100) / 100;
+  const round = (n: number, precise: boolean) => Number(n.toFixed(precise ? 3 : 2));
 
   const handlePointerDown = (which: 1 | 2) => (e: React.PointerEvent) => {
     if (!onChange) return;
@@ -90,11 +93,13 @@ export function EasingCurve({
     if (!rect) return;
     // rect is CSS px; viewBox === size so the mapping is 1:1.
     const nx = (((e.clientX - rect.left) / rect.width) * size - pad) / span;
-    const ny = 1 - (((e.clientY - rect.top) / rect.height) * size - pad) / span;
+    const ny = maxY - ((((e.clientY - rect.top) / rect.height) * size - pad) / span) * yRange;
     const cx = Math.max(0, Math.min(1, nx)); // control x stays within the domain
-    const cy = Math.max(-0.4, Math.min(1.4, ny)); // allow a little overshoot
+    const cy = Math.max(minY, Math.min(maxY, ny));
     const next: Pts =
-      dragging.current === 1 ? [round(cx), round(cy), x2, y2] : [x1, y1, round(cx), round(cy)];
+      dragging.current === 1
+        ? [round(cx, e.altKey), round(cy, e.altKey), x2, y2]
+        : [x1, y1, round(cx, e.altKey), round(cy, e.altKey)];
     onChange(next);
   };
 
@@ -147,18 +152,72 @@ export function EasingCurve({
         { n: 1 as const, x: x1, y: y1 },
         { n: 2 as const, x: x2, y: y2 },
       ].map(({ n, x, y }) => (
-        <circle
-          key={n}
-          cx={px(x)}
-          cy={py(y)}
-          r={editable ? 5 : 2.5}
-          fill="var(--primary)"
-          fillOpacity={editable ? 1 : 0.5}
-          stroke={editable ? "var(--background)" : undefined}
-          strokeWidth={editable ? 1.5 : undefined}
-          style={editable ? { cursor: "grab" } : undefined}
-          onPointerDown={editable ? handlePointerDown(n) : undefined}
-        />
+        <g key={n}>
+          {editable && (
+            <circle
+              cx={px(x)}
+              cy={py(y)}
+              r={10}
+              fill="transparent"
+              aria-hidden
+              style={{ cursor: "grab" }}
+              onPointerDown={handlePointerDown(n)}
+            />
+          )}
+          <circle
+            cx={px(x)}
+            cy={py(y)}
+            r={editable ? 5 : 2.5}
+            fill="var(--primary)"
+            fillOpacity={editable ? 1 : 0.5}
+            stroke={editable ? "var(--background)" : undefined}
+            strokeWidth={editable ? 1.5 : undefined}
+            style={editable ? { cursor: "grab" } : undefined}
+            tabIndex={editable ? 0 : undefined}
+            role={editable ? "slider" : undefined}
+            aria-label={editable ? `Easing control point ${n}` : undefined}
+            aria-valuemin={editable ? 0 : undefined}
+            aria-valuemax={editable ? 1 : undefined}
+            aria-valuenow={editable ? x : undefined}
+            aria-valuetext={editable ? `Time ${x}, value ${y}` : undefined}
+            className={
+              editable
+                ? "outline-none focus-visible:stroke-ring focus-visible:stroke-[3]"
+                : undefined
+            }
+            onKeyDown={
+              editable
+                ? (event) => {
+                    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key))
+                      return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const step = event.altKey ? 0.001 : event.shiftKey ? 0.1 : 0.01;
+                    const nextX = Math.max(
+                      0,
+                      Math.min(
+                        1,
+                        x +
+                          (event.key === "ArrowRight"
+                            ? step
+                            : event.key === "ArrowLeft"
+                              ? -step
+                              : 0),
+                      ),
+                    );
+                    const nextY =
+                      y + (event.key === "ArrowUp" ? step : event.key === "ArrowDown" ? -step : 0);
+                    onChange?.(
+                      n === 1
+                        ? [Number(nextX.toFixed(3)), Number(nextY.toFixed(3)), x2, y2]
+                        : [x1, y1, Number(nextX.toFixed(3)), Number(nextY.toFixed(3))],
+                    );
+                  }
+                : undefined
+            }
+            onPointerDown={editable ? handlePointerDown(n) : undefined}
+          />
+        </g>
       ))}
     </svg>
   );

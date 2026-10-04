@@ -8,6 +8,7 @@ import {
   exportLiveDocument,
   exportLiveLottieDocument,
   LIVE_EXPORT_SCOPE,
+  selectedLayerExportIssue,
   serializeLiveProject,
   summarizeAndroidWarnings,
 } from "../exportDocument";
@@ -16,6 +17,28 @@ import { parseZip } from "../../shapeshifter/zip";
 describe("live project export", () => {
   beforeEach(() => {
     useEditorStore.getState().resetProject();
+  });
+
+  it("rejects selected-group and empty-path morph exports while whole-owner export remains available", async () => {
+    const store = useEditorStore.getState();
+    const group = {
+      ...store.layers[0]!,
+      id: "group-export",
+      type: "group" as const,
+      from: { subPaths: [] },
+    };
+    useEditorStore.setState({
+      layers: [group, { ...store.layers[0]!, parentId: group.id }],
+      selectedLayerId: group.id,
+    });
+    expect(selectedLayerExportIssue(group)).toContain("Select a path layer");
+    for (const kind of ["svg", "css", "spritesheet"] as const)
+      await expect(exportLiveDocument(kind)).rejects.toThrow("Select a path layer");
+    expect((await exportLiveDocument("static")).content).toContain("<path");
+    useEditorStore.setState({
+      layers: [{ ...group, type: "path", to: undefined }],
+    });
+    await expect(exportLiveDocument("svg")).rejects.toThrow("drawable geometry");
   });
 
   it("preserves page metadata while a differently sized artboard is active", () => {
@@ -230,14 +253,17 @@ describe("live project export", () => {
     const commandLottie = JSON.parse((await exportLiveDocument("lottie")).content as string);
     expect(dialogLottie).toEqual(lottie);
     expect(commandLottie).toEqual(lottie);
-    expect(useEditorStore.getState().animation.blocks.some((block) => String(block.layerId) === String(edited.id))).toBe(
-      true,
-    );
+    expect(
+      useEditorStore
+        .getState()
+        .animation.blocks.some((block) => String(block.layerId) === String(edited.id)),
+    ).toBe(true);
 
     const android = compileLiveAndroidArtboard();
     const dialogAndroid = await exportLiveDocument("avd");
     const commandAndroid = await exportLiveDocument("vector");
-    const androidXml = android.files.find((file) => file.path.endsWith("_vector.xml"))?.content ?? "";
+    const androidXml =
+      android.files.find((file) => file.path.endsWith("_vector.xml"))?.content ?? "";
     expect(androidXml).toContain("#112233");
     expect(androidXml).toContain(editedPath);
     expect(dialogAndroid.scope).toBe("artboard");

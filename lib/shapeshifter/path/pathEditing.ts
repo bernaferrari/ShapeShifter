@@ -6,6 +6,62 @@ import { generateId } from "../ids";
 
 const clonePath = (pathData: PathData): PathData => structuredClone(pathData);
 
+type PathPointIndex = { subPathIndex: number; commandIndex: number; pointIndex: number };
+
+/** Translate selected points and the tangent handles attached to selected anchors once. */
+export function translatePathPoints(
+  pathData: PathData,
+  selected: readonly PathPointIndex[],
+  dx: number,
+  dy: number,
+): PathData {
+  if (!Number.isFinite(dx) || !Number.isFinite(dy) || (!dx && !dy)) return pathData;
+  const points = new Map<string, PathPointIndex>();
+  const anchors = new Set<string>();
+  const add = (subPathIndex: number, commandIndex: number, pointIndex: number) => {
+    const command = pathData.subPaths[subPathIndex]?.commands[commandIndex];
+    if (!command?.points[pointIndex]) return;
+    const key = `${subPathIndex}:${commandIndex}:${pointIndex}`;
+    points.set(key, { subPathIndex, commandIndex, pointIndex });
+    if (pointIndex !== command.points.length - 1 || anchors.has(key)) return;
+    anchors.add(key);
+    if (command.type === "C") add(subPathIndex, commandIndex, 1);
+    else if (command.type === "Q" || command.type === "S") add(subPathIndex, commandIndex, 0);
+    const commands = pathData.subPaths[subPathIndex].commands;
+    const next = commands[commandIndex + 1];
+    if (next?.type === "C" || next?.type === "Q") add(subPathIndex, commandIndex + 1, 0);
+
+    // SVG may repeat the first anchor as the closing curve endpoint. Both
+    // copies move together; a plain Z closing edge has no tangent handle.
+    if (commands.at(-1)?.type !== "Z") return;
+    const first = commands[0];
+    const lastIndex = commands.length - 2;
+    const last = commands[lastIndex];
+    const firstPoint = first?.type === "M" ? first.points[0] : undefined;
+    const lastPoint = last?.points.at(-1);
+    if (
+      !firstPoint ||
+      !lastPoint ||
+      lastIndex === 0 ||
+      Math.hypot(firstPoint.x - lastPoint.x, firstPoint.y - lastPoint.y) > 1e-9
+    )
+      return;
+    if (commandIndex === 0) add(subPathIndex, lastIndex, last.points.length - 1);
+    else if (commandIndex === lastIndex) add(subPathIndex, 0, 0);
+  };
+  for (const point of selected) add(point.subPathIndex, point.commandIndex, point.pointIndex);
+  if (!points.size) return pathData;
+  const next = clonePath(pathData);
+  for (const { subPathIndex, commandIndex, pointIndex } of points.values()) {
+    const original = pathData.subPaths[subPathIndex].commands[commandIndex].points[pointIndex];
+    next.subPaths[subPathIndex].commands[commandIndex].points[pointIndex] = {
+      x: original.x + dx,
+      y: original.y + dy,
+    };
+  }
+  return next;
+}
+
 /**
  * Simple point update helper.
  */

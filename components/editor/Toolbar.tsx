@@ -25,6 +25,7 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  Search,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,8 @@ import { useEditorStore } from "@/lib/store/editorStore";
 import { DEMO_INFOS } from "@/lib/shapeshifter/demoProjects";
 import { ExportDialog } from "./ExportDialog";
 import { ThemeToggle } from "../ThemeToggle";
+import { DocumentSaveStatus, type DocumentAutosave } from "./DocumentSaveStatus";
+import { BooleanMenuItems } from "./BooleanOperations";
 
 interface ToolbarProps {
   onExport: (type: string) => void;
@@ -51,6 +54,10 @@ interface ToolbarProps {
   onResetAnim: () => void;
   onOpenSVGImport: () => void;
   onShowHelp: () => void;
+  onOpenCommand: () => void;
+  onOpenAgentTools?: () => void;
+  onOpenRecovery?: () => void;
+  autosave: DocumentAutosave;
   resetAllViews: () => void;
   isPlaying: boolean;
   isActionMode: boolean;
@@ -72,6 +79,10 @@ export function Toolbar({
   onResetAnim,
   onOpenSVGImport,
   onShowHelp,
+  onOpenCommand,
+  onOpenAgentTools,
+  onOpenRecovery,
+  autosave,
   isPlaying,
   isActionMode,
   editingSide,
@@ -112,7 +123,10 @@ export function Toolbar({
   };
 
   return (
-    <header className="relative flex h-10 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border/80 bg-card px-2 text-foreground [scrollbar-width:none]">
+    <header
+      aria-label="Editor toolbar"
+      className="relative flex h-12 shrink-0 items-center gap-0.5 overflow-x-auto border-b bg-card px-2 text-foreground [scrollbar-width:none]"
+    >
       {/* Document identity stays compact and left-aligned, like an editor tab. */}
       <div className="flex min-w-0 items-center gap-1.5 pr-1">
         {isActionMode && (
@@ -171,6 +185,15 @@ export function Toolbar({
           <DropdownMenuItem onClick={() => onExport("json")}>
             <Download className="mr-2 size-4" /> Export project (.json)
           </DropdownMenuItem>
+          {onOpenRecovery && (
+            <DropdownMenuItem onClick={onOpenRecovery}>Earlier autosaves…</DropdownMenuItem>
+          )}
+          {onOpenAgentTools && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={onOpenAgentTools}>Agent tools…</DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -249,14 +272,9 @@ export function Toolbar({
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
             <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              Combine with next layer
+              Combine selected paths
             </DropdownMenuLabel>
-            <DropdownMenuItem disabled>
-              Union (unavailable — no curve Boolean kernel)
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled>Subtract (unavailable)</DropdownMenuItem>
-            <DropdownMenuItem disabled>Intersect (unavailable)</DropdownMenuItem>
-            <DropdownMenuItem disabled>Exclude (unavailable)</DropdownMenuItem>
+            <BooleanMenuItems />
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -307,6 +325,23 @@ export function Toolbar({
       )}
 
       <div className="flex-1" />
+
+      <DocumentSaveStatus autosave={autosave} />
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onOpenCommand}
+              aria-label="Search commands"
+            />
+          }
+        >
+          <Search className="size-4" />
+        </TooltipTrigger>
+        <TooltipContent>Search commands (⌘K / Ctrl+K)</TooltipContent>
+      </Tooltip>
 
       {/* Transport stays icon-first; Export is the single primary action. */}
       <div className="flex items-center gap-0.5">

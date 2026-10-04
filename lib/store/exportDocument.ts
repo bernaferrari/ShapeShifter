@@ -8,14 +8,18 @@ import {
   exportAnimatedSVG,
   exportCSSKeyframes,
   exportLottieDocument,
-  exportPDF,
   exportStaticSVGWithDiagnostics,
   exportSvgSpritesheet,
 } from "../shapeshifter/exporter";
+import { exportPDFWithDiagnostics, type PdfExportDiagnostic } from "../shapeshifter/export/pdf";
+import {
+  exportLottieDocumentWithDiagnostics,
+  type LottieExportDiagnostic,
+} from "../shapeshifter/export/lottie";
 import { exportProjectJSON } from "../shapeshifter/export/projectJson";
 import type { ExportOptions, StaticSvgDiagnostic } from "../shapeshifter/export/types";
 import { createZip } from "../shapeshifter/zip";
-import type { DocumentV2 } from "../shapeshifter/types";
+import type { DocumentV2, Layer } from "../shapeshifter/types";
 import { vectorFromPageMetadata } from "../shapeshifter/vectorSpace";
 import { PAGE_ROOT_ID, useEditorStore } from "./editorStore";
 
@@ -49,6 +53,19 @@ export const LIVE_EXPORT_SCOPE: Record<LiveExportKind, LiveExportScope> = {
 
 export type LiveExportDocument = ReturnType<typeof flushLiveExportDocument>;
 
+/** Morph-only exporters need an actual drawable path, never a group's placeholder. */
+export function selectedLayerExportIssue(layer: Layer | undefined): string | null {
+  if (!layer || layer.type !== "path")
+    return "Select a path layer for this morph format. Use a document format to export groups.";
+  const hasGeometry = (path: Layer["from"]) =>
+    path.subPaths.some((contour) =>
+      contour.commands.some((command) => command.type !== "M" && command.type !== "Z"),
+    );
+  if (!hasGeometry(layer.pathData ?? layer.from) || !hasGeometry(layer.to ?? layer.from))
+    return "The selected path needs drawable geometry in both morph endpoints.";
+  return null;
+}
+
 export interface LiveExportResult {
   live: LiveExportDocument;
   kind: LiveExportKind;
@@ -58,6 +75,7 @@ export interface LiveExportResult {
   content: string | Uint8Array;
   androidDiagnostics: AndroidDiagnostic[];
   staticDiagnostics: StaticSvgDiagnostic[];
+  formatDiagnostics: Array<PdfExportDiagnostic | LottieExportDiagnostic>;
 }
 
 /** Flush the live artboard projection, then return the document used by every export path. */
@@ -179,6 +197,10 @@ export async function exportLiveDocument(
   const live = flushLiveExportDocument();
   const scope = LIVE_EXPORT_SCOPE[kind];
   const layer = liveSelectedLayer(live);
+  if (scope === "selected-layer") {
+    const issue = selectedLayerExportIssue(layer);
+    if (issue) throw new Error(issue);
+  }
   const baseName = liveFileBase(live);
   const empty = {
     live,
@@ -186,6 +208,7 @@ export async function exportLiveDocument(
     scope,
     androidDiagnostics: [] as AndroidDiagnostic[],
     staticDiagnostics: [] as StaticSvgDiagnostic[],
+    formatDiagnostics: [] as Array<PdfExportDiagnostic | LottieExportDiagnostic>,
   };
 
   if (kind === "json") {
@@ -198,11 +221,17 @@ export async function exportLiveDocument(
   }
 
   if (kind === "lottie") {
+    const result = exportLottieDocumentWithDiagnostics(
+      live.layers,
+      live.selectedFrame?.name || live.vector.name,
+      { animation: live.animation, vector: live.vector, duration: live.animation.duration / 1000 },
+    );
     return {
       ...empty,
       filename: `${baseName}.json`,
       mimeType: "application/json",
-      content: JSON.stringify(exportLiveLottieDocument(live), null, 2),
+      content: JSON.stringify(result.lottie, null, 2),
+      formatDiagnostics: result.diagnostics,
     };
   }
 
@@ -263,17 +292,18 @@ export async function exportLiveDocument(
   }
 
   if (kind === "pdf") {
+    const result = exportPDFWithDiagnostics(live.layers, {
+      ...options,
+      rootAlpha: live.vector.alpha,
+      viewBoxWidth: options.viewBoxWidth ?? live.vector.viewportWidth ?? live.vector.width,
+      viewBoxHeight: options.viewBoxHeight ?? live.vector.viewportHeight ?? live.vector.height,
+    });
     return {
       ...empty,
       filename: `${baseName}.pdf`,
       mimeType: "application/pdf",
-      content: exportPDF(live.layers, {
-        ...options,
-        viewBoxWidth:
-          options.viewBoxWidth ?? live.vector.viewportWidth ?? live.vector.width,
-        viewBoxHeight:
-          options.viewBoxHeight ?? live.vector.viewportHeight ?? live.vector.height,
-      }),
+      content: result.pdf,
+      formatDiagnostics: result.diagnostics,
     };
   }
 

@@ -3,7 +3,16 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { MousePointer2, Lasso, PaintBucket, PenTool, Scissors, Waypoints } from "lucide-react";
+import {
+  MousePointer2,
+  Lasso,
+  PaintBucket,
+  PenTool,
+  Scissors,
+  Waypoints,
+  Square,
+  Circle,
+} from "lucide-react";
 import { useEditorStore } from "@/lib/store/editorStore";
 import type { ToolMode } from "@/lib/shapeshifter/toolModes";
 
@@ -43,6 +52,8 @@ const TOOLS: ToolDef[] = [
     icon: <PenTool className="h-4 w-4" />,
     shortcut: "P",
   },
+  { mode: "rectangle", label: "Rectangle", icon: <Square className="size-4" />, shortcut: "R" },
+  { mode: "ellipse", label: "Ellipse", icon: <Circle className="size-4" />, shortcut: "O" },
   {
     mode: "pencil",
     label: "Lasso",
@@ -68,7 +79,11 @@ export function BottomToolPalette() {
   const setToolMode = useEditorStore((state) => state.setToolMode);
 
   return (
-    <div className="flex items-center gap-0.5 rounded-lg bg-card/95 p-1 [box-shadow:var(--elevation-floating)] backdrop-blur-md">
+    <div
+      role="toolbar"
+      aria-label="Drawing tools"
+      className="flex items-center gap-0.5 rounded-xl bg-card/95 p-1 [box-shadow:var(--elevation-floating)] backdrop-blur-md"
+    >
       {TOOLS.map((tool) => {
         const isActive = toolMode === tool.mode;
         return (
@@ -81,12 +96,16 @@ export function BottomToolPalette() {
                   <Button
                     size="icon"
                     variant="ghost"
-                    className={`size-8 rounded-md transition-[background-color,color,transform] active:scale-[0.96] ${
+                    className={`size-10 rounded-lg transition-colors ${
                       isActive
                         ? "bg-primary text-primary-foreground hover:bg-primary"
                         : "text-muted-foreground hover:bg-muted hover:text-foreground"
                     }`}
-                    onClick={() => setToolMode(tool.mode)}
+                    onClick={() => {
+                      if (tool.mode === "rectangle" || tool.mode === "ellipse")
+                        useEditorStore.getState().closeActionMode();
+                      setToolMode(tool.mode);
+                    }}
                     aria-label={tool.label}
                     aria-pressed={isActive}
                   >
@@ -122,6 +141,11 @@ export function BottomToolPalette() {
                 {tool.mode === "paint" && (
                   <div className="text-[10px] text-muted-foreground leading-tight">
                     Click a region to fill with the current color
+                  </div>
+                )}
+                {(tool.mode === "rectangle" || tool.mode === "ellipse") && (
+                  <div className="text-[10px] text-muted-foreground leading-tight">
+                    Drag to draw · Shift for equal sides · Alt to draw from center
                   </div>
                 )}
               </TooltipContent>

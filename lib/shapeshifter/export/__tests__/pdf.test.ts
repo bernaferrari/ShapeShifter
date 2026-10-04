@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { exportPDF } from "../pdf";
+import { exportPDF, exportPDFWithDiagnostics } from "../pdf";
 import { parsePath } from "../../pathUtils";
 import type { Layer, PathData } from "../../types";
 
@@ -59,13 +59,20 @@ describe("exportPDF page/content scale agreement", () => {
       from: makePath("M 0 0 L 120 0 L 120 60 L 0 60 Z"),
       to: makePath("M 0 0 L 120 0 L 120 60 L 0 60 Z"),
     });
-    const pdf = exportPDF([layer], { width: 512, height: 256, viewBoxWidth: 120, viewBoxHeight: 60 });
+    const pdf = exportPDF([layer], {
+      width: 512,
+      height: 256,
+      viewBoxWidth: 120,
+      viewBoxHeight: 60,
+    });
     const mediaBox = pdf.match(/MediaBox\[0 0 (\d+) (\d+)\]/)!;
     expect([Number(mediaBox[1]), Number(mediaBox[2])]).toEqual([512, 256]);
 
     // Full-viewport rect must fill the page: x scale 512/120, y scale 256/60.
     const stream = contentStream(pdf);
-    expect(stream).toContain(`${(120 * (512 / 120)).toFixed(2)} ${((60 - 60) * (256 / 60)).toFixed(2)} l`);
+    expect(stream).toContain(
+      `${(120 * (512 / 120)).toFixed(2)} ${((60 - 60) * (256 / 60)).toFixed(2)} l`,
+    );
     expect(stream).toContain(`${(0).toFixed(2)} ${(256).toFixed(2)} m`); // (0, 60): x=0, y flips to top
     // And nothing may be emitted outside the page.
     for (const m of stream.matchAll(/(-?[\d.]+) (-?[\d.]+) (?:m|l)/g)) {
@@ -202,6 +209,67 @@ describe("exportPDF colors", () => {
   });
 });
 
+describe("exportPDF path painting", () => {
+  const paintOperators = (stream: string) =>
+    stream
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => /^(B\*?|f\*?|S|n)$/.test(line));
+
+  it("paints fill and outline together before consuming the path", () => {
+    const stream = contentStream(
+      exportPDF([makeLayer({ fillColor: "#ffffff", strokeColor: "#ff0000", strokeWidth: 2 })]),
+    );
+    expect(paintOperators(stream)).toEqual(["B"]);
+    const paintIndex = stream.search(/\n\s*B\n/);
+    expect(stream.indexOf(" rg")).toBeLessThan(paintIndex);
+    expect(stream.indexOf(" RG")).toBeLessThan(paintIndex);
+  });
+
+  it("preserves even-odd holes with and without an outline", () => {
+    const hole = makePath("M 0 0 L 20 0 L 20 20 L 0 20 Z M 5 5 L 15 5 L 15 15 L 5 15 Z");
+    const layers = [
+      makeLayer({ id: 1, from: hole, fillColor: "#fff", fillType: "evenOdd", strokeColor: "#f00" }),
+      makeLayer({ id: 2, from: hole, fillColor: "#fff", fillType: "evenOdd" }),
+    ];
+    expect(paintOperators(contentStream(exportPDF(layers)))).toEqual(["B*", "f*"]);
+  });
+
+  it("uses fill-only, stroke-only, and unpainted paths without inventing a stroke", () => {
+    const layers = [
+      makeLayer({ id: 1, fillColor: "#fff", strokeColor: "none" }),
+      makeLayer({ id: 2, fillColor: "#fff", strokeColor: "#f00", strokeWidth: 0 }),
+      makeLayer({ id: 3, fillColor: "none", strokeColor: "#f00", strokeWidth: 2 }),
+      makeLayer({ id: 4, fillColor: "none", strokeColor: "none" }),
+    ];
+    const stream = contentStream(exportPDF(layers));
+    expect(paintOperators(stream)).toEqual(["f", "f", "S", "n"]);
+    expect(stream.split("\n").filter((line) => line.endsWith(" w"))).toHaveLength(1);
+  });
+
+  it("isolates each layer's graphics state", () => {
+    const stream = contentStream(
+      exportPDF([
+        makeLayer({ id: 1, strokeColor: "#f00", strokeWidth: 6 }),
+        makeLayer({ id: 2, fillColor: "#00f" }),
+      ]),
+    );
+    const layerOps = stream
+      .split("\n")
+      .map((line) => line.trim())
+      .slice(1, -1)
+      .join("\n");
+    const paths = [...layerOps.matchAll(/(?:^|\n)q\n([\s\S]*?)\nQ(?=\n|$)/g)].map(
+      (match) => match[1],
+    );
+    expect(paths).toHaveLength(2);
+    expect(paths[0]).toMatch(/ w\n/);
+    expect(paths[0]).toMatch(/\nS$/);
+    expect(paths[1]).toMatch(/ rg\nf$/);
+    expect(paths[1]).not.toMatch(/ w| RG/);
+  });
+});
+
 describe("exportPDF group transforms", () => {
   it("applies a group's translation to child path coordinates", () => {
     const group = {
@@ -237,7 +305,7 @@ describe("exportPDF group transforms", () => {
     expect(stream).toContain(`${(2 * SCALE).toFixed(2)} w`);
   });
 
-  it("skips children of hidden groups and warns on clip-path layers", () => {
+  it("skips children of hidden groups and applies clip paths without painting them", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const hiddenGroup = {
@@ -246,9 +314,9 @@ describe("exportPDF group transforms", () => {
       } as unknown as Layer;
       const clip = makeLayer({ id: 4, type: "clipPath" }) as unknown as Layer;
       const pdf = exportPDF([hiddenGroup, clip]);
-      // Only the clip layer was rejected explicitly; nothing drawable remained.
-      expect(contentStream(pdf)).not.toMatch(/\bm\b|\bl\b|\bc\b/);
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining("Clip path"));
+      expect(contentStream(pdf)).toContain("W n");
+      expect(contentStream(pdf)).not.toMatch(/\n\s*(?:f|B|S)\s*\n/);
+      expect(warn).not.toHaveBeenCalled();
     } finally {
       warn.mockRestore();
     }
@@ -277,5 +345,136 @@ describe("exportPDF flat parentId hierarchy", () => {
     const child = makeLayer({ id: 3, parentId: 2 });
     const stream = contentStream(exportPDF([group, child]));
     expect(stream).not.toMatch(/\bm\b|\bl\b|\bc\b/);
+  });
+});
+
+describe("exportPDF scene fidelity", () => {
+  it("terminates stream and object keywords separately for strict PDF readers", () => {
+    const pdf = exportPDF([makeLayer({ fillColor: "red" })]);
+    expect(pdf).toContain("\nendstream\nendobj\n");
+    const declaredLength = Number(pdf.match(/\/Length (\d+)/)?.[1]);
+    expect(contentStream(pdf)).toHaveLength(declaredLength);
+  });
+  it("preserves independent fill and stroke alpha including source colors, parent groups, and root opacity", () => {
+    const group = makeLayer({ id: "group", type: "group", alpha: 0.5 });
+    const art = makeLayer({
+      id: "art",
+      parentId: "group",
+      alpha: 0.8,
+      fillColor: "rgba(255,0,0,0.5)",
+      fillAlpha: 0.5,
+      strokeColor: "#0000ff",
+      strokeAlpha: 0.75,
+    });
+    const pdf = exportPDF([group, art], { rootAlpha: 0.5 });
+    expect(pdf).toContain("/ExtGState<</GS1 5 0 R>>");
+    expect(pdf).toContain(`/ca ${((0.1 * 128) / 255).toFixed(6)}/CA 0.150000`);
+    expect(contentStream(pdf)).toContain("/GS1 gs");
+    const startxref = Number(pdf.match(/startxref\n(\d+)/)?.[1]);
+    expect(pdf.slice(startxref, startxref + 4)).toBe("xref");
+  });
+
+  it("applies ordered even-odd clips inside a group and restores clipping before the next root", () => {
+    const group = makeLayer({ id: "group", type: "group", translateX: 3 });
+    const before = makeLayer({ id: "before", parentId: "group", fillColor: "#f00" });
+    const clip = makeLayer({
+      id: "clip",
+      parentId: "group",
+      type: "clipPath",
+      fillType: "evenOdd",
+    });
+    const after = makeLayer({ id: "after", parentId: "group", fillColor: "#0f0" });
+    const outside = makeLayer({ id: "outside", fillColor: "#00f" });
+    const lines = contentStream(exportPDF([group, before, clip, after, outside]))
+      .split("\n")
+      .map((line) => line.trim());
+    const clipIndex = lines.indexOf("W* n");
+    expect(lines.slice(0, clipIndex)).toContain("f");
+    expect(lines.slice(clipIndex + 1)).toContain("f");
+    const outsideIndex = lines.indexOf("0.000 0.000 1.000 rg");
+    expect(lines.slice(clipIndex + 1, outsideIndex).filter((line) => line === "Q")).toHaveLength(2);
+    expect(lines).toContain(`${px(3)} ${py(0)} m`);
+  });
+
+  it("emits stroke caps, joins, miter limits, and scaled dash patterns", () => {
+    const stream = contentStream(
+      exportPDF([
+        makeLayer({
+          strokeColor: "#f00",
+          strokeLinecap: "square",
+          strokeLinejoin: "bevel",
+          strokeMiterLimit: 8,
+          strokeDasharray: "2, 3",
+        }),
+      ]),
+    );
+    expect(stream).toContain("2 J");
+    expect(stream).toContain("2 j");
+    expect(stream).toContain("8 M");
+    expect(stream).toContain(`[${(2 * SCALE).toFixed(4)} ${(3 * SCALE).toFixed(4)}] 0 d`);
+  });
+
+  it("slices partial geometry for fill and stroke and preserves authored dash patterns", () => {
+    const line = makeLayer({
+      from: makePath("M0 0 L100 0"),
+      strokeColor: "#f00",
+      trimPathStart: 0.2,
+      trimPathEnd: 0.6,
+      strokeDasharray: "2 3",
+    });
+    const stream = contentStream(
+      exportPDF([line], { width: 100, height: 100, viewBoxWidth: 100, viewBoxHeight: 100 }),
+    );
+    expect(stream).toContain("20.00 100.00 m");
+    expect(stream).toContain("60.00 100.00 l");
+    expect(stream).toContain("[2.0000 3.0000] 0 d");
+    expect(stream).not.toMatch(/\n\s*0\.00 100\.00 m/);
+    const empty = contentStream(
+      exportPDF([
+        makeLayer({ fillColor: "#0f0", strokeColor: "#f00", trimPathStart: 0.5, trimPathEnd: 0.5 }),
+      ]),
+    );
+    expect(empty).not.toMatch(/\n\s*(?:B|f|S)\n/);
+    expect(empty).not.toMatch(/\n\s*[\d.]+ [\d.]+ m/);
+  });
+
+  it("retains curve operators in trimmed filled artwork instead of painting the full shape", () => {
+    const curve = makeLayer({
+      from: makePath("M0 0 C0 10 10 10 10 0 Z"),
+      fillColor: "#f00",
+      strokeColor: "#00f",
+      trimPathEnd: 0.25,
+    });
+    const stream = contentStream(exportPDF([curve]));
+    expect(stream).toMatch(/\n\s*[\d.]+ [\d.]+ [\d.]+ [\d.]+ [\d.]+ [\d.]+ c/);
+    expect(stream).not.toMatch(/\n\s*h\n/);
+    expect(stream).toMatch(/\n\s*B\n/);
+    const empty = contentStream(exportPDF([{ ...curve, trimPathEnd: 0 }]));
+    expect(empty).not.toMatch(/\n\s*(?:B|f|S)\n/);
+  });
+
+  it("reports remaining gradient and non-uniform stroke approximations for the actual document", () => {
+    const result = exportPDFWithDiagnostics([
+      makeLayer({
+        scaleX: 2,
+        strokeColor: "#000",
+        fillGradient: {
+          type: "linear",
+          stops: [
+            { offset: 0, color: "#f00" },
+            { offset: 1, color: "#00f" },
+          ],
+        },
+      }),
+    ]);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      "GRADIENT_APPROXIMATED",
+      "NON_UNIFORM_STROKE_APPROXIMATED",
+    ]);
+    expect(
+      exportPDFWithDiagnostics([
+        makeLayer({ visible: false, fillGradient: { type: "linear", stops: [] } }),
+      ]).diagnostics,
+    ).toEqual([]);
   });
 });

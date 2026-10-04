@@ -15,7 +15,7 @@ interface CanvasNavigationControlsProps {
   onReset: () => void;
 }
 
-const iconButtonClass = "h-7 text-muted-foreground hover:bg-muted hover:text-foreground";
+const iconButtonClass = "h-8 text-muted-foreground hover:bg-muted hover:text-foreground";
 
 export function CanvasNavigationControls({
   zoomPercent,
@@ -28,24 +28,27 @@ export function CanvasNavigationControls({
   onReset,
 }: CanvasNavigationControlsProps) {
   return (
-    <div className="pointer-events-none absolute bottom-3 right-3 z-30 flex items-center gap-0.5 rounded-md bg-background/95 p-0.5 [box-shadow:var(--elevation-floating)] backdrop-blur-md">
+    <div
+      aria-label="Canvas navigation"
+      className="pointer-events-none absolute top-8 right-3 z-30 flex items-center gap-0.5 rounded-lg bg-card/95 p-1 [box-shadow:var(--elevation-floating)] backdrop-blur-md"
+    >
       <div className="pointer-events-auto flex items-center gap-0.5">
         <Button
           size="icon-xs"
           variant="ghost"
-          className={`${iconButtonClass} w-7 text-xs`}
+          className={`${iconButtonClass} w-8 text-sm`}
           onClick={onZoomOut}
           aria-label="Zoom out"
         >
           −
         </Button>
-        <span className="min-w-[2.5rem] select-none px-0.5 text-center font-mono text-[10px] font-medium text-muted-foreground">
+        <span className="min-w-[3rem] select-none px-0.5 text-center font-mono text-[11px] tabular-nums text-foreground">
           {Math.round(zoomPercent)}%
         </span>
         <Button
           size="icon-xs"
           variant="ghost"
-          className={`${iconButtonClass} w-7 text-xs`}
+          className={`${iconButtonClass} w-8 text-sm`}
           onClick={onZoomIn}
           aria-label="Zoom in"
         >
@@ -94,7 +97,7 @@ export function CanvasNavigationControls({
         <Button
           size="icon-xs"
           variant="ghost"
-          className={`${iconButtonClass} w-7`}
+          className={`${iconButtonClass} w-8`}
           onClick={onReset}
           aria-label="Reset canvas views"
         >

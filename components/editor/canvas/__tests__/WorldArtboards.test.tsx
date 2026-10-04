@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import type { ComponentProps } from "react";
 import { describe, expect, it } from "vitest";
 import type { CanvasFrame } from "@/lib/store/defaultWorkspace";
 import { parsePath } from "@/lib/shapeshifter/pathUtils";
@@ -61,7 +62,10 @@ function vector(id: string): VectorMetadata {
   return { id, name: id, width: 24, height: 24, alpha: 1, tint: "" };
 }
 
-function renderWorld(layers: Layer[]): string {
+function renderWorld(
+  layers: Layer[],
+  overrides: Partial<ComponentProps<typeof WorldArtboards>> = {},
+): string {
   const frame: CanvasFrame = {
     id: "frame",
     name: "Frame",
@@ -99,6 +103,7 @@ function renderWorld(layers: Layer[]): string {
         progress={0}
         worldPerPx={1}
         gridVisibility={{ minorOpacity: 0, majorOpacity: 0 }}
+        {...overrides}
       />
     </svg>,
   );
@@ -127,6 +132,52 @@ describe("WorldArtboards per-frame clip definitions", () => {
     const markup = renderWorld([pathLayer("plain")]);
 
     expect(markup).not.toContain("android-clip-frame");
+  });
+});
+
+describe("WorldArtboards trimmed endpoint poses", () => {
+  it("keeps the selected filled start pose empty at trimEnd=0 even in Direct editing", () => {
+    const layer = { ...pathLayer("empty"), trimPathEnd: 0 };
+    const markup = renderWorld([layer], {
+      selectedFrameId: "frame",
+      editLayer: layer,
+      editPath: layer.from,
+      isPointTool: true,
+    });
+    expect(markup).not.toContain('fill="#e11d48"');
+    expect(markup).not.toContain("pathLength");
+  });
+  it("shows the trimmed explicit To in Direct while ordinary viewing uses the evaluated start", () => {
+    const layer = {
+      ...pathLayer("editable"),
+      trimPathEnd: 0.5,
+      to: parsePath("M20 0L32 0L32 12L20 12Z"),
+    };
+    const selected = {
+      selectedFrameId: "frame",
+      editLayer: layer,
+      editPath: layer.to,
+      editingSide: "to" as const,
+    };
+    const direct = renderWorld([layer], { ...selected, isPointTool: true });
+    expect(direct).toContain('<path d="M20 0 L32 0 L32 12" fill="#e11d48"');
+    const ordinary = renderWorld([layer], { ...selected, isPointTool: false });
+    expect(ordinary).toContain('<path d="M0 0 L12 0 L12 12" fill="#e11d48"');
+    expect(ordinary).not.toContain('<path d="M20 0 L32 0 L32 12" fill="#e11d48"');
+  });
+  it("keeps authored stroke dashes without adding a second trim", () => {
+    const layer = {
+      ...pathLayer("dashed"),
+      strokeColor: "#000",
+      strokeWidth: 1,
+      strokeDasharray: "2 3",
+      trimPathEnd: 0.25,
+    };
+    const markup = renderWorld([layer]);
+    expect(markup).toContain('<path d="M0 0 L12 0"');
+    expect(markup).toContain('stroke-dasharray="2 3"');
+    expect(markup).not.toContain("pathLength");
+    expect(markup).not.toContain("stroke-dashoffset");
   });
 });
 

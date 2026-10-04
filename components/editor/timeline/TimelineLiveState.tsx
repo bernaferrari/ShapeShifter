@@ -4,7 +4,10 @@ import React from "react";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { EasingCurve } from "../EasingCurve";
 import type { TimelineBlock } from "@/lib/shapeshifter/types";
+import { colorAtTime, numberAtTime } from "@/lib/shapeshifter/playheadResolve";
+import type { Layer } from "@/lib/shapeshifter/types";
 import { cn } from "@/lib/utils";
+import type { TimelineTimeUnit } from "./timelineScale";
 
 function formatCompactValue(value: string | number | undefined, propertyName?: string): string {
   if (value == null || value === "") return "—";
@@ -36,17 +39,34 @@ export function TimelinePlayhead({
   visible,
   layersWidth,
   color,
+  contentWidth,
+  viewportWidth,
+  scrollLeft = 0,
 }: {
   visible: boolean;
   layersWidth: number;
   color: string;
+  contentWidth?: number;
+  viewportWidth?: number;
+  scrollLeft?: number;
 }) {
   const progress = useEditorStore((state) => state.progress);
-  if (!visible) return null;
+  const position = contentWidth === undefined ? undefined : progress * contentWidth - scrollLeft;
+  if (
+    !visible ||
+    (position !== undefined && (position < 0 || position > (viewportWidth ?? contentWidth!)))
+  )
+    return null;
   return (
     <div
-      className="pointer-events-none absolute inset-y-0 z-[60] w-0"
-      style={{ left: `calc(${layersWidth}px + (100% - ${layersWidth}px) * ${progress})` }}
+      data-timeline-playhead
+      className="pointer-events-none absolute top-0 bottom-8 z-[60] w-0"
+      style={{
+        left:
+          position === undefined
+            ? `calc(${layersWidth}px + (100% - ${layersWidth}px) * ${progress})`
+            : layersWidth + position,
+      }}
       aria-hidden
     >
       <div className="absolute left-1/2 top-0 -translate-x-1/2">
@@ -62,69 +82,131 @@ export function TimelinePlayhead({
   );
 }
 
-export function TimelineCurrentTimeInput({ color }: { color: string }) {
+export function TimelineCurrentTimeInput({
+  color,
+  unit = "milliseconds",
+  fps = 30,
+}: {
+  color: string;
+  unit?: TimelineTimeUnit;
+  fps?: number;
+}) {
   const progress = useEditorStore((state) => state.progress);
   const duration = useEditorStore((state) => state.animation.duration);
   const setProgress = useEditorStore((state) => state.setProgress);
   const [draft, setDraft] = React.useState<string | null>(null);
+  const draftRef = React.useRef<string | null>(null);
+  const cancelBlur = React.useRef(false);
   const currentMilliseconds = progress * duration;
+  const multiplier = unit === "frames" ? fps / 1000 : 1;
   const commit = () => {
-    const milliseconds = Number(draft);
-    if (Number.isFinite(milliseconds)) {
-      setProgress(Math.max(0, Math.min(1, milliseconds / Math.max(1, duration))));
+    const raw = draftRef.current;
+    const milliseconds = Number(raw);
+    if (raw !== null && raw.trim() !== "" && Number.isFinite(milliseconds)) {
+      setProgress(Math.max(0, Math.min(1, milliseconds / multiplier / Math.max(1, duration))));
     }
     setDraft(null);
+    draftRef.current = null;
   };
   return (
     <input
       type="text"
       inputMode="numeric"
-      value={draft ?? Math.round(currentMilliseconds)}
-      onFocus={() => setDraft(String(Math.round(currentMilliseconds)))}
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={commit}
+      value={draft ?? Math.round(currentMilliseconds * multiplier)}
+      onFocus={(event) => {
+        const store = useEditorStore.getState();
+        if (store.isPlaying) store.togglePlayback();
+        draftRef.current = String(store.progress * duration * multiplier);
+        setDraft(draftRef.current);
+        event.currentTarget.select();
+      }}
+      onChange={(event) => {
+        draftRef.current = event.target.value;
+        setDraft(event.target.value);
+      }}
+      onBlur={() => {
+        if (cancelBlur.current) cancelBlur.current = false;
+        else commit();
+      }}
       onKeyDown={(event) => {
-        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Enter") {
+          event.preventDefault();
+          event.currentTarget.blur();
+        }
         if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          cancelBlur.current = true;
+          draftRef.current = null;
           setDraft(null);
           event.currentTarget.blur();
         }
       }}
-      aria-label="Current time in milliseconds"
-      className="w-[42px] border-0 bg-transparent p-0 font-medium tabular-nums outline-none"
+      aria-label={unit === "frames" ? "Current frame" : "Current time in milliseconds"}
+      className="w-[42px] rounded-sm border-0 bg-transparent p-0 font-medium tabular-nums outline-none focus-visible:ring-1 focus-visible:ring-ring"
       style={{ color }}
     />
   );
 }
 
-export function TimelineDurationInput() {
+export function TimelineDurationInput({
+  unit = "milliseconds",
+  fps = 30,
+}: {
+  unit?: TimelineTimeUnit;
+  fps?: number;
+}) {
   const duration = useEditorStore((state) => state.animation.duration);
   const setAnimationDuration = useEditorStore((state) => state.setAnimationDuration);
   const [draft, setDraft] = React.useState<string | null>(null);
+  const draftRef = React.useRef<string | null>(null);
+  const cancelBlur = React.useRef(false);
+  const multiplier = unit === "frames" ? fps / 1000 : 1;
   const commit = () => {
-    const milliseconds = Number(draft);
-    if (Number.isFinite(milliseconds) && milliseconds > 0) {
-      setAnimationDuration(Math.max(100, Math.round(milliseconds)));
+    const raw = draftRef.current;
+    const milliseconds = Number(raw);
+    if (raw !== null && raw.trim() !== "" && Number.isFinite(milliseconds) && milliseconds > 0) {
+      setAnimationDuration(Math.max(100, milliseconds / multiplier));
     }
     setDraft(null);
+    draftRef.current = null;
   };
   return (
     <input
       type="text"
       inputMode="numeric"
-      value={draft ?? String(duration)}
-      onFocus={() => setDraft(String(duration))}
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={commit}
+      value={draft ?? String(Math.round(duration * multiplier))}
+      onFocus={(event) => {
+        draftRef.current = String(duration * multiplier);
+        setDraft(draftRef.current);
+        event.currentTarget.select();
+      }}
+      onChange={(event) => {
+        draftRef.current = event.target.value;
+        setDraft(event.target.value);
+      }}
+      onBlur={() => {
+        if (cancelBlur.current) cancelBlur.current = false;
+        else commit();
+      }}
       onKeyDown={(event) => {
-        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Enter") {
+          event.preventDefault();
+          event.currentTarget.blur();
+        }
         if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          cancelBlur.current = true;
+          draftRef.current = null;
           setDraft(null);
           event.currentTarget.blur();
         }
       }}
-      aria-label="Animation duration in milliseconds"
-      className="h-4 w-[42px] border-0 bg-transparent p-0 text-[11px] tabular-nums text-white/50 outline-none hover:text-white/80 focus:text-white"
+      aria-label={
+        unit === "frames" ? "Animation duration in frames" : "Animation duration in milliseconds"
+      }
+      className="h-4 w-[42px] rounded-sm border-0 bg-transparent p-0 text-[11px] tabular-nums text-muted-foreground outline-none hover:text-foreground focus:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
     />
   );
 }
@@ -136,6 +218,7 @@ export function LiveEasingCurve({
   onEditStart,
   onEditEnd,
   onEditCancel,
+  block,
 }: {
   size: number;
   points: [number, number, number, number];
@@ -143,13 +226,24 @@ export function LiveEasingCurve({
   onEditStart?: () => void;
   onEditEnd?: () => void;
   onEditCancel?: () => void;
+  block?: TimelineBlock;
 }) {
   const progress = useEditorStore((state) => state.progress);
+  const duration = useEditorStore((state) => state.animation.duration);
+  const curveProgress = block
+    ? Math.max(
+        0,
+        Math.min(
+          1,
+          (progress * duration - block.startTime) / Math.max(1, block.endTime - block.startTime),
+        ),
+      )
+    : progress;
   return (
     <EasingCurve
       size={size}
       points={points}
-      progress={progress}
+      progress={curveProgress}
       onChange={onChange}
       onEditStart={onEditStart}
       onEditEnd={onEditEnd}
@@ -162,25 +256,47 @@ export function TimelinePropertyValue({
   block,
   propertyName,
   selected,
+  blocks,
+  duration: trackDuration,
 }: {
   block: TimelineBlock | undefined;
   propertyName: string;
   selected: boolean;
+  blocks?: TimelineBlock[];
+  duration?: number;
 }) {
   const progress = useEditorStore((state) => state.progress);
   const duration = useEditorStore((state) => state.animation.duration);
   if (!block) return <span className="w-[48px] shrink-0" />;
-  const currentTimeMs = progress * duration;
-  const display = formatCompactValue(
-    currentTimeMs < (block.startTime + block.endTime) / 2 ? block.fromValue : block.toValue,
-    propertyName,
-  );
+  const currentTimeMs = progress * (trackDuration ?? duration);
+  const trackBlocks = blocks ?? [block];
+  const layer = { id: block.layerId } as Layer;
+  const valueType =
+    block.propertyName === "pathData" || block.type === "path"
+      ? "path"
+      : ["fillColor", "strokeColor"].includes(block.propertyName) || block.type === "color"
+        ? "color"
+        : "number";
+  const value =
+    valueType === "number"
+      ? numberAtTime(layer, trackBlocks, propertyName, currentTimeMs, trackDuration ?? duration)
+      : valueType === "color"
+        ? colorAtTime(
+            layer,
+            trackBlocks,
+            propertyName,
+            currentTimeMs,
+            trackDuration ?? duration,
+            String(block.fromValue),
+          )
+        : "Path";
+  const display = formatCompactValue(value, propertyName);
   const title = `${formatCompactValue(block.fromValue, propertyName)} → ${formatCompactValue(block.toValue, propertyName)}`;
   return (
     <span
       className={cn(
         "w-[48px] shrink-0 truncate text-right font-mono text-[10px] tabular-nums",
-        selected ? "text-white/70" : "text-white/35",
+        selected ? "text-foreground" : "text-muted-foreground",
       )}
       title={title}
     >

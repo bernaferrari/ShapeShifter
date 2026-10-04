@@ -9,7 +9,7 @@ export const PROPERTY_LABELS: Record<string, string> = {
   // Path/Clip/Group — one vocabulary for the same concept everywhere in the panel.
   pathData: "Path",
   fillColor: "Fill",
-  fillAlpha: "Opacity",
+  fillAlpha: "Fill opacity",
   strokeColor: "Stroke",
   strokeAlpha: "Stroke opacity",
   strokeWidth: "Stroke width",

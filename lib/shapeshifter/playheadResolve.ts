@@ -77,7 +77,10 @@ function resolveSegment(segments: TimelineBlock[], ms: number): ResolvedSegment 
     const span = block.endTime - block.startTime;
     const progress =
       span <= 0 ? 1 : evaluateInterpolator((ms - block.startTime) / span, block.interpolator);
-    return { block, progress: clamp01(progress), before: false, after: false };
+    // Android PathInterpolator constrains time (x), not its output (y).
+    // FloatEvaluator uses the eased fraction directly, allowing anticipation
+    // and overshoot on translation, rotation, scale, and other numeric tracks.
+    return { block, progress, before: false, after: false };
   }
 
   const completed = segments.filter((block) => block.endTime < ms);
@@ -203,6 +206,41 @@ function pathFromValue(value: string | number, fallback: PathData): PathData {
   }
 }
 
+const pathEndpointCache = new WeakMap<
+  TimelineBlock,
+  {
+    fromValue: string | number;
+    toValue: string | number;
+    fromFallback: PathData;
+    toFallback: PathData | undefined;
+    from: PathData;
+    to: PathData;
+  }
+>();
+function pathEndpoints(block: TimelineBlock, layer: Layer) {
+  const previous = pathEndpointCache.get(block);
+  if (
+    previous &&
+    previous.fromValue === block.fromValue &&
+    previous.toValue === block.toValue &&
+    previous.fromFallback === layer.from &&
+    previous.toFallback === layer.to
+  )
+    return previous;
+  const from = pathFromValue(block.fromValue, layer.from);
+  const to = pathFromValue(block.toValue, layer.to ?? from);
+  const endpoints = {
+    fromValue: block.fromValue,
+    toValue: block.toValue,
+    fromFallback: layer.from,
+    toFallback: layer.to,
+    from,
+    to,
+  };
+  pathEndpointCache.set(block, endpoints);
+  return endpoints;
+}
+
 /** Resolve geometry from the path track itself, rather than a mutable layer endpoint pair. */
 export function pathDAtTime(
   layer: Layer,
@@ -215,8 +253,7 @@ export function pathDAtTime(
   const segments = blocksFor(blocks, layer.id, "pathData");
   const segment = resolveSegment(segments, ms);
   if (segment.block) {
-    const pathFrom = pathFromValue(segment.block.fromValue, from);
-    const pathTo = pathFromValue(segment.block.toValue, layer.to ?? pathFrom);
+    const { from: pathFrom, to: pathTo } = pathEndpoints(segment.block, layer);
     if (segment.progress <= 0) return pathToString(pathFrom);
     if (segment.progress >= 1) return pathToString(pathTo);
     return interpolatedPathIfCompatible(pathFrom, pathTo, segment.progress);

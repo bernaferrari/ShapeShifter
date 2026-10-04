@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { PAGE_ROOT_ID, useEditorStore } from "../editorStore";
 import { computeDetailViewport } from "../../shapeshifter/camera";
 import { parsePath, pathToString } from "../../shapeshifter/pathUtils";
@@ -7,14 +7,6 @@ import { DEMO_INFOS } from "../../shapeshifter/demoProjects";
 import type { Selection, Layer, DocumentV2 } from "../../shapeshifter/types";
 import type { EditorState } from "../editorStore";
 import type { LegacyDocumentSnapshot } from "../../shapeshifter/documentModel";
-
-// Destructive Boolean commands are compiled off in production (BOOLEAN_OPERATIONS_ENABLED,
-// see the androidTrust P0 suite). Mock the gate open — spreading the real module — so these
-// tests can exercise the store action's operand/lock/morph invariants behind it.
-vi.mock("../../shapeshifter/pathUtils", async (importOriginal) => {
-  const actual = await importOriginal<Record<string, unknown>>();
-  return { ...actual, BOOLEAN_OPERATIONS_ENABLED: true };
-});
 
 // Helper: get a fresh store state by resetting
 function freshStore() {
@@ -1184,7 +1176,8 @@ describe("editorStore", () => {
         const sel = makeSelection(0);
         getStore().selectPoint(sel);
         getStore().selectPoint(sel, true);
-        expect(getStore().selectedPoints).toHaveLength(1);
+        expect(getStore().selectedPoints).toHaveLength(0);
+        expect(getStore().selection).toBeNull();
       });
 
       it("keeps primary selection when toggling off other points", () => {
@@ -1882,7 +1875,7 @@ describe("editorStore", () => {
     });
 
     describe("booleanCombine", () => {
-      it("does not consume or delete locked operands", () => {
+      it("refuses locked operands without touching geometry or history", async () => {
         const [first, second] = getStore().layers;
         useEditorStore.setState({
           layers: getStore().layers.map((layer) =>
@@ -1890,114 +1883,33 @@ describe("editorStore", () => {
           ),
         });
         getStore().selectLayers([first.id, second.id]);
-        const before = getStore().layers.map((layer) => pathToString(layer.from));
-
-        getStore().booleanCombine("union");
-
-        expect(getStore().layers).toHaveLength(2);
-        expect(getStore().layers.map((layer) => pathToString(layer.from))).toEqual(before);
+        const before = JSON.stringify(getStore().layers);
+        const history = getStore().history;
+        expect((await getStore().booleanCombine("union")).ok).toBe(false);
+        expect(JSON.stringify(getStore().layers)).toBe(before);
+        expect(getStore().history).toBe(history);
       });
-
-      it("keeps a morphable result morphable instead of collapsing to a static shape", () => {
+      it("refuses to collapse morphs or prune their animation", async () => {
         const [a, b] = getStore().layers;
         getStore().selectLayers([a.id, b.id]);
-
-        getStore().booleanCombine("union");
-
-        const result = getStore().layers.find((layer) => layer.id === a.id)!;
-        const to = result.to;
-        expect(to).toBeDefined();
-        // `to` is an independent clone of the combined geometry, never an alias of `from`.
-        expect(to).not.toBe(result.from);
-        if (!to) return;
-        expect(to.subPaths.length).toBe(result.from.subPaths.length);
-        expect(getStore().layers.some((layer) => layer.id === b.id)).toBe(false);
-      });
-
-      it("leaves a static layer static instead of inventing an end state", () => {
-        const [a] = getStore().layers;
-        useEditorStore.setState({
-          layers: [
-            { ...getStore().layers[0], to: undefined },
-            { ...getStore().layers[1], id: "static-partner" },
-          ],
+        const before = JSON.stringify({
+          layers: getStore().layers,
+          animation: getStore().animation,
         });
-        getStore().selectLayers([a.id, "static-partner"]);
-
-        getStore().booleanCombine("intersect");
-
-        const result = getStore().layers.find((layer) => layer.id === a.id)!;
-        expect(result.to).toBeUndefined();
+        const result = await getStore().booleanCombine("union");
+        expect(result.ok).toBe(false);
+        expect(result.reason).toContain("static paths");
+        expect(JSON.stringify({ layers: getStore().layers, animation: getStore().animation })).toBe(
+          before,
+        );
       });
-
-      it("refuses to run with fewer than two explicit selections instead of picking a hidden partner", () => {
+      it("requires explicit operands instead of choosing an invisible partner", async () => {
         getStore().selectLayer(getStore().layers[0].id);
-        const before = getStore().layers.map((layer) => pathToString(layer.from));
-
-        getStore().booleanCombine("union");
-
-        expect(getStore().layers).toHaveLength(2);
-        expect(getStore().layers.map((layer) => pathToString(layer.from))).toEqual(before);
-        expect(getStore().selectedLayerIds).toHaveLength(1);
-      });
-
-      it("prunes both operands' animation blocks and their selection", () => {
-        const [a, b] = getStore().layers;
-        const doomedBlockId = `block-${String(b.id)}`;
-        useEditorStore.setState((state) => ({
-          animation: {
-            ...state.animation,
-            blocks: [
-              ...state.animation.blocks,
-              {
-                id: doomedBlockId,
-                layerId: b.id,
-                propertyName: "pathData",
-                fromValue: pathToString(b.from),
-                toValue: pathToString(b.from),
-                startTime: 0,
-                endTime: 500,
-                interpolator: "FAST_OUT_SLOW_IN" as const,
-                type: "path" as const,
-              },
-            ],
-          },
-          selectedBlockIds: [doomedBlockId],
-        }));
-        // A block on an untouched third layer must survive the boolean op.
-        useEditorStore.setState({
-          layers: [
-            ...getStore().layers,
-            { ...getStore().layers[0], id: "bystander-layer", name: "Bystander" },
-          ],
-        });
-        useEditorStore.setState((state) => ({
-          animation: {
-            ...state.animation,
-            blocks: [
-              ...state.animation.blocks,
-              {
-                id: "block-survives",
-                layerId: "bystander-layer",
-                propertyName: "translateX",
-                fromValue: 0,
-                toValue: 10,
-                startTime: 0,
-                endTime: 500,
-                interpolator: "FAST_OUT_SLOW_IN" as const,
-                type: "number" as const,
-              },
-            ],
-          },
-        }));
-        getStore().selectLayers([a.id, b.id]);
-
-        getStore().booleanCombine("union");
-
-        const blockIds = getStore().animation.blocks.map((block) => block.id);
-        expect(blockIds).not.toContain(doomedBlockId);
-        expect(blockIds).toContain("block-survives");
-        expect(getStore().selectedBlockIds).not.toContain(doomedBlockId);
+        const before = JSON.stringify(getStore().layers);
+        const result = await getStore().booleanCombine("union");
+        expect(result.ok).toBe(false);
+        expect(result.reason).toContain("at least two");
+        expect(JSON.stringify(getStore().layers)).toBe(before);
       });
     });
   });
@@ -2578,10 +2490,7 @@ describe("editorStore", () => {
         selectedBlockIds: [block.id],
       }));
       getStore().addLayer("path"); // survives the cut — must keep its blocks
-      getStore().selectLayers([
-        getStore().layers[0]!.id,
-        getStore().layers[1]!.id,
-      ]);
+      getStore().selectLayers([getStore().layers[0]!.id, getStore().layers[1]!.id]);
       getStore().groupSelectedLayers();
       const groupId = getStore().selectedLayerId;
 
@@ -2716,9 +2625,7 @@ describe("editorStore", () => {
           candidate.id === layer.id
             ? {
                 ...candidate,
-                timeline: [
-                  { ...authoredBlock, id: "ghost-alpha", toValue: 0.25, endTime: 100 },
-                ],
+                timeline: [{ ...authoredBlock, id: "ghost-alpha", toValue: 0.25, endTime: 100 }],
               }
             : candidate,
         ),
@@ -2810,7 +2717,9 @@ describe("editorStore", () => {
 
       getStore().copyLayers([layer.id]);
 
-      expect(getStore().clipboard!.layers.map((item) => String(item.id))).toContain(String(layer.id));
+      expect(getStore().clipboard!.layers.map((item) => String(item.id))).toContain(
+        String(layer.id),
+      );
       expect(getStore().clipboard!.blocks?.some((item) => item.id === block.id)).toBe(true);
     });
 

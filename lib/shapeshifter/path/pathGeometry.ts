@@ -300,18 +300,17 @@ export function isPointInPath(
 ) {
   const paths = flattenPathData(pathData);
   if (fillType === "evenOdd") {
-    return (
-      paths.filter((subPath) => subPath.closed && pointInPolygon(point, subPath.points)).length %
-        2 ===
-      1
-    );
+    return paths.filter((subPath) => pointInPolygon(point, subPath.points)).length % 2 === 1;
   }
   let winding = 0;
   for (const subPath of paths) {
-    if (!subPath.closed) continue;
+    // SVG and Android fill implicitly close open contours. Keep distance/stroke
+    // geometry open, so trimming does not invent a stroked closing edge.
+    if (subPath.points.length < 3) continue;
     for (let index = 1; index < subPath.points.length; index++) {
       winding += windingContribution(point, subPath.points[index - 1]!, subPath.points[index]!);
     }
+    winding += windingContribution(point, subPath.points.at(-1)!, subPath.points[0]!);
   }
   return winding !== 0;
 }

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AUTOSAVE_DEBOUNCE_MS,
+  autosaveSignature,
   createCoalescingAutosaveWriter,
   createDebouncedAutosaveScheduler,
   restoreStoredAutosave,
@@ -26,6 +27,36 @@ afterEach(() => {
 });
 
 describe("document autosave scheduling", () => {
+  it("includes durable endpoint and authored geometry identities in save equality", () => {
+    const payload = (generatedId: string, authoredId: string) => ({
+      documentV2: {
+        keyframes: { start: { legacyBlockId: "morph", geometryVersionId: "endpoint" } },
+        geometryVersions: {
+          endpoint: {
+            pathData: {
+              subPaths: [{ commands: [{ id: generatedId, type: "M", points: [{ x: 0, y: 0 }] }] }],
+            },
+          },
+          authored: {
+            pathData: {
+              subPaths: [{ commands: [{ id: authoredId, type: "M", points: [{ x: 0, y: 0 }] }] }],
+            },
+          },
+        },
+      },
+    });
+    const first = payload("generated-1", "authored-1");
+    expect(autosaveSignature(first)).toBe(autosaveSignature(payload("generated-1", "authored-1")));
+    expect(autosaveSignature(first)).not.toBe(
+      autosaveSignature(payload("generated-2", "authored-1")),
+    );
+    expect(autosaveSignature(first)).not.toBe(
+      autosaveSignature(payload("generated-1", "authored-2")),
+    );
+    expect(first.documentV2.geometryVersions.endpoint.pathData.subPaths[0]!.commands[0]!.id).toBe(
+      "generated-1",
+    );
+  });
   it("does not treat a user edit made during hydration as safe to overwrite", () => {
     const shared = {
       layers: [],
@@ -95,9 +126,73 @@ describe("document autosave scheduling", () => {
 
     scheduler.dispose();
   });
+
+  it("flushes pending edits immediately and cancels the delayed duplicate", () => {
+    vi.useFakeTimers();
+    let revision = 1;
+    const enqueue = vi.fn();
+    const scheduler = createDebouncedAutosaveScheduler({ snapshot: () => ({ revision }), enqueue });
+    scheduler.markHydrated();
+    scheduler.flush();
+    expect(enqueue).toHaveBeenLastCalledWith({ revision: 1 });
+
+    revision = 2;
+    scheduler.schedule();
+    scheduler.flush();
+    expect(enqueue).toHaveBeenLastCalledWith({ revision: 2 });
+    vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+    expect(enqueue).toHaveBeenCalledTimes(2);
+    scheduler.dispose();
+  });
+
+  it("allows an explicit retry of an unchanged snapshot without bypassing recovery preservation", () => {
+    const enqueue = vi.fn();
+    const scheduler = createDebouncedAutosaveScheduler({
+      snapshot: () => ({ revision: 1 }),
+      enqueue,
+    });
+    scheduler.markHydrated();
+    scheduler.flush();
+    scheduler.flush();
+    expect(enqueue).toHaveBeenCalledOnce();
+    scheduler.flush({ force: true });
+    expect(enqueue).toHaveBeenCalledTimes(2);
+
+    scheduler.preserveStoredSnapshot();
+    scheduler.flush({ force: true });
+    expect(enqueue).toHaveBeenCalledTimes(2);
+    scheduler.dispose();
+  });
 });
 
 describe("coalescing autosave writes", () => {
+  it("reports success only after the transaction completes", async () => {
+    const transaction = deferred();
+    const onSuccess = vi.fn();
+    const writer = createCoalescingAutosaveWriter(() => transaction.promise, { onSuccess });
+    writer.enqueue(1);
+    expect(onSuccess).not.toHaveBeenCalled();
+    transaction.resolve();
+    await writer.whenIdle();
+    expect(onSuccess).toHaveBeenCalledWith(1);
+  });
+
+  it("reports a failed transaction and remains usable for a later retry", async () => {
+    const failure = new Error("Quota exceeded");
+    const onSuccess = vi.fn();
+    const onError = vi.fn();
+    const write = vi.fn().mockRejectedValueOnce(failure).mockResolvedValueOnce(undefined);
+    const writer = createCoalescingAutosaveWriter(write, { onSuccess, onError });
+    writer.enqueue(1);
+    await writer.whenIdle();
+    expect(onError).toHaveBeenCalledWith(failure, 1);
+    expect(onSuccess).not.toHaveBeenCalled();
+
+    writer.enqueue(1);
+    await writer.whenIdle();
+    expect(onSuccess).toHaveBeenCalledWith(1);
+    expect(write).toHaveBeenCalledTimes(2);
+  });
   it("writes snapshots in order and makes the newest pending snapshot the final write", async () => {
     const firstWrite = deferred();
     const finalWrite = deferred();

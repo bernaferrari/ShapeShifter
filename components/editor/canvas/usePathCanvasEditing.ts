@@ -7,7 +7,9 @@ import type {
   RefObject,
 } from "react";
 import type { Viewport } from "@/lib/shapeshifter/camera";
-import { scalePathToBounds } from "@/lib/shapeshifter/pathUtils";
+import { scalePathToBounds, translatePathPoints } from "@/lib/shapeshifter/pathUtils";
+import { evaluateAndroidScene } from "@/lib/shapeshifter/scene/evaluate";
+import { beginLiveGesture, endLiveGesture, ownsLiveGesture } from "@/lib/store/liveGesture";
 import type { Layer, Point, Selection } from "@/lib/shapeshifter/types";
 import {
   useEditorStore,
@@ -24,6 +26,7 @@ import {
   type ResizeHandle,
   type SegmentTarget,
 } from "./pathCanvasGeometry";
+import { isEditorShortcutBlocked } from "../hooks/useEditorKeyboardShortcuts";
 
 type PathCanvasSide = "from" | "to" | "preview";
 type PointFromClient = (clientX: number, clientY: number) => Point | null;
@@ -57,19 +60,31 @@ function useWindowPointerDrag() {
   }, []);
 
   const start = useCallback(
-    (onMove: (event: PointerEvent) => void, onEnd?: () => void) => {
+    (onMove: (event: PointerEvent) => void, onEnd?: () => void, onCancel?: () => void) => {
       end();
-      const finish = () => {
+      const finish = (cancelled: boolean) => {
         window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", finish);
-        window.removeEventListener("pointercancel", finish);
+        window.removeEventListener("pointerup", release);
+        window.removeEventListener("pointercancel", cancel);
+        window.removeEventListener("keydown", keyDown);
         cleanupRef.current = null;
-        onEnd?.();
+        if (cancelled && onCancel) onCancel();
+        else onEnd?.();
       };
-      cleanupRef.current = finish;
+      const release = () => finish(false);
+      const cancel = () => finish(true);
+      const keyDown = (event: KeyboardEvent) => {
+        if (onCancel && event.key === "Escape" && !isEditorShortcutBlocked(event)) {
+          event.preventDefault();
+          event.stopPropagation();
+          cancel();
+        }
+      };
+      cleanupRef.current = cancel;
       window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", finish);
-      window.addEventListener("pointercancel", finish);
+      window.addEventListener("pointerup", release);
+      window.addEventListener("pointercancel", cancel);
+      if (onCancel) window.addEventListener("keydown", keyDown);
     },
     [end],
   );
@@ -116,14 +131,7 @@ export function usePathCanvasEditing({
   useEffect(() => {
     if (side !== "preview" || isActionMode) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (
-        target?.tagName === "INPUT" ||
-        target?.tagName === "TEXTAREA" ||
-        target?.isContentEditable
-      ) {
-        return;
-      }
+      if (isEditorShortcutBlocked(event)) return;
       if (event.key === "Escape") {
         if (useEditorStore.getState().selectedSubPaths.length > 0) {
           event.preventDefault();
@@ -148,57 +156,117 @@ export function usePathCanvasEditing({
       commandIndex: number,
       pointIndex: number,
     ) => {
-      if (!canEditPoints) return;
+      if (!canEditPoints || event.button !== 0) return;
       event.stopPropagation();
-      capturePointer(event.currentTarget, event.pointerId);
       const store = useEditorStore.getState();
-      store.pushHistory();
+      const layer = store.layers.find((item) => String(item.id) === String(selectedLayerId));
+      const editSide = side === "preview" ? "from" : editingSide;
+      const path = editSide === "from" ? layer?.from : layer?.to;
+      const origin = path?.subPaths[subPathIndex]?.commands[commandIndex]?.points[pointIndex];
+      if (
+        !layer ||
+        !path ||
+        !origin ||
+        layer.locked ||
+        evaluateAndroidScene(store.layers, store.animation, store.progress, true).nodesById.get(
+          String(layer.id),
+        )?.locked
+      )
+        return;
+      capturePointer(event.currentTarget, event.pointerId);
       if (side === "preview") store.setEditingSide("from");
-      store.selectPoint(
-        {
-          layerId: selectedLayerId,
-          side: side === "preview" ? "from" : editingSide,
-          subPathIndex,
-          commandIndex,
-          pointIndex,
-        },
-        event.shiftKey,
-      );
-
+      const clicked = {
+        layerId: selectedLayerId,
+        side: editSide,
+        subPathIndex,
+        commandIndex,
+        pointIndex,
+      };
+      const samePoint = (point: Selection) =>
+        String(point.layerId) === String(selectedLayerId) &&
+        point.side === editSide &&
+        point.subPathIndex === subPathIndex &&
+        point.commandIndex === commandIndex &&
+        point.pointIndex === pointIndex;
+      if (event.shiftKey || !store.selectedPoints.some(samePoint))
+        store.selectPoint(clicked, event.shiftKey);
+      const points = useEditorStore
+        .getState()
+        .selectedPoints.filter(
+          (point) => String(point.layerId) === String(selectedLayerId) && point.side === editSide,
+        );
+      if (!points.some(samePoint)) return;
+      const marker = beginLiveGesture("detail-anchor", origin);
+      const ownerId = store.selectedFrameId;
+      let history = useEditorStore.getState().history;
+      let moved = false;
       let lastX = event.clientX;
       let lastY = event.clientY;
-      const isBatch = useEditorStore.getState().selectedPoints.length > 1;
-      beginWindowDrag((moveEvent) => {
-        const point = pointFromClient(moveEvent.clientX, moveEvent.clientY);
-        if (!point) return;
-        const bounds = svgRef.current?.getBoundingClientRect();
-        const dx = (moveEvent.clientX - lastX) * (bounds ? view.w / bounds.width : 1);
-        const dy = (moveEvent.clientY - lastY) * (bounds ? view.h / bounds.height : 1);
-        lastX = moveEvent.clientX;
-        lastY = moveEvent.clientY;
-        const liveStore = useEditorStore.getState();
-        const delta = snapToGrid ? { x: snapHalf(dx), y: snapHalf(dy) } : { x: dx, y: dy };
-        if (isBatch && liveStore.selectedPoints.length > 1 && (dx !== 0 || dy !== 0)) {
-          liveStore.translateSelectedPoints(delta.x, delta.y, { recordHistory: false });
-        } else if (liveStore.toolMode === "direct" && moveEvent.ctrlKey && (dx !== 0 || dy !== 0)) {
-          liveStore.flexSelectedLayerSegment(
-            {
-              layerId: selectedLayerId,
-              side: side === "preview" ? "from" : editingSide,
-              subPathIndex,
-              commandIndex,
-            },
-            delta,
-            pointIndex === 0 ? 0.33 : pointIndex === 1 ? 0.66 : 0.5,
-            { recordHistory: false },
-          );
-        } else {
-          liveStore.updateSelectedPoint(
-            snapToGrid ? { x: snapHalf(point.x), y: snapHalf(point.y) } : point,
-            { recordHistory: false },
-          );
-        }
-      });
+      const toLocal =
+        side === "preview" ? makeWorldToLocal(selectedPreviewTransform) : (point: Point) => point;
+      const valid = () => {
+        const state = useEditorStore.getState();
+        return (
+          ownsLiveGesture(marker) &&
+          state.selectedFrameId === ownerId &&
+          String(state.selectedLayerId) === String(selectedLayerId) &&
+          state.editingSide === editSide &&
+          state.history === history &&
+          !state.layers.find((item) => String(item.id) === String(selectedLayerId))?.locked
+        );
+      };
+      beginWindowDrag(
+        (moveEvent) => {
+          if (!valid()) return;
+          const point = pointFromClient(moveEvent.clientX, moveEvent.clientY);
+          if (!point) return;
+          const bounds = svgRef.current?.getBoundingClientRect();
+          const dx = (moveEvent.clientX - lastX) * (bounds ? view.w / bounds.width : 1);
+          const dy = (moveEvent.clientY - lastY) * (bounds ? view.h / bounds.height : 1);
+          lastX = moveEvent.clientX;
+          lastY = moveEvent.clientY;
+          const liveStore = useEditorStore.getState();
+          const delta = snapToGrid ? { x: snapHalf(dx), y: snapHalf(dy) } : { x: dx, y: dy };
+          const raw = toLocal(point);
+          const local = snapToGrid ? { x: snapHalf(raw.x), y: snapHalf(raw.y) } : raw;
+          const offset = { x: local.x - origin.x, y: local.y - origin.y };
+          if (!moved && !offset.x && !offset.y) return;
+          if (!moved) {
+            liveStore.pushHistory();
+            history = useEditorStore.getState().history;
+            moved = true;
+          }
+          if (
+            points.length === 1 &&
+            liveStore.toolMode === "direct" &&
+            moveEvent.ctrlKey &&
+            (dx !== 0 || dy !== 0)
+          ) {
+            liveStore.flexSelectedLayerSegment(
+              {
+                layerId: selectedLayerId,
+                side: editSide,
+                subPathIndex,
+                commandIndex,
+              },
+              delta,
+              pointIndex === 0 ? 0.33 : pointIndex === 1 ? 0.66 : 0.5,
+              { recordHistory: false },
+            );
+          } else {
+            const updated = translatePathPoints(path, points, offset.x, offset.y);
+            liveStore.updateSelectedLayer(
+              editSide === "from" ? { from: updated, pathData: updated } : { to: updated },
+              { recordHistory: false },
+            );
+          }
+        },
+        () => endLiveGesture(marker),
+        () => {
+          if (moved && valid()) useEditorStore.getState().cancelLastHistoryTransaction();
+          endLiveGesture(marker);
+        },
+      );
     },
     [
       beginWindowDrag,
@@ -211,6 +279,7 @@ export function usePathCanvasEditing({
       svgRef,
       view.h,
       view.w,
+      selectedPreviewTransform,
     ],
   );
 

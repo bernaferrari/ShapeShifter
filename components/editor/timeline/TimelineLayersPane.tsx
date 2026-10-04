@@ -9,8 +9,8 @@ import { TimelineKeyframeDiamond } from "./TimelinePropertyBlock";
 import { TimelinePropertyValue } from "./TimelineLiveState";
 import type { TimelineProjection, TimelineRow } from "./timelineProjection";
 
-const FIGMA_BLUE = "#0C8CE9";
-const ROW_SELECTED = "bg-[#0C8CE9]/20";
+const SELECTION_COLOR = "var(--primary)";
+const ROW_SELECTED = "bg-primary/10";
 const ROW_LAYER_HEIGHT = 30;
 const ROW_PROPERTY_HEIGHT = 28;
 
@@ -41,18 +41,21 @@ export function TimelineLayersPane({
   const selectionKind = useEditorStore((state) => state.selectionKind);
   const hasCanvasSelection = useEditorStore((state) => state.hasCanvasSelection);
   const animationDuration = useEditorStore((state) => state.animation.duration);
+  const frames = useEditorStore((state) => state.frames);
   const [renamingLayerKey, setRenamingLayerKey] = React.useState<string | null>(null);
 
   const jumpTo = (milliseconds: number) => {
-    useEditorStore
-      .getState()
-      .setProgress(Math.max(0, Math.min(1, milliseconds / Math.max(1, animationDuration))));
+    const store = useEditorStore.getState();
+    if (store.isPlaying) store.togglePlayback();
+    store.setProgress(
+      Math.max(0, Math.min(1, milliseconds / Math.max(1, store.animation.duration))),
+    );
   };
 
   return (
     <div
       ref={scrollRef}
-      className="min-h-0 shrink-0 overflow-y-auto overflow-x-hidden border-r border-white/[0.06]"
+      className="min-h-0 shrink-0 overflow-y-auto overflow-x-hidden border-r border-border"
       style={{ width }}
       onScroll={onScroll}
     >
@@ -67,12 +70,15 @@ export function TimelineLayersPane({
               tabIndex={0}
               className={cn(
                 "group flex w-full items-center gap-1 pr-2 text-left",
-                isActive ? "bg-white/[0.05] text-white/90" : "text-white/55 hover:bg-white/[0.03]",
+                isActive ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted",
               )}
               style={{ height: ROW_LAYER_HEIGHT, paddingLeft: 8 }}
               onClick={() => useEditorStore.getState().selectFrame(row.frameId)}
               onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
+                if (
+                  event.target === event.currentTarget &&
+                  (event.key === "Enter" || event.key === " ")
+                ) {
                   event.preventDefault();
                   useEditorStore.getState().selectFrame(row.frameId);
                 }
@@ -80,7 +86,7 @@ export function TimelineLayersPane({
             >
               <button
                 type="button"
-                className="grid size-4 shrink-0 place-items-center rounded-sm hover:bg-white/[0.08]"
+                className="grid size-4 shrink-0 place-items-center rounded-sm hover:bg-muted"
                 aria-label={row.expanded ? `Collapse ${row.name}` : `Expand ${row.name}`}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -88,10 +94,7 @@ export function TimelineLayersPane({
                 }}
               >
                 <ChevronRight
-                  className={cn(
-                    "h-2.5 w-2.5 text-white/30 transition-transform duration-100",
-                    row.expanded && "rotate-90",
-                  )}
+                  className={cn("h-2.5 w-2.5 text-muted-foreground", row.expanded && "rotate-90")}
                 />
               </button>
               <span className="min-w-0 flex-1 select-none truncate text-[11px] font-normal tracking-[-0.01em]">
@@ -126,7 +129,7 @@ export function TimelineLayersPane({
               tabIndex={0}
               className={cn(
                 "group flex w-full items-center gap-1 pr-1.5 text-left",
-                isSelected ? `${ROW_SELECTED} text-white` : "text-white/80 hover:bg-white/[0.03]",
+                isSelected ? `${ROW_SELECTED} text-foreground` : "text-foreground hover:bg-muted",
               )}
               style={{ height: ROW_LAYER_HEIGHT, paddingLeft: 6 + row.depth * 12 }}
               onClick={(event) => {
@@ -152,7 +155,10 @@ export function TimelineLayersPane({
                 selectRow();
               }}
               onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
+                if (
+                  event.target === event.currentTarget &&
+                  (event.key === "Enter" || event.key === " ")
+                ) {
                   event.preventDefault();
                   selectRow();
                 }
@@ -162,7 +168,7 @@ export function TimelineLayersPane({
                 {row.expandable && (
                   <button
                     type="button"
-                    className="grid size-4 place-items-center rounded-sm hover:bg-white/[0.08]"
+                    className="grid size-4 place-items-center rounded-sm hover:bg-muted"
                     aria-label={row.expanded ? `Collapse ${row.name}` : `Expand ${row.name}`}
                     onClick={(event) => {
                       event.stopPropagation();
@@ -171,7 +177,7 @@ export function TimelineLayersPane({
                   >
                     <ChevronRight
                       className={cn(
-                        "h-2.5 w-2.5 text-white/30 transition-transform duration-100",
+                        "h-2.5 w-2.5 text-muted-foreground",
                         row.expanded && "rotate-90",
                       )}
                     />
@@ -181,39 +187,42 @@ export function TimelineLayersPane({
               <span
                 className="flex size-[12px] shrink-0 items-center justify-center rounded-[2px] border"
                 style={{
-                  borderColor: isSelected ? FIGMA_BLUE : "rgba(255,255,255,0.28)",
+                  borderColor: isSelected ? SELECTION_COLOR : "var(--border)",
                   background: "transparent",
                 }}
                 aria-hidden
               >
                 <Square
                   className="size-[7px]"
-                  style={{ color: isSelected ? FIGMA_BLUE : "rgba(255,255,255,0.35)" }}
+                  style={{ color: isSelected ? SELECTION_COLOR : "var(--muted-foreground)" }}
                   strokeWidth={1.75}
                 />
               </span>
               {renamingLayerKey === row.key ? (
                 <input
                   autoFocus
+                  aria-label={`Rename ${row.name}`}
                   defaultValue={row.name}
                   onFocus={(event) => event.currentTarget.select()}
                   onBlur={(event) => {
-                    useEditorStore.getState().updateSelectedLayer({ name: event.target.value });
+                    const name = event.currentTarget.value.trim();
+                    if (name && name !== row.name)
+                      useEditorStore.getState().renameOwnedLayer(row.frameId, row.layer.id, name);
                     setRenamingLayerKey(null);
                   }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
-                      useEditorStore
-                        .getState()
-                        .updateSelectedLayer({ name: event.currentTarget.value });
-                      setRenamingLayerKey(null);
+                      event.preventDefault();
+                      event.currentTarget.blur();
                     } else if (event.key === "Escape") {
+                      event.preventDefault();
+                      event.currentTarget.value = row.name;
                       setRenamingLayerKey(null);
                     }
                   }}
                   onClick={(event) => event.stopPropagation()}
                   onPointerDown={(event) => event.stopPropagation()}
-                  className="h-4 min-w-0 flex-1 rounded-sm border border-primary bg-black/40 px-1 text-[11px] text-white outline-none"
+                  className="h-4 min-w-0 flex-1 rounded-sm border border-primary bg-background px-1 text-[11px] text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                 />
               ) : (
                 <span
@@ -256,33 +265,44 @@ export function TimelineLayersPane({
             key={row.key}
             className={cn(
               "group flex w-full items-center gap-0.5 pr-1.5 text-left",
-              isSelected ? ROW_SELECTED : "hover:bg-white/[0.025]",
+              isSelected ? ROW_SELECTED : "hover:bg-muted/60",
             )}
             style={{ height: ROW_PROPERTY_HEIGHT, paddingLeft: 24 + row.depth * 6 }}
+            role="button"
+            tabIndex={0}
+            aria-pressed={isSelected}
+            aria-label={`Select ${propertyLabel(row.propertyName)} track for ${row.layer.name}`}
             onClick={selectProperty}
+            onKeyDown={(event) => {
+              if (
+                event.target === event.currentTarget &&
+                (event.key === "Enter" || event.key === " ")
+              ) {
+                event.preventDefault();
+                selectProperty();
+              }
+            }}
           >
             <span
               className={cn(
                 "min-w-0 flex-1 truncate text-[11px]",
-                isSelected ? "text-white/90" : "text-white/45",
+                isSelected ? "text-foreground" : "text-muted-foreground",
               )}
             >
               {propertyLabel(row.propertyName)}
             </span>
-            <div
-              className={cn(
-                "flex shrink-0 items-center",
-                isSelected ? "opacity-100" : "opacity-50 group-hover:opacity-100",
-              )}
-            >
+            <div className="flex shrink-0 items-center">
               <button
                 type="button"
                 aria-label={`Jump to first ${propertyLabel(row.propertyName)} keyframe`}
-                className="grid size-4 place-items-center rounded text-white/35 hover:bg-white/[0.08] disabled:opacity-20"
+                className="grid size-4 place-items-center rounded text-muted-foreground hover:bg-muted disabled:opacity-20"
                 disabled={!Number.isFinite(earliest)}
                 onClick={(event) => {
                   event.stopPropagation();
-                  if (Number.isFinite(earliest)) jumpTo(earliest);
+                  if (Number.isFinite(earliest)) {
+                    selectProperty();
+                    jumpTo(earliest);
+                  }
                 }}
               >
                 <ChevronRight className="h-2.5 w-2.5 rotate-180" strokeWidth={2} />
@@ -290,10 +310,10 @@ export function TimelineLayersPane({
               <button
                 type="button"
                 aria-label={`Select ${propertyLabel(row.propertyName)} keyframes`}
-                className="grid size-4 place-items-center rounded hover:bg-white/[0.08]"
+                className="grid size-4 place-items-center rounded hover:bg-muted"
                 onClick={(event) => {
                   event.stopPropagation();
-                  useEditorStore.getState().selectBlocks(blockIds);
+                  selectProperty();
                 }}
               >
                 <TimelineKeyframeDiamond active={isSelected} size={6} />
@@ -301,11 +321,14 @@ export function TimelineLayersPane({
               <button
                 type="button"
                 aria-label={`Jump to last ${propertyLabel(row.propertyName)} keyframe`}
-                className="grid size-4 place-items-center rounded text-white/35 hover:bg-white/[0.08] disabled:opacity-20"
+                className="grid size-4 place-items-center rounded text-muted-foreground hover:bg-muted disabled:opacity-20"
                 disabled={!latest}
                 onClick={(event) => {
                   event.stopPropagation();
-                  if (latest) jumpTo(latest);
+                  if (latest) {
+                    selectProperty();
+                    jumpTo(latest);
+                  }
                 }}
               >
                 <ChevronRight className="h-2.5 w-2.5" strokeWidth={2} />
@@ -313,6 +336,13 @@ export function TimelineLayersPane({
             </div>
             <TimelinePropertyValue
               block={first}
+              blocks={blocks}
+              duration={
+                row.frameId === selectedFrameId
+                  ? animationDuration
+                  : (frames.find((frame) => frame.id === row.frameId)?.animation?.duration ??
+                    animationDuration)
+              }
               propertyName={row.propertyName}
               selected={isSelected}
             />

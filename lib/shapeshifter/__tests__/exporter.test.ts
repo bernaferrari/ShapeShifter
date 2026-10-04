@@ -888,10 +888,12 @@ describe("exportLottie", () => {
     expect(lottie.nm).toBe("document");
     expect(lottie.op).toBe(60);
     expect(lottie.layers).toHaveLength(2);
-    expect(lottie.layers.map((layer: any) => layer.nm)).toEqual(["One", "Two"]);
-    expect(lottie.layers[0].ks.p.k[0]).toBeCloseTo((2 * 512) / 24);
-    expect(lottie.layers[1].ks.r.k).toBe(15);
-    expect(lottie.layers[1].ks.o.k).toBe(50);
+    expect(lottie.layers.map((layer: any) => layer.nm)).toEqual(["Two", "One"]);
+    const one = lottie.layers.find((layer: any) => layer.nm === "One")!;
+    const two = lottie.layers.find((layer: any) => layer.nm === "Two")!;
+    expect(one.ks.p.k[0]).toBeCloseTo((2 * 512) / 24);
+    expect(two.ks.r.k).toBe(15);
+    expect(two.ks.o.k).toBe(50);
   });
 
   it("uses the source viewport for document scale and centers only letterboxing", () => {

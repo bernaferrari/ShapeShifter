@@ -4,7 +4,8 @@
  */
 
 import type { Layer, PathData } from "./types";
-import { getInterpolatedPath, pathToString } from "./pathUtils";
+import { getInterpolatedPath, parsePath, pathToString } from "./pathUtils";
+import { trimPathData } from "./path/pathTrim";
 import { gradientDomId, gradientToSvg, sanitizeCssColor, svgIdFragment } from "./gradients";
 import type {
   ExportOptions,
@@ -363,7 +364,14 @@ export function exportStaticSVGWithDiagnostics(
       if (!rendered) return "";
       return `${indent}<g${idAttr}${transformAttr(layer)}>\n${rendered}\n${indent}</g>`;
     }
-    const d = pathToString(layer.pathData ?? layer.from);
+    const d = pathToString(
+      trimPathData(
+        layer.pathData ?? layer.from,
+        layer.trimPathStart ?? 0,
+        layer.trimPathEnd ?? 1,
+        layer.trimPathOffset ?? 0,
+      ),
+    );
     if (!d) return "";
     return `${indent}<path${idAttr} d="${escapeXml(d)}"${transformAttr(layer)} ${styleAttrs(
       layer,
@@ -474,7 +482,14 @@ export function exportSvgSpritesheet(layer: Layer, options: ExportOptions = {}) 
   const frames = Array.from({ length: frameCount }, (_, index) => {
     const t = frameCount === 1 ? 0 : index / (frameCount - 1);
     const translateX = index * viewBoxWidth;
-    const d = getInterpolatedPath(baseFrom, layer.to ?? baseFrom, t);
+    const d = pathToString(
+      trimPathData(
+        parsePath(getInterpolatedPath(baseFrom, layer.to ?? baseFrom, t)),
+        layer.trimPathStart ?? 0,
+        layer.trimPathEnd ?? 1,
+        layer.trimPathOffset ?? 0,
+      ),
+    );
     return `  <g id="${escapeXml(safeName(layer.name))}_frame_${index}" transform="translate(${translateX} 0)">
     <path d="${escapeXml(d)}" ${styleAttrs(layer)} />
   </g>`;

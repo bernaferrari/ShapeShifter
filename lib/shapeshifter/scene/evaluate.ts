@@ -1,5 +1,6 @@
-import { colorAtTime, numberAtTime, pathDAtTime } from "../playheadResolve";
-import { parsePath } from "../pathUtils";
+import { blocksFor, colorAtTime, numberAtTime, pathDAtTime } from "../playheadResolve";
+import { parsePath, pathToString } from "../pathUtils";
+import { trimPathData } from "../path/pathTrim";
 import type { AnimationState, Layer, PathData } from "../types";
 import {
   IDENTITY_AFFINE,
@@ -163,10 +164,10 @@ function evaluateAndroidSceneUncached(
         cursor = byId.get(cursorKey)?.parentId ?? null;
       }
     }
-    children.set(parentId == null ? null : String(parentId), [
-      ...(children.get(parentId == null ? null : String(parentId)) ?? []),
-      entry.layer.id,
-    ]);
+    const parentKey = parentId == null ? null : String(parentId);
+    const siblings = children.get(parentKey);
+    if (siblings) siblings.push(entry.layer.id);
+    else children.set(parentKey, [entry.layer.id]);
   }
   if (cyclicIds.size > 0 && process.env.NODE_ENV !== "production") {
     console.warn(
@@ -185,7 +186,7 @@ function evaluateAndroidSceneUncached(
     parentVisible: boolean,
     inheritedAlpha: number,
     inheritedClips: Array<string | number>,
-  ) => {
+  ): EvaluatedSceneNode | undefined => {
     const entry = byId.get(String(id));
     if (!entry) return;
     const layer = entry.layer;
@@ -199,7 +200,7 @@ function evaluateAndroidSceneUncached(
         : (layer.alpha ?? 1));
     const type = layer.type === "vector" ? "group" : layer.type;
     const isPath = type === "path" || type === "clipPath";
-    const d = isPath
+    let d = isPath
       ? usePlayhead
         ? pathDAtTime(layer, animation.blocks, ms, animation.duration, progress)
         : pathDAtTime(layer, [], 0, animation.duration, 0)
@@ -207,7 +208,15 @@ function evaluateAndroidSceneUncached(
     let path: PathData | null = null;
     if (isPath) {
       try {
-        path = usePlayhead ? parsePath(d) : (layer.pathData ?? layer.from);
+        // Transform/style animation does not change local geometry. Reuse its
+        // authored command identities instead of reparsing SVG and minting new
+        // IDs on every playback frame.
+        const hasPathTrack =
+          usePlayhead && blocksFor(animation.blocks, layer.id, "pathData").length > 0;
+        path =
+          !usePlayhead || (!hasPathTrack && (!layer.to || progress <= 0))
+            ? (layer.pathData ?? layer.from)
+            : parsePath(d);
       } catch {
         path = layer.pathData ?? layer.from;
       }
@@ -239,6 +248,16 @@ function evaluateAndroidSceneUncached(
             (layer as unknown as Record<string, unknown>)[property] as number | undefined,
             fallback,
           );
+    const trimPathStart = value("trimPathStart", 0);
+    const trimPathEnd = value("trimPathEnd", 1);
+    const trimPathOffset = value("trimPathOffset", 0);
+    if (type === "path" && path) {
+      const painted = trimPathData(path, trimPathStart, trimPathEnd, trimPathOffset);
+      if (painted !== path) {
+        path = painted;
+        d = pathToString(path);
+      }
+    }
     const childIds = children.get(String(id)) ?? [];
     const node: EvaluatedSceneNode = {
       id: layer.id,
@@ -249,7 +268,9 @@ function evaluateAndroidSceneUncached(
       transform,
       worldMatrix,
       visible,
-      locked: Boolean(layer.locked),
+      locked: Boolean(
+        layer.locked || (parentId != null && nodesById.get(String(parentId))?.locked),
+      ),
       alpha,
       d,
       path,
@@ -264,9 +285,9 @@ function evaluateAndroidSceneUncached(
       strokeLinejoin: layer.strokeLinejoin ?? "miter",
       strokeMiterLimit: value("strokeMiterLimit", 4),
       strokeDasharray: layer.strokeDasharray,
-      trimPathStart: value("trimPathStart", 0),
-      trimPathEnd: value("trimPathEnd", 1),
-      trimPathOffset: value("trimPathOffset", 0),
+      trimPathStart,
+      trimPathEnd,
+      trimPathOffset,
       clipNodeIds: [...inheritedClips],
     };
     nodes.push(node);
@@ -275,17 +296,16 @@ function evaluateAndroidSceneUncached(
     if (type === "clipPath") return node;
     const localClips = [...inheritedClips];
     for (const childId of childIds) {
-      const child = byId.get(String(childId))?.layer;
-      if (child?.type === "clipPath") {
-        visit(childId, layer.id, worldMatrix, visible, alpha, localClips);
-        localClips.push(childId);
-      } else {
-        visit(childId, layer.id, worldMatrix, visible, alpha, localClips);
-      }
+      const child = visit(childId, layer.id, worldMatrix, visible, alpha, localClips);
+      if (child?.type === "clipPath" && child.visible) localClips.push(childId);
     }
     return node;
   };
 
-  for (const rootId of roots) visit(rootId, null, IDENTITY_AFFINE, true, 1, []);
+  const rootClips: Array<string | number> = [];
+  for (const rootId of roots) {
+    const root = visit(rootId, null, IDENTITY_AFFINE, true, 1, rootClips);
+    if (root?.type === "clipPath" && root.visible) rootClips.push(rootId);
+  }
   return { roots, nodes, nodesById };
 }

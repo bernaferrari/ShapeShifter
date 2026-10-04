@@ -58,6 +58,67 @@ const input = (): AndroidArtboardInput => ({
 });
 
 describe("Android artboard compiler", () => {
+  it("preserves static trims and targets timed trim tracks at the path inside a transform wrapper", () => {
+    const source = input();
+    source.layers[1] = {
+      ...source.layers[1]!,
+      trimPathStart: 0.1,
+      trimPathEnd: 0.9,
+      trimPathOffset: 0.2,
+    };
+    source.animation.blocks = [
+      ...["trimPathStart", "trimPathEnd", "trimPathOffset"].map((propertyName, index) => ({
+        id: `trim-${index}`,
+        layerId: "heart",
+        propertyName,
+        fromValue: 0.125,
+        toValue: 0.375,
+        startTime: 125,
+        endTime: 625,
+        interpolator: "LINEAR",
+      })),
+      {
+        id: "trim-start-next",
+        layerId: "heart",
+        propertyName: "trimPathStart",
+        fromValue: 0.375,
+        toValue: 0.875,
+        startTime: 625,
+        endTime: 1000,
+        interpolator: "LINEAR",
+      },
+    ];
+    const bundle = compileAndroidArtboard(source);
+    const vector = bundle.files.find((file) => file.path.endsWith("_vector.xml"))!.content;
+    const avd = bundle.files.find((file) => file.path.endsWith("_animated.xml"))!.content;
+    expect(vector).toContain('android:name="heart_transform"');
+    expect(vector).toContain('android:trimPathStart="0.1"');
+    expect(vector).toContain('android:trimPathEnd="0.9"');
+    expect(vector).toContain('android:trimPathOffset="0.2"');
+    for (const propertyName of ["trimPathStart", "trimPathEnd", "trimPathOffset"]) {
+      const animator = bundle.files.find((file) =>
+        file.path.endsWith(`_${propertyName.toLowerCase()}.xml`),
+      )!;
+      expect(animator.content).toContain(`android:propertyName="${propertyName}"`);
+      expect(animator.content).toContain('android:startOffset="125"');
+      expect(animator.content).toContain('android:duration="500"');
+      expect(animator.content).toContain('android:valueType="floatType"');
+      expect(animator.content).toContain('android:valueFrom="0.125"');
+      expect(animator.content).toContain('android:valueTo="0.375"');
+      const resource = animator.path
+        .split("/")
+        .at(-1)!
+        .replace(/\.xml$/, "");
+      expect(avd).toContain(`android:name="heart" android:animation="@animator/${resource}"`);
+    }
+    const start = bundle.files.find((file) => file.path.endsWith("_trimpathstart.xml"))!.content;
+    expect(start.match(/<objectAnimator/g)).toHaveLength(2);
+    expect(start).toContain('android:startOffset="625"');
+    expect(start).toContain('android:duration="375"');
+    expect(start).toContain('android:valueTo="0.875"');
+    expect(bundle.diagnostics.some((diagnostic) => diagnostic.severity === "error")).toBe(false);
+  });
+
   it("compiles a complete hierarchy into VectorDrawable and AVD resources", () => {
     const bundle = compileAndroidArtboard(input());
     const vector = bundle.files.find((file) => file.path.endsWith("_vector.xml"))?.content;

@@ -13,15 +13,53 @@ export function isEditableTarget(target: EventTarget | null) {
   return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
 }
 
+/** Shared by global and canvas shortcuts so local UI keeps its keyboard input. */
+export function isEditorShortcutBlocked(event: KeyboardEvent) {
+  if (event.defaultPrevented || event.isComposing || isEditableTarget(event.target)) return true;
+  const target = event.target instanceof Element ? event.target : null;
+  if (target?.closest('[role="dialog"], [role="alertdialog"], [role="menu"], [role="menubar"]')) {
+    return true;
+  }
+  if (
+    document.querySelector(
+      '[role="dialog"][aria-modal="true"]:not([hidden]):not([data-closed]), [role="alertdialog"][aria-modal="true"]:not([hidden]):not([data-closed])',
+    )
+  ) {
+    return true;
+  }
+  const control = target?.closest(
+    'button, a[href], summary, [role="button"], [role="slider"], [role="spinbutton"], [role="tab"], [role="switch"], [role="checkbox"], [role="radio"], [role="combobox"], [role="listbox"], [role="option"]',
+  );
+  const timelineDelete =
+    (event.key === "Delete" || event.key === "Backspace") &&
+    target?.closest("[data-timeline-keyframe-block-id], [data-timeline-block-id]");
+  const controlKey =
+    [
+      "Enter",
+      " ",
+      "ArrowLeft",
+      "ArrowRight",
+      "ArrowUp",
+      "ArrowDown",
+      "Home",
+      "End",
+      "PageUp",
+      "PageDown",
+    ].includes(event.key) || event.code === "Space";
+  return Boolean(control && controlKey && !event.metaKey && !event.ctrlKey && !timelineDelete);
+}
+
 /**
  * Owns application-level editor shortcuts. Canvas-local framing and escape
  * behavior stay with the canvas because they depend on its active gesture.
  */
 export function useEditorKeyboardShortcuts() {
   useEffect(() => {
+    let spacePressed = false;
+    let handPressed = false;
+
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
-      if (isEditableTarget(event.target)) return;
+      if (isEditorShortcutBlocked(event)) return;
 
       const store = useEditorStore.getState();
       const key = event.key.toLowerCase();
@@ -76,8 +114,9 @@ export function useEditorKeyboardShortcuts() {
         store.toggleLayerLock(store.selectedLayerId);
         return;
       }
+      if (command || event.altKey) return;
 
-      if (!command) {
+      if (!command && !event.shiftKey) {
         const toolByKey = {
           v: "select",
           a: "direct",
@@ -86,15 +125,19 @@ export function useEditorKeyboardShortcuts() {
           l: "pencil",
           b: "paint",
           k: "knife",
+          r: "rectangle",
+          o: "ellipse",
         } as const;
         const nextTool = toolByKey[key as keyof typeof toolByKey];
         if (nextTool) {
           event.preventDefault();
+          if (nextTool === "rectangle" || nextTool === "ellipse") store.closeActionMode();
           store.setToolMode(nextTool);
           return;
         }
         if (key === "h") {
           event.preventDefault();
+          handPressed = true;
           store.setSpacePanActive(true);
           return;
         }
@@ -162,18 +205,20 @@ export function useEditorKeyboardShortcuts() {
         const step = event.shiftKey ? 5 : 0.5;
         const dx = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
         const dy = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
-        if (store.selectedPoints.length > 0) store.translateSelectedPoints(dx, dy);
+        if (store.selectionKind === "frame") store.moveFrames(store.selectedFrameIds, dx, dy);
+        else if (store.selectedPoints.length > 0) store.translateSelectedPoints(dx, dy);
         else if (store.selection) {
           const point = store.getCurrentSelectedPoint();
           if (point) store.updateSelectedPoint({ x: point.x + dx, y: point.y + dy });
         } else if (store.selectedSubPaths.length > 0) store.translateSelectedSubPaths(dx, dy);
-        else store.translateSelectedLayer(dx, dy);
+        else if (store.selectionKind === "layer") store.translateSelectedLayer(dx, dy);
         return;
       }
 
       if (event.code === "Space" || event.key === " ") {
-        if (event.repeat) return;
+        if (event.repeat || spacePressed || command || event.altKey) return;
         event.preventDefault();
+        spacePressed = true;
         store.setSpacePanActive(true);
         const gestureWindow = window as SpaceGestureWindow;
         gestureWindow.__ssSpacePanUsed = false;
@@ -193,25 +238,46 @@ export function useEditorKeyboardShortcuts() {
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
-      if (isEditableTarget(event.target)) return;
-      if (event.code === "Space" || event.key === " ") {
+      if ((event.code === "Space" || event.key === " ") && spacePressed) {
+        spacePressed = false;
+        const blocked = isEditorShortcutBlocked(event);
         event.preventDefault();
         const store = useEditorStore.getState();
         const gestureWindow = window as SpaceGestureWindow;
         const wasBrief = performance.now() - (gestureWindow.__ssSpaceDownAt ?? 0) < 450;
-        store.setSpacePanActive(false);
-        if (!gestureWindow.__ssSpacePanUsed && wasBrief) store.togglePlayback();
+        store.setSpacePanActive(handPressed);
+        if (!blocked && !gestureWindow.__ssSpacePanUsed && wasBrief) store.togglePlayback();
+        delete gestureWindow.__ssSpaceDownAt;
+        delete gestureWindow.__ssSpacePanUsed;
       }
-      if (event.key.toLowerCase() === "h" && !event.metaKey) {
-        useEditorStore.getState().setSpacePanActive(false);
+      if (event.key.toLowerCase() === "h" && handPressed) {
+        handPressed = false;
+        useEditorStore.getState().setSpacePanActive(spacePressed);
       }
+    };
+
+    const resetPan = () => {
+      spacePressed = false;
+      handPressed = false;
+      const gestureWindow = window as SpaceGestureWindow;
+      delete gestureWindow.__ssSpaceDownAt;
+      delete gestureWindow.__ssSpacePanUsed;
+      useEditorStore.getState().setSpacePanActive(false);
+    };
+    const handleVisibilityChange = () => {
+      if (document.hidden) resetPan();
     };
 
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", resetPan);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", resetPan);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      resetPan();
     };
   }, []);
 }

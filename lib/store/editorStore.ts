@@ -11,8 +11,6 @@ import {
   shiftPath,
   areAndroidPathsMorphCompatible,
   countPathPoints,
-  BOOLEAN_OPERATIONS_ENABLED,
-  booleanCombine,
   simplifyPath,
   getTaperedStrokeWidth,
 } from "../shapeshifter/pathUtils";
@@ -53,6 +51,15 @@ import { createSelectionActions } from "./actions/selectionActions";
 import { createLayerOrganizationActions } from "./actions/layerOrganizationActions";
 import { createLayerDataActions } from "./actions/layerDataActions";
 import { createTransformActions } from "./actions/transformActions";
+import { booleanSelectionIssue, combineBooleanSelection } from "./commands/booleanSelection";
+import type { BooleanOp } from "../shapeshifter/path/booleanOperations";
+import { legacySnapshotFromEditor } from "./documentRuntime";
+import { syncEditedTimelinePath, timelinePathSelection } from "./timelinePathEditing";
+import type {
+  TimelineClipboard,
+  TimelinePasteResult,
+} from "../shapeshifter/motion/timelineClipboard";
+import type { TimelinePreviewRange } from "../shapeshifter/motion/previewRange";
 
 export type { CanvasFrame } from "./defaultWorkspace";
 export { PAGE_ROOT_ID, type LayerSelectionRef } from "../shapeshifter/scene/owners";
@@ -110,6 +117,8 @@ export interface HistorySession {
   selectedLayerId: string | number;
   selectedLayerIds: Array<string | number>;
   selectedLayerRefs: LayerSelectionRef[];
+  selectedBlockIds?: string[];
+  isActionMode?: boolean;
   selection: Selection | null;
   selectedPoints: Selection[];
   selectedSubPaths: SubPathSelection[];
@@ -200,6 +209,9 @@ export interface EditorState {
 
   // Timeline
   selectedBlockIds: string[];
+  timelineClipboard: TimelineClipboard | null;
+  timelinePreviewRange: TimelinePreviewRange | null;
+  setTimelinePreviewRange: (range: { start: number; end: number } | null) => void;
   collapsedLayerIds: (string | number)[];
   timelineZoom: number;
   timelineScrollX: number;
@@ -408,7 +420,25 @@ export interface EditorState {
   toggleBlockSelection: (blockId: string) => void;
   updateTimelineBlock: (
     blockId: string,
-    patch: Partial<{ startTime: number; endTime: number; interpolator: string }>,
+    patch: Partial<
+      Pick<TimelineBlock, "startTime" | "endTime" | "interpolator" | "fromValue" | "toValue">
+    >,
+    options?: { recordHistory?: boolean },
+  ) => void;
+  insertTimelineKeyframe: (blockId: string, time: number) => boolean;
+  startTimelinePathEditing: (blockId: string) => void;
+  beginTimelineMorphEditing: () => boolean;
+  copyTimelineBlocks: (blockIds?: string[]) => boolean;
+  pasteTimelineBlocks: (layerId?: string | number, time?: number) => TimelinePasteResult;
+  moveTimelineBlock: (
+    blockId: string,
+    offset: number,
+    options?: { recordHistory?: boolean },
+  ) => void;
+  updateTimelineKeyframe: (
+    blockId: string,
+    edge: "start" | "end",
+    patch: { time?: number; value?: string | number },
     options?: { recordHistory?: boolean },
   ) => void;
   removeTimelineBlocks: (blockIds: string[]) => void;
@@ -438,7 +468,7 @@ export interface EditorState {
   reverseSelectedLayer: () => void;
   shiftSelectedLayer: (steps?: number) => boolean;
   autoFixSelectedLayer: () => boolean;
-  booleanCombine: (op: "union" | "subtract" | "intersect" | "exclude") => void;
+  booleanCombine: (op: BooleanOp) => Promise<{ ok: boolean; reason?: string; empty?: boolean }>;
   loadSample: (index: number) => void;
   // 1td advanced (14l) smallest wiring: simplify/optimize + dash + taper primitives now available in UI flows.
   simplifySelectedLayer: (tolerance?: number) => void;
@@ -564,12 +594,15 @@ function setDocumentState(
   update: Partial<EditorState> | ((state: EditorState) => Partial<EditorState> | EditorState),
 ) {
   set((state) => {
-    const patch = typeof update === "function" ? update(state) : update;
+    let patch = typeof update === "function" ? update(state) : update;
+    if (patch.selectedFrameId !== undefined && patch.selectedFrameId !== state.selectedFrameId)
+      patch = { ...patch, timelinePreviewRange: null };
     if ("documentV2" in patch) {
       // A wholesale replacement supersedes anything pending.
       commitScheduled = false;
       return patch;
     }
+    patch = syncEditedTimelinePath(state, patch);
     if (!contentChanged(state, patch)) return patch;
     if (!commitScheduled) {
       commitScheduled = true;
@@ -632,6 +665,8 @@ export const useEditorStore = create<EditorState>((rawSet, get) => {
     snapToGrid: true,
     gridDivisions: 4,
     selectedBlockIds: [],
+    timelineClipboard: null,
+    timelinePreviewRange: null,
     collapsedLayerIds: [],
     timelineZoom: 1,
     timelineScrollX: 0,
@@ -719,55 +754,50 @@ export const useEditorStore = create<EditorState>((rawSet, get) => {
       return true; // for toast feedback
     },
 
-    booleanCombine: (op) => {
-      if (!BOOLEAN_OPERATIONS_ENABLED) return;
-      const { layers, selectedLayerIds } = get();
-      // Exactly two operands must be chosen up front — no invisible fallback partner.
-      if (selectedLayerIds.length < 2) return;
-      const idxA = layers.findIndex((l) => String(l.id) === String(selectedLayerIds[0]));
-      const idxB = layers.findIndex((l) => String(l.id) === String(selectedLayerIds[1]));
-      if (idxA === -1 || idxB === -1 || idxA === idxB) return;
-      const layerA = layers[idxA]!;
-      const layerB = layers[idxB]!;
-      // Same lock discipline as reverseSelectedLayer / shiftSelectedLayer: a locked
-      // layer must never be consumed or deleted by a boolean op.
-      if (layerA.locked || layerB.locked) return;
-      const combined = booleanCombine(op, layerA.from, layerB.from);
-      const resultLayer: Layer = {
-        ...layerA,
-        from: combined,
-        // A morphable layer stays morphable: clone the combined geometry into `to`
-        // instead of aliasing it, and never invent `to` on a static layer.
-        ...(layerA.to !== undefined ? { to: structuredClone(combined) } : {}),
-        pathData: combined,
-        name: `${layerA.name} ${op}`,
-      };
-      let newLayers = [...layers];
-      newLayers[idxA] = resultLayer;
-      newLayers = newLayers.filter((_, i) => i !== idxB);
-      // Deleting layerB orphans its animation blocks — same pruning as deleteLayer.
-      const animationBlocks = get().animation.blocks.filter(
-        (block) =>
-          String(block.layerId) !== String(layerA.id) &&
-          String(block.layerId) !== String(layerB.id),
-      );
-      get().pushHistory();
-      setDocumentState(set, {
-        layers: newLayers,
-        animation: { ...get().animation, blocks: animationBlocks },
-        selectedBlockIds: get().selectedBlockIds.filter((blockId) =>
-          animationBlocks.some((block) => block.id === blockId),
-        ),
-        selectedLayerId: resultLayer.id,
-        selectedLayerIds: [resultLayer.id],
-        selectedLayerRefs: [{ ownerId: get().selectedFrameId, layerId: resultLayer.id }],
-        hasCanvasSelection: true,
-        selectionKind: "layer",
-        selectedFrameIds: [],
-        selection: null,
-        selectedPoints: [],
-        selectedSubPaths: [],
-      });
+    booleanCombine: async (op) => {
+      const captured = get();
+      const issue = booleanSelectionIssue(captured);
+      if (issue) return { ok: false, reason: issue };
+      const signature = JSON.stringify(legacySnapshotFromEditor(captured));
+      const selection = JSON.stringify(captured.selectedLayerRefs);
+      const selectedIds = JSON.stringify(captured.selectedLayerIds);
+      try {
+        const combined = await combineBooleanSelection(captured, op);
+        const current = get();
+        if (
+          current.selectedFrameId !== captured.selectedFrameId ||
+          current.history !== captured.history ||
+          current.future !== captured.future ||
+          JSON.stringify(current.selectedLayerRefs) !== selection ||
+          JSON.stringify(current.selectedLayerIds) !== selectedIds ||
+          JSON.stringify(legacySnapshotFromEditor(current)) !== signature ||
+          booleanSelectionIssue(current)
+        )
+          return {
+            ok: false,
+            reason:
+              "The document or selection changed while combining. Select the paths again and retry.",
+          };
+        current.pushHistory();
+        set({
+          layers: combined.layers,
+          selectedLayerId: combined.result.id,
+          selectedLayerIds: [combined.result.id],
+          selectedLayerRefs: [{ ownerId: current.selectedFrameId, layerId: combined.result.id }],
+          hasCanvasSelection: true,
+          selectionKind: "layer",
+          selectedFrameIds: [],
+          selection: null,
+          selectedPoints: [],
+          selectedSubPaths: [],
+        });
+        return { ok: true, empty: combined.empty };
+      } catch (error) {
+        return {
+          ok: false,
+          reason: error instanceof Error ? error.message : "These paths could not be combined.",
+        };
+      }
     },
 
     selectPoint: (selection, addToMulti = false) => {
@@ -798,17 +828,17 @@ export const useEditorStore = create<EditorState>((rawSet, get) => {
               )
             : [...state.selectedPoints, selection];
           return {
-            selection,
-            selectedPoints: newSelected.length > 0 ? newSelected : [selection],
+            selection: exists ? (newSelected.at(-1) ?? null) : selection,
+            selectedPoints: newSelected,
             selectedSubPaths: [],
-            selectedBlockIds: [],
+            selectedBlockIds: timelinePathSelection(state, selection.layerId),
           };
         }
         return {
           selection,
           selectedPoints: [selection],
           selectedSubPaths: [],
-          selectedBlockIds: [],
+          selectedBlockIds: timelinePathSelection(state, selection.layerId),
         };
       });
     },
@@ -841,7 +871,7 @@ export const useEditorStore = create<EditorState>((rawSet, get) => {
             selection: null,
             selectedPoints: [],
             selectedSubPaths: selectedSubPaths.length > 0 ? selectedSubPaths : [selection],
-            selectedBlockIds: [],
+            selectedBlockIds: timelinePathSelection(state, selection.layerId),
           };
         }
         return {
@@ -850,7 +880,7 @@ export const useEditorStore = create<EditorState>((rawSet, get) => {
           selection: null,
           selectedPoints: [],
           selectedSubPaths: [selection],
-          selectedBlockIds: [],
+          selectedBlockIds: timelinePathSelection(state, selection.layerId),
         };
       });
     },
@@ -859,7 +889,7 @@ export const useEditorStore = create<EditorState>((rawSet, get) => {
         selectedPoints: points,
         selection: points[0] || null,
         selectedSubPaths: [],
-        selectedBlockIds: [],
+        selectedBlockIds: timelinePathSelection(get(), points[0]?.layerId),
       }),
     selectMultipleSubPaths: (subPaths: SubPathSelection[]) =>
       set({
@@ -868,7 +898,7 @@ export const useEditorStore = create<EditorState>((rawSet, get) => {
         editingSide: subPaths[0]?.side ?? get().editingSide,
         selection: null,
         selectedPoints: [],
-        selectedBlockIds: [],
+        selectedBlockIds: timelinePathSelection(get(), subPaths[0]?.layerId),
       }),
     clearSelection: () => set({ selection: null, selectedPoints: [], selectedSubPaths: [] }),
 
@@ -950,6 +980,8 @@ export const useEditorStore = create<EditorState>((rawSet, get) => {
         hiddenLayerIds: [],
         selectedBlockIds: [],
         collapsedLayerIds: [],
+        timelineClipboard: null,
+        timelinePreviewRange: null,
         timelineZoom: 1,
         timelineScrollX: 0,
         timelineScrollY: 0,

@@ -20,11 +20,14 @@ import { type ExportOptions } from "@/lib/shapeshifter/exporter";
 import {
   exportLiveDocument,
   LIVE_EXPORT_SCOPE,
+  selectedLayerExportIssue,
   summarizeAndroidWarnings,
   type LiveExportKind,
 } from "@/lib/store/exportDocument";
 import { vectorCoordinateSize } from "@/lib/shapeshifter/vectorSpace";
 import { CAPABILITY_MATRIX, type ExportFormatId } from "@/lib/shapeshifter/formatCapabilities";
+import { commitDocumentV2 } from "@/lib/store/documentRuntime";
+import { exportAgentSnapshot, type AgentExportFormat } from "@/lib/agent/export";
 
 interface ExportDialogProps {
   children: React.ReactNode;
@@ -37,10 +40,10 @@ export function ExportDialog({ children }: ExportDialogProps) {
   const animation = useEditorStore((state) => state.animation);
   const frames = useEditorStore((state) => state.frames);
   const selectedFrameId = useEditorStore((state) => state.selectedFrameId);
-  const currentLayer = layers.find((l) => l.id === selectedLayerId) || layers[0];
+  const currentLayer = layers.find((l) => String(l.id) === String(selectedLayerId)) || layers[0];
   const selectedFrame = frames.find((frame) => frame.id === selectedFrameId);
   const viewportSize = vectorCoordinateSize(selectedFrame?.vector ?? vector);
-  const androidAnimation = selectedFrame?.animation ?? animation;
+  const androidAnimation = animation;
   const androidTrackCount = new Set(
     androidAnimation.blocks.map((block) => `${String(block.layerId)}:${block.propertyName}`),
   ).size;
@@ -57,6 +60,12 @@ export function ExportDialog({ children }: ExportDialogProps) {
     loop: true,
     strokeWidth: 2.8,
   });
+  const [dimensions, setDimensions] = useState({ width: "512", height: "512" });
+  const [dimensionsTouched, setDimensionsTouched] = useState(false);
+  const hasDimensions = ["svg", "static", "pdf", "spritesheet"].includes(format);
+  const validDimension = (value: string) =>
+    /^\d+$/.test(value) && Number(value) >= 1 && Number(value) <= 16384;
+  const dimensionsValid = validDimension(dimensions.width) && validDimension(dimensions.height);
 
   // Per-format capability summary: N of M animated-track kinds fully supported.
   const capabilityProfile = CAPABILITY_MATRIX[format as ExportFormatId] ?? null;
@@ -65,8 +74,10 @@ export function ExportDialog({ children }: ExportDialogProps) {
     const capabilities = Object.values(capabilityProfile.capabilities);
     const supportedCount = capabilities.filter((c) => c.supported).length;
     const notes = [
-      ...capabilities.filter((c) => !c.supported && c.note).map((c) => c.note),
-      ...capabilityProfile.notes,
+      ...new Set([
+        ...capabilities.filter((c) => !c.supported && c.note).map((c) => c.note),
+        ...capabilityProfile.notes,
+      ]),
     ];
     return {
       text: `${supportedCount} of ${capabilities.length} animated-track kinds fully supported in this format.`,
@@ -74,6 +85,43 @@ export function ExportDialog({ children }: ExportDialogProps) {
     };
   })();
   const [isExporting, setIsExporting] = useState(false);
+  const [preview, setPreview] = useState<{ ready: boolean; messages: string[] }>({
+    ready: true,
+    messages: [],
+  });
+  React.useEffect(() => {
+    if (!open) return;
+    if (!["static", "json", "vector", "avd", "pdf", "lottie"].includes(format)) {
+      const issue = selectedLayerExportIssue(currentLayer);
+      setPreview({ ready: !issue, messages: issue ? [issue] : [] });
+      return;
+    }
+    try {
+      const result = exportAgentSnapshot(commitDocumentV2(useEditorStore.getState()), 0, {
+        ownerId: selectedFrameId,
+        format: format as AgentExportFormat,
+      });
+      setPreview({
+        ready: result.ready,
+        messages: [...new Set(result.diagnostics.map((item) => item.message))],
+      });
+    } catch (error) {
+      setPreview({
+        ready: false,
+        messages: [error instanceof Error ? error.message : "This document could not be exported."],
+      });
+    }
+  }, [
+    open,
+    format,
+    selectedFrameId,
+    selectedLayerId,
+    currentLayer,
+    layers,
+    animation,
+    vector,
+    frames,
+  ]);
 
   // Compact format config for a quick visual scan.
   const formats = [
@@ -98,7 +146,7 @@ export function ExportDialog({ children }: ExportDialogProps) {
     {
       key: "static" as const,
       label: "Static SVG",
-      hint: "Scene snapshot",
+      hint: "Base artwork",
       icon: <FileImage className="h-3.5 w-3.5" />,
     },
     {
@@ -140,8 +188,6 @@ export function ExportDialog({ children }: ExportDialogProps) {
     }
 
     setIsExporting(true);
-    // Pro UX: tiny simulated progress for perceived quality on longer bakes (sprites/lottie/pdf)
-    await new Promise((r) => setTimeout(r, 60));
 
     try {
       let blob: Blob | null = null;
@@ -152,7 +198,7 @@ export function ExportDialog({ children }: ExportDialogProps) {
       const blockingDiagnostics = exported.androidDiagnostics.filter(
         (diagnostic) => diagnostic.severity === "error",
       );
-      if (format === "avd" && blockingDiagnostics.length > 0) {
+      if ((format === "avd" || format === "vector") && blockingDiagnostics.length > 0) {
         toast.error("Android export needs attention", {
           description: blockingDiagnostics[0]!.message,
         });
@@ -160,7 +206,9 @@ export function ExportDialog({ children }: ExportDialogProps) {
       }
       androidWarningSummary = summarizeAndroidWarnings(exported.androidDiagnostics);
       staticWarningDescription =
-        exported.staticDiagnostics.map((diagnostic) => diagnostic.message).join(" ") || null;
+        [...exported.staticDiagnostics, ...exported.formatDiagnostics]
+          .map((diagnostic) => diagnostic.message)
+          .join(" ") || null;
       const payload =
         exported.content instanceof Uint8Array
           ? (exported.content.buffer.slice(
@@ -179,7 +227,7 @@ export function ExportDialog({ children }: ExportDialogProps) {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
 
         if (androidWarningSummary) {
           const warningLabel = androidWarningSummary.count === 1 ? "warning" : "warnings";
@@ -193,16 +241,18 @@ export function ExportDialog({ children }: ExportDialogProps) {
             },
           );
         } else if (staticWarningDescription) {
-          toast.warning("Exported STATIC with warning", { description: staticWarningDescription });
+          toast.warning(`Exported ${format.toUpperCase()} with warning`, {
+            description: staticWarningDescription,
+          });
         } else {
           toast.success(`Exported ${format.toUpperCase()}`, { description: filename });
         }
         setOpen(false);
       }
     } catch (error) {
-      // Outstanding error recovery + partial UX (kus): never hard crash, always toast actionable
       toast.error("Export failed", {
-        description: String(error) || "Partial export may have succeeded; check downloads.",
+        description:
+          error instanceof Error ? error.message : "Try exporting again or save a project backup.",
       });
     } finally {
       setIsExporting(false);
@@ -212,15 +262,15 @@ export function ExportDialog({ children }: ExportDialogProps) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={children as React.ReactElement} />
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Download className="w-5 h-5" />
-            Export Animation
+            Export
           </DialogTitle>
           <DialogDescription>
-            Android, Lottie, static SVG, and project backup use the flushed live artboard or
-            document. Animated SVG and CSS export only the selected layer's morph endpoints.
+            Export the active artboard or back up the whole project. Animated SVG, CSS, and
+            spritesheets use the selected layer’s morph endpoints.
           </DialogDescription>
         </DialogHeader>
 
@@ -254,18 +304,19 @@ export function ExportDialog({ children }: ExportDialogProps) {
             <div className="text-[10px] text-muted-foreground mt-1.5 pl-0.5">
               {formats.find((f) => f.key === format)?.hint || "Production-ready export"}
               {capabilitySummary && (
-                <div className="mt-1">
+                <details className="mt-2">
+                  <summary className="cursor-pointer py-1">Target capabilities</summary>
                   {capabilitySummary.text}
                   {capabilitySummary.notes.map((note) => (
                     <div key={note}>{note}</div>
                   ))}
-                </div>
+                </details>
               )}
             </div>
           </div>
 
           {/* Options */}
-          {(format === "vector" || format === "avd") && (
+          {["vector", "avd", "static", "pdf", "lottie"].includes(format) && (
             <div className="grid grid-cols-3 gap-2 rounded-lg border border-border bg-muted/40 p-3 text-xs">
               <div>
                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -287,69 +338,121 @@ export function ExportDialog({ children }: ExportDialogProps) {
                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
                   Motion
                 </div>
-                <div className="mt-1 font-mono">{androidTrackCount} tracks</div>
+                <div className="mt-1 font-mono">
+                  {["avd", "lottie"].includes(format)
+                    ? `${androidTrackCount} tracks`
+                    : "Base artwork"}
+                </div>
               </div>
             </div>
           )}
 
-          {!["json", "vector", "avd"].includes(format) && (
+          {!["json", "vector", "avd", "lottie"].includes(format) && (
             <div className="space-y-4">
-              <div>
-                <div className="flex justify-between text-xs mb-1.5">
-                  <Label>Duration</Label>
-                  <span className="font-mono text-primary">{options.duration}s</span>
-                </div>
-                <Slider
-                  value={[options.duration || 1.4]}
-                  min={0.4}
-                  max={4}
-                  step={0.1}
-                  onValueChange={(v) =>
-                    setOptions({ ...options, duration: Array.isArray(v) ? v[0] : v })
-                  }
-                />
-              </div>
-
-              <div>
-                <div className="flex justify-between text-xs mb-1.5">
-                  <Label>Stroke Width</Label>
-                  <span className="font-mono text-primary">{options.strokeWidth}px</span>
-                </div>
-                <Slider
-                  value={[options.strokeWidth || 2.8]}
-                  min={0.5}
-                  max={8}
-                  step={0.1}
-                  onValueChange={(v) =>
-                    setOptions({ ...options, strokeWidth: Array.isArray(v) ? v[0] : v })
-                  }
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
+              {["svg", "css", "spritesheet"].includes(format) && (
                 <div>
-                  <Label className="text-xs">Width</Label>
-                  <Input
-                    type="number"
-                    value={options.width}
-                    onChange={(e) =>
-                      setOptions({ ...options, width: parseInt(e.target.value) || 512 })
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <Label>Duration</Label>
+                    <span className="font-mono text-primary">{options.duration}s</span>
+                  </div>
+                  <Slider
+                    value={[options.duration || 1.4]}
+                    min={0.4}
+                    max={4}
+                    step={0.1}
+                    aria-label="Export duration in seconds"
+                    onValueChange={(v) =>
+                      setOptions({ ...options, duration: Array.isArray(v) ? v[0] : v })
                     }
-                    className="h-8 mt-1 font-mono"
                   />
                 </div>
+              )}
+
+              {["svg", "spritesheet"].includes(format) && (
                 <div>
-                  <Label className="text-xs">Height</Label>
-                  <Input
-                    type="number"
-                    value={options.height}
-                    onChange={(e) =>
-                      setOptions({ ...options, height: parseInt(e.target.value) || 512 })
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <Label>Stroke Width</Label>
+                    <span className="font-mono text-primary">{options.strokeWidth}px</span>
+                  </div>
+                  <Slider
+                    value={[options.strokeWidth || 2.8]}
+                    min={0.5}
+                    max={8}
+                    step={0.1}
+                    aria-label="Export stroke width"
+                    onValueChange={(v) =>
+                      setOptions({ ...options, strokeWidth: Array.isArray(v) ? v[0] : v })
                     }
-                    className="h-8 mt-1 font-mono"
                   />
                 </div>
-              </div>
+              )}
+
+              {format !== "css" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="export-width" className="text-xs">
+                      Width
+                    </Label>
+                    <Input
+                      id="export-width"
+                      type="number"
+                      min={1}
+                      max={16384}
+                      step={1}
+                      value={dimensions.width}
+                      aria-invalid={dimensionsTouched && !validDimension(dimensions.width)}
+                      onBlur={() => setDimensionsTouched(true)}
+                      onChange={(e) => {
+                        setDimensions({ ...dimensions, width: e.target.value });
+                        if (validDimension(e.target.value))
+                          setOptions({ ...options, width: Number(e.target.value) });
+                      }}
+                      className="h-8 mt-1 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="export-height" className="text-xs">
+                      Height
+                    </Label>
+                    <Input
+                      id="export-height"
+                      type="number"
+                      min={1}
+                      max={16384}
+                      step={1}
+                      value={dimensions.height}
+                      aria-invalid={dimensionsTouched && !validDimension(dimensions.height)}
+                      onBlur={() => setDimensionsTouched(true)}
+                      onChange={(e) => {
+                        setDimensions({ ...dimensions, height: e.target.value });
+                        if (validDimension(e.target.value))
+                          setOptions({ ...options, height: Number(e.target.value) });
+                      }}
+                      className="h-8 mt-1 font-mono"
+                    />
+                  </div>
+                </div>
+              )}
+              {hasDimensions && dimensionsTouched && !dimensionsValid && (
+                <p role="status" className="text-xs text-destructive">
+                  Use whole dimensions between 1 and 16,384 pixels.
+                </p>
+              )}
+            </div>
+          )}
+          {preview.messages.length > 0 && (
+            <div
+              role="status"
+              className={`space-y-2 rounded-lg border p-3 text-xs leading-relaxed ${preview.ready ? "border-border bg-muted/40" : "border-destructive/30 text-destructive"}`}
+            >
+              <p className="font-medium">
+                {preview.ready ? "Export fidelity" : "Resolve these issues before exporting"}
+              </p>
+              <ul className="list-disc space-y-1 pl-4">
+                {preview.messages.map((message) => (
+                  <li key={message}>{message}</li>
+                ))}
+              </ul>
             </div>
           )}
         </div>
@@ -358,7 +461,11 @@ export function ExportDialog({ children }: ExportDialogProps) {
           <Button variant="outline" onClick={() => setOpen(false)}>
             Cancel
           </Button>
-          <Button onClick={handleExport} className="gap-2" disabled={isExporting}>
+          <Button
+            onClick={handleExport}
+            className="gap-2"
+            disabled={isExporting || !preview.ready || (hasDimensions && !dimensionsValid)}
+          >
             {isExporting ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (

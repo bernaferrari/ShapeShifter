@@ -5,6 +5,11 @@ export interface TranslationRecordResult {
   animation: AnimationState;
 }
 
+export interface TranslationRecordOptions {
+  /** Record at the pointer's playhead without snapping to nearby authored keys. */
+  exactPlayhead?: boolean;
+}
+
 export type NumericLayerProperty =
   | "translateX"
   | "translateY"
@@ -41,13 +46,16 @@ export function recordTranslationAtProgress(
   progress: number,
   idSeed = Date.now(),
   properties: NumericLayerProperty[] = ["translateX", "translateY"],
+  { exactPlayhead = false }: TranslationRecordOptions = {},
 ): TranslationRecordResult {
   const selected = new Set(selectedIds.map(String));
   const targets = layers.filter((layer) => selected.has(String(layer.id)));
   if (targets.length === 0) return { layers, animation };
 
   const duration = Math.max(1, animation.duration);
-  const ms = Math.round(progress * duration);
+  const ms = exactPlayhead
+    ? Math.max(0, Math.min(duration, progress * duration))
+    : Math.round(progress * duration);
   const nearStart = ms <= duration * 0.05;
   const nearEnd = ms >= duration * 0.95;
   const minSeg = 50;
@@ -65,7 +73,14 @@ export function recordTranslationAtProgress(
         ({ block }) =>
           String(block.layerId) === String(layer.id) && block.propertyName === propertyName,
       )
-      .sort((a, b) => a.block.startTime - b.block.startTime);
+      .sort(
+        (a, b) =>
+          a.block.startTime - b.block.startTime ||
+          (exactPlayhead
+            ? a.block.endTime - b.block.endTime ||
+              String(a.block.id).localeCompare(String(b.block.id))
+            : 0),
+      );
 
     const nextId = (suffix: string) =>
       `block-${layer.id}-${propertyName}-${idSeed}-${sequence++}-${suffix}`;
@@ -90,7 +105,36 @@ export function recordTranslationAtProgress(
       ];
     }
 
-    const cover = segments.find(({ block }) => ms >= block.startTime && ms <= block.endTime);
+    const cover = exactPlayhead
+      ? segments.filter(({ block }) => ms >= block.startTime && ms <= block.endTime).at(-1)
+      : segments.find(({ block }) => ms >= block.startTime && ms <= block.endTime);
+    if (
+      exactPlayhead &&
+      cover &&
+      (Math.abs(ms - cover.block.startTime) < 1e-7 || Math.abs(ms - cover.block.endTime) < 1e-7)
+    ) {
+      const atStart = Math.abs(ms - cover.block.startTime) < 1e-7;
+      const prior = atStart ? cover.block.fromValue : cover.block.toValue;
+      // Continuous adjoining segments share one authored key. Keep both sides
+      // linked while leaving deliberately discontinuous animator values intact.
+      return blocks.map((block, index) => {
+        if (String(block.layerId) !== String(layer.id) || block.propertyName !== propertyName)
+          return block;
+        const from =
+          Math.abs(block.startTime - ms) < 1e-7 &&
+          (index === cover.index || block.fromValue === prior);
+        const to =
+          Math.abs(block.endTime - ms) < 1e-7 && (index === cover.index || block.toValue === prior);
+        return from || to
+          ? {
+              ...block,
+              ...(from ? { fromValue: value } : {}),
+              ...(to ? { toValue: value } : {}),
+              type: "number",
+            }
+          : block;
+      });
+    }
     if (!cover) {
       const last = segments[segments.length - 1]!.block;
       if (ms > last.endTime) {
@@ -104,16 +148,13 @@ export function recordTranslationAtProgress(
             fromValue: Number(last.toValue) || 0,
             toValue: value,
             startTime: last.endTime,
-            endTime: duration,
+            endTime: exactPlayhead ? ms : duration,
             interpolator: last.interpolator || "FAST_OUT_SLOW_IN",
           },
         ];
       }
       const first = segments[0]!.block;
-      const interior =
-        ms > first.startTime &&
-        ms < last.endTime &&
-        segments.length > 1;
+      const interior = ms > first.startTime && ms < last.endTime && segments.length > 1;
       if (interior) {
         // Recording inside a gap between two authored segments: end the previous
         // segment at the playhead and append a new block seeded from the layer's
@@ -124,6 +165,29 @@ export function recordTranslationAtProgress(
         }
         const previousBlock = segments[gapIndex]!.block;
         const nextBlock = segments[gapIndex + 1]!.block;
+        if (exactPlayhead) {
+          return [
+            ...blocks,
+            {
+              ...previousBlock,
+              id: nextId("gap-left"),
+              fromValue: previousBlock.toValue,
+              toValue: value,
+              startTime: previousBlock.endTime,
+              endTime: ms,
+              type: "number",
+            },
+            {
+              ...nextBlock,
+              id: nextId("gap-right"),
+              fromValue: value,
+              toValue: nextBlock.fromValue,
+              startTime: ms,
+              endTime: nextBlock.startTime,
+              type: "number",
+            },
+          ];
+        }
         return [
           ...blocks.map((block, index) =>
             index === segments[gapIndex]!.index
@@ -139,8 +203,31 @@ export function recordTranslationAtProgress(
             toValue: Number(nextBlock.fromValue) || 0,
             startTime: ms,
             endTime: nextBlock.startTime,
-            interpolator:
-              previousBlock.interpolator || "FAST_OUT_SLOW_IN",
+            interpolator: previousBlock.interpolator || "FAST_OUT_SLOW_IN",
+          },
+        ];
+      }
+      if (exactPlayhead && ms > 0) {
+        const first = segments[0]!.block;
+        return [
+          ...blocks,
+          {
+            ...first,
+            id: nextId("head-left"),
+            fromValue: first.fromValue,
+            toValue: value,
+            startTime: 0,
+            endTime: ms,
+            type: "number",
+          },
+          {
+            ...first,
+            id: nextId("head-right"),
+            fromValue: value,
+            toValue: first.fromValue,
+            startTime: ms,
+            endTime: first.startTime,
+            type: "number",
           },
         ];
       }
@@ -161,12 +248,12 @@ export function recordTranslationAtProgress(
     }
 
     const previous = cover.block;
-    if (nearStart || Math.abs(ms - previous.startTime) < minSeg) {
+    if (!exactPlayhead && (nearStart || Math.abs(ms - previous.startTime) < minSeg)) {
       return blocks.map((block, index) =>
         index === cover.index ? { ...previous, fromValue: value, type: "number" } : block,
       );
     }
-    if (nearEnd || Math.abs(ms - previous.endTime) < minSeg) {
+    if (!exactPlayhead && (nearEnd || Math.abs(ms - previous.endTime) < minSeg)) {
       return blocks.map((block, index) =>
         index === cover.index ? { ...previous, toValue: value, type: "number" } : block,
       );

@@ -2,11 +2,14 @@ import React, { useCallback, useMemo } from "react";
 import type { CanvasFrame } from "@/lib/store/defaultWorkspace";
 import { gradientToSvg, sanitizeCssColor, svgIdFragment } from "@/lib/shapeshifter/gradients";
 import { getPathDataBounds, parsePath, pathToString } from "@/lib/shapeshifter/pathUtils";
+import { trimPathData } from "@/lib/shapeshifter/path/pathTrim";
 import { matrixToSvg } from "@/lib/shapeshifter/scene/layerTransform";
 import { resolveWorldLayerDraws, type WorldLayerDraw } from "@/lib/shapeshifter/scene/render";
 import { PAGE_ROOT_ID, type LayerSelectionRef } from "@/lib/shapeshifter/scene/owners";
 import { vectorCoordinateSize } from "@/lib/shapeshifter/vectorSpace";
 import type { AnimationState, Layer, PathData, VectorMetadata } from "@/lib/shapeshifter/types";
+import type { SceneRect } from "@/lib/shapeshifter/scene/selection";
+import { selectedWorldSubtreeIds } from "./worldLayerTransforms";
 
 interface FrameBounds {
   x: number;
@@ -67,21 +70,10 @@ function wrapDrawWithClips(draw: WorldLayerDraw, ownerId: string, content: React
   );
 }
 
-function LayerDraw({ draw, ownerId }: { draw: WorldLayerDraw; ownerId: string }) {
+export function LayerDraw({ draw, ownerId }: { draw: WorldLayerDraw; ownerId: string }) {
   const gradId = draw.fillGradient
     ? `ss-world-grad-${svgIdFragment(ownerId)}-${svgIdFragment(draw.id)}`
     : null;
-  const trimStart = (((draw.trimPathStart + draw.trimPathOffset) % 1) + 1) % 1;
-  const trimEnd = (((draw.trimPathEnd + draw.trimPathOffset) % 1) + 1) % 1;
-  const trimLength = trimEnd >= trimStart ? trimEnd - trimStart : 1 - trimStart + trimEnd;
-  const strokeTrim =
-    draw.stroke && (draw.trimPathStart !== 0 || draw.trimPathEnd !== 1 || draw.trimPathOffset !== 0)
-      ? {
-          pathLength: 1,
-          strokeDasharray: `${Math.max(0, trimLength)} ${Math.max(0, 1 - trimLength)}`,
-          strokeDashoffset: -trimStart,
-        }
-      : undefined;
   const content = (
     <g transform={matrixToSvg(draw.worldMatrix)}>
       {draw.fillGradient && gradId && (
@@ -104,7 +96,6 @@ function LayerDraw({ draw, ownerId }: { draw: WorldLayerDraw; ownerId: string })
           strokeLinejoin={draw.strokeLinejoin}
           strokeMiterlimit={draw.strokeMiterLimit}
           strokeDasharray={draw.strokeDasharray}
-          {...strokeTrim}
           pointerEvents="none"
         />
       )}
@@ -145,7 +136,7 @@ function clipDomId(ownerId: string, id: string | number) {
   return `android-clip-${ownerId}-${String(id).replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 }
 
-function ClipDefinitions({ ownerId, draws }: { ownerId: string; draws: WorldLayerDraw[] }) {
+export function ClipDefinitions({ ownerId, draws }: { ownerId: string; draws: WorldLayerDraw[] }) {
   const clips = draws.filter((draw) => draw.isClipPath && draw.d);
   if (!clips.length) return null;
   return (
@@ -175,17 +166,19 @@ function rootTint(vector: VectorMetadata): string | undefined {
   return sanitizeCssColor(tint, "") || undefined;
 }
 
-function VectorDrawableRootPaint({
+export function VectorDrawableRootPaint({
   vector,
   ownerId,
   width,
   height,
+  bounds,
   children,
 }: {
   vector: VectorMetadata;
   ownerId: string;
   width: number;
   height: number;
+  bounds?: SceneRect;
   children: React.ReactNode;
 }) {
   const alpha = rootAlpha(vector);
@@ -202,8 +195,8 @@ function VectorDrawableRootPaint({
           id={maskId}
           maskUnits="userSpaceOnUse"
           maskContentUnits="userSpaceOnUse"
-          x={0}
-          y={0}
+          x={bounds?.x ?? 0}
+          y={bounds?.y ?? 0}
           width={width}
           height={height}
           {...{ "mask-type": "alpha" }}
@@ -213,8 +206,8 @@ function VectorDrawableRootPaint({
       </defs>
       <g opacity={alpha}>
         <rect
-          x={0}
-          y={0}
+          x={bounds?.x ?? 0}
+          y={bounds?.y ?? 0}
           width={width}
           height={height}
           fill={tint}
@@ -248,6 +241,7 @@ const FrameArtboard = React.memo(function FrameArtboard({
   dropTarget,
   isLayerDragging,
   selectedLayerRefKeys,
+  isPointTool,
   isPlaying,
   progress,
   worldPerPx,
@@ -269,6 +263,7 @@ const FrameArtboard = React.memo(function FrameArtboard({
   dropTarget: boolean;
   isLayerDragging: boolean;
   selectedLayerRefKeys: Set<string>;
+  isPointTool: boolean;
   isPlaying: boolean;
   progress: number;
   worldPerPx: number;
@@ -289,13 +284,21 @@ const FrameArtboard = React.memo(function FrameArtboard({
       active ? activeLayers : frame.layers,
       active ? activeAnimation : frame.animation,
       progress,
-      isPlaying || progress > 0.001,
+      true,
     );
     if (isLayerDragging) {
-      next = next.filter((draw) => !selectedLayerRefKeys.has(`${frame.id}:${String(draw.id)}`));
+      const layers = active ? activeLayers : frame.layers;
+      const selected = layers.length
+        ? [...selectedLayerRefKeys]
+            .filter((key) => key.startsWith(`${frame.id}:`))
+            .map((key) => key.slice(frame.id.length + 1))
+        : [];
+      const movedIds = selectedWorldSubtreeIds(layers, selected);
+      next = next.filter((draw) => draw.isClipPath || !movedIds.has(String(draw.id)));
     }
     if (
       !isPlaying &&
+      isPointTool &&
       progress === 0 &&
       active &&
       editPath &&
@@ -303,7 +306,21 @@ const FrameArtboard = React.memo(function FrameArtboard({
       editLayer.type !== "group"
     ) {
       next = next.map((draw) =>
-        String(draw.id) === String(editLayer.id) ? { ...draw, d: pathToString(editPath) } : draw,
+        String(draw.id) === String(editLayer.id)
+          ? {
+              ...draw,
+              d: pathToString(
+                draw.isClipPath
+                  ? editPath
+                  : trimPathData(
+                      editPath,
+                      draw.trimPathStart,
+                      draw.trimPathEnd,
+                      draw.trimPathOffset,
+                    ),
+              ),
+            }
+          : draw,
       );
     }
     return next;
@@ -314,6 +331,7 @@ const FrameArtboard = React.memo(function FrameArtboard({
     editPath,
     frame,
     isLayerDragging,
+    isPointTool,
     isPlaying,
     progress,
     selectedFrameId,
@@ -502,9 +520,20 @@ export function WorldArtboards({
   gridVisibility,
 }: WorldArtboardsProps) {
   const pageDraws = useMemo(
-    () =>
-      resolveWorldLayerDraws(rootLayers, rootAnimation, progress, isPlaying || progress > 0.001),
+    () => resolveWorldLayerDraws(rootLayers, rootAnimation, progress, true),
     [isPlaying, progress, rootAnimation, rootLayers],
+  );
+  const draggedRootIds = useMemo(
+    () =>
+      isLayerDragging
+        ? selectedWorldSubtreeIds(
+            rootLayers,
+            [...selectedLayerRefKeys]
+              .filter((key) => key.startsWith(`${PAGE_ROOT_ID}:`))
+              .map((key) => key.slice(PAGE_ROOT_ID.length + 1)),
+          )
+        : new Set<string>(),
+    [isLayerDragging, rootLayers, selectedLayerRefKeys],
   );
   const rootSize = useMemo(() => vectorCoordinateSize(rootVector), [rootVector]);
   const resolveRootHoverDraws = useCallback(() => pageDraws, [pageDraws]);
@@ -530,6 +559,7 @@ export function WorldArtboards({
             dropTarget={layerDropTargetId === frame.id}
             isLayerDragging={isLayerDragging}
             selectedLayerRefKeys={selectedLayerRefKeys}
+            isPointTool={isPointTool}
             isPlaying={isPlaying}
             progress={progress}
             worldPerPx={worldPerPx}
@@ -547,7 +577,7 @@ export function WorldArtboards({
                 frame.id === selectedFrameId ? activeLayers : frame.layers,
                 frame.id === selectedFrameId ? activeAnimation : frame.animation,
                 progress,
-                isPlaying || progress > 0.001,
+                true,
               )
             }
           />
@@ -561,11 +591,7 @@ export function WorldArtboards({
         height={rootSize.height}
       >
         {pageDraws
-          .filter(
-            (draw) =>
-              !draw.isClipPath &&
-              (!isLayerDragging || !selectedLayerRefKeys.has(`${PAGE_ROOT_ID}:${String(draw.id)}`)),
-          )
+          .filter((draw) => !draw.isClipPath && !draggedRootIds.has(String(draw.id)))
           .map((draw) => (
             <LayerDraw key={`root-${draw.id}`} draw={draw} ownerId={PAGE_ROOT_ID} />
           ))}

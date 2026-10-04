@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 import { compileAndroidArtboard } from "../androidCompiler";
-import { BOOLEAN_OPERATIONS_ENABLED, booleanCombine } from "../path/booleanOperations";
+import { BOOLEAN_OPERATIONS_ENABLED } from "../path/booleanOperations";
 import { areAndroidPathsMorphCompatible, parsePath, pathToString } from "../pathUtils";
 import { gradientToSvg, sanitizeCssColor } from "../gradients";
 import { exportStaticSVG } from "../exporter";
@@ -48,24 +48,14 @@ describe("P0 Android trust", () => {
     useEditorStore.getState().resetProject();
   });
 
-  it("does not enable destructive Boolean commands", () => {
-    expect(BOOLEAN_OPERATIONS_ENABLED).toBe(false);
+  it("enables curve Booleans while refusing implicit or animated selections", async () => {
+    expect(BOOLEAN_OPERATIONS_ENABLED).toBe(true);
     const before = useEditorStore.getState().layers.map((layer) => pathToString(layer.from));
-    useEditorStore.getState().booleanCombine("union");
-    const after = useEditorStore.getState().layers.map((layer) => pathToString(layer.from));
-    expect(after).toEqual(before);
-    const contained = booleanCombine(
-      "intersect",
-      parsePath("M0 0 L20 0 L20 20 L0 20 Z"),
-      parsePath("M5 5 L10 5 L10 10 L5 10 Z"),
+    const result = await useEditorStore.getState().booleanCombine("union");
+    expect(result.ok).toBe(false);
+    expect(useEditorStore.getState().layers.map((layer) => pathToString(layer.from))).toEqual(
+      before,
     );
-    expect(pathToString(contained)).toContain("M");
-    const disjoint = booleanCombine(
-      "intersect",
-      parsePath("M0 0 L10 0 L10 10 L0 10 Z"),
-      parsePath("M20 20 L30 20 L30 30 L20 30 Z"),
-    );
-    expect(disjoint.subPaths).toHaveLength(0);
   });
 
   it("maps FAST_OUT_SLOW_IN as the named platform interpolator", () => {

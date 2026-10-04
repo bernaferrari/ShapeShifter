@@ -1,11 +1,12 @@
 import { parsePath } from "../../shapeshifter/pathUtils";
-import { collectLayerSubtreeIds, placeLayerSubtree } from "../../shapeshifter/scene/layerHierarchy";
+import { collectLayerSubtreeIds } from "../../shapeshifter/scene/layerHierarchy";
 import { PAGE_ROOT_ID, type LayerSelectionRef } from "../../shapeshifter/scene/owners";
 import type { Layer, TimelineBlock } from "../../shapeshifter/types";
 import { collectSubtreeWithAnimation, remapClonedSubtree } from "../cloneSubtree";
 import { createPathLayer } from "../defaultWorkspace";
 import type { EditorState } from "../editorStore";
 import { saveActiveFrame, saveActiveRoot, updateOwnedLayers } from "../workspaceState";
+import { reparentLayerPreservingAppearance } from "../commands/reparentLayer";
 
 type LayerOrganizationActionKey =
   | "deleteSelectedLayers"
@@ -197,12 +198,18 @@ export function createLayerOrganizationActions(
 
     reparentOwnedLayer: (ownerId, id, target, options) => {
       const state = get();
-      const ownerLayers =
+      const owner =
         ownerId === PAGE_ROOT_ID
-          ? saveActiveRoot(state).layers
-          : saveActiveFrame(state).find((frame) => frame.id === ownerId)?.layers;
-      if (!ownerLayers) return false;
-      const next = placeLayerSubtree(ownerLayers, id, target);
+          ? saveActiveRoot(state)
+          : saveActiveFrame(state).find((frame) => frame.id === ownerId);
+      if (!owner) return false;
+      const next = reparentLayerPreservingAppearance(
+        owner.layers,
+        owner.animation,
+        owner.hiddenLayerIds,
+        id,
+        target,
+      );
       if (!next) return false;
       if (options?.recordHistory !== false) get().pushHistory();
       set(updateOwnedLayers(state, ownerId, () => next));

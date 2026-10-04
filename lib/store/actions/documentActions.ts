@@ -8,6 +8,16 @@ import { collectLayerSubtreeIds } from "../../shapeshifter/scene/layerHierarchy"
 import { PAGE_ROOT_ID } from "../../shapeshifter/scene/owners";
 import { saveActiveFrame, updateOwnedLayers } from "../workspaceState";
 import { commitDocumentV2 } from "../documentRuntime";
+import {
+  insertTimelineKeyframe,
+  linkedTimelineKeyframe,
+  timelineKeyframeRange,
+  timelineBlockStartRange,
+} from "../../shapeshifter/motion/timelineKeyframes";
+import { planTimelinePaste } from "../../shapeshifter/motion/timelineClipboard";
+import { resolveTimelinePreviewRange } from "../../shapeshifter/motion/previewRange";
+import { mapLayerTimelines } from "../timelineLayerMapping";
+import { isTimelineNumberValid } from "../../shapeshifter/motion/timelineProperties";
 
 type DocumentActionKey =
   | "addLayer"
@@ -18,6 +28,14 @@ type DocumentActionKey =
   | "convertLayerType"
   | "addTimelineBlock"
   | "updateTimelineBlock"
+  | "insertTimelineKeyframe"
+  | "updateTimelineKeyframe"
+  | "moveTimelineBlock"
+  | "startTimelinePathEditing"
+  | "beginTimelineMorphEditing"
+  | "copyTimelineBlocks"
+  | "pasteTimelineBlocks"
+  | "setTimelinePreviewRange"
   | "removeTimelineBlocks"
   | "removeTimelineProperty"
   | "removeTimelineKeyframe"
@@ -33,17 +51,6 @@ function layerLabel(type: LayerType): string {
   if (type === "clipPath") return "Clip path";
   if (type === "group") return "Group layer";
   return "Path layer";
-}
-
-function mapLayerTimelines(
-  layers: Layer[],
-  transform: (blocks: NonNullable<Layer["timeline"]>) => NonNullable<Layer["timeline"]>,
-): Layer[] {
-  return layers.map((layer) => ({
-    ...layer,
-    ...(layer.timeline ? { timeline: transform(layer.timeline) } : {}),
-    ...(layer.children?.length ? { children: mapLayerTimelines(layer.children, transform) } : {}),
-  }));
 }
 
 function updateLayerById(
@@ -75,17 +82,25 @@ function timelineBaseValue(layer: Layer, propertyName: string): number | string 
     case "translateX":
     case "translateY":
     case "rotation":
+    case "pivotX":
+    case "pivotY":
+    case "strokeWidth":
       return numeric ?? 0;
     case "scaleX":
     case "scaleY":
       return numeric ?? 1;
     case "alpha":
+    case "fillAlpha":
+    case "strokeAlpha":
       return numeric ?? 1;
     case "trimPathStart":
     case "trimPathOffset":
       return numeric ?? 0;
     case "trimPathEnd":
       return numeric ?? 1;
+    case "fillColor":
+    case "strokeColor":
+      return typeof raw === "string" && raw && raw !== "none" ? raw : "#00000000";
     default:
       return typeof raw === "string" ? raw : "";
   }
@@ -229,7 +244,7 @@ export function createDocumentActions(
     addTimelineBlock: (layerId, propertyName) => {
       const state = get();
       const layer = state.layers.find((candidate) => candidate.id === layerId);
-      if (!layer) return;
+      if (!layer || layer.locked) return;
       const value =
         propertyName === "pathData"
           ? pathToString(layer.pathData ?? layer.from)
@@ -248,7 +263,7 @@ export function createDocumentActions(
               ? ("number" as const)
               : ("color" as const),
         fromValue: value,
-        toValue: value,
+        toValue: propertyName === "pathData" && layer.to ? pathToString(layer.to) : value,
       };
       state.pushHistory();
       set({
@@ -276,6 +291,273 @@ export function createDocumentActions(
         layers: mapLayerTimelines(state.layers, (blocks) =>
           blocks.map((block) => (block.id === blockId ? { ...block, ...patch } : block)),
         ),
+      });
+    },
+
+    insertTimelineKeyframe: (blockId, time) => {
+      const state = get();
+      const block = state.animation.blocks.find((item) => item.id === blockId);
+      if (!block) return false;
+      const pair = insertTimelineKeyframe(block, time, generateId());
+      if (!pair) return false;
+      const replace = (blocks: typeof state.animation.blocks) =>
+        blocks.flatMap((item) => (item.id === blockId ? pair : [item]));
+      state.pushHistory();
+      set({
+        animation: { ...state.animation, blocks: replace(state.animation.blocks) },
+        layers: mapLayerTimelines(state.layers, replace),
+        selectedBlockIds: [pair[1].id],
+      });
+      return true;
+    },
+
+    startTimelinePathEditing: (blockId) => {
+      const state = get();
+      const block = state.animation.blocks.find(
+        (item) => item.id === blockId && item.propertyName === "pathData",
+      );
+      const layer = block && state.layers.find((item) => String(item.id) === String(block.layerId));
+      if (!block || !layer || layer.locked) return;
+      const from = parsePath(String(block.fromValue));
+      const to = parsePath(String(block.toValue));
+      const needsGeometry =
+        pathToString(layer.from) !== pathToString(from) ||
+        pathToString(layer.to ?? layer.from) !== pathToString(to);
+      if (needsGeometry) state.pushHistory();
+      set({
+        layers: needsGeometry
+          ? updateLayerById(state.layers, block.layerId, (item) => ({
+              ...item,
+              from,
+              to,
+              pathData: from,
+            }))
+          : state.layers,
+        // Seeding the editing geometry must not feed back into another selected track.
+        animation: state.animation,
+        selectedLayerId: block.layerId,
+        selectedLayerIds: [block.layerId],
+        selectedLayerRefs: [{ ownerId: state.selectedFrameId, layerId: block.layerId }],
+        selectedBlockIds: [block.id],
+        isActionMode: true,
+        editingSide: "from",
+        hasCanvasSelection: true,
+        selectionKind: "layer",
+        selection: null,
+        selectedPoints: [],
+        selectedSubPaths: [],
+        toolMode: "direct",
+        isPlaying: false,
+        timelineCollapsed: false,
+      });
+    },
+
+    beginTimelineMorphEditing: () => {
+      const state = get();
+      if (state.selectedLayerIds.length !== 1 || state.selectedLayerRefs.length > 1) return false;
+      const layer = state.layers.find((item) => String(item.id) === String(state.selectedLayerId));
+      if (!layer || layer.locked || (layer.type !== "path" && layer.type !== "clipPath"))
+        return false;
+      const tracks = state.animation.blocks
+        .filter(
+          (block) =>
+            String(block.layerId) === String(layer.id) && block.propertyName === "pathData",
+        )
+        .sort((a, b) => a.startTime - b.startTime);
+      if (tracks.length) {
+        const time = state.progress * state.animation.duration;
+        const selected = tracks.find((block) => state.selectedBlockIds.includes(block.id));
+        const atPlayhead = tracks.find((block) => block.startTime <= time && time < block.endTime);
+        const nearest = tracks.reduce((closest, block) => {
+          const distance = Math.max(block.startTime - time, time - block.endTime, 0);
+          const closestDistance = Math.max(closest.startTime - time, time - closest.endTime, 0);
+          return distance < closestDistance ? block : closest;
+        });
+        get().startTimelinePathEditing((selected ?? atPlayhead ?? nearest).id);
+        return true;
+      }
+
+      const from = layer.from;
+      const to = layer.to ?? from;
+      const block = {
+        id: generateId(),
+        layerId: layer.id,
+        propertyName: "pathData",
+        type: "path" as const,
+        fromValue: pathToString(from),
+        toValue: pathToString(to),
+        startTime: 0,
+        endTime: state.animation.duration,
+        // Preserve the linear legacy from/to preview when making it explicit.
+        interpolator: layer.to ? "LINEAR" : "FAST_OUT_SLOW_IN",
+      };
+      state.pushHistory();
+      set({
+        animation: { ...state.animation, blocks: [...state.animation.blocks, block] },
+        layers: updateLayerById(state.layers, layer.id, (item) => ({
+          ...item,
+          from,
+          to,
+          pathData: from,
+          expanded: true,
+          ...(item.timeline && { timeline: [...item.timeline, block] }),
+        })),
+        selectedBlockIds: [block.id],
+        isActionMode: true,
+        editingSide: "from",
+        selection: null,
+        selectedPoints: [],
+        selectedSubPaths: [],
+        toolMode: "direct",
+        isPlaying: false,
+        timelineCollapsed: false,
+        hasCanvasSelection: true,
+        selectionKind: "layer",
+      });
+      return true;
+    },
+
+    copyTimelineBlocks: (blockIds) => {
+      const state = get();
+      const ids = new Set(blockIds ?? state.selectedBlockIds);
+      const blocks = state.animation.blocks.filter((block) => ids.has(block.id));
+      if (!blocks.length || new Set(blocks.map((block) => String(block.layerId))).size !== 1)
+        return false;
+      set({ timelineClipboard: { blocks: structuredClone(blocks) } });
+      return true;
+    },
+
+    setTimelinePreviewRange: (range) => {
+      const state = get();
+      const resolved =
+        range &&
+        resolveTimelinePreviewRange(
+          { ...range, ownerId: state.selectedFrameId },
+          state.selectedFrameId,
+          state.animation.duration,
+        );
+      set({
+        timelinePreviewRange: resolved ? { ...resolved, ownerId: state.selectedFrameId } : null,
+        ...(resolved && { isRepeating: true }),
+      });
+    },
+
+    pasteTimelineBlocks: (layerId, time) => {
+      const state = get();
+      if (!state.timelineClipboard) return { ok: false, message: "Copy motion first." };
+      if (layerId === undefined && state.selectedLayerIds.length !== 1)
+        return { ok: false, message: "Select one target layer to paste motion." };
+      const targetId = layerId ?? state.selectedLayerId;
+      const layer = state.layers.find((item) => String(item.id) === String(targetId));
+      if (!layer)
+        return { ok: false, message: "Select a layer in the active artboard to paste motion." };
+      const result = planTimelinePaste(
+        state.timelineClipboard,
+        layer,
+        state.animation.blocks,
+        time ?? state.progress * state.animation.duration,
+        state.animation.duration,
+        generateId,
+      );
+      if (!result.ok) return result;
+      state.pushHistory();
+      const blockIds = result.blocks.map((block) => block.id);
+      set({
+        animation: {
+          ...state.animation,
+          duration: result.duration,
+          blocks: [...state.animation.blocks, ...result.blocks],
+        },
+        layers: updateLayerById(state.layers, layer.id, (item) => ({
+          ...item,
+          expanded: true,
+          ...(item.timeline && { timeline: [...item.timeline, ...result.blocks] }),
+        })),
+        selectedLayerId: layer.id,
+        selectedLayerIds: [layer.id],
+        selectedLayerRefs: [{ ownerId: state.selectedFrameId, layerId: layer.id }],
+        selectedBlockIds: blockIds,
+        timelineCollapsed: false,
+        isActionMode: false,
+        isPlaying: false,
+        progress: (time ?? state.progress * state.animation.duration) / result.duration,
+      });
+      return { ok: true, blockIds };
+    },
+
+    updateTimelineKeyframe: (blockId, edge, patch, options) => {
+      const state = get();
+      const target = state.animation.blocks.find((item) => item.id === blockId);
+      if (!target) return;
+      const adjacent = linkedTimelineKeyframe(state.animation.blocks, target, edge);
+      const originalTime = edge === "start" ? target.startTime : target.endTime;
+      const [min, max] = timelineKeyframeRange(
+        state.animation.blocks,
+        target,
+        edge,
+        state.animation.duration,
+      );
+      const time =
+        patch.time === undefined ? originalTime : Math.max(min, Math.min(max, patch.time));
+      if (
+        !Number.isFinite(time) ||
+        (typeof patch.value === "number" &&
+          !isTimelineNumberValid(target.propertyName, patch.value))
+      )
+        return;
+      const targetPatch =
+        edge === "start"
+          ? { startTime: time, ...(patch.value !== undefined && { fromValue: patch.value }) }
+          : { endTime: time, ...(patch.value !== undefined && { toValue: patch.value }) };
+      const adjacentPatch =
+        edge === "start"
+          ? { endTime: time, ...(patch.value !== undefined && { toValue: patch.value }) }
+          : { startTime: time, ...(patch.value !== undefined && { fromValue: patch.value }) };
+      const apply = (block: typeof target) =>
+        block.id === blockId
+          ? { ...block, ...targetPatch }
+          : block.id === adjacent?.id
+            ? { ...block, ...adjacentPatch }
+            : block;
+      if (
+        time === originalTime &&
+        (patch.value === undefined ||
+          patch.value === (edge === "start" ? target.fromValue : target.toValue))
+      )
+        return;
+      if (options?.recordHistory !== false) state.pushHistory();
+      set({
+        animation: { ...state.animation, blocks: state.animation.blocks.map(apply) },
+        layers: mapLayerTimelines(state.layers, (blocks) => blocks.map(apply)),
+      });
+    },
+
+    moveTimelineBlock: (blockId, offset, options) => {
+      const state = get();
+      const target = state.animation.blocks.find((item) => item.id === blockId);
+      if (!target || !Number.isFinite(offset)) return;
+      const [min, max] = timelineBlockStartRange(
+        state.animation.blocks,
+        target,
+        state.animation.duration,
+      );
+      const start = Math.max(min, Math.min(max, target.startTime + offset));
+      const delta = start - target.startTime;
+      if (!delta) return;
+      const left = linkedTimelineKeyframe(state.animation.blocks, target, "start");
+      const right = linkedTimelineKeyframe(state.animation.blocks, target, "end");
+      const apply = (block: typeof target) =>
+        block.id === target.id
+          ? { ...block, startTime: start, endTime: target.endTime + delta }
+          : block.id === left?.id
+            ? { ...block, endTime: start }
+            : block.id === right?.id
+              ? { ...block, startTime: target.endTime + delta }
+              : block;
+      if (options?.recordHistory !== false) state.pushHistory();
+      set({
+        animation: { ...state.animation, blocks: state.animation.blocks.map(apply) },
+        layers: mapLayerTimelines(state.layers, (blocks) => blocks.map(apply)),
       });
     },
 
@@ -390,12 +672,17 @@ export function createDocumentActions(
     },
 
     setAnimationDuration: (milliseconds, options) => {
+      if (
+        !Number.isFinite(milliseconds) ||
+        Math.max(100, milliseconds) === get().animation.duration
+      )
+        return;
       if (options?.recordHistory !== false) get().pushHistory();
       set((state) => {
         const duration = Math.max(100, milliseconds);
         const resizeBlock = (block: (typeof state.animation.blocks)[number]) => ({
           ...block,
-          startTime: Math.min(block.startTime, duration - 50),
+          startTime: Math.min(block.startTime, duration - 1),
           endTime:
             block.endTime === state.animation.duration
               ? duration
@@ -407,6 +694,16 @@ export function createDocumentActions(
             duration,
             blocks: state.animation.blocks.map(resizeBlock),
           },
+          timelinePreviewRange: state.timelinePreviewRange
+            ? (() => {
+                const range = resolveTimelinePreviewRange(
+                  state.timelinePreviewRange,
+                  state.selectedFrameId,
+                  duration,
+                );
+                return range ? { ...range, ownerId: state.selectedFrameId } : null;
+              })()
+            : null,
           layers: mapLayerTimelines(state.layers, (blocks) => blocks.map(resizeBlock)),
         };
       });

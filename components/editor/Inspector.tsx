@@ -16,15 +16,9 @@ import {
   RectangleHorizontal,
   Activity,
 } from "lucide-react";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { PAGE_ROOT_ID, useEditorStore } from "@/lib/store/editorStore";
-import {
-  changeCommandType,
-  parsePath,
-  pathToString,
-  updateCommandPoint,
-} from "@/lib/shapeshifter/pathUtils";
+import { changeCommandType, parsePath, updateCommandPoint } from "@/lib/shapeshifter/pathUtils";
 import type { Layer } from "@/lib/shapeshifter/types";
 import { PathCommandsList } from "./PathCommandsList";
 import {
@@ -41,6 +35,8 @@ import {
   type InspectorTab,
 } from "./inspector/InspectorPanels";
 import { MorphPrepareSection } from "./inspector/MorphPrepareSection";
+import { BooleanOperationsPanel } from "./BooleanOperations";
+import { PathDataEditor } from "./inspector/PathDataEditor";
 
 /* ------------------------------------------------------------------ */
 /* Field primitives — a small, consistent control system. */
@@ -65,9 +61,10 @@ export function Inspector() {
   const layers = useEditorStore((state) => state.layers);
   const updateSelectedLayer = useEditorStore((state) => state.updateSelectedLayer);
   const translateSelectedLayer = useEditorStore((state) => state.translateSelectedLayer);
-  const startActionMode = useEditorStore((state) => state.startActionMode);
+  const beginTimelineMorphEditing = useEditorStore((state) => state.beginTimelineMorphEditing);
   const animation = useEditorStore((state) => state.animation);
   const selectedPoints = useEditorStore((state) => state.selectedPoints);
+  const selectedBlockId = useEditorStore((state) => state.selectedBlockIds[0]);
   const selectPoint = useEditorStore((state) => state.selectPoint);
 
   const toggleLayerLock = useEditorStore((state) => state.toggleLayerLock);
@@ -115,9 +112,11 @@ export function Inspector() {
     [sceneOwners, selectedLayerRefs],
   );
   const multiCount = selectedLayerRefs.length || selectedLayerIds?.length || 0;
-  const animatedPropertyCount = animation.blocks.filter(
-    (block) => String(block.layerId) === String(currentLayer?.id),
-  ).length;
+  const animatedPropertyCount = new Set(
+    animation.blocks
+      .filter((block) => String(block.layerId) === String(currentLayer?.id))
+      .map((block) => block.propertyName),
+  ).size;
   const updateLayer = (patch: Partial<Layer>) => updateSelectedLayer(patch);
   const setPath = (parsed: ReturnType<typeof parsePath>) =>
     updateLayer(editingSide === "from" ? { from: parsed, pathData: parsed } : { to: parsed });
@@ -125,6 +124,9 @@ export function Inspector() {
   const [isCommandsFocused, setIsCommandsFocused] = React.useState(false);
   const [showPathData, setShowPathData] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<InspectorTab>("design");
+  React.useEffect(() => {
+    if (selectedBlockId) setActiveTab("motion");
+  }, [selectedBlockId]);
   const changeInspectorTab = (tab: InspectorTab) => {
     setActiveTab(tab);
     if (tab === "motion") setTimelineCollapsed(false);
@@ -308,7 +310,7 @@ export function Inspector() {
             </span>
           </div>
         </div>
-        {!isGroup && (
+        {(currentLayer.type === "path" || currentLayer.type === "clipPath") && (
           <Tooltip>
             <TooltipTrigger
               render={
@@ -316,7 +318,8 @@ export function Inspector() {
                   size="icon-sm"
                   variant="ghost"
                   className="text-muted-foreground hover:text-foreground"
-                  onClick={startActionMode}
+                  onClick={() => beginTimelineMorphEditing()}
+                  disabled={currentLayer.locked || multiCount > 1}
                   aria-label="Edit start and end paths"
                 />
               }
@@ -334,7 +337,7 @@ export function Inspector() {
           <MotionPanel
             layer={currentLayer}
             selectionCount={multiCount}
-            onEditMorph={startActionMode}
+            onEditMorph={() => beginTimelineMorphEditing()}
           />
         </>
       ) : (
@@ -411,148 +414,16 @@ export function Inspector() {
                     SVG path data
                   </button>
                   {showPathData && (
-                    <textarea
-                      value={pathToString(currentLayer[editingSide] ?? currentLayer.from)}
-                      onChange={(e) => {
-                        try {
-                          setPath(parsePath(e.target.value));
-                        } catch {
-                          toast.error("Invalid path data");
-                        }
-                      }}
-                      spellCheck={false}
-                      className="min-h-20 w-full resize-y rounded-md border border-border bg-background p-2 font-mono text-[10px] leading-relaxed text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    <PathDataEditor
+                      key={`${selectedFrameId}:${String(selectedLayerId)}:${editingSide}`}
+                      path={currentLayer[editingSide] ?? currentLayer.from}
+                      onCommit={setPath}
                     />
                   )}
                 </Section>
               )}
 
-              {/* Boolean combine with the layer below (mirrors the toolbar Edit menu). */}
-              {multiCount <= 1 &&
-                (() => {
-                  const idx = layers.findIndex((l) => l.id === currentLayer.id);
-                  const hasNext = idx >= 0 && idx < layers.length - 1;
-                  if (!hasNext) return null;
-                  // Two overlapping circles per op, matching each boolean result region
-                  // (mirrors the original Material Symbols join_* icons this replaced).
-                  const ops = [
-                    {
-                      op: "union",
-                      label: "Union",
-                      icon: (
-                        <svg width="15" height="15" viewBox="0 0 16 16">
-                          <circle cx="6" cy="8" r="5" fill="currentColor" opacity="0.55" />
-                          <circle cx="10" cy="8" r="5" fill="currentColor" opacity="0.55" />
-                        </svg>
-                      ),
-                    },
-                    {
-                      op: "subtract",
-                      label: "Subtract",
-                      icon: (
-                        <svg width="15" height="15" viewBox="0 0 16 16">
-                          <mask id="bool-subtract-mask">
-                            <rect width="16" height="16" fill="black" />
-                            <circle cx="6" cy="8" r="5" fill="white" />
-                            <circle cx="10" cy="8" r="5" fill="black" />
-                          </mask>
-                          <circle
-                            cx="10"
-                            cy="8"
-                            r="5"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1"
-                            opacity="0.35"
-                          />
-                          <rect
-                            width="16"
-                            height="16"
-                            fill="currentColor"
-                            mask="url(#bool-subtract-mask)"
-                          />
-                        </svg>
-                      ),
-                    },
-                    {
-                      op: "intersect",
-                      label: "Intersect",
-                      icon: (
-                        <svg width="15" height="15" viewBox="0 0 16 16">
-                          <mask id="bool-intersect-mask">
-                            <rect width="16" height="16" fill="black" />
-                            <circle cx="6" cy="8" r="5" fill="white" />
-                          </mask>
-                          <circle
-                            cx="6"
-                            cy="8"
-                            r="5"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1"
-                            opacity="0.35"
-                          />
-                          <circle
-                            cx="10"
-                            cy="8"
-                            r="5"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="1"
-                            opacity="0.35"
-                          />
-                          <circle
-                            cx="10"
-                            cy="8"
-                            r="5"
-                            fill="currentColor"
-                            mask="url(#bool-intersect-mask)"
-                          />
-                        </svg>
-                      ),
-                    },
-                    {
-                      op: "exclude",
-                      label: "Exclude",
-                      icon: (
-                        <svg width="15" height="15" viewBox="0 0 16 16">
-                          <mask id="bool-exclude-mask">
-                            <circle cx="6" cy="8" r="5" fill="white" />
-                            <circle cx="10" cy="8" r="5" fill="white" />
-                            <circle cx="8" cy="8" r="3.2" fill="black" />
-                          </mask>
-                          <rect
-                            width="16"
-                            height="16"
-                            fill="currentColor"
-                            mask="url(#bool-exclude-mask)"
-                          />
-                        </svg>
-                      ),
-                    },
-                  ] as const;
-                  return (
-                    <Section title="Combine" defaultOpen={false}>
-                      <p className="text-[10px] leading-relaxed text-muted-foreground">
-                        Boolean commands are disabled until a curve-capable kernel is available.
-                      </p>
-                      <div className="grid grid-cols-2 gap-1">
-                        {ops.map(({ op, label, icon }) => (
-                          <button
-                            key={op}
-                            type="button"
-                            disabled
-                            title="Boolean operations are disabled until a curve-capable kernel lands"
-                            className="flex h-8 items-center justify-center gap-1.5 rounded-md border border-border bg-background text-[11px] text-muted-foreground opacity-60"
-                          >
-                            <span className="text-muted-foreground">{icon}</span>
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </Section>
-                  );
-                })()}
+              <BooleanOperationsPanel />
             </>
           )}
 
