@@ -191,9 +191,11 @@ export function MobileWorkspace({
             className="absolute inset-x-0 bottom-0 flex flex-col overflow-hidden rounded-t-xl border-t border-border bg-sidebar shadow-[0_-4px_16px_rgb(0_0_0/0.08)]"
           >
             <div className="relative flex h-11 shrink-0 items-center justify-between border-b border-border px-3">
-              <span className="pointer-events-none text-[12px] font-medium">
-                {TABS.find((tab) => tab.id === visibleSheet)?.label}
-              </span>
+              {visibleSheet !== "motion" && (
+                <span className="pointer-events-none text-[12px] font-medium">
+                  {TABS.find((tab) => tab.id === visibleSheet)?.label}
+                </span>
+              )}
               <SheetHandle
                 height={height}
                 min={min}
@@ -210,7 +212,7 @@ export function MobileWorkspace({
                 type="button"
                 aria-label="Close panel"
                 onClick={close}
-                className="grid size-11 touch-manipulation place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                className="ml-auto grid size-11 touch-manipulation place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
               >
                 <X className="size-4" aria-hidden="true" />
               </button>
