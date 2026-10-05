@@ -52,7 +52,10 @@ export function CanvasNavigationControls({
   return (
     <div
       aria-label="Canvas navigation"
-      className="absolute right-3 bottom-3 z-30 flex items-center gap-1 max-md:top-3 max-md:bottom-auto"
+      className={cn(
+        "absolute right-3 bottom-3 z-30 flex items-center gap-1 max-md:bottom-auto",
+        showRulers ? "max-md:top-8 [--canvas-ruler-inset:20px]" : "max-md:top-3",
+      )}
       onContextMenu={(event) => event.stopPropagation()}
     >
       {compact && (
