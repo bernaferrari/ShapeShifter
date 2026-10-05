@@ -556,6 +556,7 @@ export function CanvasArea({
     updateArtboardDrag,
     finishArtboardDrag,
     cancelArtboardDrag,
+    startArtboardDrag: startWorldArtboardDrag,
     isDraggingArtboards,
     updateIdlePointerPreview,
     updatePaintPreview,
@@ -712,6 +713,7 @@ export function CanvasArea({
                 className="relative min-h-0 w-full flex-1 overflow-hidden bg-muted"
                 role="region"
                 aria-label="Canvas"
+                style={{ userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
                 onPointerDownCapture={worldTouchHandlers.onPointerDownCapture}
                 onPointerMoveCapture={worldTouchHandlers.onPointerMoveCapture}
                 onPointerUpCapture={worldTouchHandlers.onPointerUpCapture}

@@ -178,7 +178,7 @@ test("frame top and left edges resize without moving artwork, and undo restores 
   expect(restored.tracks).toEqual(before.tracks);
 });
 
-for (const kind of ["frame-title", "artwork", "frame-resize"] as const) {
+for (const kind of ["frame-title", "frame-body", "artwork", "frame-resize"] as const) {
   test(`pinching during a ${kind} drag cancels the move and takes over the camera smoothly`, async ({
     browser,
   }, info) => {
@@ -207,9 +207,15 @@ for (const kind of ["frame-title", "artwork", "frame-resize"] as const) {
           ? title
           : kind === "artwork"
             ? art(page)
-            : page.locator('[data-frame-resize-handle="nw"]');
+            : kind === "frame-body"
+              ? page.locator("#editor-canvas [data-frame-background]").last()
+              : page.locator('[data-frame-resize-handle="nw"]');
       const box = (await target.boundingBox())!;
-      const a = { id: 1, x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      const a = {
+        id: 1,
+        x: box.x + (kind === "frame-body" ? 20 : box.width / 2),
+        y: box.y + (kind === "frame-body" ? 20 : box.height / 2),
+      };
       const canvas = page.locator('#editor-canvas svg[aria-label="World canvas"]');
       const view = () =>
         canvas.evaluate((svg) => {
@@ -218,6 +224,7 @@ for (const kind of ["frame-title", "artwork", "frame-resize"] as const) {
         });
       const initial = await view();
       await touch("touchStart", [a]);
+      if (kind === "frame-body") await page.waitForTimeout(500);
       a.x += 24;
       await touch("touchMove", [a]);
       const b = { id: 2, x: a.x, y: a.y + 130 };
@@ -258,6 +265,140 @@ for (const kind of ["frame-title", "artwork", "frame-resize"] as const) {
     }
   });
 }
+
+for (const targetKind of ["frame-title", "frame-body", "artwork"] as const) {
+  test(`holding then dragging ${targetKind} moves it without selecting page text or panning`, async ({
+    browser,
+  }, info) => {
+    test.skip(info.project.name !== "desktop", "Native Chromium touch injection.");
+    const context = await browser.newContext({ ...devices["Pixel 7"] });
+    try {
+      const page = await context.newPage();
+      await openPractice(page);
+      const before = await project(page);
+      const frame = Object.values(
+        before.frames as Record<string, { id: string; name: string; x: number; y: number }>,
+      ).find((f) => f.name === "Make this icon move")!;
+      const canvas = page.locator('#editor-canvas svg[aria-label="World canvas"]');
+      const camera = () => canvas.getAttribute("viewBox");
+      const initialCamera = await camera();
+      const artworkBefore = (await art(page).boundingBox())!;
+      const title = page.getByRole("button", {
+        name: "Select frame Make this icon move",
+        exact: true,
+      });
+      let point: { id: number; x: number; y: number };
+      if (targetKind === "frame-body") {
+        point = await canvas.evaluate((svg, f) => {
+          const bounds = svg.getBoundingClientRect();
+          const view = (svg as SVGSVGElement).viewBox.baseVal;
+          return {
+            id: 1,
+            x: bounds.x + ((f.x + 2 - view.x) / view.width) * bounds.width,
+            y: bounds.y + ((f.y + 2 - view.y) / view.height) * bounds.height,
+          };
+        }, frame);
+      } else {
+        const bounds = targetKind === "artwork" ? artworkBefore : (await title.boundingBox())!;
+        point = { id: 1, x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+      }
+      const cdp = await context.newCDPSession(page);
+      const touch = (type: "touchStart" | "touchMove" | "touchEnd", points: (typeof point)[]) =>
+        cdp.send("Input.dispatchTouchEvent", {
+          type,
+          touchPoints: points.map((p) => ({ ...p, radiusX: 5, radiusY: 5, force: 1 })),
+        });
+      await touch("touchStart", [point]);
+      await page.waitForTimeout(750);
+      expect(await page.evaluate(() => window.getSelection()?.toString())).toBe("");
+      point.x += 30;
+      point.y += 20;
+      await touch("touchMove", [point]);
+      await touch("touchEnd", []);
+      const after = await project(page);
+      expect(await camera()).toBe(initialCamera);
+      const artworkAfter = (await art(page).boundingBox())!;
+      expect(artworkAfter.x).toBeGreaterThan(artworkBefore.x + 15);
+      expect(artworkAfter.y).toBeGreaterThan(artworkBefore.y + 8);
+      if (targetKind === "artwork") {
+        expect(after.frames).toEqual(before.frames);
+        expect(after.nodes).not.toEqual(before.nodes);
+      } else {
+        expect(after.frames[frame.id].x).toBeGreaterThan(frame.x);
+        expect(after.nodes).toEqual(before.nodes);
+      }
+      // Each completed drag remains one undo step, including a held frame.
+      await page.locator("#editor-canvas").focus();
+      await page.keyboard.press("ControlOrMeta+z");
+      const undone = await project(page);
+      expect(undone.frames).toEqual(before.frames);
+      expect(undone.nodes).toEqual(before.nodes);
+    } finally {
+      await context.close();
+    }
+  });
+}
+
+test("quick frame taps, pans, and pinches cancel the pending hold", async ({ browser }, info) => {
+  test.skip(info.project.name !== "desktop", "Native Chromium touch injection.");
+  const context = await browser.newContext({ ...devices["Pixel 7"] });
+  try {
+    const page = await context.newPage();
+    await openPractice(page);
+    const before = await project(page);
+    const canvas = page.locator('#editor-canvas svg[aria-label="World canvas"]');
+    const initialCamera = await canvas.getAttribute("viewBox");
+    const cdp = await context.newCDPSession(page);
+    const touch = (
+      type: "touchStart" | "touchMove" | "touchEnd",
+      points: { id: number; x: number; y: number }[],
+    ) =>
+      cdp.send("Input.dispatchTouchEvent", {
+        type,
+        touchPoints: points.map((p) => ({ ...p, radiusX: 5, radiusY: 5, force: 1 })),
+      });
+    const point = async (id: number) => {
+      const box = (await page
+        .locator("#editor-canvas [data-frame-background]")
+        .last()
+        .boundingBox())!;
+      return { id, x: box.x + box.width * 0.85, y: box.y + box.height * 0.25 };
+    };
+    const a = await point(1);
+    await touch("touchStart", [a]);
+    await touch("touchEnd", []);
+    await page.waitForTimeout(500);
+    expect(await canvas.getAttribute("viewBox")).toBe(initialCamera);
+    await expect(canvas).not.toHaveCSS("cursor", "grabbing");
+    const pan = await point(2);
+    await touch("touchStart", [pan]);
+    pan.x += 24;
+    await touch("touchMove", [pan]);
+    await page.waitForTimeout(500);
+    pan.x += 16;
+    await touch("touchMove", [pan]);
+    await touch("touchEnd", []);
+    expect(await canvas.getAttribute("viewBox")).not.toBe(initialCamera);
+    const first = await point(3);
+    const second = { id: 4, x: first.x, y: first.y + 90 };
+    await touch("touchStart", [first]);
+    await touch("touchStart", [first, second]);
+    await page.waitForTimeout(500);
+    const width = await canvas.evaluate((svg) => (svg as SVGSVGElement).viewBox.baseVal.width);
+    second.y += 45;
+    await touch("touchMove", [first, second]);
+    await expect
+      .poll(() => canvas.evaluate((svg) => (svg as SVGSVGElement).viewBox.baseVal.width))
+      .toBeCloseTo(width / 1.5, 3);
+    await touch("touchEnd", []);
+    const after = await project(page);
+    expect(after.frames).toEqual(before.frames);
+    expect(after.nodes).toEqual(before.nodes);
+    await expect(canvas).not.toHaveCSS("cursor", "grabbing");
+  } finally {
+    await context.close();
+  }
+});
 
 test("native phone touches pinch, release outside, edit with one finger, and drag the sheet without zooming", async ({
   browser,

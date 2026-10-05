@@ -91,6 +91,7 @@ interface WorldPointerRouterOptions {
   updateArtboardDrag: (clientX: number, clientY: number, modifiers: PointerModifiers) => boolean;
   finishArtboardDrag: (clientX: number, clientY: number, modifiers: PointerModifiers) => void;
   cancelArtboardDrag: () => void;
+  startArtboardDrag: (clientX: number, clientY: number, frameIds: string[]) => void;
   isDraggingArtboards: boolean;
   updateIdlePointerPreview: (clientX: number, clientY: number, event: React.PointerEvent) => void;
   updatePaintPreview: (point: Point) => void;
@@ -126,7 +127,21 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
     y: number;
     moved: boolean;
     frameId: string | null;
+    timer: ReturnType<typeof setTimeout> | null;
   } | null>(null);
+  const latestOptions = React.useRef(options);
+  latestOptions.current = options;
+  const clearTouchHold = React.useCallback(() => {
+    const tap = touchPan.current;
+    if (tap?.timer) clearTimeout(tap.timer);
+    if (tap) tap.timer = null;
+  }, []);
+  React.useEffect(() => {
+    return () => {
+      clearTouchHold();
+      touchPan.current = null;
+    };
+  }, [clearTouchHold, options.toolMode]);
   const handlePointerDown = React.useCallback(
     (event: React.PointerEvent) => {
       if (!event.isPrimary || (event.button !== 0 && event.button !== 1)) return;
@@ -254,16 +269,34 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
 
       const frameId = options.hitArtboard(point);
       if (event.pointerType === "touch" && options.toolMode === "select") {
-        // Empty space is for navigation on touch. A tap still selects a frame
-        // or clears selection, but a drag preserves selection and pans.
+        // An immediate drag navigates; holding inside a frame picks it up.
+        // A tap selects a frame or clears selection without moving the camera.
         touchPan.current = {
           id: event.pointerId,
           x: event.clientX,
           y: event.clientY,
           moved: false,
           frameId,
+          timer: null,
         };
         options.startWorldPan(event.clientX, event.clientY, event.pointerId);
+        if (frameId) {
+          const tap = touchPan.current;
+          tap.timer = setTimeout(() => {
+            if (touchPan.current !== tap || tap.moved) return;
+            const state = useEditorStore.getState();
+            if (!state.frames.some((frame) => frame.id === frameId)) return;
+            touchPan.current = null;
+            const current = latestOptions.current;
+            current.cancelWorldPan();
+            const ids =
+              state.selectionKind === "frame" && state.selectedFrameIds.includes(frameId)
+                ? state.selectedFrameIds
+                : [frameId];
+            current.selectFrames(ids, frameId);
+            current.startArtboardDrag(tap.x, tap.y, ids);
+          }, 400);
+        }
         return;
       }
       if (frameId) {
@@ -314,12 +347,12 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
         return;
       }
       const tap = touchPan.current;
-      if (
-        tap &&
-        tap.id === event.pointerId &&
-        Math.hypot(event.clientX - tap.x, event.clientY - tap.y) > 6
-      )
-        tap.moved = true;
+      if (tap && tap.id === event.pointerId) {
+        if (Math.hypot(event.clientX - tap.x, event.clientY - tap.y) > 6) {
+          tap.moved = true;
+          clearTouchHold();
+        } else if (!tap.moved) return;
+      }
       if (options.updateWorldPan(event.clientX, event.clientY)) return;
       const point = options.worldPointFromEvent(event.clientX, event.clientY);
       if (!point) return;
@@ -362,13 +395,14 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
       if (options.updateMarquee(point)) return;
       if (options.toolMode === "pencil") options.updateWorldLasso(point);
     },
-    [options],
+    [options, clearTouchHold],
   );
 
   const handlePointerUp = React.useCallback(
     (event: React.PointerEvent) => {
       const tap = touchPan.current;
       if (tap && tap.id === event.pointerId) {
+        clearTouchHold();
         touchPan.current = null;
         options.finishWorldPan();
         releasePointer(options.svgRef.current, event.pointerId);
@@ -420,11 +454,12 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
       if (options.toolMode === "pencil") options.finishWorldLasso(event.shiftKey);
       if (options.toolMode === "paint") options.clearPaintPreview();
     },
-    [options],
+    [options, clearTouchHold],
   );
 
   const handlePointerCancel = React.useCallback(
     (event: React.PointerEvent) => {
+      clearTouchHold();
       touchPan.current = null;
       options.cancelObjectDrag();
       options.cancelShapeDrawing?.();
@@ -439,7 +474,7 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
       options.clearObjectFeedback();
       releasePointer(options.svgRef.current, event.pointerId);
     },
-    [options],
+    [options, clearTouchHold],
   );
 
   return { handlePointerDown, handlePointerMove, handlePointerUp, handlePointerCancel };

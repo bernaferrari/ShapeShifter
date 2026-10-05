@@ -213,6 +213,15 @@ describe("canvas touch gestures", () => {
     pointer("pointerup", 1, 50, 50);
     pointer("pointerup", 2, 100, 50);
   });
+  it("finishes a touch release that bypasses the SVG instead of cancelling the drag", () => {
+    const { handlers, pointer, outside } = mount(true);
+    pointer("pointerdown", 1, 30, 50);
+    outside("pointerup", 1);
+    expect(handlers.onPointerUp).toHaveBeenCalledTimes(1);
+    expect(handlers.onPointerUp.mock.calls[0]![0].pointerId).toBe(1);
+    expect(handlers.onPointerCancel).not.toHaveBeenCalled();
+  });
+
   it("cancels editing on an outside release and resets stale touches when focus is lost", () => {
     const { handlers, views, pointer, outside } = mount();
     pointer("pointerdown", 1, 40, 50);

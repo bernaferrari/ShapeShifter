@@ -152,6 +152,14 @@ export function useCanvasTouchGestures({
     if (!suppress.current) handlers.onPointerCancel(touch.event);
     release(pointerId);
   };
+  const finishTouch = (event: PointerEvent) => {
+    if (!touches.current.has(event.pointerId)) return;
+    const suppressed = suppress.current;
+    release(event.pointerId);
+    // HTML frame titles and releases outside the SVG bypass its bubble handler.
+    // A normal release commits the gesture; only cancellation rolls it back.
+    if (!suppressed) handlers.onPointerUp(event as unknown as React.PointerEvent<Element>);
+  };
   const reset = () => {
     const first = touches.current.values().next().value;
     if (first && !suppress.current) handlers.onPointerCancel(first.event);
@@ -168,13 +176,15 @@ export function useCanvasTouchGestures({
       }
     }
   };
-  const lifecycle = React.useRef({ cancelTouch, reset });
-  lifecycle.current = { cancelTouch, reset };
+  const lifecycle = React.useRef({ cancelTouch, finishTouch, reset });
+  lifecycle.current = { cancelTouch, finishTouch, reset };
   React.useEffect(() => {
     // Bubble after React handles the canvas event. This also catches releases
     // outside the canvas if the browser drops capture or a panel intercepts it.
     const end = (event: PointerEvent) => {
-      if (event.pointerType === "touch") lifecycle.current.cancelTouch(event.pointerId);
+      if (event.pointerType !== "touch") return;
+      if (event.type === "pointerup") lifecycle.current.finishTouch(event);
+      else lifecycle.current.cancelTouch(event.pointerId);
     };
     const blur = () => lifecycle.current.reset();
     const visibility = () => {

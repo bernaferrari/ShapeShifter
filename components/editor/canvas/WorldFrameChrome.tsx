@@ -126,7 +126,7 @@ export function WorldFrameChrome({
                       setRenamingFrameId(null);
                     }
                   }}
-                  className="h-5 w-36 rounded border border-primary bg-card px-1 text-[11px] text-foreground outline-none"
+                  className="h-5 w-36 select-text rounded border border-primary bg-card px-1 text-[11px] text-foreground outline-none"
                   onPointerDown={(event) => event.stopPropagation()}
                   aria-label={`Rename ${frame.name}`}
                 />
