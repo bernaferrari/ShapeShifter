@@ -14,15 +14,13 @@ import {
   FrameResizeGesture,
   type FrameResizeHandle,
 } from "@/lib/shapeshifter/gestures/select/FrameResizeGesture";
-import {
-  vectorCoordinateResizePatch,
-  vectorCoordinateResizePolicy,
-} from "@/lib/shapeshifter/vectorSpace";
+import { vectorCoordinateResizePolicy } from "@/lib/shapeshifter/vectorSpace";
 import { getCanvasFrameBounds } from "./useWorldCamera";
 
 interface WorldFrameResizeOptions {
   svgRef: RefObject<SVGSVGElement | null>;
   frame: CanvasFrame | undefined;
+  worldPointFromClient: (x: number, y: number) => Point | null;
 }
 interface ResizeBaseline {
   marker: ReturnType<typeof beginLiveGesture>;
@@ -31,7 +29,11 @@ interface ResizeBaseline {
   changed: boolean;
 }
 
-export function useWorldFrameResize({ svgRef, frame }: WorldFrameResizeOptions) {
+export function useWorldFrameResize({
+  svgRef,
+  frame,
+  worldPointFromClient,
+}: WorldFrameResizeOptions) {
   const gestureRef = useRef<FrameResizeGesture | null>(null);
   const baselineRef = useRef<ResizeBaseline | null>(null);
   const cancel = useCallback(() => {
@@ -61,6 +63,8 @@ export function useWorldFrameResize({ svgRef, frame }: WorldFrameResizeOptions) 
       if (!restoredFrame) return;
       const bounds = getCanvasFrameBounds({ ...restoredFrame, vector: state.vector });
       const resizePolicy = vectorCoordinateResizePolicy(state.vector);
+      const pointer = worldPointFromClient(event.clientX, event.clientY);
+      if (!pointer) return;
       const baseline: ResizeBaseline = {
         marker: beginLiveGesture("world-frame-resize", { x: event.clientX, y: event.clientY }),
         ownerId: frame.id,
@@ -77,34 +81,41 @@ export function useWorldFrameResize({ svgRef, frame }: WorldFrameResizeOptions) 
         if (owns() && baseline.historyEntry)
           useEditorStore.getState().cancelLastHistoryTransaction();
       };
-      gestureRef.current = new FrameResizeGesture(bounds, handle, {
-        beginTransaction: () => {
-          if (!owns()) return;
-          useEditorStore.getState().pushHistory();
-          baseline.historyEntry = useEditorStore.getState().history.at(-1);
-        },
-        applySize: ({ width, height }) => {
-          if (!owns()) return;
-          baseline.changed =
-            Math.abs(width - bounds.w) > 1e-6 || Math.abs(height - bounds.h) > 1e-6;
-          useEditorStore
-            .getState()
-            .updateVector(vectorCoordinateResizePatch(width, height, resizePolicy), {
+      gestureRef.current = new FrameResizeGesture(
+        bounds,
+        handle,
+        {
+          beginTransaction: () => {
+            if (!owns()) return;
+            useEditorStore.getState().pushHistory();
+            baseline.historyEntry = useEditorStore.getState().history.at(-1);
+          },
+          applyBounds: (next) => {
+            if (!owns()) return;
+            baseline.changed =
+              Math.abs(next.w - bounds.w) > 1e-6 ||
+              Math.abs(next.h - bounds.h) > 1e-6 ||
+              Math.abs(next.x - bounds.x) > 1e-6 ||
+              Math.abs(next.y - bounds.y) > 1e-6;
+            useEditorStore.getState().resizeFrame(frame.id, next, {
               recordHistory: false,
+              policy: resizePolicy,
             });
+          },
+          commit: () => {
+            if (!baseline.changed) rollback();
+          },
+          rollback,
         },
-        commit: () => {
-          if (!baseline.changed) rollback();
-        },
-        rollback,
-      });
+        pointer,
+      );
       try {
         svgRef.current?.setPointerCapture(event.pointerId);
       } catch {
         /* Native capture can already be released. */
       }
     },
-    [cancel, frame, svgRef],
+    [cancel, frame, svgRef, worldPointFromClient],
   );
 
   const update = useCallback((point: Point, bypassSnap: boolean) => {

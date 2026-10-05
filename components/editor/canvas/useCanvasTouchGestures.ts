@@ -3,7 +3,7 @@
 import React from "react";
 import { clientToWorld, zoomAtWorldPoint, type Viewport } from "@/lib/shapeshifter/camera";
 
-type PointerHandler = (event: React.PointerEvent<SVGSVGElement>) => void;
+type PointerHandler = (event: React.PointerEvent<Element>) => void;
 interface Handlers {
   onPointerDown: PointerHandler;
   onPointerMove: PointerHandler;
@@ -13,7 +13,7 @@ interface Handlers {
 interface Touch {
   x: number;
   y: number;
-  event: React.PointerEvent<SVGSVGElement>;
+  event: React.PointerEvent<Element>;
 }
 interface Pinch {
   ids: number[];
@@ -28,11 +28,13 @@ export function useCanvasTouchGestures({
   view,
   setView,
   handlers,
+  onGestureStart,
 }: {
   svgRef: React.RefObject<SVGSVGElement | null>;
   view: Viewport;
   setView: (view: Viewport) => void;
   handlers: Handlers;
+  onGestureStart?: () => void;
 }): Handlers & {
   onPointerDownCapture: PointerHandler;
   onPointerMoveCapture: PointerHandler;
@@ -154,6 +156,7 @@ export function useCanvasTouchGestures({
 
   return {
     onPointerDownCapture: (event) => {
+      onGestureStart?.();
       if (event.pointerType !== "touch") return;
       touches.current.set(event.pointerId, { x: event.clientX, y: event.clientY, event });
       if (touches.current.size === 2) {

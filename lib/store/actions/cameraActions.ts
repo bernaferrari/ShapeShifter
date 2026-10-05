@@ -46,13 +46,20 @@ function animateViewport(
   onUpdate: (viewport: Viewport) => void,
   animate: boolean,
 ) {
+  let active = true;
+  let request: number | undefined;
+  const cancel = () => {
+    active = false;
+    if (request !== undefined) cancelAnimationFrame(request);
+  };
   if (!animate || typeof requestAnimationFrame === "undefined") {
     onUpdate(to);
-    return;
+    return cancel;
   }
   const duration = 180;
   const startedAt = performance.now();
   const step = () => {
+    if (!active) return;
     const progress = Math.min(1, (performance.now() - startedAt) / duration);
     const eased = 1 - Math.pow(1 - progress, 3);
     onUpdate({
@@ -62,17 +69,35 @@ function animateViewport(
       h: from.h + (to.h - from.h) * eased,
       scale: from.scale + (to.scale - from.scale) * eased,
     });
-    if (progress < 1) requestAnimationFrame(step);
+    if (progress < 1) request = requestAnimationFrame(step);
   };
-  requestAnimationFrame(step);
+  request = requestAnimationFrame(step);
+  return cancel;
 }
 
 export function createCameraActions(
   set: SetEditorState,
   get: () => EditorState,
 ): Pick<EditorState, CameraActionKey> {
+  let cancelAnimation: (() => void) | undefined;
+  const stopAnimation = () => {
+    cancelAnimation?.();
+    cancelAnimation = undefined;
+  };
+  const focusViewport = (from: Viewport, to: Viewport, animate: boolean) => {
+    stopAnimation();
+    const reducedMotion =
+      typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    cancelAnimation = animateViewport(
+      from,
+      to,
+      (worldViewport) => set({ worldViewport }),
+      animate && !reducedMotion,
+    );
+  };
   return {
     setWorldViewport: (viewport) => {
+      stopAnimation();
       set((state) => ({
         worldViewport: { ...state.worldViewport, ...viewport },
       }));
@@ -100,18 +125,16 @@ export function createCameraActions(
     },
 
     bringFrameIntoView: (frameId, options = {}) => {
-      const { frames, worldViewport, setWorldViewport } = get();
+      stopAnimation();
+      const { frames, worldViewport } = get();
       const frame = frames.find((candidate) => candidate.id === frameId);
       if (!frame) return;
 
       const bounds = getFrameRect(frame);
-      const padding = Math.max(bounds.w, bounds.h) * 0.6;
       const target = {
-        x: bounds.x - padding,
-        y: bounds.y - padding,
-        w: (bounds.w + padding * 2) / worldViewport.scale,
-        h: (bounds.h + padding * 2) / worldViewport.scale,
-        scale: worldViewport.scale,
+        ...worldViewport,
+        x: bounds.x + bounds.w / 2 - worldViewport.w / 2,
+        y: bounds.y + bounds.h / 2 - worldViewport.h / 2,
       };
       const isVisible =
         bounds.x > worldViewport.x &&
@@ -119,30 +142,11 @@ export function createCameraActions(
         bounds.y > worldViewport.y &&
         bounds.y + bounds.h < worldViewport.y + worldViewport.h;
       if (isVisible) return;
-      if (options.animate === false || typeof requestAnimationFrame === "undefined") {
-        setWorldViewport(target);
-        return;
-      }
-
-      const start = { ...worldViewport };
-      const duration = 220;
-      const startedAt = performance.now();
-      const step = () => {
-        const progress = Math.min(1, (performance.now() - startedAt) / duration);
-        const eased = 1 - Math.pow(1 - progress, 3);
-        setWorldViewport({
-          x: start.x + (target.x - start.x) * eased,
-          y: start.y + (target.y - start.y) * eased,
-          w: start.w + (target.w - start.w) * eased,
-          h: start.h + (target.h - start.h) * eased,
-          scale: target.scale,
-        });
-        if (progress < 1) requestAnimationFrame(step);
-      };
-      requestAnimationFrame(step);
+      focusViewport(worldViewport, target, options.animate !== false);
     },
 
     bringLayerIntoView: (ownerId, layerId, options = {}) => {
+      stopAnimation();
       const state = get();
       const frame = state.frames.find((candidate) => candidate.id === ownerId);
       const ownerLayers =
@@ -208,7 +212,7 @@ export function createCameraActions(
           y: center.y - current.h / 2,
         };
       }
-      animateViewport(current, target, state.setWorldViewport, options.animate !== false);
+      focusViewport(current, target, options.animate !== false);
     },
   };
 }

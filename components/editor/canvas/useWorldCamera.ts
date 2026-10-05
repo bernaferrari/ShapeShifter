@@ -86,7 +86,11 @@ export function useWorldCamera({
       // A newly created/loaded active artboard should remain large enough to edit.
       const newlyFocused = !previous.frameIdsSignature.split("|").includes(selectedFrameId);
       onFitFrames(newlyFocused ? [selectedFrameId] : undefined);
-    } else if (selectedFrameId !== previous.selectedFrameId && selectionKind !== "layer") {
+    } else if (
+      selectedFrameId !== previous.selectedFrameId &&
+      selectionKind !== "layer" &&
+      !useEditorStore.getState().dragState
+    ) {
       onBringFrameIntoView(selectedFrameId, { animate: true });
     }
   }, [

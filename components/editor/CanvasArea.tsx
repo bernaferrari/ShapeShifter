@@ -289,7 +289,11 @@ export function CanvasArea({
     finish: finishFrameResize,
     cancel: cancelFrameResize,
     hasGesture: hasFrameResize,
-  } = useWorldFrameResize({ svgRef: worldSvgRef, frame: editFrame });
+  } = useWorldFrameResize({
+    svgRef: worldSvgRef,
+    frame: editFrame,
+    worldPointFromClient: worldPointFromEvent,
+  });
 
   const {
     marquee,
@@ -613,6 +617,8 @@ export function CanvasArea({
     svgRef: worldSvgRef,
     view: worldView,
     setView: setWorldView,
+    // A manual gesture takes ownership immediately, including HTML frame titles.
+    onGestureStart: () => useEditorStore.getState().setWorldViewport({}),
     handlers: {
       onPointerDown: handleWorldPointerDown,
       onPointerMove: handleWorldPointerMove,
@@ -706,6 +712,10 @@ export function CanvasArea({
                 className="relative min-h-0 w-full flex-1 overflow-hidden bg-muted"
                 role="region"
                 aria-label="Canvas"
+                onPointerDownCapture={worldTouchHandlers.onPointerDownCapture}
+                onPointerMoveCapture={worldTouchHandlers.onPointerMoveCapture}
+                onPointerUpCapture={worldTouchHandlers.onPointerUpCapture}
+                onLostPointerCapture={worldTouchHandlers.onLostPointerCapture}
               >
                 <CanvasNavigationControls
                   zoomPercent={worldView.scale * 100}
@@ -772,7 +782,10 @@ export function CanvasArea({
                     aria-label="World canvas"
                     className="touch-none"
                     onWheel={handleWorldWheel}
-                    {...worldTouchHandlers}
+                    onPointerDown={worldTouchHandlers.onPointerDown}
+                    onPointerMove={worldTouchHandlers.onPointerMove}
+                    onPointerUp={worldTouchHandlers.onPointerUp}
+                    onPointerCancel={worldTouchHandlers.onPointerCancel}
                     onPointerLeave={handlePointerLeave}
                     onDoubleClick={handleWorldDoubleClick}
                     onContextMenu={handleWorldContextMenu}
@@ -931,18 +944,24 @@ export function CanvasArea({
                     )}
                     {!isPlaying &&
                       isObjectTool &&
+                      !spacePanActive &&
                       hasCanvasSelection &&
                       selectTarget === "frame" &&
                       editFrame && (
                         <WorldFrameResizeHandles
                           bounds={getFrameBounds(editFrame)}
                           worldPerPixel={worldPerPx}
+                          touch={coarsePointer}
                           onResizeStart={startFrameResize}
                         />
                       )}
                     <WorldSelectionOverlay
                       visible={
-                        !isPlaying && isObjectTool && hasCanvasSelection && selectTarget === "layer"
+                        !isPlaying &&
+                        !spacePanActive &&
+                        isObjectTool &&
+                        hasCanvasSelection &&
+                        selectTarget === "layer"
                       }
                       activeOrigin={editOrigin}
                       activeLayers={layers}

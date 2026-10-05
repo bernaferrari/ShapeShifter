@@ -3,6 +3,7 @@ import { PAGE_ROOT_ID, type LayerSelectionRef } from "../../shapeshifter/scene/o
 import type { AnimationState, Layer, VectorMetadata } from "../../shapeshifter/types";
 import type { CanvasFrame } from "../defaultWorkspace";
 import { moveLayersBetweenOwners } from "../commands/moveLayersBetweenOwners";
+import { resizeFramePreservingArtwork } from "../commands/resizeFrame";
 import {
   cloneFrame,
   cloneLayers,
@@ -29,6 +30,7 @@ type FrameActionKeys =
   | "selectRootLayer"
   | "moveFrame"
   | "moveFrames"
+  | "resizeFrame"
   | "moveSelectedLayersToFrame"
   | "moveSelectedLayersToRoot";
 
@@ -385,6 +387,32 @@ export function createFrameActions(
           idSet.has(frame.id) ? { ...frame, x: frame.x + dx, y: frame.y + dy } : frame,
         ),
       }));
+    },
+
+    resizeFrame: (id, bounds, options) => {
+      if (
+        ![bounds.x, bounds.y, bounds.w, bounds.h].every(Number.isFinite) ||
+        bounds.w < 1 ||
+        bounds.h < 1
+      )
+        return;
+      const state = get();
+      const frames = saveActiveFrame(state);
+      const frame = frames.find((candidate) => candidate.id === id);
+      if (!frame) return;
+      const resized = resizeFramePreservingArtwork(frame, bounds, options?.policy);
+      if (options?.recordHistory !== false) state.pushHistory();
+      set({
+        frames: frames.map((candidate) => (candidate.id === id ? resized : candidate)),
+        ...(state.selectedFrameId === id
+          ? {
+              vector: resized.vector,
+              layers: resized.layers,
+              animation: resized.animation,
+              detailViewport: computeDetailViewport(resized.vector, state.detailViewport.scale),
+            }
+          : {}),
+      });
     },
 
     moveSelectedLayersToFrame: (targetFrameId, options) => {

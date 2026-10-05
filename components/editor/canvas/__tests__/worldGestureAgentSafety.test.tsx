@@ -81,7 +81,7 @@ function Harness() {
     progress: state.progress,
     syncActiveOwner: state.syncActiveOwner,
   });
-  frameResize = useWorldFrameResize({ svgRef, frame });
+  frameResize = useWorldFrameResize({ svgRef, frame, worldPointFromClient: (x, y) => ({ x, y }) });
   artboard = useArtboardDrag({ snapToGrid: false, worldPointFromClient: (x, y) => ({ x, y }) });
   return (
     <svg ref={svgRef}>

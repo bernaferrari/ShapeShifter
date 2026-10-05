@@ -370,6 +370,7 @@ const FrameArtboard = React.memo(function FrameArtboard({
   return (
     <g transform={`translate(${bounds.x} ${bounds.y})`}>
       <rect
+        data-frame-background={frame.id}
         width={bounds.w}
         height={bounds.h}
         rx={radius}

@@ -14,7 +14,8 @@ import {
   simplifyPath,
   getTaperedStrokeWidth,
 } from "../shapeshifter/pathUtils";
-import type { Viewport } from "../shapeshifter/camera";
+import type { Rect, Viewport } from "../shapeshifter/camera";
+import type { VectorCoordinateResizePolicy } from "../shapeshifter/vectorSpace";
 import type {
   AnimationState,
   EditorDocument,
@@ -289,6 +290,11 @@ export interface EditorState {
     dx: number,
     dy: number,
     options?: { recordHistory?: boolean },
+  ) => void;
+  resizeFrame: (
+    id: string,
+    bounds: Rect,
+    options?: { recordHistory?: boolean; policy?: VectorCoordinateResizePolicy },
   ) => void;
   /** Reparent selected objects to another frame without changing world position. */
   moveSelectedLayersToFrame: (targetFrameId: string, options?: MoveLayerOptions) => boolean;

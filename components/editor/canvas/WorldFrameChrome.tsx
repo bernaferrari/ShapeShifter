@@ -105,7 +105,7 @@ export function WorldFrameChrome({
               )}
               style={{
                 left: Math.round(screen.x),
-                top: Math.round(screen.y) - 8,
+                top: Math.round(screen.y) - 3,
                 transform: "translateY(-100%)",
                 maxWidth: Math.max(48, Math.round(screen.width)),
               }}
@@ -142,7 +142,7 @@ export function WorldFrameChrome({
                   <button
                     type="button"
                     className={cn(
-                      "max-w-full touch-none truncate text-[11px] leading-5 transition-colors",
+                      "flex h-5 max-w-full touch-none items-end text-[11px] transition-colors",
                       selected
                         ? "font-medium text-primary"
                         : hovered || containsSelection
@@ -185,7 +185,9 @@ export function WorldFrameChrome({
                       setRenamingFrameId(frame.id);
                     }}
                   >
-                    {frame.name}
+                    <span data-frame-title-text className="min-w-0 truncate leading-4">
+                      {frame.name}
+                    </span>
                   </button>
                 </div>
               )}

@@ -420,35 +420,101 @@ export function WorldMarqueeOverlay({ start, current }: { start: Point; current:
 export function WorldFrameResizeHandles({
   bounds,
   worldPerPixel,
+  touch = false,
   onResizeStart,
 }: {
   bounds: Rect;
   worldPerPixel: number;
+  touch?: boolean;
   onResizeStart: (event: ReactPointerEvent<SVGRectElement>, handle: FrameResizeHandle) => void;
 }) {
   const size = worldPerPixel * 3;
+  const hitSize = worldPerPixel * (touch ? 22 : 10);
   const handles: Array<{ handle: FrameResizeHandle; x: number; y: number; cursor: string }> = [
+    { handle: "nw", x: bounds.x, y: bounds.y, cursor: "nwse-resize" },
+    { handle: "n", x: bounds.x + bounds.w / 2, y: bounds.y, cursor: "ns-resize" },
+    { handle: "ne", x: bounds.x + bounds.w, y: bounds.y, cursor: "nesw-resize" },
     { handle: "se", x: bounds.x + bounds.w, y: bounds.y + bounds.h, cursor: "nwse-resize" },
     { handle: "e", x: bounds.x + bounds.w, y: bounds.y + bounds.h / 2, cursor: "ew-resize" },
     { handle: "s", x: bounds.x + bounds.w / 2, y: bounds.y + bounds.h, cursor: "ns-resize" },
+    { handle: "sw", x: bounds.x, y: bounds.y + bounds.h, cursor: "nesw-resize" },
+    { handle: "w", x: bounds.x, y: bounds.y + bounds.h / 2, cursor: "ew-resize" },
+  ];
+  const edges = [
+    {
+      handle: "n" as const,
+      x: bounds.x,
+      y: bounds.y - hitSize / 2,
+      w: bounds.w,
+      h: hitSize,
+      cursor: "ns-resize",
+    },
+    {
+      handle: "s" as const,
+      x: bounds.x,
+      y: bounds.y + bounds.h - hitSize / 2,
+      w: bounds.w,
+      h: hitSize,
+      cursor: "ns-resize",
+    },
+    {
+      handle: "w" as const,
+      x: bounds.x - hitSize / 2,
+      y: bounds.y,
+      w: hitSize,
+      h: bounds.h,
+      cursor: "ew-resize",
+    },
+    {
+      handle: "e" as const,
+      x: bounds.x + bounds.w - hitSize / 2,
+      y: bounds.y,
+      w: hitSize,
+      h: bounds.h,
+      cursor: "ew-resize",
+    },
   ];
   return (
-    <g>
-      {handles.map(({ handle, x, y, cursor }) => (
+    <g className="touch-none">
+      {edges.map(({ handle, x, y, w, h, cursor }) => (
         <rect
-          key={handle}
-          x={x - size}
-          y={y - size}
-          width={size * 2}
-          height={size * 2}
-          rx={worldPerPixel}
-          fill="#ffffff"
-          stroke="var(--primary)"
-          strokeWidth={1.25}
-          vectorEffect="non-scaling-stroke"
+          key={`edge-${handle}`}
+          data-frame-resize-edge={handle}
+          x={x}
+          y={y}
+          width={w}
+          height={h}
+          fill="transparent"
           style={{ cursor }}
           onPointerDown={(event) => onResizeStart(event, handle)}
         />
+      ))}
+      {handles.map(({ handle, x, y, cursor }) => (
+        <g key={handle}>
+          <rect
+            data-frame-resize-handle={handle}
+            aria-label={`Resize frame ${handle}`}
+            x={x - hitSize}
+            y={y - hitSize}
+            width={hitSize * 2}
+            height={hitSize * 2}
+            fill="transparent"
+            style={{ cursor }}
+            onPointerDown={(event) => onResizeStart(event, handle)}
+          />
+          <rect
+            x={x - size}
+            y={y - size}
+            width={size * 2}
+            height={size * 2}
+            rx={worldPerPixel}
+            fill="#ffffff"
+            stroke="var(--primary)"
+            strokeWidth={1.25}
+            vectorEffect="non-scaling-stroke"
+            pointerEvents="none"
+          />
+        </g>
       ))}
     </g>
   );
