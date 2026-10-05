@@ -239,6 +239,7 @@ test("every mobile panel uses one header row for its actions, grab handle, and c
   test.skip(info.project.name !== "phone", "Compact panel composition.");
   await practice(page);
   await page.setViewportSize({ width: 320, height: 700 });
+  let panelBackground: string | undefined;
   for (const name of ["Layers", "Design", "Motion"]) {
     await page.getByRole("button", { name, exact: true }).tap();
     const panel = page.getByRole("region", { name, exact: true });
@@ -251,14 +252,30 @@ test("every mobile panel uses one header row for its actions, grab handle, and c
     const geometry = await header.evaluate((element) => ({
       y: element.getBoundingClientRect().y,
       height: element.getBoundingClientRect().height,
+      leftPadding: getComputedStyle(element).paddingLeft,
+      rightBorder: getComputedStyle(element).borderRightWidth,
+      background: getComputedStyle(element).backgroundColor,
+      leadingX: element.firstElementChild!.getBoundingClientRect().x,
       targets: [...element.querySelectorAll('button, [role="slider"]')].map((target) => {
         const box = target.getBoundingClientRect();
         return { x: box.x, y: box.y, width: box.width, height: box.height };
       }),
     }));
     expect(geometry.height).toBe(44);
+    expect(geometry.leftPadding).toBe("12px");
+    expect(geometry.leadingX).toBe(12);
+    expect(geometry.rightBorder).toBe("0px");
+    panelBackground ??= geometry.background;
+    expect(geometry.background).toBe(panelBackground);
+    if (name === "Motion") {
+      await expect(panel.locator("[data-timeline-layer-names]")).toHaveCSS(
+        "background-color",
+        panelBackground,
+      );
+    }
     const handleBox = (await handle.boundingBox())!;
     const panelBox = (await panel.boundingBox())!;
+    expect(geometry.y - panelBox.y).toBeCloseTo(1, 4);
     expect(
       Math.abs(handleBox.x + handleBox.width / 2 - panelBox.x - panelBox.width / 2),
     ).toBeLessThanOrEqual(0.5);

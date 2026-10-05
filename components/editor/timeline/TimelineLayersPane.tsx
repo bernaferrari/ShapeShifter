@@ -52,7 +52,10 @@ export function TimelineLayersPane({
 
   return (
     <div
-      className="sticky left-0 z-10 shrink-0 border-r border-border bg-card"
+      className={cn(
+        "sticky left-0 z-10 shrink-0 border-r border-border",
+        compact ? "bg-sidebar" : "bg-card",
+      )}
       data-timeline-layer-names
       style={{ width }}
     >
@@ -69,7 +72,7 @@ export function TimelineLayersPane({
                 "group flex w-full items-center gap-1 pr-2 text-left",
                 isActive ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted",
               )}
-              style={{ height: compact ? 44 : ROW_LAYER_HEIGHT, paddingLeft: 8 }}
+              style={{ height: compact ? 44 : ROW_LAYER_HEIGHT, paddingLeft: compact ? 12 : 8 }}
               onClick={() => useEditorStore.getState().selectFrame(row.frameId)}
               onKeyDown={(event) => {
                 if (

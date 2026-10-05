@@ -303,7 +303,7 @@ export interface EditorState {
 
   // World camera (1el / k4mv Phase 2) — first-class store citizen
   worldViewport: Viewport;
-  setWorldViewport: (v: Partial<Viewport>) => void;
+  setWorldViewport: (v: Partial<Viewport>, options?: { animate?: boolean }) => void;
   fitWorldToFrames: (frameIds?: string[]) => void;
   bringFrameIntoView: (frameId: string, options?: { animate?: boolean }) => void;
   bringLayerIntoView: (

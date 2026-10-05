@@ -37,13 +37,13 @@ export function PanelHeader({
       className={cn(
         className,
         mobile &&
-          "relative flex h-11 min-h-11 shrink-0 items-center gap-0 border-b border-border px-1 py-0 [&_button]:min-h-11 [&_button]:min-w-11 [&_button>svg]:size-5",
+          "relative flex h-11 min-h-11 shrink-0 items-center gap-0 border-b border-r-0 border-border bg-sidebar pl-3 pr-1 py-0 [&_button]:min-h-11 [&_button]:min-w-11 [&_button>svg]:size-5",
       )}
       style={style}
     >
       {mobile ? (
         <>
-          <div className="flex min-w-0 flex-1 max-w-[calc(50%-24px)] items-center">{children}</div>
+          <div className="flex min-w-0 flex-1 max-w-[calc(50%-32px)] items-center">{children}</div>
           <div className="absolute left-1/2 top-0 -translate-x-1/2">{mobile.handle}</div>
           <div className="ml-auto flex shrink-0 items-center">
             {actions}

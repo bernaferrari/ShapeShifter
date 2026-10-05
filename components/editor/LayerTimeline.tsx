@@ -45,7 +45,6 @@ import {
 } from "./timeline/timelineTiming";
 
 const PLAYHEAD = "var(--primary)";
-const SURFACE = "bg-card";
 
 const DEFAULT_HEADER_H = 36;
 const DEFAULT_LAYERS_W = 240;
@@ -275,7 +274,7 @@ export function LayerTimeline({
       onKeyDown={handleTimelineClipboardShortcut}
       className={cn(
         "relative z-20 flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-t border-border",
-        SURFACE,
+        compact ? "border-t-0 bg-sidebar" : "bg-card",
       )}
     >
       {/* ── Unified playhead (head in ruler, needle through tracks) ── */}
@@ -502,7 +501,7 @@ export function LayerTimeline({
             className={cn(
               "grid size-7 place-items-center rounded-md text-foreground transition-colors hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring",
               compact &&
-                "flex h-11 w-auto shrink-0 gap-1.5 px-2 text-[12px] font-medium touch-manipulation",
+                "flex h-11 w-auto shrink-0 gap-1.5 px-0 text-[12px] font-medium touch-manipulation",
             )}
             aria-label={isPlaying ? "Pause" : "Play"}
             title={isPlaying ? "Pause · Space" : "Play · Space"}

@@ -22,6 +22,47 @@ async function openPractice(page: Page) {
 }
 const art = (page: Page) => page.locator('#editor-canvas path[fill="#6366f1"]').first();
 
+test("Zoom to fit glides through intermediate camera positions through the canvas controls", async ({
+  page,
+}) => {
+  await openPractice(page);
+  for (let index = 0; index < 3; index++) {
+    await page.getByRole("button", { name: "Zoom options", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Zoom in", exact: false }).click();
+  }
+  await page.getByRole("button", { name: "Zoom options", exact: true }).click();
+  await page.evaluate(() => {
+    const canvas = document.querySelector('svg[aria-label="World canvas"]')!;
+    const samples: string[] = [];
+    const observations = { samples, done: false };
+    (window as typeof window & { fitObservations: typeof observations }).fitObservations =
+      observations;
+    const start = performance.now();
+    const sample = () => {
+      samples.push(canvas.getAttribute("viewBox")!);
+      if (performance.now() - start < 600) requestAnimationFrame(sample);
+      else observations.done = true;
+    };
+    requestAnimationFrame(sample);
+  });
+  await page.getByRole("menuitem", { name: "Zoom to fit", exact: false }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as typeof window & { fitObservations: { done: boolean } }).fitObservations.done,
+      ),
+    )
+    .toBe(true);
+  const samples = await page.evaluate(
+    () =>
+      (window as typeof window & { fitObservations: { samples: string[] } }).fitObservations
+        .samples,
+  );
+  expect(new Set(samples).size).toBeGreaterThan(3);
+  expect(samples.at(-1)).not.toBe(samples[0]);
+});
+
 test("opening and resizing mobile sheets preserves artwork scale and uses a vertical grab handle", async ({
   page,
 }, info) => {

@@ -40,7 +40,7 @@ export function useWorldCamera({
   selectionKind: "none" | "frame" | "layer";
   selectionBounds: Rect | null;
   viewport: Viewport;
-  onViewportChange: (viewport: Partial<Viewport>) => void;
+  onViewportChange: (viewport: Partial<Viewport>, options?: { animate?: boolean }) => void;
   onFitFrames: (frameIds?: string[]) => void;
   onBringFrameIntoView: (frameId: string, options?: { animate?: boolean }) => void;
 }) {
@@ -56,10 +56,10 @@ export function useWorldCamera({
   const worldPerPixel = viewportSize.w > 0 ? view.w / viewportSize.w : 1;
 
   const setView = useCallback(
-    (next: Viewport | ((previous: Viewport) => Viewport)) => {
+    (next: Viewport | ((previous: Viewport) => Viewport), options?: { animate?: boolean }) => {
       const resolved =
         typeof next === "function" ? next(useEditorStore.getState().worldViewport) : next;
-      onViewportChange(resolved);
+      onViewportChange(resolved, options);
     },
     [onViewportChange],
   );
@@ -169,10 +169,13 @@ export function useWorldCamera({
         view.w / view.h,
       );
       const multiplier = Math.min(view.w / fitted.w, view.h / fitted.h);
-      setView({
-        ...fitted,
-        scale: Math.max(0.05, Math.min(20, view.scale * multiplier)),
-      });
+      setView(
+        {
+          ...fitted,
+          scale: Math.max(0.05, Math.min(20, view.scale * multiplier)),
+        },
+        { animate: true },
+      );
       return;
     }
     const frameIds = selectedFrameIds.length

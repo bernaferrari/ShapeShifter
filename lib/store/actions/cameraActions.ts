@@ -56,11 +56,15 @@ function animateViewport(
     onUpdate(to);
     return cancel;
   }
-  const duration = 180;
+  const duration = 220;
   const startedAt = performance.now();
   const step = () => {
     if (!active) return;
     const progress = Math.min(1, (performance.now() - startedAt) / duration);
+    if (progress === 1) {
+      onUpdate(to);
+      return;
+    }
     const eased = 1 - Math.pow(1 - progress, 3);
     onUpdate({
       x: from.x + (to.x - from.x) * eased,
@@ -69,7 +73,7 @@ function animateViewport(
       h: from.h + (to.h - from.h) * eased,
       scale: from.scale + (to.scale - from.scale) * eased,
     });
-    if (progress < 1) request = requestAnimationFrame(step);
+    request = requestAnimationFrame(step);
   };
   request = requestAnimationFrame(step);
   return cancel;
@@ -96,7 +100,12 @@ export function createCameraActions(
     );
   };
   return {
-    setWorldViewport: (viewport) => {
+    setWorldViewport: (viewport, options = {}) => {
+      if (options.animate) {
+        const current = get().worldViewport;
+        focusViewport(current, { ...current, ...viewport }, true);
+        return;
+      }
       stopAnimation();
       set((state) => ({
         worldViewport: { ...state.worldViewport, ...viewport },
@@ -121,7 +130,8 @@ export function createCameraActions(
       const targetFrames = frameIds
         ? frames.filter((frame) => frameIds.includes(frame.id))
         : frames;
-      if (targetFrames.length > 0) setWorldViewport(computeFramesViewport(targetFrames));
+      if (targetFrames.length > 0)
+        setWorldViewport(computeFramesViewport(targetFrames), { animate: true });
     },
 
     bringFrameIntoView: (frameId, options = {}) => {

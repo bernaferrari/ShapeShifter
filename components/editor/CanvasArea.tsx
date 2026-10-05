@@ -736,10 +736,7 @@ export function CanvasArea({
                   }
                   onSetGrid={setGridDivisions}
                   onFitSelection={fitWorldToSelection}
-                  onReset={() => {
-                    fitWorldToFrames();
-                    resetAllViews();
-                  }}
+                  onReset={resetAllViews}
                   showRulers={showRulers}
                   onToggleRulers={onToggleRulers}
                 />
