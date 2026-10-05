@@ -583,7 +583,7 @@ function InspectorHeader({
       <div className="grid size-6 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground">
         {icon}
       </div>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 in-[.mobile-workspace]:flex in-[.mobile-workspace]:items-center in-[.mobile-workspace]:gap-2">
         {onRename ? (
           <input
             aria-label="Name"
@@ -603,7 +603,7 @@ function InspectorHeader({
         ) : (
           <div className="truncate text-[12px] font-semibold leading-tight">{title}</div>
         )}
-        <div className="mt-0.5 truncate text-[11px] leading-none text-muted-foreground">
+        <div className="mt-0.5 truncate text-[11px] leading-none text-muted-foreground in-[.mobile-workspace]:max-w-[55%] in-[.mobile-workspace]:shrink-0">
           {subtitle}
         </div>
       </div>

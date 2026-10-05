@@ -100,7 +100,8 @@ export function WorldFrameChrome({
               className="pointer-events-auto absolute"
               style={{
                 left: Math.round(screen.x),
-                top: Math.round(screen.y) - 22,
+                top: Math.round(screen.y) - 8,
+                transform: "translateY(-100%)",
                 maxWidth: Math.max(48, Math.round(screen.width)),
               }}
             >
@@ -136,7 +137,7 @@ export function WorldFrameChrome({
                   <button
                     type="button"
                     className={cn(
-                      "max-w-full truncate text-[11px] leading-5 transition-colors",
+                      "max-w-full touch-none truncate text-[11px] leading-5 transition-colors",
                       selected
                         ? "font-medium text-primary"
                         : hovered || containsSelection

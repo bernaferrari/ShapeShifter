@@ -234,3 +234,9 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Keep navigation reachable while a mobile sheet shifts the artwork upward. */
+.mobile-workspace [aria-label="Canvas navigation"] {
+  top: calc(12px + var(--mobile-canvas-offset, 0px));
+  bottom: auto;
+}

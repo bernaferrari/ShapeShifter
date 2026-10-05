@@ -46,17 +46,20 @@ import {
 const PLAYHEAD = "var(--primary)";
 const SURFACE = "bg-card";
 
-const HEADER_H = 36;
+const DEFAULT_HEADER_H = 36;
 const DEFAULT_LAYERS_W = 240;
 
 export function LayerTimeline({
   onCollapse,
   layersWidth: LAYERS_W = DEFAULT_LAYERS_W,
+  compact = false,
 }: {
   onCollapse?: () => void;
   /** Width of the layer-name column; phones use a narrower one. */
   layersWidth?: number;
+  compact?: boolean;
 }) {
+  const HEADER_H = compact ? 44 : DEFAULT_HEADER_H;
   const frames = useEditorStore((state) => state.frames);
   const selectedFrameId = useEditorStore((state) => state.selectedFrameId);
   const layers = useEditorStore((state) => state.layers);
@@ -275,14 +278,19 @@ export function LayerTimeline({
       )}
     >
       {/* ── Unified playhead (head in ruler, needle through tracks) ── */}
-      <TimelinePlayhead
-        visible={!isTimelineEmpty}
-        layersWidth={LAYERS_W}
-        color={PLAYHEAD}
-        contentWidth={navigation.contentWidth}
-        viewportWidth={navigation.width}
-        scrollLeft={navigation.scrollLeft}
-      />
+      <div
+        className="pointer-events-none absolute inset-x-0 bottom-0"
+        style={{ top: compact ? HEADER_H : 0 }}
+      >
+        <TimelinePlayhead
+          visible={!isTimelineEmpty}
+          layersWidth={LAYERS_W}
+          color={PLAYHEAD}
+          contentWidth={navigation.contentWidth}
+          viewportWidth={navigation.width}
+          scrollLeft={navigation.scrollLeft}
+        />
+      </div>
       {snapGuide &&
         (() => {
           const x =
@@ -293,7 +301,7 @@ export function LayerTimeline({
             <div
               data-timeline-snap-guide
               className="pointer-events-none absolute top-0 bottom-0 z-[15] border-l border-dashed border-primary/65"
-              style={{ left: LAYERS_W + x }}
+              style={{ left: LAYERS_W + x, top: compact ? HEADER_H : 0 }}
             >
               <span
                 role="status"
@@ -321,7 +329,11 @@ export function LayerTimeline({
           data-timeline-preview-range
           aria-hidden
           className="pointer-events-none absolute top-0 bottom-0 z-[2] border-x border-primary/35 bg-primary/5"
-          style={{ left: LAYERS_W + previewLeft, width: previewRight - previewLeft }}
+          style={{
+            left: LAYERS_W + previewLeft,
+            width: previewRight - previewLeft,
+            top: compact ? HEADER_H : 0,
+          }}
         >
           <div className="absolute inset-x-0 top-0 h-0.5 bg-primary/50" />
         </div>
@@ -353,12 +365,12 @@ export function LayerTimeline({
 
       {/* ══ Top bar: transport | ruler (one continuous Figma row) ══ */}
       <div
-        className="relative z-10 flex shrink-0 border-b border-border"
-        style={{ height: HEADER_H }}
+        className={cn("relative z-10 flex shrink-0 border-b border-border", compact && "flex-wrap")}
+        style={{ height: HEADER_H * (compact ? 2 : 1) }}
       >
         <div
           className="flex shrink-0 items-center gap-1 border-r border-border pl-1.5 pr-1"
-          style={{ width: LAYERS_W }}
+          style={{ width: compact ? "100%" : LAYERS_W, height: HEADER_H }}
         >
           <button
             type="button"
@@ -376,7 +388,7 @@ export function LayerTimeline({
           <TimelineInsertKeyframeButton iconOnly label="Add keyframe at playhead" />
           <div className="flex h-6 min-w-0 items-center gap-[3px] rounded-md bg-secondary px-1.5 text-[11px] tabular-nums leading-none">
             <TimelineCurrentTimeInput color={PLAYHEAD} unit={timeUnit} fps={fps} />
-            {LAYERS_W >= 200 && (
+            {(compact || LAYERS_W >= 200) && (
               <>
                 <span className="text-muted-foreground">/</span>
                 <TimelineDurationInput unit={timeUnit} fps={fps} />
@@ -495,8 +507,20 @@ export function LayerTimeline({
           )}
         </div>
 
+        {compact && (
+          <div
+            aria-hidden
+            className="absolute bottom-0 left-0 flex items-center border-r border-border px-3 text-[11px] text-muted-foreground"
+            style={{ width: LAYERS_W, height: HEADER_H }}
+          >
+            Layers
+          </div>
+        )}
         {/* Ruler — Figma motion: continuous baseline, major labels, minor ticks */}
-        <div className="relative min-w-0 flex-1 overflow-hidden">
+        <div
+          className="relative min-w-0 flex-1 overflow-hidden"
+          style={{ marginLeft: compact ? LAYERS_W : 0, height: HEADER_H }}
+        >
           <div
             ref={rulerRef}
             style={{

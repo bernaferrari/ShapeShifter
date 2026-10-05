@@ -6,13 +6,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Viewport } from "@/lib/shapeshifter/camera";
 import { useCanvasTouchGestures } from "../useCanvasTouchGestures";
 
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
 let cleanup: (() => void) | null = null;
 afterEach(() => {
   cleanup?.();
   cleanup = null;
 });
 
-function mount() {
+function mount(interceptHandle = false) {
   const handlers = {
     onPointerDown: vi.fn(),
     onPointerMove: vi.fn(),
@@ -32,7 +34,11 @@ function mount() {
       },
       handlers,
     });
-    return <svg ref={svgRef} data-testid="canvas" {...touch} />;
+    return (
+      <svg ref={svgRef} data-testid="canvas" {...touch}>
+        {interceptHandle && <circle onPointerDown={(event) => event.stopPropagation()} />}
+      </svg>
+    );
   }
   const container = document.createElement("div");
   document.body.append(container);
@@ -47,7 +53,12 @@ function mount() {
   };
   const pointer = (type: string, pointerId: number, x: number, y: number, pointerType = "touch") =>
     React.act(() => {
-      svg.dispatchEvent(
+      if (type === "lostpointercapture") svg.releasePointerCapture(pointerId);
+      const target =
+        interceptHandle && type === "pointerdown" && pointerId === 1
+          ? svg.querySelector("circle")!
+          : svg;
+      target.dispatchEvent(
         new PointerEvent(type, {
           pointerId,
           pointerType,
@@ -58,7 +69,13 @@ function mount() {
         }),
       );
     });
-  return { handlers, views, pointer };
+  const outside = (type: string, pointerId: number) =>
+    React.act(() =>
+      window.dispatchEvent(
+        new PointerEvent(type, { pointerId, pointerType: "touch", bubbles: true }),
+      ),
+    );
+  return { handlers, views, pointer, outside };
 }
 
 describe("canvas touch gestures", () => {
@@ -94,6 +111,84 @@ describe("canvas touch gestures", () => {
     expect(handlers.onPointerUp).not.toHaveBeenCalled();
   });
 
+  it("does not turn the next single-finger drag into zoom when the last pinch finger ends outside the canvas", () => {
+    const { views, pointer, outside } = mount();
+    pointer("pointerdown", 1, 40, 50);
+    pointer("pointerdown", 2, 60, 50);
+    pointer("pointermove", 2, 80, 50);
+    pointer("pointerup", 1, 40, 50);
+    outside("pointerup", 2);
+    const before = views.length;
+    pointer("pointerdown", 3, 50, 50);
+    pointer("pointermove", 3, 90, 90);
+    pointer("pointerup", 3, 90, 90);
+    expect(views).toHaveLength(before);
+  });
+  it("clears a pinch when capture is lost and ignores orphan touch movement", () => {
+    const { views, handlers, pointer } = mount();
+    pointer("pointerdown", 1, 40, 50);
+    pointer("pointerdown", 2, 60, 50);
+    pointer("lostpointercapture", 1, 40, 50);
+    pointer("pointerup", 2, 60, 50);
+    const before = views.length;
+    pointer("pointerdown", 3, 30, 30);
+    pointer("pointermove", 3, 60, 60);
+    pointer("pointerup", 3, 60, 60);
+    expect(views).toHaveLength(before);
+    const edits = handlers.onPointerMove.mock.calls.length;
+    pointer("pointermove", 99, 80, 80);
+    expect(handlers.onPointerMove).toHaveBeenCalledTimes(edits);
+  });
+  it("cancels a resize handle that stops bubbling before a second finger starts a pinch", () => {
+    const { handlers, views, pointer } = mount(true);
+    pointer("pointerdown", 1, 30, 50);
+    expect(handlers.onPointerDown).not.toHaveBeenCalled();
+    pointer("pointerdown", 2, 70, 50);
+    expect(handlers.onPointerCancel.mock.calls[0]![0].pointerId).toBe(1);
+    pointer("pointermove", 2, 90, 50);
+    expect(views.at(-1)!.scale).toBeCloseTo(1.5);
+    pointer("pointerup", 1, 30, 50);
+    pointer("pointerup", 2, 90, 50);
+    expect(handlers.onPointerUp).not.toHaveBeenCalled();
+  });
+  it("rebases when a third finger replaces a pinch finger without jumping", () => {
+    const { views, pointer } = mount();
+    pointer("pointerdown", 1, 30, 50);
+    pointer("pointerdown", 2, 70, 50);
+    pointer("pointermove", 2, 90, 50);
+    const before = views.at(-1)!;
+    pointer("pointerdown", 3, 20, 80);
+    pointer("pointerup", 1, 30, 50);
+    pointer("pointermove", 3, 20, 80);
+    expect(views.at(-1)).toEqual(before);
+    pointer("pointerup", 2, 90, 50);
+    pointer("pointerup", 3, 20, 80);
+  });
+  it("waits for a useful finger spread instead of magnifying nearly coincident touches", () => {
+    const { views, pointer } = mount();
+    pointer("pointerdown", 1, 50, 50);
+    pointer("pointerdown", 2, 51, 50);
+    pointer("pointermove", 2, 90, 50);
+    expect(views).toHaveLength(0);
+    pointer("pointermove", 2, 100, 50);
+    expect(views.at(-1)!.scale).toBeCloseTo(1.25);
+    pointer("pointerup", 1, 50, 50);
+    pointer("pointerup", 2, 100, 50);
+  });
+  it("cancels editing on an outside release and resets stale touches when focus is lost", () => {
+    const { handlers, views, pointer, outside } = mount();
+    pointer("pointerdown", 1, 40, 50);
+    outside("pointercancel", 1);
+    expect(handlers.onPointerCancel).toHaveBeenCalledTimes(1);
+    pointer("pointerdown", 2, 40, 50);
+    pointer("pointerdown", 3, 60, 50);
+    React.act(() => window.dispatchEvent(new Event("blur")));
+    pointer("pointerdown", 4, 20, 50);
+    pointer("pointermove", 4, 30, 50);
+    pointer("pointerup", 4, 30, 50);
+    expect(views).toHaveLength(0);
+    expect(handlers.onPointerMove).toHaveBeenCalledTimes(1);
+  });
   it("leaves mouse input alone", () => {
     const { handlers, pointer } = mount();
     pointer("pointerdown", 1, 10, 10, "mouse");
