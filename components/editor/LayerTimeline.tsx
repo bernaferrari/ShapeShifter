@@ -500,8 +500,7 @@ export function LayerTimeline({
             type="button"
             className={cn(
               "grid size-7 place-items-center rounded-md text-foreground transition-colors hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring",
-              compact &&
-                "flex h-11 w-auto shrink-0 gap-1.5 px-0 text-[12px] font-medium touch-manipulation",
+              compact && "size-11 mr-2 shrink-0 touch-manipulation",
             )}
             aria-label={isPlaying ? "Pause" : "Play"}
             title={isPlaying ? "Pause · Space" : "Play · Space"}
@@ -512,7 +511,6 @@ export function LayerTimeline({
             ) : (
               <Play className="size-3.5 fill-current" strokeWidth={0} />
             )}
-            {compact && <span className="max-[360px]:hidden">{isPlaying ? "Pause" : "Play"}</span>}
           </button>
           {!compact && (
             <TimelineInsertKeyframeButton presentation="icon" label="Add keyframe at playhead" />
