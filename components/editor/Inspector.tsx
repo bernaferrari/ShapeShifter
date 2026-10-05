@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   ChevronRight,
+  Ellipsis,
   Crop,
   Folder,
   Lock,
@@ -37,12 +38,20 @@ import { FrameDesignPanel, LayerTransformSection } from "./inspector/InspectorPa
 import { MorphPrepareSection } from "./inspector/MorphPrepareSection";
 import { BooleanOperationsPanel } from "./BooleanOperations";
 import { PathDataEditor } from "./inspector/PathDataEditor";
+import { PanelHeader, useMobilePanelHeader } from "./PanelHeader";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 /* ------------------------------------------------------------------ */
 /* Inspector                                                          */
 /* ------------------------------------------------------------------ */
 
 export function Inspector() {
+  const mobileHeader = useMobilePanelHeader();
   // Keep the inspector off the 60 fps playback path. A broad `useEditorStore()`
   // subscription re-rendered this entire control tree for unrelated progress,
   // viewport, hover, and pointer updates.
@@ -290,21 +299,25 @@ export function Inspector() {
   if (isCommandsFocused) {
     return (
       <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-        <div className="flex h-12 items-center justify-between border-b border-border pl-3 pr-2">
-          <div className="min-w-0">
+        <PanelHeader
+          className="flex h-12 shrink-0 items-center justify-between border-b border-border pl-3 pr-2"
+          actions={
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => setIsCommandsFocused(false)}
+              aria-label="Exit focus (Esc)"
+            >
+              <Minimize2 className="size-4" />
+            </Button>
+          }
+        >
+          <div className="min-w-0 flex-1">
             <div className="text-[12px] font-semibold">Path commands</div>
             <div className="truncate text-[11px] text-muted-foreground">{currentLayer.name}</div>
           </div>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className="text-muted-foreground hover:text-foreground"
-            onClick={() => setIsCommandsFocused(false)}
-            aria-label="Exit focus (Esc)"
-          >
-            <Minimize2 className="size-4" />
-          </Button>
-        </div>
+        </PanelHeader>
         <div className="min-h-0 flex-1 overflow-hidden p-2">{commandsList("h-full")}</div>
       </div>
     );
@@ -350,6 +363,13 @@ export function Inspector() {
           )
         }
         title={multiCount > 1 ? `${multiCount} layers` : currentLayer.name}
+        mobileSubtitle={
+          multiCount > 1
+            ? "Mixed selection"
+            : animatedPropertyCount
+              ? `Keyframe · ${Number(playheadMs.toFixed(2))} ms`
+              : "Base artwork"
+        }
         onRename={multiCount > 1 ? undefined : (name) => updateLayer({ name })}
         subtitle={
           multiCount > 1 ? (
@@ -382,47 +402,81 @@ export function Inspector() {
           )
         }
         actions={
-          <>
-            {isPathLike && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      className="size-7 text-muted-foreground hover:text-foreground"
-                      onClick={() => beginTimelineMorphEditing()}
-                      disabled={currentLayer.locked || multiCount > 1}
-                      aria-label="Edit start and end paths"
-                    />
-                  }
-                >
-                  <Shapes className="size-3.5" />
-                </TooltipTrigger>
-                <TooltipContent>Morph: edit start and end shapes</TooltipContent>
-              </Tooltip>
-            )}
-            {multiCount <= 1 && (
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                className={cn(
-                  "size-7 text-muted-foreground hover:text-foreground",
-                  currentLayer.locked && "text-foreground",
-                )}
-                onClick={() => toggleLayerLock(currentLayer.id)}
-                aria-label={currentLayer.locked ? "Unlock layer" : "Lock layer"}
-                aria-pressed={Boolean(currentLayer.locked)}
-                title={currentLayer.locked ? "Unlock layer" : "Lock layer"}
+          mobileHeader ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button size="icon-sm" variant="ghost" aria-label="Layer actions" />}
               >
-                {currentLayer.locked ? (
-                  <Lock className="size-3.5" />
-                ) : (
-                  <Unlock className="size-3.5" />
+                <Ellipsis className="size-4" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                {isPathLike && (
+                  <DropdownMenuItem
+                    disabled={currentLayer.locked || multiCount > 1}
+                    onClick={() => beginTimelineMorphEditing()}
+                  >
+                    Edit start and end paths
+                  </DropdownMenuItem>
                 )}
-              </Button>
-            )}
-          </>
+                {isPathLike && multiCount <= 1 && (
+                  <DropdownMenuItem
+                    onClick={() =>
+                      updateLayer({ type: currentLayer.type === "path" ? "clipPath" : "path" })
+                    }
+                  >
+                    {currentLayer.type === "path" ? "Use as mask" : "Use as path"}
+                  </DropdownMenuItem>
+                )}
+                {multiCount <= 1 && (
+                  <DropdownMenuItem onClick={() => toggleLayerLock(currentLayer.id)}>
+                    {currentLayer.locked ? "Unlock layer" : "Lock layer"}
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <>
+              {isPathLike && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        className="size-7 text-muted-foreground hover:text-foreground"
+                        onClick={() => beginTimelineMorphEditing()}
+                        disabled={currentLayer.locked || multiCount > 1}
+                        aria-label="Edit start and end paths"
+                      />
+                    }
+                  >
+                    <Shapes className="size-3.5" />
+                  </TooltipTrigger>
+                  <TooltipContent>Morph: edit start and end shapes</TooltipContent>
+                </Tooltip>
+              )}
+              {multiCount <= 1 && (
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  className={cn(
+                    "size-7 text-muted-foreground hover:text-foreground",
+                    currentLayer.locked && "text-foreground",
+                  )}
+                  onClick={() => toggleLayerLock(currentLayer.id)}
+                  aria-label={currentLayer.locked ? "Unlock layer" : "Lock layer"}
+                  aria-pressed={Boolean(currentLayer.locked)}
+                  title={currentLayer.locked ? "Unlock layer" : "Lock layer"}
+                >
+                  {currentLayer.locked ? (
+                    <Lock className="size-3.5" />
+                  ) : (
+                    <Unlock className="size-3.5" />
+                  )}
+                </Button>
+              )}
+            </>
+          )
         }
       />
 
@@ -562,15 +616,18 @@ function InspectorHeader({
   icon,
   title,
   subtitle,
+  mobileSubtitle,
   actions,
   onRename,
 }: {
   icon: React.ReactNode;
   title: string;
   subtitle: React.ReactNode;
+  mobileSubtitle?: React.ReactNode;
   actions?: React.ReactNode;
   onRename?: (name: string) => void;
 }) {
+  const mobileHeader = useMobilePanelHeader();
   const [draft, setDraft] = React.useState(title);
   React.useEffect(() => setDraft(title), [title]);
   const commit = () => {
@@ -579,11 +636,14 @@ function InspectorHeader({
     else setDraft(title);
   };
   return (
-    <div className="inspector-header flex min-h-12 shrink-0 items-center gap-2 border-b border-border py-1.5 pl-3 pr-2">
-      <div className="grid size-6 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground">
+    <PanelHeader
+      className="inspector-header flex min-h-12 shrink-0 items-center gap-2 border-b border-border py-1.5 pl-3 pr-2"
+      actions={actions && <div className="flex shrink-0 items-center">{actions}</div>}
+    >
+      <div className="grid size-6 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground in-[.mobile-workspace]:hidden">
         {icon}
       </div>
-      <div className="min-w-0 flex-1 in-[.mobile-workspace]:flex in-[.mobile-workspace]:items-center in-[.mobile-workspace]:gap-2">
+      <div className="min-w-0 flex-1">
         {onRename ? (
           <input
             aria-label="Name"
@@ -598,17 +658,16 @@ function InspectorHeader({
               }
               event.stopPropagation();
             }}
-            className="-ml-1 h-5 w-full truncate rounded px-1 text-[12px] font-semibold leading-tight outline-none hover:bg-muted focus:bg-background focus:ring-1 focus:ring-primary"
+            className="-ml-1 h-5 w-full truncate rounded px-1 in-[.mobile-workspace]:!min-h-5 text-[12px] font-semibold leading-tight outline-none hover:bg-muted focus:bg-background focus:ring-1 focus:ring-primary"
           />
         ) : (
           <div className="truncate text-[12px] font-semibold leading-tight">{title}</div>
         )}
-        <div className="mt-0.5 truncate text-[11px] leading-none text-muted-foreground in-[.mobile-workspace]:max-w-[55%] in-[.mobile-workspace]:shrink-0">
-          {subtitle}
+        <div className="mt-0.5 truncate text-[11px] leading-none text-muted-foreground">
+          {mobileHeader ? (mobileSubtitle ?? subtitle) : subtitle}
         </div>
       </div>
-      {actions && <div className="flex shrink-0 items-center">{actions}</div>}
-    </div>
+    </PanelHeader>
   );
 }
 

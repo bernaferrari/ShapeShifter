@@ -2,18 +2,17 @@
 
 import React from "react";
 import { DiamondPlus } from "lucide-react";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useEditorStore } from "@/lib/store/editorStore";
 
 export function TimelineInsertKeyframeButton({
   blockId,
   label = "Insert keyframe at playhead",
-  iconOnly = false,
-  explainUnavailable = false,
+  presentation = "button",
 }: {
   blockId?: string;
   label?: string;
-  iconOnly?: boolean;
-  explainUnavailable?: boolean;
+  presentation?: "button" | "icon" | "menu";
 }) {
   const progress = useEditorStore((state) => state.progress);
   const animation = useEditorStore((state) => state.animation);
@@ -39,14 +38,28 @@ export function TimelineInsertKeyframeButton({
   const retimesCurve = candidates.some(
     (block) => !block.interpolator || block.interpolator === "ACCELERATE_DECELERATE",
   );
-  if (explainUnavailable && !candidates.length)
+  const insert = () => {
+    const store = useEditorStore.getState();
+    const currentTime = store.progress * store.animation.duration;
+    if (store.isPlaying) store.togglePlayback();
+    store.beginHistoryGesture();
+    try {
+      const insertedIds: string[] = [];
+      for (const candidate of candidates) {
+        if (store.insertTimelineKeyframe(candidate.id, currentTime))
+          insertedIds.push(...useEditorStore.getState().selectedBlockIds);
+      }
+      if (insertedIds.length) store.selectBlocks(insertedIds);
+    } finally {
+      store.endHistoryGesture();
+    }
+  };
+  if (presentation === "menu")
     return (
-      <span
-        role="status"
-        className="flex min-h-11 w-28 shrink-0 items-center px-2 text-[11px] leading-tight text-muted-foreground"
-      >
-        {tracks.size ? "Move between keys" : "Select a track"}
-      </span>
+      <DropdownMenuItem aria-label={label} disabled={!candidates.length} onClick={insert}>
+        <DiamondPlus className="size-4" />
+        Add keyframe
+      </DropdownMenuItem>
     );
   return (
     <button
@@ -58,30 +71,15 @@ export function TimelineInsertKeyframeButton({
           : "Select an animation and move the playhead between its keyframes"
       }
       disabled={!candidates.length}
-      onClick={() => {
-        const store = useEditorStore.getState();
-        const currentTime = store.progress * store.animation.duration;
-        if (store.isPlaying) store.togglePlayback();
-        store.beginHistoryGesture();
-        try {
-          const insertedIds: string[] = [];
-          for (const candidate of candidates) {
-            if (store.insertTimelineKeyframe(candidate.id, currentTime))
-              insertedIds.push(...useEditorStore.getState().selectedBlockIds);
-          }
-          if (insertedIds.length) store.selectBlocks(insertedIds);
-        } finally {
-          store.endHistoryGesture();
-        }
-      }}
+      onClick={insert}
       className={
-        iconOnly
+        presentation === "icon"
           ? "grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-35"
           : "flex h-6 pointer-coarse:h-11 touch-manipulation shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-35"
       }
     >
       <DiamondPlus className="size-3.5" />
-      {!iconOnly && <span>Add keyframe</span>}
+      {presentation !== "icon" && <span>Add keyframe</span>}
     </button>
   );
 }

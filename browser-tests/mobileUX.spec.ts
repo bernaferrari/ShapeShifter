@@ -80,7 +80,11 @@ test("Motion labels playback and keyframe actions and inserts only into the sele
   await expect(
     page.getByRole("button", { name: "Add keyframe at playhead", exact: true }),
   ).toHaveCount(0);
-  await expect(page.getByText(/Select a track|Move between keys/)).toBeVisible();
+  await page.getByRole("button", { name: "Timeline options", exact: true }).tap();
+  await expect(
+    page.getByRole("menuitem", { name: "Add keyframe at playhead", exact: true }),
+  ).toBeDisabled();
+  await page.keyboard.press("Escape");
   const playhead = page.getByRole("slider", { name: "Timeline playhead", exact: true });
   await playhead.focus();
   await playhead.press("End");
@@ -99,7 +103,8 @@ test("Motion labels playback and keyframe actions and inserts only into the sele
   const time = page.getByRole("textbox", { name: "Current time in milliseconds", exact: true });
   await time.fill("500");
   await time.press("Enter");
-  const add = page.getByRole("button", { name: "Add keyframe at playhead", exact: true });
+  await page.getByRole("button", { name: "Timeline options", exact: true }).tap();
+  const add = page.getByRole("menuitem", { name: "Add keyframe at playhead", exact: true });
   await expect(add).toHaveText("Add keyframe");
   await add.tap();
   await expect(
@@ -215,4 +220,67 @@ test("recovery notice stays inside a narrow viewport and preserves the unopened 
   });
   expect(stored).toBe(preserved);
   await page.screenshot({ path: `/tmp/shapeshifter-recovery-${info.project.name}.png` });
+});
+
+test("every mobile panel uses one header row for its actions, grab handle, and close button", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "phone", "Compact panel composition.");
+  await practice(page);
+  await page.setViewportSize({ width: 320, height: 700 });
+  for (const name of ["Layers", "Design", "Motion"]) {
+    await page.getByRole("button", { name, exact: true }).tap();
+    const panel = page.getByRole("region", { name, exact: true });
+    const header = panel.locator("[data-panel-header]");
+    await expect(header).toHaveCount(1);
+    const handle = header.getByRole("slider", { name: "Panel height", exact: true });
+    const close = header.getByRole("button", { name: "Close panel", exact: true });
+    await expect(handle).toBeInViewport();
+    await expect(close).toBeInViewport();
+    const geometry = await header.evaluate((element) => ({
+      y: element.getBoundingClientRect().y,
+      height: element.getBoundingClientRect().height,
+      targets: [...element.querySelectorAll('button, [role="slider"]')].map((target) => {
+        const box = target.getBoundingClientRect();
+        return { x: box.x, y: box.y, width: box.width, height: box.height };
+      }),
+    }));
+    expect(geometry.height).toBe(44);
+    const handleBox = (await handle.boundingBox())!;
+    const panelBox = (await panel.boundingBox())!;
+    expect(
+      Math.abs(handleBox.x + handleBox.width / 2 - panelBox.x - panelBox.width / 2),
+    ).toBeLessThanOrEqual(0.5);
+    let previousRight = 0;
+    for (const box of geometry.targets) {
+      expect(Math.abs(box.y - geometry.y)).toBeLessThanOrEqual(2);
+      expect(box.height).toBe(44);
+      expect(box.width).toBeGreaterThanOrEqual(44);
+      expect(box.x).toBeGreaterThanOrEqual(previousRight);
+      previousRight = box.x + box.width;
+    }
+    expect(previousRight).toBeLessThanOrEqual(320);
+    if (name === "Layers") {
+      await expect(header.getByText("Layers", { exact: true })).toHaveCount(1);
+      await header.getByRole("button", { name: "Search layers", exact: true }).tap();
+      await expect(panel.getByRole("textbox", { name: "Find a layer", exact: true })).toBeVisible();
+      await header.getByRole("button", { name: "Close layer search", exact: true }).tap();
+      await header.getByRole("button", { name: "Add layer", exact: true }).tap();
+      await expect(page.getByRole("menuitem", { name: "Group", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.locator('[data-slot="dropdown-menu-content"]')).toHaveCount(0);
+    }
+    if (name === "Design") {
+      await header.getByRole("button", { name: "Layer actions", exact: true }).tap();
+      await expect(
+        page.getByRole("menuitem", { name: "Edit start and end paths", exact: true }),
+      ).toBeVisible();
+      await expect(page.getByRole("menuitem", { name: "Use as mask", exact: true })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.locator('[data-slot="dropdown-menu-content"]')).toHaveCount(0);
+    }
+    await page.screenshot({ path: `/tmp/shapeshifter-single-header-${name.toLowerCase()}.png` });
+    await close.tap();
+    await expect(panel).toHaveCount(0);
+  }
 });

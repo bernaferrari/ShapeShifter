@@ -198,7 +198,7 @@ body {
     min-height: 44px;
   }
   .mobile-workspace button {
-    min-height: 40px;
+    min-height: 44px;
   }
   .mobile-workspace input:not([type="range"]),
   .mobile-workspace select {

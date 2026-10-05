@@ -11,12 +11,13 @@ import {
   type MotionValue,
   type MotionStyle,
 } from "framer-motion";
-import { Clapperboard, Layers, SlidersHorizontal, X } from "lucide-react";
+import { Clapperboard, Layers, SlidersHorizontal } from "lucide-react";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { cn } from "@/lib/utils";
 import { Inspector } from "./Inspector";
 import { LayerTimeline } from "./LayerTimeline";
 import { LayersPanel } from "./LayersPanel";
+import { MobilePanelHeaderProvider } from "./PanelHeader";
 import { useInspectorView } from "./inspector/inspectorView";
 
 export type MobileSheet = "layers" | "design" | "motion";
@@ -64,7 +65,7 @@ function SheetHandle({
       aria-valuemax={Math.round(max)}
       aria-valuenow={value}
       aria-valuetext={`${value} pixels. Drag up or down to resize.`}
-      className="absolute inset-x-16 top-0 flex h-11 touch-none cursor-ns-resize select-none items-center justify-center rounded focus-visible:outline-2 focus-visible:outline-primary"
+      className="flex size-11 shrink-0 touch-none cursor-ns-resize select-none items-center justify-center rounded focus-visible:outline-2 focus-visible:outline-primary"
       onPointerDown={(event) => {
         if (!event.isPrimary || event.button !== 0) return;
         event.preventDefault();
@@ -190,42 +191,33 @@ export function MobileWorkspace({
             style={{ height, y: sheetY }}
             className="absolute inset-x-0 bottom-0 flex flex-col overflow-hidden rounded-t-xl border-t border-border bg-sidebar shadow-[0_-4px_16px_rgb(0_0_0/0.08)]"
           >
-            <div className="relative flex h-11 shrink-0 items-center justify-between border-b border-border px-3">
-              {visibleSheet !== "motion" && (
-                <span className="pointer-events-none text-[12px] font-medium">
-                  {TABS.find((tab) => tab.id === visibleSheet)?.label}
-                </span>
+            <MobilePanelHeaderProvider
+              onClose={close}
+              handle={
+                <SheetHandle
+                  height={height}
+                  min={min}
+                  max={max}
+                  onResize={resize}
+                  onCommit={(next) => {
+                    const value = bodyHeight ? next / bodyHeight : 0.52;
+                    if (constrained) setShortFraction(value);
+                    else setFraction(value);
+                  }}
+                  onClose={close}
+                />
+              }
+            >
+              {visibleSheet === "layers" && (
+                <LayersPanel className="min-h-0 flex-1 w-full border-r-0" />
               )}
-              <SheetHandle
-                height={height}
-                min={min}
-                max={max}
-                onResize={resize}
-                onCommit={(next) => {
-                  const value = bodyHeight ? next / bodyHeight : 0.52;
-                  if (constrained) setShortFraction(value);
-                  else setFraction(value);
-                }}
-                onClose={close}
-              />
-              <button
-                type="button"
-                aria-label="Close panel"
-                onClick={close}
-                className="ml-auto grid size-11 touch-manipulation place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-              >
-                <X className="size-4" aria-hidden="true" />
-              </button>
-            </div>
-            {visibleSheet === "layers" && (
-              <LayersPanel className="min-h-0 flex-1 w-full border-r-0" />
-            )}
-            {visibleSheet === "design" && (
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <Inspector />
-              </div>
-            )}
-            {visibleSheet === "motion" && <LayerTimeline layersWidth={112} compact />}
+              {visibleSheet === "design" && (
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                  <Inspector />
+                </div>
+              )}
+              {visibleSheet === "motion" && <LayerTimeline layersWidth={112} compact />}
+            </MobilePanelHeaderProvider>
           </motion.section>
         )}
       </div>

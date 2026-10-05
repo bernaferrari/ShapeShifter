@@ -33,6 +33,7 @@ import {
   timelineMajorStep,
   type TimelineTimeUnit,
 } from "./timeline/timelineScale";
+import { PanelHeader } from "./PanelHeader";
 import { TimelineInsertKeyframeButton } from "./timeline/TimelineInsertKeyframeButton";
 import { handleTimelineClipboardShortcut } from "./timeline/TimelineClipboardControls";
 import { TIMELINE_FRAME_RATES, useTimelineViewSettings } from "./timeline/timelineViewSettings";
@@ -368,8 +369,132 @@ export function LayerTimeline({
         className={cn("relative z-10 flex shrink-0 border-b border-border", compact && "flex-wrap")}
         style={{ height: HEADER_H * (compact ? 2 : 1) }}
       >
-        <div
+        <PanelHeader
           className="flex shrink-0 items-center gap-1 border-r border-border pl-1.5 pr-1"
+          actions={
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <button
+                      type="button"
+                      aria-label="Timeline options"
+                      className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground data-popup-open:bg-muted data-popup-open:text-foreground"
+                    />
+                  }
+                >
+                  <Ellipsis className="size-3.5" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" side="top" className="w-64">
+                  {compact && (
+                    <TimelineInsertKeyframeButton
+                      label="Add keyframe at playhead"
+                      presentation="menu"
+                    />
+                  )}
+                  <DropdownMenuCheckboxItem
+                    checked={isRepeating}
+                    onCheckedChange={() => useEditorStore.getState().toggleRepeating()}
+                  >
+                    Loop playback
+                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem
+                    checked={playbackMode === "back-and-forth"}
+                    onCheckedChange={(checked) =>
+                      useEditorStore
+                        .getState()
+                        .setPlaybackMode(checked ? "back-and-forth" : "forward")
+                    }
+                  >
+                    Back-and-forth playback
+                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem
+                    checked={isSlowMotion}
+                    onCheckedChange={() => useEditorStore.getState().toggleSlowMotion()}
+                  >
+                    Slow motion
+                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem
+                    checked={snapping}
+                    onCheckedChange={(checked) => setSnapping(Boolean(checked))}
+                  >
+                    Snap to keyframes
+                  </DropdownMenuCheckboxItem>
+                  <p className="px-2 py-1 text-[11px] leading-relaxed whitespace-nowrap text-muted-foreground">
+                    Hold Alt / Option to ignore snapping.
+                  </p>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuRadioGroup
+                    value={timeUnit}
+                    onValueChange={(value) => setTimeUnit(value as TimelineTimeUnit)}
+                  >
+                    <DropdownMenuRadioItem value="milliseconds">
+                      Show milliseconds
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="frames">Show frames</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>Frame rate · {fps} fps</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-32">
+                      <DropdownMenuRadioGroup
+                        value={String(fps)}
+                        onValueChange={(value) => setFps(Number(value))}
+                      >
+                        {TIMELINE_FRAME_RATES.map((rate) => (
+                          <DropdownMenuRadioItem key={rate} value={String(rate)}>
+                            {rate} fps
+                          </DropdownMenuRadioItem>
+                        ))}
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuCheckboxItem
+                    checked={Boolean(previewRange)}
+                    disabled={!previewRange && !selectedRange}
+                    onCheckedChange={() =>
+                      useEditorStore
+                        .getState()
+                        .setTimelinePreviewRange(previewRange ? null : selectedRange)
+                    }
+                  >
+                    Loop selection
+                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuItem onClick={() => navigation.zoomBy(Math.sqrt(2))}>
+                    Zoom in
+                    <DropdownMenuShortcut>⌘ scroll</DropdownMenuShortcut>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={navigation.zoom <= 1}
+                    onClick={() => navigation.zoomBy(1 / Math.sqrt(2))}
+                  >
+                    Zoom out
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={navigation.fit}>Zoom to fit</DropdownMenuItem>
+                  <DropdownMenuItem onClick={navigation.focusPlayhead}>
+                    Go to playhead
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => addLayer("path")}>
+                    New path layer
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => addLayer("group")}>New group</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => addLayer("clipPath")}>New mask</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {onCollapse && (
+                <button
+                  type="button"
+                  onClick={onCollapse}
+                  className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+                  aria-label="Hide timeline"
+                  title="Hide timeline"
+                >
+                  <ChevronDown className="size-3.5" />
+                </button>
+              )}
+            </>
+          }
           style={{ width: compact ? "100%" : LAYERS_W, height: HEADER_H }}
         >
           <button
@@ -388,9 +513,11 @@ export function LayerTimeline({
             ) : (
               <Play className="size-3.5 fill-current" strokeWidth={0} />
             )}
-            {compact && <span>{isPlaying ? "Pause" : "Play"}</span>}
+            {compact && <span className="max-[360px]:hidden">{isPlaying ? "Pause" : "Play"}</span>}
           </button>
-          {!compact && <TimelineInsertKeyframeButton iconOnly label="Add keyframe at playhead" />}
+          {!compact && (
+            <TimelineInsertKeyframeButton presentation="icon" label="Add keyframe at playhead" />
+          )}
           <div className="flex h-6 min-w-0 items-center gap-[3px] rounded-md bg-secondary px-1.5 text-[11px] tabular-nums leading-none">
             <TimelineCurrentTimeInput color={PLAYHEAD} unit={timeUnit} fps={fps} />
             {!compact && LAYERS_W >= 200 && (
@@ -402,118 +529,7 @@ export function LayerTimeline({
             <span className="text-muted-foreground">{timeUnit === "frames" ? "f" : "ms"}</span>
           </div>
           <div className="flex-1" />
-          {compact && (
-            <TimelineInsertKeyframeButton label="Add keyframe at playhead" explainUnavailable />
-          )}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <button
-                  type="button"
-                  aria-label="Timeline options"
-                  className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground data-popup-open:bg-muted data-popup-open:text-foreground"
-                />
-              }
-            >
-              <Ellipsis className="size-3.5" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" side="top" className="w-64">
-              <DropdownMenuCheckboxItem
-                checked={isRepeating}
-                onCheckedChange={() => useEditorStore.getState().toggleRepeating()}
-              >
-                Loop playback
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={playbackMode === "back-and-forth"}
-                onCheckedChange={(checked) =>
-                  useEditorStore.getState().setPlaybackMode(checked ? "back-and-forth" : "forward")
-                }
-              >
-                Back-and-forth playback
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={isSlowMotion}
-                onCheckedChange={() => useEditorStore.getState().toggleSlowMotion()}
-              >
-                Slow motion
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={snapping}
-                onCheckedChange={(checked) => setSnapping(Boolean(checked))}
-              >
-                Snap to keyframes
-              </DropdownMenuCheckboxItem>
-              <p className="px-2 py-1 text-[11px] leading-relaxed whitespace-nowrap text-muted-foreground">
-                Hold Alt / Option to ignore snapping.
-              </p>
-              <DropdownMenuSeparator />
-              <DropdownMenuRadioGroup
-                value={timeUnit}
-                onValueChange={(value) => setTimeUnit(value as TimelineTimeUnit)}
-              >
-                <DropdownMenuRadioItem value="milliseconds">
-                  Show milliseconds
-                </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="frames">Show frames</DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>Frame rate · {fps} fps</DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="w-32">
-                  <DropdownMenuRadioGroup
-                    value={String(fps)}
-                    onValueChange={(value) => setFps(Number(value))}
-                  >
-                    {TIMELINE_FRAME_RATES.map((rate) => (
-                      <DropdownMenuRadioItem key={rate} value={String(rate)}>
-                        {rate} fps
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-              <DropdownMenuSeparator />
-              <DropdownMenuCheckboxItem
-                checked={Boolean(previewRange)}
-                disabled={!previewRange && !selectedRange}
-                onCheckedChange={() =>
-                  useEditorStore
-                    .getState()
-                    .setTimelinePreviewRange(previewRange ? null : selectedRange)
-                }
-              >
-                Loop selection
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuItem onClick={() => navigation.zoomBy(Math.sqrt(2))}>
-                Zoom in
-                <DropdownMenuShortcut>⌘ scroll</DropdownMenuShortcut>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={navigation.zoom <= 1}
-                onClick={() => navigation.zoomBy(1 / Math.sqrt(2))}
-              >
-                Zoom out
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={navigation.fit}>Zoom to fit</DropdownMenuItem>
-              <DropdownMenuItem onClick={navigation.focusPlayhead}>Go to playhead</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => addLayer("path")}>New path layer</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => addLayer("group")}>New group</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => addLayer("clipPath")}>New mask</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          {onCollapse && (
-            <button
-              type="button"
-              onClick={onCollapse}
-              className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
-              aria-label="Hide timeline"
-              title="Hide timeline"
-            >
-              <ChevronDown className="size-3.5" />
-            </button>
-          )}
-        </div>
+        </PanelHeader>
 
         {compact && (
           <div

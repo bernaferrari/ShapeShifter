@@ -113,7 +113,7 @@ export function MobileCanvasTools() {
         <div
           role="toolbar"
           aria-label="Canvas tools"
-          className="grid grid-cols-4 gap-1 [&_button]:w-11"
+          className="grid grid-cols-4 gap-0 [&_button]:w-11"
         >
           <button
             type="button"

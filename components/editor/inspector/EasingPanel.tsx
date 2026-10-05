@@ -6,6 +6,7 @@ import { interpolatorControlPoints } from "@/lib/shapeshifter/motion/timelineKey
 import type { TimelineBlock } from "@/lib/shapeshifter/types";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { ChevronDown, ChevronLeft, FlipHorizontal2, Spline } from "lucide-react";
+import { PanelHeader } from "../PanelHeader";
 import { LiveEasingCurve } from "../timeline/TimelineLiveState";
 
 const EASING_OPTIONS = [
@@ -67,7 +68,7 @@ export function EasingPanel({ block, onBack }: { block: TimelineBlock; onBack: (
 
   return (
     <div data-motion-block-id={block.id} className="flex h-full min-h-0 flex-col">
-      <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2">
+      <PanelHeader className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2">
         <button
           type="button"
           onClick={onBack}
@@ -82,7 +83,7 @@ export function EasingPanel({ block, onBack }: { block: TimelineBlock; onBack: (
             {label} · {block.startTime}–{block.endTime} ms
           </div>
         </div>
-      </div>
+      </PanelHeader>
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
         <div className="relative">
           <EasingIcon

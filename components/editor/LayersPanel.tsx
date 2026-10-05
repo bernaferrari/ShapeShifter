@@ -60,6 +60,8 @@ interface LayerDropTarget {
   position: DropPosition;
 }
 
+import { PanelHeader } from "./PanelHeader";
+
 export function LayersPanel({
   onCollapse,
   className,
@@ -382,7 +384,7 @@ export function LayersPanel({
               clearLayerDrag();
             }}
             className={cn(
-              "group relative flex h-8 items-center gap-1 pr-1.5 text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+              "group relative flex h-8 in-[.mobile-workspace]:h-11 items-center gap-1 pr-1.5 text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
               selected
                 ? "bg-primary/14 text-foreground"
                 : "text-foreground/80 hover:bg-muted/70 hover:text-foreground",
@@ -436,7 +438,7 @@ export function LayersPanel({
               <button
                 type="button"
                 tabIndex={-1}
-                className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch text-left"
+                className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch text-left leading-none"
                 onClick={(event) => {
                   rangeAnchorRef.current = key;
                   selectLayer(owner.id, layer.id, event.shiftKey);
@@ -658,38 +660,44 @@ export function LayersPanel({
         className,
       )}
     >
-      <div className="flex h-10 shrink-0 items-center gap-0.5 border-b border-border pl-3 pr-2">
+      <PanelHeader
+        className="flex h-10 shrink-0 items-center gap-0.5 border-b border-border pl-3 pr-2"
+        actions={
+          <>
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              onClick={() => {
+                setSearchOpen((open) => !open);
+                if (searchOpen) setQuery("");
+              }}
+              aria-label={searchOpen ? "Close layer search" : "Search layers"}
+              aria-pressed={searchOpen}
+            >
+              {searchOpen ? <X className="size-3.5" /> : <Search className="size-3.5" />}
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button size="icon-xs" variant="ghost" aria-label="Add layer" />}
+              >
+                <Plus className="size-3.5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuItem onClick={() => addLayer("path")}>Path</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => addLayer("clipPath")}>Clip path</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => addLayer("group")}>Group</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {onCollapse && (
+              <Button size="icon-xs" variant="ghost" onClick={onCollapse} aria-label="Hide layers">
+                <PanelLeftClose className="size-3.5" />
+              </Button>
+            )}
+          </>
+        }
+      >
         <span className="flex-1 text-[12px] font-semibold">Layers</span>
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          onClick={() => {
-            setSearchOpen((open) => !open);
-            if (searchOpen) setQuery("");
-          }}
-          aria-label={searchOpen ? "Close layer search" : "Search layers"}
-          aria-pressed={searchOpen}
-        >
-          {searchOpen ? <X className="size-3.5" /> : <Search className="size-3.5" />}
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={<Button size="icon-xs" variant="ghost" aria-label="Add layer" />}
-          >
-            <Plus className="size-3.5" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-40">
-            <DropdownMenuItem onClick={() => addLayer("path")}>Path</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => addLayer("clipPath")}>Clip path</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => addLayer("group")}>Group</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        {onCollapse && (
-          <Button size="icon-xs" variant="ghost" onClick={onCollapse} aria-label="Hide layers">
-            <PanelLeftClose className="size-3.5" />
-          </Button>
-        )}
-      </div>
+      </PanelHeader>
       {searchOpen && (
         <div className="relative border-b border-border p-2">
           <Search className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
