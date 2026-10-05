@@ -28,7 +28,11 @@ import { EditorCommandPalette, EditorHelpDialog } from "@/components/editor/Edit
 import { EditorContextMenu } from "@/components/editor/EditorContextMenu";
 import { AgentToolsDialog } from "@/components/editor/AgentToolsDialog";
 import { RecoveryHistoryDialog } from "@/components/editor/RecoveryHistoryDialog";
-import { MobileWorkspace, type MobileSheet } from "@/components/editor/MobileWorkspace";
+import {
+  MobilePanelTabs,
+  MobileWorkspace,
+  type MobileSheet,
+} from "@/components/editor/MobileWorkspace";
 import {
   useCompactLayout,
   useVisualViewportHeight,
@@ -211,7 +215,12 @@ export default function ShapeShifter2026() {
         onToggleRulers={toggleRulers}
       />
       {(!compact || !mobileSheet) && (
-        <div className="pointer-events-none absolute bottom-3 left-1/2 z-30 -translate-x-1/2">
+        <div
+          className={cn(
+            "pointer-events-none absolute bottom-3 left-1/2 z-30 -translate-x-1/2",
+            !compact && "editor-desktop-only",
+          )}
+        >
           <div className="pointer-events-auto" onContextMenu={(event) => event.stopPropagation()}>
             {compact ? <MobileCanvasTools /> : <BottomToolPalette />}
           </div>
@@ -323,10 +332,11 @@ export default function ShapeShifter2026() {
         <>
           {/* Figma Motion model: the timeline is a document-wide bottom workspace,
           not a canvas-only panel trapped between the sidebars. */}
-          <div className="relative min-h-0 flex-1 overflow-hidden bg-muted">
-            <ResizablePanelGroup orientation="vertical" className="min-h-0">
+          <div className="editor-desktop-workspace relative flex min-h-0 flex-1 flex-col overflow-hidden bg-muted">
+            <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
               <ResizablePanel
                 id="workspace"
+                data-workspace-main
                 minSize="54%"
                 defaultSize={timelineCollapsed ? "100%" : "72%"}
               >
@@ -334,11 +344,12 @@ export default function ShapeShifter2026() {
                   {!layersHidden && (
                     <LayersPanel
                       onCollapse={isNarrow ? () => setNarrowPanel(null) : toggleLayers}
-                      className={
+                      className={cn(
+                        "editor-desktop-only",
                         isNarrow
                           ? "absolute inset-y-0 left-0 z-40 shadow-[8px_0_24px_rgba(0,0,0,0.16)]"
-                          : undefined
-                      }
+                          : undefined,
+                      )}
                     />
                   )}
                   {canvas}
@@ -347,7 +358,7 @@ export default function ShapeShifter2026() {
                     <aside
                       aria-label="Properties"
                       className={cn(
-                        "flex h-full w-64 shrink-0 flex-col overflow-hidden border-l bg-sidebar",
+                        "editor-desktop-only flex h-full w-64 shrink-0 flex-col overflow-hidden border-l bg-sidebar",
                       )}
                     >
                       <Inspector />
@@ -360,7 +371,7 @@ export default function ShapeShifter2026() {
                       onClick={toggleLayersPanel}
                       aria-label="Show layers"
                       title="Show layers"
-                      className="absolute left-2 top-2 z-30 grid size-8 place-items-center rounded-lg bg-card text-muted-foreground [box-shadow:var(--elevation-floating)] transition-colors hover:text-foreground"
+                      className="editor-desktop-only absolute left-2 top-2 z-30 grid size-8 place-items-center rounded-lg bg-card text-muted-foreground [box-shadow:var(--elevation-floating)] transition-colors hover:text-foreground"
                     >
                       <PanelLeftOpen className="size-4" />
                     </button>
@@ -373,7 +384,7 @@ export default function ShapeShifter2026() {
                       aria-label="Show inspector"
                       title="Show properties"
                       aria-expanded={false}
-                      className="absolute right-2 top-2 z-30 grid size-8 place-items-center rounded-lg bg-card text-muted-foreground [box-shadow:var(--elevation-floating)] transition-colors hover:text-foreground"
+                      className="editor-desktop-only absolute right-2 top-2 z-30 grid size-8 place-items-center rounded-lg bg-card text-muted-foreground [box-shadow:var(--elevation-floating)] transition-colors hover:text-foreground"
                     >
                       <PanelRightOpen className="size-4" />
                     </button>
@@ -383,13 +394,16 @@ export default function ShapeShifter2026() {
 
               {!timelineCollapsed && (
                 <>
-                  <ResizableHandle className="bg-border/80" />
-                  <ResizablePanel id="timeline" minSize="16%" defaultSize="28%">
+                  <ResizableHandle data-desktop-panel className="bg-border/80" />
+                  <ResizablePanel data-desktop-panel id="timeline" minSize="16%" defaultSize="28%">
                     <LayerTimeline onCollapse={toggleTimeline} />
                   </ResizablePanel>
                 </>
               )}
             </ResizablePanelGroup>
+            <div className="editor-mobile-startup-nav shrink-0">
+              <MobilePanelTabs sheet={mobileSheet} onSheetChange={setMobileSheet} />
+            </div>
           </div>
         </>
       )}

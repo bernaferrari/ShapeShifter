@@ -28,6 +28,48 @@ const TABS: { id: MobileSheet; label: string; icon: React.ReactNode }[] = [
 ];
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
+/** Shared by the first-paint responsive shell and the interactive mobile workspace. */
+export function MobilePanelTabs({
+  sheet,
+  onSheetChange,
+}: {
+  sheet: MobileSheet | null;
+  onSheetChange: (sheet: MobileSheet | null) => void;
+}) {
+  const hasSelection = useEditorStore((state) => state.selectionKind === "layer");
+  return (
+    <nav
+      aria-label="Panels"
+      className="flex shrink-0 items-stretch border-t border-border bg-background pb-[env(safe-area-inset-bottom)]"
+    >
+      {TABS.map((tab) => {
+        const active = sheet === tab.id;
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onSheetChange(active ? null : tab.id)}
+            className={cn(
+              "relative flex h-14 flex-1 touch-manipulation flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition-colors",
+              active ? "text-primary" : "text-muted-foreground active:text-foreground",
+            )}
+          >
+            {tab.icon}
+            {tab.label}
+            {tab.id === "design" && hasSelection && !active && (
+              <span
+                aria-hidden
+                className="absolute top-2.5 left-[calc(50%+9px)] size-1.5 rounded-full bg-primary"
+              />
+            )}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
 function SheetHandle({
   height,
   min,
@@ -136,7 +178,6 @@ export function MobileWorkspace({
   const reducedMotion = useReducedMotion();
   const min = Math.min(160, bodyHeight);
   const max = Math.max(min, bodyHeight - (constrained ? 0 : 56));
-  const hasSelection = useEditorStore((state) => state.selectionKind === "layer");
   const easingBlockId = useInspectorView((state) => state.easingBlockId);
   React.useEffect(() => {
     if (easingBlockId) onSheetChange("design");
@@ -221,35 +262,7 @@ export function MobileWorkspace({
           </motion.section>
         )}
       </div>
-      <nav
-        aria-label="Panels"
-        className="flex shrink-0 items-stretch border-t border-border bg-background pb-[env(safe-area-inset-bottom)]"
-      >
-        {TABS.map((tab) => {
-          const active = sheet === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              aria-pressed={active}
-              onClick={() => onSheetChange(active ? null : tab.id)}
-              className={cn(
-                "relative flex h-14 flex-1 touch-manipulation flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition-colors",
-                active ? "text-primary" : "text-muted-foreground active:text-foreground",
-              )}
-            >
-              {tab.icon}
-              {tab.label}
-              {tab.id === "design" && hasSelection && !active && (
-                <span
-                  aria-hidden
-                  className="absolute top-2.5 left-[calc(50%+9px)] size-1.5 rounded-full bg-primary"
-                />
-              )}
-            </button>
-          );
-        })}
-      </nav>
+      <MobilePanelTabs sheet={sheet} onSheetChange={onSheetChange} />
     </div>
   );
 }

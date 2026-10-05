@@ -1,5 +1,26 @@
 import { test, expect } from "@playwright/test";
 
+for (const landscape of [false, true]) {
+  test(`mobile first paint shows the canvas and panel tabs without desktop sidebars (${landscape ? "landscape" : "portrait"})`, async ({
+    page,
+  }, info) => {
+    test.skip(info.project.name !== "phone", "Touch viewport startup.");
+    await page.setViewportSize(
+      landscape ? { width: 844, height: 390 } : { width: 390, height: 844 },
+    );
+    await page.route("**/_next/static/**/*.js", (route) => route.abort());
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.screenshot();
+    await expect(page.getByRole("navigation", { name: "Panels" })).toBeVisible();
+    await expect(page.getByRole("complementary", { name: "Properties" })).toBeHidden();
+    for (const sidebar of await page.locator("aside").all()) await expect(sidebar).toBeHidden();
+    const canvas = (await page.locator("#editor-canvas").boundingBox())!;
+    expect(canvas.x).toBeCloseTo(0, 1);
+    expect(canvas.width).toBeCloseTo(page.viewportSize()!.width, 1);
+    expect(canvas.height).toBeGreaterThan(page.viewportSize()!.height * 0.65);
+  });
+}
+
 for (const [preference, system, expected] of [
   [null, "light", "dark"],
   ["dark", "light", "dark"],

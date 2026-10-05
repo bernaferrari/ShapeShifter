@@ -179,6 +179,26 @@ body {
   overflow: hidden;
 }
 
+/* Match PHONE_QUERY in useCompactLayout. CSS chooses the first-paint layout
+ * before React can replace the server-rendered workspace with mobile sheets. */
+.editor-mobile-startup-nav {
+  display: none;
+}
+
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .editor-desktop-only,
+  [data-desktop-panel] {
+    display: none !important;
+  }
+  .editor-desktop-workspace [data-workspace-main] {
+    flex-basis: 0 !important;
+    flex-grow: 1 !important;
+  }
+  .editor-mobile-startup-nav {
+    display: block;
+  }
+}
+
 /* Thin, unobtrusive scrollbars for dense panels. */
 * {
   scrollbar-width: thin;
