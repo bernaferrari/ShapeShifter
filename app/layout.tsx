@@ -47,17 +47,19 @@ export default function RootLayout({
             offset={56}
             mobileOffset={{ top: 56, left: 12, right: 12 }}
             gap={8}
+            style={{ width: "min(420px, calc(100vw - 24px))" }}
             toastOptions={{
               classNames: {
                 toast:
-                  "!w-auto !max-w-[420px] !rounded-xl !border-0 !bg-foreground !px-3.5 !py-2.5 !text-[13px] !text-background !shadow-[0_8px_24px_-6px_rgb(0_0_0/0.35)] !gap-2.5 mx-auto",
-                title: "!font-medium",
-                description: "!text-[12px] !text-background/70",
-                icon: "!size-4",
+                  "!w-full !max-w-full !rounded-lg !border-border !bg-popover !px-3 !py-2.5 !text-[13px] !text-popover-foreground !shadow-md !gap-2.5 [&_[data-content]]:min-w-0 [&_[data-content]]:flex-1",
+                title: "!font-medium !whitespace-normal [overflow-wrap:anywhere]",
+                description:
+                  "!text-[12px] !text-muted-foreground !whitespace-normal [overflow-wrap:anywhere]",
+                icon: "!size-4 !shrink-0",
                 error: "[&_[data-icon]]:!text-red-400",
                 success: "[&_[data-icon]]:!text-emerald-400",
                 warning: "[&_[data-icon]]:!text-amber-400",
-                actionButton: "!bg-background !text-foreground !rounded-md",
+                actionButton: "!shrink-0 !bg-primary !text-primary-foreground !rounded-md",
               },
             }}
           />

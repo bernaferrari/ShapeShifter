@@ -422,13 +422,12 @@ export function useDocumentAutosave(): DocumentAutosave {
               ...current,
               status: "paused",
               error:
-                "The previous autosave is preserved for recovery. Download a project backup to keep new edits.",
+                "Your previous save could not be opened. It is kept in Version history. Export to save new edits.",
             }));
             if (!recoveryNoticeShown.current) {
               recoveryNoticeShown.current = true;
-              toast.warning("Autosave preserved for recovery", {
-                description:
-                  "It could not be restored, so automatic saves are paused for this session.",
+              toast.warning("Autosave paused", {
+                description: "Your previous save could not open. Export to save new edits.",
               });
             }
           } else {

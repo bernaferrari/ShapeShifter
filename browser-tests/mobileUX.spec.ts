@@ -19,18 +19,29 @@ async function project(page: Page) {
   return JSON.parse(await readFile((await file.path())!, "utf8")).document;
 }
 
-test("mobile tools explain modes and put object actions on the selection", async ({
+test("mobile tools switch modes and keep object actions in a compact toolbar", async ({
   page,
 }, info) => {
   test.skip(info.project.name !== "phone", "Touch workspace.");
   await practice(page);
+  await page.setViewportSize({ width: 320, height: 700 });
+  const tools = page.getByRole("toolbar", { name: "Canvas tools", exact: true });
+  await expect(tools).toBeInViewport();
+  const toolBounds = (await tools.boundingBox())!;
+  expect(toolBounds.height).toBe(44);
+  expect(toolBounds.width).toBeLessThan(220);
+  await expect(page.getByText("Tap to select", { exact: false })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Select objects", exact: true })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
   await page.getByRole("button", { name: "Add artwork", exact: true }).tap();
   await page.getByRole("menuitem", { name: "Ellipse", exact: true }).tap();
-  await expect(page.getByText("Ellipse · Drag to draw", { exact: true })).toBeVisible();
+  await expect(
+    page
+      .getByRole("toolbar", { name: "Active drawing tool" })
+      .getByText("Ellipse", { exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Done drawing", exact: true }).tap();
   await expect(page.getByRole("button", { name: "Select objects", exact: true })).toHaveAttribute(
     "aria-pressed",
@@ -46,9 +57,10 @@ test("mobile tools explain modes and put object actions on the selection", async
     page.getByRole("button", { name: "Actions for Moving icon", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Move canvas", exact: true }).tap();
-  await expect(
-    page.getByText("Drag anywhere to pan · Pinch to zoom", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Move canvas", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await expect(
     page.getByRole("button", { name: "Fit active frame", exact: true }),
   ).toBeInViewport();
@@ -153,4 +165,54 @@ test("native touch navigation pans empty space and artwork in Move view without 
   } finally {
     await context.close();
   }
+});
+
+test("recovery notice stays inside a narrow viewport and preserves the unopened save", async ({
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dismiss onboarding", exact: true }).click();
+  const preserved = "unreadable saved project";
+  await page.evaluate(async (payload) => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("shapeshifter", 1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction("autosave", "readwrite");
+      transaction.objectStore("autosave").put(payload, "document");
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+    db.close();
+  }, preserved);
+  await page.reload();
+  const notice = page.locator("[data-sonner-toast]").filter({ hasText: "Autosave paused" });
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText("Export to save new edits.");
+  await expect.poll(async () => (await notice.boundingBox())!.y).toBeCloseTo(56, 0);
+  const box = (await notice.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(12);
+  expect(box.x + box.width).toBeLessThanOrEqual(308);
+  expect(await notice.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  const stored = await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve) => {
+      const request = indexedDB.open("shapeshifter", 1);
+      request.onsuccess = () => resolve(request.result);
+    });
+    const payload = await new Promise<unknown>((resolve) => {
+      const request = db
+        .transaction("autosave", "readonly")
+        .objectStore("autosave")
+        .get("document");
+      request.onsuccess = () => resolve(request.result);
+    });
+    db.close();
+    return payload;
+  });
+  expect(stored).toBe(preserved);
+  await page.screenshot({ path: `/tmp/shapeshifter-recovery-${info.project.name}.png` });
 });

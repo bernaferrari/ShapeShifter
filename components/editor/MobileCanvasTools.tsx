@@ -1,6 +1,6 @@
 "use client";
 
-import { Circle, Frame, Hand, MousePointer2, PenTool, Plus, Square, Waypoints } from "lucide-react";
+import { Circle, Ellipsis, Frame, Hand, MousePointer2, PenTool, Plus, Square } from "lucide-react";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { selectedPathLayer } from "@/lib/store/playheadPathEditing";
 import type { ToolMode } from "@/lib/shapeshifter/toolModes";
@@ -14,7 +14,7 @@ import {
 import { EditorContextMenuItems } from "./EditorContextMenu";
 
 const buttonClass =
-  "flex h-11 touch-manipulation items-center justify-center gap-1.5 rounded-lg px-3 text-[12px] font-medium focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring";
+  "flex h-11 touch-manipulation items-center justify-center gap-1.5 rounded-md px-1.5 text-[12px] font-medium focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring";
 const pointTools: { mode: ToolMode; label: string }[] = [
   { mode: "direct", label: "Move points" },
   { mode: "pen", label: "Pen" },
@@ -32,16 +32,16 @@ const drawing = new Set<ToolMode>([
   "knife",
 ]);
 const descriptions: Partial<Record<ToolMode, string>> = {
-  rectangle: "Rectangle · Drag to draw",
-  ellipse: "Ellipse · Drag to draw",
-  pen: "Pen · Tap to place points",
-  direct: "Points · Drag a point to move it",
-  pencil: "Select points · Draw around them",
-  paint: "Fill · Tap inside the shape",
-  knife: "Add point · Tap an edge",
+  rectangle: "Rectangle",
+  ellipse: "Ellipse",
+  pen: "Pen",
+  direct: "Points",
+  pencil: "Select points",
+  paint: "Fill",
+  knife: "Add point",
 };
 
-/** Touch tools explain the active mode and reveal actions for the current selection. */
+/** A compact touch toolbar with contextual actions and an explicit way out of drawing. */
 export function MobileCanvasTools() {
   const mode = useEditorStore((state) => state.toolMode);
   const hasSelection = useEditorStore((state) => state.hasCanvasSelection);
@@ -71,34 +71,12 @@ export function MobileCanvasTools() {
   };
 
   return (
-    <div className="w-[min(420px,calc(100vw-24px))] rounded-xl bg-card p-1 [box-shadow:var(--elevation-floating)]">
-      {hasSelection && name && !activeDrawing && (
-        <div className="flex min-w-0 items-center gap-1 border-b border-border px-2 pb-1">
-          <span className="min-w-0 flex-1 truncate text-[12px] font-medium">{name}</span>
-          {kind === "layer" && canEditPoints && (
-            <button type="button" className={buttonClass} onClick={() => choose("direct")}>
-              <Waypoints className="size-4" />
-              Edit points
-            </button>
-          )}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <button type="button" aria-label={`Actions for ${name}`} className={buttonClass} />
-              }
-            >
-              Actions
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              side="top"
-              align="end"
-              className="w-56 [&_[data-slot=dropdown-menu-shortcut]]:hidden"
-            >
-              <EditorContextMenuItems />
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+    <div
+      className={cn(
+        "rounded-lg bg-card p-1 [box-shadow:var(--elevation-floating)]",
+        activeDrawing ? "w-[min(320px,calc(100vw-24px))]" : "w-fit",
       )}
+    >
       {activeDrawing ? (
         <div
           role="toolbar"
@@ -132,61 +110,75 @@ export function MobileCanvasTools() {
           </button>
         </div>
       ) : (
-        <>
-          <div role="toolbar" aria-label="Canvas tools" className="grid grid-cols-3 gap-1">
-            <button
-              type="button"
-              aria-label="Select objects"
-              aria-pressed={mode === "select"}
-              className={cn(buttonClass, mode === "select" && "bg-primary text-primary-foreground")}
-              onClick={() => choose("select")}
+        <div
+          role="toolbar"
+          aria-label="Canvas tools"
+          className="grid grid-cols-4 gap-1 [&_button]:w-11"
+        >
+          <button
+            type="button"
+            aria-label="Select objects"
+            aria-pressed={mode === "select"}
+            className={cn(buttonClass, mode === "select" && "bg-muted text-foreground")}
+            onClick={() => choose("select")}
+          >
+            <MousePointer2 className="size-5" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            aria-label="Move canvas"
+            aria-pressed={mode === "hand"}
+            className={cn(buttonClass, mode === "hand" && "bg-muted text-foreground")}
+            onClick={() => choose("hand")}
+          >
+            <Hand className="size-5" aria-hidden="true" />
+          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={<button type="button" aria-label="Add artwork" className={buttonClass} />}
             >
-              <MousePointer2 className="size-4" />
-              Select
-            </button>
-            <button
-              type="button"
-              aria-label="Move canvas"
-              aria-pressed={mode === "hand"}
-              className={cn(buttonClass, mode === "hand" && "bg-primary text-primary-foreground")}
-              onClick={() => choose("hand")}
+              <Plus className="size-5" aria-hidden="true" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="end" className="w-48">
+              <DropdownMenuItem onClick={() => choose("rectangle")}>
+                <Square className="size-4" />
+                Rectangle
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => choose("ellipse")}>
+                <Circle className="size-4" />
+                Ellipse
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => choose("pen")}>
+                <PenTool className="size-4" />
+                Pen path
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => useEditorStore.getState().addFrame()}>
+                <Frame className="size-4" />
+                Frame
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label={hasSelection && name ? `Actions for ${name}` : "Canvas actions"}
+                  className={buttonClass}
+                />
+              }
             >
-              <Hand className="size-4" />
-              Move view
-            </button>
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={<button type="button" aria-label="Add artwork" className={buttonClass} />}
-              >
-                <Plus className="size-4" />
-                Add
-              </DropdownMenuTrigger>
-              <DropdownMenuContent side="top" align="end" className="w-48">
-                <DropdownMenuItem onClick={() => choose("rectangle")}>
-                  <Square className="size-4" />
-                  Rectangle
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => choose("ellipse")}>
-                  <Circle className="size-4" />
-                  Ellipse
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => choose("pen")}>
-                  <PenTool className="size-4" />
-                  Pen path
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => useEditorStore.getState().addFrame()}>
-                  <Frame className="size-4" />
-                  Frame
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-          <p role="status" className="px-2 pb-1 pt-1 text-center text-[11px] text-muted-foreground">
-            {mode === "hand"
-              ? "Drag anywhere to pan · Pinch to zoom"
-              : "Tap to select · Drag empty space to pan"}
-          </p>
-        </>
+              <Ellipsis className="size-5" aria-hidden="true" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              side="top"
+              align="end"
+              className="w-56 [&_[data-slot=dropdown-menu-shortcut]]:hidden"
+            >
+              <EditorContextMenuItems />
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       )}
     </div>
   );
