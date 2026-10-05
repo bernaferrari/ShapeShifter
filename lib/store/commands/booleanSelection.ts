@@ -54,10 +54,8 @@ export function booleanSelectionIssue(state: BooleanSelectionState): string | nu
     )
       return "Show the selected paths and their containing groups.";
     if (
-      ancestry.some(
-        (parent) =>
-          (parent.timeline?.length ?? 0) > 0 ||
-          state.animation.blocks.some((block) => String(block.layerId) === String(parent.id)),
+      ancestry.some((parent) =>
+        state.animation.blocks.some((block) => String(block.layerId) === String(parent.id)),
       ) ||
       layer.to
     )

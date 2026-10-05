@@ -34,8 +34,7 @@ export interface GestureCallbacks {
    * PR-02 start (ShapeShifter-2cq under mvd/7fz/ish/c9f): added commitMarqueeSelection so the concrete gesture
    * owns the end-of-marquee AABB multi-point commit + hit test trigger (now that dispatcher is the sole gate).
    * The canvas-specific selection application (preview subpath vs edit-path points) lives in the provided callback
-   * (re-uses PathCanvas helpers safely). This begins migration of the commit logic out of the monolith while
-   * preserving 100% behavioral parity.
+   * (re-uses PathCanvas helpers safely). The concrete gesture commits through this canvas callback.
    *
    * References: DESIGN_ID 67dd105e (Key Decision #2: dispatcher as single source of truth), PR-01/PR-02, gesture lifecycle,
    * beads 2cq (this work), mvd (review), 7fz (rereview), ish/c9f (impl), dwm (foundation), v6j (vision epic).

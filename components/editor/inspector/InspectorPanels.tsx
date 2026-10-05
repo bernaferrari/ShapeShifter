@@ -28,7 +28,7 @@ import {
   type KeyframeToggleProps,
 } from "./InspectorControls";
 import { parsePath, pathToString } from "@/lib/shapeshifter/pathUtils";
-import { pathDAtTime } from "@/lib/shapeshifter/playheadResolve";
+import { layerAtTime, pathDAtTime } from "@/lib/shapeshifter/playheadResolve";
 import { scalePathToBounds } from "@/lib/shapeshifter/path/pathEditing";
 
 /**
@@ -37,8 +37,9 @@ import { scalePathToBounds } from "@/lib/shapeshifter/path/pathEditing";
  */
 export function useKeyframeToggles(layer: Layer, count: number) {
   const blocks = useEditorStore((state) => state.animation.blocks);
-  const addTimelineBlock = useEditorStore((state) => state.addTimelineBlock);
-  const removeTimelineProperty = useEditorStore((state) => state.removeTimelineProperty);
+  const progress = useEditorStore((state) => (state.isPlaying ? null : state.progress));
+  const duration = useEditorStore((state) => state.animation.duration);
+  const time = (progress ?? useEditorStore.getState().progress) * duration;
   const animatable = React.useMemo(
     () => new Set(timelinePropertiesForLayer(layer.type)),
     [layer.type],
@@ -53,24 +54,100 @@ export function useKeyframeToggles(layer: Layer, count: number) {
         (block) => String(block.layerId) === String(layer.id) && block.propertyName === name,
       ),
     );
-    const active = animated.length > 0;
+    const trackBlocks = blocks.filter(
+      (block) =>
+        String(block.layerId) === String(layer.id) && properties.includes(block.propertyName),
+    );
+    const atPlayhead = (block: (typeof blocks)[number]) =>
+      Math.abs(block.startTime - time) < 1e-6 || Math.abs(block.endTime - time) < 1e-6;
+    const active = properties.every((name) =>
+      trackBlocks.some((block) => block.propertyName === name && atPlayhead(block)),
+    );
     const label = groupLabel ?? propertyLabel(properties[0]!);
+    const transaction = (action: () => void) => {
+      const store = useEditorStore.getState();
+      store.beginHistoryGesture();
+      try {
+        action();
+      } finally {
+        useEditorStore.getState().endHistoryGesture();
+      }
+    };
     return {
       active,
-      label: active ? `Remove ${label} animation` : `Animate ${label}`,
-      onClick: () => {
-        if (active) {
-          for (const name of animated) removeTimelineProperty(layer.id, name);
-          return;
-        }
-        const store = useEditorStore.getState();
-        const added: string[] = [];
-        for (const name of properties) {
-          addTimelineBlock(layer.id, name);
-          added.push(...useEditorStore.getState().selectedBlockIds);
-        }
-        if (properties.length > 1) store.selectBlocks(added);
-      },
+      animated: animated.length > 0,
+      label: !animated.length
+        ? `Animate ${label}`
+        : active
+          ? `Select ${label} keyframe`
+          : `Add ${label} keyframe at ${Number(time.toFixed(2))} ms`,
+      onClick: () =>
+        transaction(() => {
+          for (const name of properties) {
+            const store = useEditorStore.getState();
+            if (!animated.includes(name)) store.addTimelineBlock(layer.id, name);
+            const current = useEditorStore.getState();
+            const tracks = current.animation.blocks.filter(
+              (block) => String(block.layerId) === String(layer.id) && block.propertyName === name,
+            );
+            if (!tracks.some(atPlayhead)) {
+              const pose = layerAtTime(layer, current.animation.blocks, time, duration);
+              const value =
+                name === "pathData"
+                  ? pathDAtTime(layer, current.animation.blocks, time, duration, current.progress)
+                  : (pose as unknown as Record<string, string | number>)[name];
+              if (value !== undefined) current.setPropertiesAtPlayhead(layer.id, { [name]: value });
+            }
+          }
+          useEditorStore.getState().selectBlocks(
+            useEditorStore
+              .getState()
+              .animation.blocks.filter(
+                (block) =>
+                  String(block.layerId) === String(layer.id) &&
+                  properties.includes(block.propertyName) &&
+                  atPlayhead(block),
+              )
+              .map((block) => block.id),
+          );
+        }),
+      removeAnimation: animated.length
+        ? () =>
+            transaction(() => {
+              for (const name of animated)
+                useEditorStore.getState().removeTimelineProperty(layer.id, name);
+            })
+        : undefined,
+      removeAnimationLabel: `Remove ${label} animation`,
+      removeKeyframe:
+        active &&
+        properties.every((name) =>
+          trackBlocks.some(
+            (block) => block.propertyName === name && block.startTime !== block.endTime,
+          ),
+        )
+          ? () =>
+              transaction(() => {
+                for (const name of properties) {
+                  const block = useEditorStore
+                    .getState()
+                    .animation.blocks.find(
+                      (block) =>
+                        String(block.layerId) === String(layer.id) &&
+                        block.propertyName === name &&
+                        atPlayhead(block),
+                    );
+                  if (block)
+                    useEditorStore
+                      .getState()
+                      .removeTimelineKeyframe(
+                        block.id,
+                        Math.abs(block.startTime - time) < 1e-6 ? "start" : "end",
+                      );
+                }
+              })
+          : undefined,
+      removeKeyframeLabel: `Remove ${label} keyframe`,
     };
   };
 }

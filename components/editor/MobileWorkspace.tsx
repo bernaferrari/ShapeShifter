@@ -25,11 +25,14 @@ export function MobileWorkspace({
   canvas,
   sheet,
   onSheetChange,
+  constrained = false,
 }: {
+  constrained?: boolean;
   canvas: React.ReactNode;
   sheet: MobileSheet | null;
   onSheetChange: (sheet: MobileSheet | null) => void;
 }) {
+  const [sheetPercent, setSheetPercent] = React.useState(52);
   const hasSelection = useEditorStore((state) => state.selectionKind === "layer");
   const easingBlockId = useInspectorView((state) => state.easingBlockId);
   // Tapping a segment's easing in the timeline opens it where it can be seen.
@@ -38,24 +41,60 @@ export function MobileWorkspace({
   }, [easingBlockId, onSheetChange]);
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-muted">
+    <div className="mobile-workspace relative flex min-h-0 flex-1 flex-col overflow-hidden bg-muted">
       <div className="relative flex min-h-0 flex-1">{canvas}</div>
       {sheet && (
         <section
           aria-label={TABS.find((tab) => tab.id === sheet)?.label}
+          style={{
+            flexBasis: constrained ? "calc(100% - 56px)" : `${sheetPercent}%`,
+            maxHeight: constrained ? "calc(100% - 56px)" : "calc(100% - 112px)",
+            minHeight: "96px",
+          }}
           className={cn(
             "flex shrink-0 flex-col overflow-hidden border-t border-border bg-sidebar",
             "motion-safe:animate-in motion-safe:slide-in-from-bottom-4 motion-safe:duration-200",
-            sheet === "motion" ? "h-[38dvh]" : "h-[46dvh]",
           )}
         >
-          {sheet === "layers" && <LayersPanel className="h-full w-full border-r-0" />}
+          <div className="flex min-h-10 shrink-0 items-center gap-3 border-b border-border px-3">
+            {!constrained && (
+              <label className="flex min-w-0 flex-1 items-center gap-2 text-[12px] text-muted-foreground">
+                Panel height
+                <input
+                  type="range"
+                  aria-label="Panel height"
+                  min={30}
+                  max={75}
+                  value={sheetPercent}
+                  onChange={(event) => setSheetPercent(Number(event.target.value))}
+                  className="min-w-0 flex-1 accent-primary"
+                />
+              </label>
+            )}
+            {constrained && (
+              <span className="flex-1 text-[12px] font-medium">
+                {TABS.find((tab) => tab.id === sheet)?.label}
+              </span>
+            )}
+            <button
+              type="button"
+              aria-label="Return to canvas"
+              onClick={() => {
+                (document.activeElement as HTMLElement | null)?.blur();
+                onSheetChange(null);
+              }}
+              className="min-h-10 px-2 text-[12px]"
+            >
+              Canvas
+            </button>
+          </div>
+          {sheet === "layers" && <LayersPanel className="min-h-0 flex-1 w-full border-r-0" />}
           {sheet === "design" && (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <Inspector />
             </div>
           )}
-          {sheet === "motion" && <LayerTimeline layersWidth={164} />}
+          {sheet === "motion" && <LayerTimeline layersWidth={112} />}
         </section>
       )}
       <nav

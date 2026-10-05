@@ -1,11 +1,11 @@
 import { useEditorStore } from "../store/editorStore";
 import {
-  commitDocumentV2,
+  buildDocumentFromEditor,
   historySessionFromEditor,
-  legacySnapshotFromEditor,
+  workspaceFromEditor,
   restoreHistoryEntry,
 } from "../store/documentRuntime";
-import { legacySnapshotFromDocumentV2 } from "../shapeshifter/documentModel";
+import { workspaceFromDocument } from "../shapeshifter/documentModel";
 import { evaluateAndroidScene } from "../shapeshifter/scene/evaluate";
 import { getEvaluatedNodeBounds } from "../shapeshifter/scene/selection";
 import { PAGE_ROOT_ID } from "../shapeshifter/scene/owners";
@@ -23,7 +23,7 @@ export function createEditorAgent() {
   let revision = 0;
   let previous = "";
   const snapshot = () => {
-    const document = commitDocumentV2(useEditorStore.getState());
+    const document = buildDocumentFromEditor(useEditorStore.getState());
     const signature = JSON.stringify(document);
     if (previous && previous !== signature) revision++;
     previous = signature;
@@ -50,7 +50,7 @@ export function createEditorAgent() {
     inspect() {
       const current = snapshot();
       const state = useEditorStore.getState();
-      const legacy = legacySnapshotFromEditor(state);
+      const workspace = workspaceFromEditor(state);
       return structuredClone({
         apiVersion: 1,
         documentId: current.document.id,
@@ -84,13 +84,13 @@ export function createEditorAgent() {
         owners: [
           {
             id: PAGE_ROOT_ID,
-            name: legacy.rootVector.name,
+            name: workspace.rootVector.name,
             origin: { x: 0, y: 0 },
-            vector: legacy.rootVector,
-            animation: legacy.rootAnimation,
-            layers: legacy.rootLayers.map(agentLayerSummary),
+            vector: workspace.rootVector,
+            animation: workspace.rootAnimation,
+            layers: workspace.rootLayers.map(agentLayerSummary),
           },
-          ...legacy.frames.map((frame) => ({
+          ...workspace.frames.map((frame) => ({
             id: frame.id,
             name: frame.name,
             origin: { x: frame.x, y: frame.y },
@@ -104,15 +104,15 @@ export function createEditorAgent() {
     },
     evaluate({ ownerId, timeMs }: { ownerId: string; timeMs: number }) {
       const current = snapshot();
-      const legacy = legacySnapshotFromDocumentV2(current.document);
+      const workspace = workspaceFromDocument(current.document);
       const owner =
         ownerId === PAGE_ROOT_ID
           ? {
-              layers: legacy.rootLayers,
-              animation: legacy.rootAnimation,
-              vector: legacy.rootVector,
+              layers: workspace.rootLayers,
+              animation: workspace.rootAnimation,
+              vector: workspace.rootVector,
             }
-          : legacy.frames.find((frame) => frame.id === ownerId);
+          : workspace.frames.find((frame) => frame.id === ownerId);
       if (!owner)
         throw new AgentCommandError("OWNER_NOT_FOUND", `Owner ${ownerId} does not exist.`);
       if (!Number.isFinite(timeMs) || timeMs < 0 || timeMs > owner.animation.duration)
@@ -164,7 +164,7 @@ export function createEditorAgent() {
     apply({ expectedRevision, commands }: { expectedRevision: number; commands: AgentCommand[] }) {
       const current = assertRevision(expectedRevision);
       const state = useEditorStore.getState();
-      const staged = stageAgentCommands(legacySnapshotFromEditor(state), commands);
+      const staged = stageAgentCommands(workspaceFromEditor(state), commands);
       if (JSON.stringify(staged.document) === JSON.stringify(current.document))
         return { revision: current.revision, changed: false, created: [] };
       // Staging is synchronous. Validation completes before the sole history push
@@ -172,7 +172,7 @@ export function createEditorAgent() {
       state.pushHistory();
       useEditorStore.setState(
         restoreHistoryEntry(state, {
-          documentV2: staged.document,
+          document: staged.document,
           session: historySessionFromEditor(state),
         }),
       );
@@ -186,7 +186,7 @@ export function createEditorAgent() {
       layers: Array<{ ownerId: string; layerId: string | number }>;
     }) {
       assertRevision(expectedRevision);
-      const source = legacySnapshotFromEditor(useEditorStore.getState());
+      const source = workspaceFromEditor(useEditorStore.getState());
       if (!Array.isArray(layers) || layers.length > 1000)
         throw new AgentCommandError(
           "INVALID_SELECTION",

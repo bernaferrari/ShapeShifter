@@ -1,9 +1,19 @@
-import { parsePath } from "../../shapeshifter/pathUtils";
+import { planLayerDeletion } from "../commands/deleteLayers";
+import { toast } from "sonner";
 import { collectLayerSubtreeIds } from "../../shapeshifter/scene/layerHierarchy";
 import { PAGE_ROOT_ID, type LayerSelectionRef } from "../../shapeshifter/scene/owners";
 import type { Layer, TimelineBlock } from "../../shapeshifter/types";
-import { collectSubtreeWithAnimation, remapClonedSubtree } from "../cloneSubtree";
-import { createPathLayer } from "../defaultWorkspace";
+import {
+  collectSubtreeWithAnimation,
+  remapClonedSubtree,
+  uniqueSubtreeRoots,
+} from "../cloneSubtree";
+import {
+  flatHierarchy,
+  groupLayers,
+  ungroupLayer,
+  structuralLockIssue,
+} from "../commands/structuralLayers";
 import type { EditorState } from "../editorStore";
 import { saveActiveFrame, saveActiveRoot, updateOwnedLayers } from "../workspaceState";
 import { reparentLayerPreservingAppearance } from "../commands/reparentLayer";
@@ -32,98 +42,16 @@ export function createLayerOrganizationActions(
   return {
     deleteSelectedLayers: () => {
       const state = get();
-      const refs =
-        state.selectedLayerRefs.length > 0
-          ? state.selectedLayerRefs
-          : state.selectedLayerIds.map((layerId) => ({
-              ownerId: state.selectedFrameId,
-              layerId,
-            }));
-      if (refs.length === 0) return;
-      const idsByOwner = new Map<string, Set<string>>();
-      for (const ref of refs) {
-        const ids = idsByOwner.get(ref.ownerId) ?? new Set<string>();
-        ids.add(String(ref.layerId));
-        idsByOwner.set(ref.ownerId, ids);
+      const refs = state.selectedLayerRefs.length
+        ? state.selectedLayerRefs
+        : state.selectedLayerIds.map((layerId) => ({ ownerId: state.selectedFrameId, layerId }));
+      const result = planLayerDeletion(state, refs);
+      if (!result.ok) {
+        toast.error("Cannot delete selection", { description: result.message });
+        return;
       }
-      const savedFrames = saveActiveFrame(state);
-      const savedRoot = saveActiveRoot(state);
-      const nextFrames = savedFrames.map((frame) => {
-        const selectedIds = idsByOwner.get(frame.id);
-        if (!selectedIds) return frame;
-        const ids = new Set<string>();
-        for (const layer of frame.layers) {
-          if (selectedIds.has(String(layer.id)) && !layer.locked) {
-            for (const descendant of collectLayerSubtreeIds(frame.layers, layer.id)) {
-              ids.add(descendant);
-            }
-          }
-        }
-        return {
-          ...frame,
-          layers: frame.layers.filter((layer) => !ids.has(String(layer.id)) || layer.locked),
-          animation: {
-            ...frame.animation,
-            blocks: frame.animation.blocks.filter((block) => !ids.has(String(block.layerId))),
-          },
-          hiddenLayerIds: frame.hiddenLayerIds.filter((id) => !ids.has(String(id))),
-        };
-      });
-      const selectedRootIds = idsByOwner.get(PAGE_ROOT_ID);
-      const rootIds = selectedRootIds
-        ? (() => {
-            const ids = new Set<string>();
-            for (const layer of savedRoot.layers) {
-              if (selectedRootIds.has(String(layer.id)) && !layer.locked) {
-                for (const descendant of collectLayerSubtreeIds(savedRoot.layers, layer.id)) {
-                  ids.add(descendant);
-                }
-              }
-            }
-            return ids;
-          })()
-        : undefined;
-      const nextRootLayers = rootIds
-        ? savedRoot.layers.filter((layer) => !rootIds.has(String(layer.id)) || layer.locked)
-        : savedRoot.layers;
-      const nextRootAnimation = rootIds
-        ? {
-            ...savedRoot.animation,
-            blocks: savedRoot.animation.blocks.filter(
-              (block) => !rootIds.has(String(block.layerId)),
-            ),
-          }
-        : savedRoot.animation;
-      const nextRootHidden = rootIds
-        ? savedRoot.hiddenLayerIds.filter((id) => !rootIds.has(String(id)))
-        : savedRoot.hiddenLayerIds;
-      const activeFrame = nextFrames.find((frame) => frame.id === state.selectedFrameId);
-      const nextLayers =
-        state.selectedFrameId === PAGE_ROOT_ID
-          ? nextRootLayers
-          : (activeFrame?.layers ?? state.layers);
-      get().pushHistory();
-      set({
-        frames: nextFrames,
-        rootLayers: nextRootLayers,
-        rootAnimation: nextRootAnimation,
-        rootHiddenLayerIds: nextRootHidden,
-        layers: nextLayers,
-        ...(state.selectedFrameId === PAGE_ROOT_ID
-          ? { animation: nextRootAnimation, hiddenLayerIds: nextRootHidden }
-          : activeFrame
-            ? { animation: activeFrame.animation, hiddenLayerIds: activeFrame.hiddenLayerIds }
-            : {}),
-        selectedLayerId: nextLayers[0]?.id ?? 0,
-        selectedLayerIds: [],
-        selectedLayerRefs: [],
-        selection: null,
-        selectedPoints: [],
-        selectedSubPaths: [],
-        hasCanvasSelection: false,
-        selectionKind: "none",
-        selectedFrameIds: [],
-      });
+      state.pushHistory();
+      set(result.patch);
     },
 
     toggleLayerLock: (id) => {
@@ -224,38 +152,35 @@ export function createLayerOrganizationActions(
     },
 
     groupSelectedLayers: () => {
-      const { layers, selectedLayerIds, selectedLayerId } = get();
-      const ids =
-        selectedLayerIds.length > 0
-          ? selectedLayerIds
-          : selectedLayerId != null
-            ? [selectedLayerId]
-            : [];
-      if (ids.length < 1) return;
-      const idSet = new Set(ids.map(String));
-      const groupId = `group-${Date.now()}`;
-      const groupLayer: Layer = createPathLayer({
-        id: groupId,
-        name: "Group",
-        type: "group",
-        from: parsePath("M 0 0 Z"),
-        visible: true,
-        locked: false,
-        expanded: true,
-      });
-      const reparented = layers.map((l) =>
-        idSet.has(String(l.id)) ? { ...l, parentId: groupId } : l,
+      const state = get();
+      if (!state.hasCanvasSelection || state.selectionKind !== "layer") return;
+      if (state.selectedLayerRefs.some((ref) => ref.ownerId !== state.selectedFrameId)) {
+        toast.error("Cannot group selection", {
+          description: "Select layers in one artboard or on the page.",
+        });
+        return;
+      }
+      const result = groupLayers(
+        state.layers,
+        state.selectedLayerIds.length ? state.selectedLayerIds : [state.selectedLayerId],
       );
-      // Insert group before first selected
-      const firstIdx = reparented.findIndex((l) => idSet.has(String(l.id)));
-      const next = [...reparented];
-      next.splice(Math.max(0, firstIdx), 0, groupLayer);
-      get().pushHistory();
+      if (!result.ok) {
+        toast.error("Cannot group selection", { description: result.message });
+        return;
+      }
+      state.pushHistory();
       set({
-        layers: next,
-        selectedLayerId: groupId,
-        selectedLayerIds: [groupId],
-        selectedLayerRefs: [{ ownerId: get().selectedFrameId, layerId: groupId }],
+        layers: result.layers,
+        selectedLayerId: result.selectedIds[0]!,
+        selectedLayerIds: result.selectedIds,
+        selectedLayerRefs: result.selectedIds.map((layerId) => ({
+          ownerId: state.selectedFrameId,
+          layerId,
+        })),
+        selectedBlockIds: [],
+        selection: null,
+        selectedPoints: [],
+        selectedSubPaths: [],
         hasCanvasSelection: true,
         selectionKind: "layer",
         selectedFrameIds: [],
@@ -263,33 +188,40 @@ export function createLayerOrganizationActions(
     },
 
     ungroupSelectedLayer: () => {
-      const { layers, selectedLayerId } = get();
-      const group = layers.find((l) => String(l.id) === String(selectedLayerId));
-      if (!group || group.type !== "group") return;
-      const gid = String(group.id);
-      const children = layers.filter((l) => String(l.parentId) === gid);
-      const childIds = children.map((c) => c.id);
-      const next = layers
-        .filter((l) => String(l.id) !== gid)
-        .map((l) =>
-          String(l.parentId) === gid ? { ...l, parentId: group.parentId ?? undefined } : l,
-        );
-      get().pushHistory();
+      const state = get();
+      if (!state.hasCanvasSelection || state.selectionKind !== "layer") return;
+      const result = ungroupLayer(
+        state.layers,
+        state.animation,
+        state.hiddenLayerIds,
+        state.selectedLayerId,
+      );
+      if (!result.ok) {
+        toast.error("Cannot ungroup", { description: result.message });
+        return;
+      }
+      state.pushHistory();
       set({
-        layers: next,
-        selectedLayerId: childIds[0] ?? next[0]?.id ?? 0,
-        selectedLayerIds: childIds.length ? childIds : next[0] ? [next[0].id] : [],
-        selectedLayerRefs: (childIds.length ? childIds : next[0] ? [next[0].id] : []).map(
-          (layerId) => ({ ownerId: get().selectedFrameId, layerId }),
+        layers: result.layers,
+        selectedLayerId: result.selectedIds[0] ?? 0,
+        selectedLayerIds: result.selectedIds,
+        selectedLayerRefs: result.selectedIds.map((layerId) => ({
+          ownerId: state.selectedFrameId,
+          layerId,
+        })),
+        hiddenLayerIds: state.hiddenLayerIds.filter(
+          (id) => String(id) !== String(state.selectedLayerId),
         ),
-        hasCanvasSelection: true,
-        selectionKind: "layer",
+        selectedBlockIds: [],
+        hasCanvasSelection: result.selectedIds.length > 0,
+        selectionKind: result.selectedIds.length ? "layer" : "none",
         selectedFrameIds: [],
       });
     },
 
     duplicateSelectedLayersOffset: (dx, dy, options) => {
       const state = get();
+      if (!state.hasCanvasSelection || state.selectionKind !== "layer") return;
       const refs =
         state.selectedLayerRefs.length > 0
           ? state.selectedLayerRefs
@@ -310,16 +242,38 @@ export function createLayerOrganizationActions(
       const clonesByOwner = new Map<string, Layer[]>();
       const blocksByOwner = new Map<string, TimelineBlock[]>();
       const cloneRefs: LayerSelectionRef[] = [];
+      const sourceByClone = new Map<string, string>();
+      const processedRoots = new Set<string>();
       for (const ref of refs) {
-        const ownerLayers = layersForOwner(ref.ownerId);
+        const rootKey = `${ref.ownerId}\0${String(ref.layerId)}`;
+        if (processedRoots.has(rootKey)) continue;
+        processedRoots.add(rootKey);
+        const ownerLayers = flatHierarchy(layersForOwner(ref.ownerId));
+        if (
+          !uniqueSubtreeRoots(
+            ownerLayers,
+            refs.filter((r) => r.ownerId === ref.ownerId).map((r) => r.layerId),
+          ).includes(String(ref.layerId))
+        )
+          continue;
         const layer = ownerLayers.find((candidate) => String(candidate.id) === String(ref.layerId));
-        if (!layer || layer.locked) continue;
+        if (!layer || structuralLockIssue(ownerLayers, [layer.id], false)) continue;
         const ownerAnimation =
           ref.ownerId === PAGE_ROOT_ID
             ? savedRoot.animation
             : savedFrames.find((frame) => frame.id === ref.ownerId)?.animation;
         const remapped = remapClonedSubtree(
-          collectSubtreeWithAnimation(ownerLayers, ownerAnimation?.blocks ?? [], [layer.id]),
+          collectSubtreeWithAnimation(
+            ownerLayers.map((item) => {
+              const hidden =
+                ref.ownerId === PAGE_ROOT_ID
+                  ? savedRoot.hiddenLayerIds
+                  : (savedFrames.find((frame) => frame.id === ref.ownerId)?.hiddenLayerIds ?? []);
+              return hidden.includes(String(item.id)) ? { ...item, visible: false } : item;
+            }),
+            ownerAnimation?.blocks ?? [],
+            [layer.id],
+          ),
           {
             prefix: `dup-${timestamp}`,
             offsetX: dx,
@@ -336,25 +290,42 @@ export function createLayerOrganizationActions(
           ...(blocksByOwner.get(ref.ownerId) ?? []),
           ...remapped.blocks,
         ]);
+        sourceByClone.set(remapped.idRemap.get(String(layer.id))!, String(layer.id));
         cloneRefs.push({
           ownerId: ref.ownerId,
           layerId: remapped.idRemap.get(String(layer.id))!,
         });
       }
       if (cloneRefs.length === 0) return;
+      const insertClones = (ownerId: string, original: Layer[]) => {
+        let next = flatHierarchy(original);
+        for (const ref of cloneRefs.filter((ref) => ref.ownerId === ownerId)) {
+          const sourceIds = collectLayerSubtreeIds(next, sourceByClone.get(String(ref.layerId))!);
+          const index =
+            next.reduce((last, layer, i) => (sourceIds.has(String(layer.id)) ? i : last), -1) + 1;
+          const allClones = clonesByOwner.get(ownerId) ?? [];
+          const ids = collectLayerSubtreeIds(allClones, ref.layerId);
+          next = [
+            ...next.slice(0, index),
+            ...allClones.filter((layer) => ids.has(String(layer.id))),
+            ...next.slice(index),
+          ];
+        }
+        return next;
+      };
       const nextFrames = savedFrames.map((frame) => {
         const clones = clonesByOwner.get(frame.id);
         const blocks = blocksByOwner.get(frame.id);
         if (!clones && !blocks) return frame;
         return {
           ...frame,
-          layers: [...frame.layers, ...(clones ?? [])],
+          layers: insertClones(frame.id, frame.layers),
           ...(blocks
             ? { animation: { ...frame.animation, blocks: [...frame.animation.blocks, ...blocks] } }
             : {}),
         };
       });
-      const nextRootLayers = [...savedRoot.layers, ...(clonesByOwner.get(PAGE_ROOT_ID) ?? [])];
+      const nextRootLayers = insertClones(PAGE_ROOT_ID, savedRoot.layers);
       const rootBlocks = blocksByOwner.get(PAGE_ROOT_ID);
       const nextRootAnimation = rootBlocks
         ? { ...savedRoot.animation, blocks: [...savedRoot.animation.blocks, ...rootBlocks] }
@@ -382,6 +353,10 @@ export function createLayerOrganizationActions(
         selectedLayerId: activeClones.at(-1) ?? cloneRefs.at(-1)!.layerId,
         selectedLayerIds: activeClones,
         selectedLayerRefs: cloneRefs,
+        selectedBlockIds: [],
+        selection: null,
+        selectedPoints: [],
+        selectedSubPaths: [],
         hasCanvasSelection: true,
         selectionKind: "layer",
         selectedFrameIds: [],

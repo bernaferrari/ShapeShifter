@@ -17,7 +17,7 @@ import {
 import type { Viewport } from "../shapeshifter/camera";
 import type {
   AnimationState,
-  DocumentV2,
+  EditorDocument,
   Layer,
   LayerType,
   MorphMapping,
@@ -30,10 +30,7 @@ import type {
 import type { ToolMode, CursorType } from "../shapeshifter/toolModes";
 import type { LayerPlacement } from "../shapeshifter/scene/layerHierarchy";
 import type { LayerSelectionRef } from "../shapeshifter/scene/owners";
-import {
-  createDocumentV2FromLegacy,
-  type LegacyDocumentSnapshot,
-} from "../shapeshifter/documentModel";
+import { buildEditorDocument } from "../shapeshifter/documentModel";
 import { createDefaultWorkspace, type CanvasFrame } from "./defaultWorkspace";
 import { createFrameActions } from "./actions/frameActions";
 import { createSessionActions } from "./actions/sessionActions";
@@ -44,8 +41,18 @@ import {
   computeVectorViewport,
   createCameraActions,
 } from "./actions/cameraActions";
-import { cloneFrame, cloneLayers, getFirstEditableLayerId } from "./workspaceState";
-import { commitDocumentV2 } from "./documentRuntime";
+import {
+  cloneFrame,
+  cloneLayers,
+  getFirstEditableLayerId,
+  saveActiveFrame,
+  saveActiveRoot,
+} from "./workspaceState";
+import {
+  buildDocumentFromEditor,
+  restoreHistoryEntry,
+  historySessionFromEditor,
+} from "./documentRuntime";
 import { createHistoryActions } from "./actions/historyActions";
 import { createSelectionActions } from "./actions/selectionActions";
 import { createLayerOrganizationActions } from "./actions/layerOrganizationActions";
@@ -53,7 +60,7 @@ import { createLayerDataActions } from "./actions/layerDataActions";
 import { createTransformActions } from "./actions/transformActions";
 import { booleanSelectionIssue, combineBooleanSelection } from "./commands/booleanSelection";
 import type { BooleanOp } from "../shapeshifter/path/booleanOperations";
-import { legacySnapshotFromEditor } from "./documentRuntime";
+import { workspaceFromEditor } from "./documentRuntime";
 import { syncEditedTimelinePath, timelinePathSelection } from "./timelinePathEditing";
 import type {
   TimelineClipboard,
@@ -86,12 +93,7 @@ export interface DragState {
 
 export interface ClipboardData {
   layers: Layer[];
-  /**
-   * Subtree TimelineBlocks snapshotted alongside the layers at copy time.
-   * Authoring writes only animation.blocks (the per-layer .timeline mirror is
-   * stale-prone), so pasteLayers re-emits these with remapped layerIds — the
-   * same treatment duplicateSelectedLayersOffset gives Alt-drag clones.
-   */
+  /** Motion snapshotted alongside the subtree at copy time. */
   blocks?: TimelineBlock[];
   timestamp: number;
 }
@@ -114,7 +116,7 @@ export interface SegmentSelection {
   commandIndex: number;
 }
 
-/** Session chrome stored beside the DocumentV2 graph in undo history. */
+/** Session chrome stored beside the EditorDocument graph in undo history. */
 export interface HistorySession {
   selectedFrameId: string;
   selectedFrameIds: string[];
@@ -131,9 +133,9 @@ export interface HistorySession {
   selectionKind: "none" | "frame" | "layer";
 }
 
-/** Undo records the live DocumentV2 plus session chrome — not a second Layer[] clone. */
+/** Undo records the live EditorDocument plus session chrome — not a second Layer[] clone. */
 export interface HistoryEntry {
-  documentV2: DocumentV2;
+  document: EditorDocument;
   session: HistorySession;
 }
 
@@ -147,7 +149,7 @@ export interface MorphPreview {
 }
 export interface EditorState {
   /** Live document graph. Undo, export, and persist commit this object. */
-  documentV2: DocumentV2;
+  document: EditorDocument;
   morphPreview: MorphPreview | null;
   previewPrepareForMorph: () => boolean;
   commitMorphPreview: () => boolean;
@@ -318,7 +320,7 @@ export interface EditorState {
     animation: AnimationState;
     hiddenLayerIds: string[];
   }) => void;
-  loadDocument: (snapshot: LegacyDocumentSnapshot) => void;
+  loadDocument: (document: EditorDocument) => void;
   replaceSelectedLayerPaths: (paths: Partial<Pick<Layer, "from" | "to" | "name">>) => void;
   updateSelectedLayer: (patch: Partial<Layer>, options?: { recordHistory?: boolean }) => void;
   /** Apply patch to every id in selectedLayerIds (or explicit ids). */
@@ -544,7 +546,7 @@ const {
   initialRootAnimation,
 } = createDefaultWorkspace();
 
-const initialDocumentV2 = createDocumentV2FromLegacy({
+const initialEditorDocument = buildEditorDocument({
   id: "document",
   name: "ShapeShifter",
   frames: initialFrames.map((frame) => ({
@@ -571,10 +573,8 @@ type SetEditorState = (
 ) => void;
 
 /**
- * Projection slices that define document content. When a write changes any of these
- * (by reference), the live DocumentV2 graph is scheduled for rebuild from the
- * flushed workspace. Freshness is enforced by the store itself — no call site has
- * to remember to flush, including external `useEditorStore.setState` gesture writes.
+ * Editing indexes that participate in an authored transaction. The store publishes
+ * these views and their document graph together, including external gesture writes.
  */
 const CONTENT_KEYS = [
   "layers",
@@ -595,25 +595,7 @@ function contentChanged(prev: EditorState, patch: Partial<EditorState>): boolean
   return false;
 }
 
-/**
- * Rebuilding DocumentV2 walks every frame/layer/node/track, so doing it per write
- * makes each drag tick pay O(document) twice (barrier + syncActiveOwner). Instead
- * the commit is scheduled once per microtask checkpoint: burst writes within one
- * task collapse into a single rebuild that lands before React renders or the next
- * input event. Synchronous readers are protected because every read path that
- * needs a fresh live graph (serialize/export via flushLiveExportDocument,
- * undo/redo snapshots, load/reset flows) passes a patch carrying `documentV2`,
- * which supersedes — and cancels — any pending commit.
- */
-let commitScheduled = false;
-
-/**
- * Write barrier for document content. A patch that carries `documentV2` wins
- * (load/reset/undo flows replacing the graph wholesale) and supersedes anything
- * pending. Full-state replacement (`replace`) never routes through here — the
- * caller forwards it to zustand untouched, because wrapping a replacement in an
- * updater function would silently downgrade it to a merge.
- */
+/** Atomically publish authored content and its canonical document. No deferred second write. */
 function setDocumentState(
   set: SetEditorState,
   update: Partial<EditorState> | ((state: EditorState) => Partial<EditorState> | EditorState),
@@ -622,34 +604,40 @@ function setDocumentState(
     let patch = typeof update === "function" ? update(state) : update;
     if (patch.selectedFrameId !== undefined && patch.selectedFrameId !== state.selectedFrameId)
       patch = { ...patch, timelinePreviewRange: null };
-    if ("documentV2" in patch) {
-      // A wholesale replacement supersedes anything pending.
-      commitScheduled = false;
+    if (patch.document) {
+      // A native document replacement also rebuilds its editing views atomically.
+      // Patches already carrying views (undo/load/commands) have done this work.
+      if (!CONTENT_KEYS.some((key) => key in patch))
+        return {
+          ...restoreHistoryEntry(state, {
+            document: patch.document,
+            session: historySessionFromEditor(state),
+          }),
+          ...patch,
+        };
       return patch;
     }
     patch = syncEditedTimelinePath(state, patch);
     if (!contentChanged(state, patch)) return patch;
-    if (!commitScheduled) {
-      commitScheduled = true;
-      queueMicrotask(() => {
-        // A `documentV2`-bearing write may have superseded this commit meanwhile.
-        if (!commitScheduled) return;
-        commitScheduled = false;
-        useEditorStore.setState({
-          documentV2: commitDocumentV2(useEditorStore.getState()),
-        });
-      });
-    }
-    return patch;
+    const merged = { ...state, ...patch };
+    const root = saveActiveRoot(merged);
+    const owned = {
+      ...patch,
+      frames: saveActiveFrame(merged),
+      rootLayers: root.layers,
+      rootAnimation: root.animation,
+      rootHiddenLayerIds: root.hiddenLayerIds,
+    };
+    return { ...owned, document: buildDocumentFromEditor({ ...state, ...owned }) };
   });
 }
 
 export const useEditorStore = create<EditorState>((rawSet, get) => {
-  /** Every content write routes through the freshness barrier — see setDocumentState. */
+  /** All command and gesture writes share the same atomic document transaction. */
   const set: SetEditorState = (update) => setDocumentState(rawSet, update);
 
   return {
-    documentV2: initialDocumentV2,
+    document: initialEditorDocument,
     morphPreview: null,
     frames: initialFrames.map(cloneFrame),
     selectedFrameId: initialFrame.id,
@@ -785,7 +773,7 @@ export const useEditorStore = create<EditorState>((rawSet, get) => {
       const captured = get();
       const issue = booleanSelectionIssue(captured);
       if (issue) return { ok: false, reason: issue };
-      const signature = JSON.stringify(legacySnapshotFromEditor(captured));
+      const signature = JSON.stringify(workspaceFromEditor(captured));
       const selection = JSON.stringify(captured.selectedLayerRefs);
       const selectedIds = JSON.stringify(captured.selectedLayerIds);
       try {
@@ -797,7 +785,7 @@ export const useEditorStore = create<EditorState>((rawSet, get) => {
           current.future !== captured.future ||
           JSON.stringify(current.selectedLayerRefs) !== selection ||
           JSON.stringify(current.selectedLayerIds) !== selectedIds ||
-          JSON.stringify(legacySnapshotFromEditor(current)) !== signature ||
+          JSON.stringify(workspaceFromEditor(current)) !== signature ||
           booleanSelectionIssue(current)
         )
           return {
@@ -962,9 +950,9 @@ export const useEditorStore = create<EditorState>((rawSet, get) => {
       const vector = structuredClone(active.vector);
       const animation = structuredClone(active.animation);
       // Load/reset flows replace the graph wholesale, so this patch carries a
-      // fresh documentV2 (see setDocumentState): same-task readers must never
+      // fresh document (see setDocumentState): same-task readers must never
       // observe the previous project through it.
-      const documentV2 = commitDocumentV2({
+      const document = buildDocumentFromEditor({
         ...get(),
         frames,
         rootLayers: [],
@@ -1023,7 +1011,7 @@ export const useEditorStore = create<EditorState>((rawSet, get) => {
         hoveredItem: null,
         dragState: null,
         clipboard: null,
-        documentV2,
+        document,
       });
     },
 
@@ -1105,7 +1093,6 @@ useEditorStore.setState = ((
   replace?: boolean,
 ) => {
   if (replace) {
-    commitScheduled = false;
     return rawSetState(update as EditorState, true);
   }
   setDocumentState(rawSetState as SetEditorState, update);

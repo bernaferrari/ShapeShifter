@@ -1,12 +1,11 @@
-import { legacySnapshotFromDocumentV2 } from "../shapeshifter/documentModel";
-import { exportProjectJSON } from "../shapeshifter/export/projectJson";
+import { workspaceFromDocument } from "../shapeshifter/documentModel";
 import { exportStaticSVGWithDiagnostics } from "../shapeshifter/exporter";
 import { exportPDFWithDiagnostics } from "../shapeshifter/export/pdf";
 import { exportLottieDocumentWithDiagnostics } from "../shapeshifter/export/lottie";
 import { compileAndroidArtboard } from "../shapeshifter/androidCompiler";
 import { createAndroidExportZip } from "../store/exportDocument";
 import { PAGE_ROOT_ID } from "../shapeshifter/scene/owners";
-import type { DocumentV2 } from "../shapeshifter/types";
+import type { EditorDocument } from "../shapeshifter/types";
 import { AgentCommandError } from "./commands";
 
 export const AGENT_EXPORT_FORMATS = ["json", "static", "vector", "avd", "lottie", "pdf"] as const;
@@ -32,7 +31,7 @@ function base64(bytes: Uint8Array) {
 
 /** Export one immutable capture. Reading a different owner never changes editor focus or history. */
 export function exportAgentSnapshot(
-  document: DocumentV2,
+  document: EditorDocument,
   revision: number,
   request: AgentExportRequest,
 ) {
@@ -42,7 +41,7 @@ export function exportAgentSnapshot(
     !AGENT_EXPORT_FORMATS.includes(request.format)
   )
     throw new AgentCommandError("INVALID_EXPORT", "Provide ownerId and a supported export format.");
-  const snapshot = legacySnapshotFromDocumentV2(document);
+  const snapshot = workspaceFromDocument(document);
   const owner =
     request.ownerId === PAGE_ROOT_ID
       ? {
@@ -70,20 +69,9 @@ export function exportAgentSnapshot(
     case "json":
       content = JSON.stringify(
         {
-          ...exportProjectJSON(
-            owner.layers,
-            owner.vector,
-            owner.animation,
-            owner.hiddenLayerIds,
-            snapshot.frames,
-            {
-              layers: snapshot.rootLayers,
-              vector: snapshot.rootVector,
-              animation: snapshot.rootAnimation,
-              hiddenLayerIds: snapshot.rootHiddenLayerIds,
-            },
-          ),
-          documentV2: structuredClone(document),
+          format: "shapeshifter",
+          activeOwnerId: request.ownerId,
+          document: structuredClone(document),
         },
         null,
         2,

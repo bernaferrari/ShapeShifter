@@ -74,18 +74,18 @@ describe("editor selection contracts", () => {
     expect(state.selectedBlockIds).toEqual([block!.id]);
     expect(state.timelineCollapsed).toBe(false);
     expect(
-      rendered.container.querySelector('[aria-label="Remove Rotation animation"]'),
+      rendered.container.querySelector('[aria-label="Select Rotation keyframe"]'),
     ).not.toBeNull();
   });
 
-  it("removes an active transform animation from its keyframe control", () => {
+  it("selects a transform keyframe without removing its animation", () => {
     const layer = useEditorStore.getState().layers[0]!;
     useEditorStore.getState().addTimelineBlock(layer.id, "rotation");
     useEditorStore.getState().selectLayer(layer.id);
     rendered = renderEditorComponent(<Inspector />);
 
     const removeRotation = rendered.container.querySelector(
-      '[aria-label="Remove Rotation animation"]',
+      '[aria-label="Select Rotation keyframe"]',
     );
     expect(removeRotation).toBeInstanceOf(HTMLButtonElement);
     click(removeRotation!);
@@ -97,7 +97,7 @@ describe("editor selection contracts", () => {
           (candidate) =>
             String(candidate.layerId) === String(layer.id) && candidate.propertyName === "rotation",
         ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("deletes selected timeline blocks before considering the selected layer", () => {

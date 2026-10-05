@@ -39,3 +39,6 @@ next-env.d.ts
 .dolt/
 *.db
 .beads-credential-key
+
+/playwright-report/
+/test-results/

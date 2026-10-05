@@ -224,11 +224,11 @@ export function useWorldPen({
   useEffect(
     () =>
       useEditorStore.subscribe((state, previous) => {
-        if (activeSubpathRef.current == null || state.documentV2 === previous.documentV2) return;
+        if (activeSubpathRef.current == null || state.document === previous.document) return;
         // Undo, Redo and transaction cancellation restore the exact saved graph.
         // Ordinary Pen commits create a new graph and keep construction active.
         const restored = [...previous.history, ...previous.future].some(
-          (entry) => entry.documentV2 === state.documentV2,
+          (entry) => entry.document === state.document,
         );
         if (restored) finish();
       }),

@@ -49,7 +49,7 @@ function setup(propertyName = "rotation", type: "number" | "color" | "path" = "n
     },
   ];
   useEditorStore.setState({
-    layers: [{ ...layer, timeline: blocks }],
+    layers: [layer],
     animation: { ...state.animation, duration: 1000, blocks },
     selectedBlockIds: ["right"],
     history: [],

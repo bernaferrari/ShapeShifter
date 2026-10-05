@@ -5,7 +5,7 @@ import { AGENT_EXPORT_FORMATS } from "../export";
 import { EDITOR_AGENT_TOOLS } from "../browserTools";
 import { pathToString } from "../../shapeshifter/pathUtils";
 import { compileAndroidArtboard } from "../../shapeshifter/androidCompiler";
-import { legacySnapshotFromDocumentV2 } from "../../shapeshifter/documentModel";
+import { workspaceFromDocument } from "../../shapeshifter/documentModel";
 import { useEditorStore } from "../../store/editorStore";
 
 let baseline: ReturnType<typeof useEditorStore.getState>;
@@ -249,7 +249,6 @@ describe("agent document transactions", () => {
               from: parseAgentPath(path(0)),
               pathData: parseAgentPath(path(0)),
               to: parseAgentPath(path(7)),
-              timeline: blocks.filter((candidate) => candidate.layerId === target.layerId),
             }
           : layer,
       ),
@@ -288,13 +287,9 @@ describe("agent document transactions", () => {
       });
     }
     expect(
-      legacySnapshotFromDocumentV2(after.document).frames.find(
-        (frame) => frame.id === otherOwner.id,
-      ),
+      workspaceFromDocument(after.document).frames.find((frame) => frame.id === otherOwner.id),
     ).toEqual(
-      legacySnapshotFromDocumentV2(before.document).frames.find(
-        (frame) => frame.id === otherOwner.id,
-      ),
+      workspaceFromDocument(before.document).frames.find((frame) => frame.id === otherOwner.id),
     );
     const at = (timeMs: number) =>
       agent
@@ -305,7 +300,7 @@ describe("agent document transactions", () => {
     const staticExport = agent.exportDocument({ ownerId: target.ownerId, format: "static" });
     expect(staticExport.ready).toBe(true);
     expect(staticExport.content).toContain(`d="${from}"`);
-    const owner = legacySnapshotFromDocumentV2(after.document).frames.find(
+    const owner = workspaceFromDocument(after.document).frames.find(
       (frame) => frame.id === target.ownerId,
     )!;
     const android = compileAndroidArtboard(owner);
@@ -439,7 +434,7 @@ describe("agent captured exports", () => {
     const before = agent.inspect();
     const result = agent.exportDocument({ ownerId: ref().ownerId, format: "json" });
     expect(result.scope).toBe("document");
-    expect(JSON.parse(result.content!).documentV2).toEqual(before.document);
+    expect(JSON.parse(result.content!).document).toEqual(before.document);
   });
   it("provides text formats and portable base64 bytes for a complete Android archive", () => {
     const agent = createEditorAgent();

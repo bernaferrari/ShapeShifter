@@ -10,7 +10,7 @@ import { importVectorDrawable } from "../import/androidVectorDrawable";
 import {
   compileLiveAndroidArtboard,
   flushLiveExportDocument,
-  getLiveDocumentV2,
+  getLiveDocument,
   serializeLiveProject,
 } from "../../store/exportDocument";
 import { prepareForMorph, scoreMorphQuality } from "../pathUtils";
@@ -239,10 +239,10 @@ describe("P0 Android trust", () => {
     expect(remaining.some((layer) => String(layer.parentId) === String(group.id))).toBe(false);
   });
 
-  it("serializes a flushed project and a live DocumentV2", () => {
+  it("serializes a flushed project and a live EditorDocument", () => {
     const project = serializeLiveProject();
-    expect(project.documentV2?.version).toBe(2);
-    expect(getLiveDocumentV2().version).toBe(2);
+    expect(project.document?.schema).toBe("shapeshifter");
+    expect(getLiveDocument().schema).toBe("shapeshifter");
   });
 
   it("persists an inspectable MorphMapping from prepareForMorph", () => {
@@ -251,14 +251,14 @@ describe("P0 Android trust", () => {
     expect(scoreMorphQuality(prepared.from, prepared.to).compatible).toBe(true);
   });
 
-  it("commits added layers into the live DocumentV2 and restores that graph on undo", () => {
-    const before = Object.keys(getLiveDocumentV2().nodes).length;
+  it("commits added layers into the live EditorDocument and restores that graph on undo", () => {
+    const before = Object.keys(getLiveDocument().nodes).length;
     useEditorStore.getState().addLayer("path");
     const added = useEditorStore.getState().layers.at(-1)!;
-    const live = getLiveDocumentV2();
+    const live = getLiveDocument();
     expect(Object.keys(live.nodes).length).toBeGreaterThan(before);
     expect(Object.values(live.nodes).some((node) => node.name === added.name)).toBe(true);
-    expect(useEditorStore.getState().history.at(-1)?.documentV2).toBeDefined();
+    expect(useEditorStore.getState().history.at(-1)?.document).toBeDefined();
     expect(useEditorStore.getState().history.at(-1)?.session).toBeDefined();
     useEditorStore.getState().undo();
     expect(

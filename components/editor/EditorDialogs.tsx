@@ -46,6 +46,8 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useAnimationExercise } from "./animationExercise";
+import { Button } from "@/components/ui/button";
 import { KeyCombo } from "@/components/ui/kbd";
 import { DEMO_INFOS } from "@/lib/shapeshifter/demoProjects";
 import { useEditorStore } from "@/lib/store/editorStore";
@@ -131,8 +133,25 @@ export function EditorHelpDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="gap-0 p-0 sm:max-w-[680px]">
         <DialogHeader className="border-b border-border px-6 py-4">
-          <DialogTitle>Keyboard shortcuts</DialogTitle>
+          <DialogTitle>Editor help</DialogTitle>
         </DialogHeader>
+        <div className="flex items-center justify-between gap-4 border-b border-border px-6 py-4">
+          <div>
+            <p className="text-sm font-medium">Make an icon move</p>
+            <p className="text-xs text-muted-foreground">
+              An editable exercise from artwork to export.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => {
+              useAnimationExercise.getState().start();
+              onOpenChange(false);
+            }}
+          >
+            Start exercise
+          </Button>
+        </div>
         <div className="grid gap-x-10 gap-y-6 px-6 py-5 sm:grid-cols-2">
           {SHORTCUT_SECTIONS.map((section) => (
             <section key={section.title} aria-labelledby={`shortcut-${section.title}`}>
@@ -163,12 +182,12 @@ export function EditorHelpDialog({
 const EXPORT_COMMANDS: ReadonlyArray<[EditorExportType, string]> = [
   ["avd", "Export Animated Vector Drawable"],
   ["vector", "Export Vector Drawable"],
-  ["svg", "Export animated SVG"],
+  ["svg", "Export morph demo SVG (experimental)"],
   ["static", "Export SVG"],
-  ["css", "Export CSS keyframes"],
+  ["css", "Export morph demo CSS (experimental)"],
   ["lottie", "Export Lottie"],
   ["pdf", "Export PDF"],
-  ["spritesheet", "Export SVG spritesheet"],
+  ["spritesheet", "Export morph sprite sheet (experimental)"],
   ["json", "Save project file"],
 ];
 
@@ -262,13 +281,7 @@ export function EditorCommandPalette({
           icon: Copy,
           shortcut: "⌘D",
           disabled: !hasSelection,
-          action: () => {
-            const state = store();
-            state.copyLayers(
-              state.selectedLayerIds.length ? state.selectedLayerIds : [state.selectedLayerId],
-            );
-            state.pasteLayers();
-          },
+          action: () => store().duplicateSelectedLayersOffset(2, 2),
         },
         {
           label: "Group selection",
@@ -358,6 +371,12 @@ export function EditorCommandPalette({
     {
       heading: "File",
       commands: [
+        {
+          label: "Make an icon move",
+          icon: Sparkles,
+          keywords: ["learn", "exercise", "onboarding"],
+          action: () => useAnimationExercise.getState().start(),
+        },
         { label: "Import SVG, XML or project…", icon: Upload, action: onOpenImport },
         ...EXPORT_COMMANDS.map(([type, label]) => ({
           label,

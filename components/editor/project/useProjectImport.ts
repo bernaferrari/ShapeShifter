@@ -2,11 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
 import { toast } from "sonner";
-import {
-  legacyProjectionIssues,
-  legacySnapshotFromDocumentV2,
-  validateDocumentV2,
-} from "@/lib/shapeshifter/documentModel";
+import { documentEditingIssues, validateEditorDocument } from "@/lib/shapeshifter/documentModel";
 import { importLayersFromSvg } from "@/lib/shapeshifter/importers";
 import {
   importAnimatedVectorBundle,
@@ -14,20 +10,7 @@ import {
 } from "@/lib/shapeshifter/import/androidAnimatedVector";
 import { importVectorDrawable } from "@/lib/shapeshifter/import/androidVectorDrawable";
 import { parseZip } from "@/lib/shapeshifter/zip";
-import { parsePath } from "@/lib/shapeshifter/pathUtils";
-import {
-  flattenOriginalProject,
-  isOriginalShapeShifterProject,
-  recoverLegacyDocumentSnapshot,
-} from "@/lib/shapeshifter/project";
-import type {
-  Command,
-  DocumentV2,
-  Layer,
-  LayerType,
-  PathData,
-  Point,
-} from "@/lib/shapeshifter/types";
+import type { EditorDocument } from "@/lib/shapeshifter/types";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { isEditableTarget } from "../hooks/useEditorKeyboardShortcuts";
 
@@ -40,83 +23,6 @@ interface ImportSummary {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function isDocumentV2Candidate(value: unknown): value is Record<string, unknown> {
-  return isRecord(value) && value.version === 2;
-}
-
-const PATH_COMMAND_TYPES = new Set(["M", "L", "C", "Q", "A", "Z", "H", "V", "S", "T"]);
-
-function isPoint(value: unknown): value is Point {
-  return (
-    isRecord(value) &&
-    typeof value.x === "number" &&
-    Number.isFinite(value.x) &&
-    typeof value.y === "number" &&
-    Number.isFinite(value.y)
-  );
-}
-
-function isCommand(value: unknown): value is Command {
-  return (
-    isRecord(value) &&
-    typeof value.id === "string" &&
-    typeof value.type === "string" &&
-    PATH_COMMAND_TYPES.has(value.type) &&
-    Array.isArray(value.points) &&
-    value.points.every(isPoint)
-  );
-}
-
-function isPathData(value: unknown): value is PathData {
-  return (
-    isRecord(value) &&
-    Array.isArray(value.subPaths) &&
-    value.subPaths.every(
-      (subPath) =>
-        isRecord(subPath) && Array.isArray(subPath.commands) && subPath.commands.every(isCommand),
-    )
-  );
-}
-
-function parsePathValue(value: unknown, fallback?: PathData): PathData {
-  if (typeof value === "string") return parsePath(value);
-  if (isPathData(value)) return value;
-  return fallback ?? parsePath("");
-}
-
-function parseLayerType(value: unknown): LayerType {
-  return value === "group" || value === "clipPath" || value === "vector" ? value : "path";
-}
-
-function parseLooseLayer(value: unknown, index: number): Layer | null {
-  if (!isRecord(value)) return null;
-  const candidate = value as Partial<Layer> & {
-    from?: Layer["from"] | string;
-    to?: Layer["to"] | string;
-    pathData?: Layer["pathData"] | string;
-  };
-  const from = parsePathValue(candidate.from ?? candidate.pathData);
-  const to = candidate.to == null ? undefined : parsePathValue(candidate.to, from);
-  const children = Array.isArray(candidate.children)
-    ? candidate.children.flatMap((child, childIndex) => {
-        const parsed = parseLooseLayer(child, childIndex);
-        return parsed ? [parsed] : [];
-      })
-    : undefined;
-  return {
-    ...candidate,
-    id: candidate.id ?? `imported-layer-${Date.now()}-${index}`,
-    name: candidate.name ?? `Imported layer ${index + 1}`,
-    type: parseLayerType(candidate.type),
-    from,
-    to,
-    pathData: parsePathValue(candidate.pathData, from),
-    visible: candidate.visible ?? true,
-    locked: candidate.locked ?? false,
-    children,
-  };
 }
 
 export function importEditorZip(fileName: string, bytes: Uint8Array): ImportSummary {
@@ -138,69 +44,26 @@ export function importEditorText(fileName: string, text: string): ImportSummary 
 
   if (lowerName.endsWith(".json") || lowerName.endsWith(".shapeshifter")) {
     const parsed: unknown = JSON.parse(text);
-    const documentCandidate = isRecord(parsed) ? parsed.documentV2 : undefined;
-    let documentIssues: string[] | null = null;
-    if (isDocumentV2Candidate(documentCandidate)) {
-      documentIssues = validateDocumentV2(documentCandidate);
-      if (documentIssues.length === 0) {
-        const projectionIssues = legacyProjectionIssues(documentCandidate as unknown as DocumentV2);
-        if (projectionIssues.length) {
-          throw new Error(
-            `This native v2 project cannot be opened without loss: ${projectionIssues[0]}. ` +
-              "Use a legacy-compatible project export or a version with native v2 editing support.",
-          );
-        }
-        try {
-          const snapshot = legacySnapshotFromDocumentV2(documentCandidate as unknown as DocumentV2);
-          store.loadDocument(snapshot);
-          return {
-            title: `Opened ${snapshot.name}`,
-            description: `${snapshot.frames.length} frame(s) · ${snapshot.rootLayers.length} page vector(s)`,
-          };
-        } catch {
-          documentIssues = ["Document v2 could not be projected safely."];
-        }
-      }
-    }
-
-    // Newer project exports retain this complete legacy envelope beside documentV2.
-    // Prefer it only when the canonical graph is absent or invalid, so a damaged V2
-    // graph cannot silently collapse a multi-frame project to the selected artboard.
-    const recovered = recoverLegacyDocumentSnapshot(parsed);
-    if (recovered) {
-      store.loadDocument(recovered);
-      return {
-        title: `Opened ${recovered.name}`,
-        description: `Recovered ${recovered.frames.length} frame(s) and ${recovered.rootLayers.length} page vector(s) from the legacy project envelope`,
-      };
-    }
-
-    // A damaged V2 document may be accompanied by a legacy-shaped top-level
-    // vector, but flattening that compatibility wrapper would discard its
-    // artboards/page owner. Refuse it unless the complete recovery envelope
-    // succeeded above; this also lets autosave preserve the original payload.
-    if (documentIssues?.length) throw new Error(`Invalid document: ${documentIssues[0]}`);
-
-    if (isOriginalShapeShifterProject(parsed)) {
-      const project = flattenOriginalProject(parsed);
-      if (!project.layers.length) throw new Error("No path layers found in project");
-      store.loadProject(project);
-      return {
-        title: `Opened ${project.vector.name}`,
-        description: `${project.layers.length} layer(s) · ${project.animation.blocks.length} animated track(s)`,
-      };
-    }
-
-    const rawLayers = isRecord(parsed) && Array.isArray(parsed.layers) ? parsed.layers : [];
-    const layers = rawLayers.flatMap((layer, index) => {
-      const parsedLayer = parseLooseLayer(layer, index);
-      return parsedLayer ? [parsedLayer] : [];
-    });
-    if (!layers.length) {
-      throw new Error("No layers found in project file");
-    }
-    store.setLayers(layers);
-    return { title: `Opened project`, description: `${layers.length} layer(s)` };
+    if (!isRecord(parsed) || parsed.format !== "shapeshifter")
+      throw new Error("Open a native ShapeShifter project, SVG, or Android vector file.");
+    const issues = validateEditorDocument(parsed.document);
+    if (issues.length) throw new Error(`Invalid project: ${issues[0]}`);
+    const document = parsed.document as EditorDocument;
+    const editingIssues = documentEditingIssues(document);
+    if (editingIssues.length) throw new Error(`Unsupported project content: ${editingIssues[0]}`);
+    const ownerId = parsed.activeOwnerId;
+    if (
+      ownerId !== undefined &&
+      (typeof ownerId !== "string" ||
+        (ownerId !== "__page_root__" && !document.frameIds.includes(ownerId)))
+    )
+      throw new Error("Invalid project: the active artboard no longer exists.");
+    store.loadDocument(document);
+    if (typeof ownerId === "string") useEditorStore.getState().selectFrame(ownerId);
+    return {
+      title: `Opened ${document.name}`,
+      description: `${document.frameIds.length} artboard(s) · ${document.rootNodeIds.length} page vector(s)`,
+    };
   }
 
   if (isAnimatedVectorMarkup(text)) {

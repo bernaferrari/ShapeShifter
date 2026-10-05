@@ -3,7 +3,7 @@ import { useCallback, type RefObject } from "react";
 import { useEditorStore } from "@/lib/store/editorStore";
 import {
   historySessionFromEditor,
-  legacySnapshotFromEditor,
+  workspaceFromEditor,
   restoreHistoryEntry,
 } from "@/lib/store/documentRuntime";
 import { stageAgentCommands } from "@/lib/agent/commands";
@@ -35,13 +35,13 @@ export function useWorldPenCreation({
         local.x = snapValueToStep(local.x, snapStep);
         local.y = snapValueToStep(local.y, snapStep);
       }
-      const staged = stageAgentCommands(legacySnapshotFromEditor(state), [
+      const staged = stageAgentCommands(workspaceFromEditor(state), [
         { type: "createPath", ownerId, name: "Path", d: `M${local.x} ${local.y}` },
       ]);
       state.pushHistory();
       useEditorStore.setState(
         restoreHistoryEntry(state, {
-          documentV2: staged.document,
+          document: staged.document,
           session: historySessionFromEditor(state),
         }),
       );

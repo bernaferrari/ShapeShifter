@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "../editorStore";
 import { compileLiveAndroidArtboard, serializeLiveProject } from "../exportDocument";
-import { legacySnapshotFromDocumentV2 } from "../../shapeshifter/documentModel";
 import { parsePath, pathToString } from "../../shapeshifter/pathUtils";
 import { evaluateAndroidScene } from "../../shapeshifter/scene/evaluate";
 import { blocksFor } from "../../shapeshifter/playheadResolve";
@@ -78,7 +77,7 @@ describe("world base path and motion parity", () => {
     ).toBe(true);
     expect(android.files[0].content).toContain(`android:pathData="${d}"`);
     const saved = serializeLiveProject();
-    store.loadDocument(legacySnapshotFromDocumentV2(saved.documentV2));
+    store.loadDocument(saved.document);
     expect(tracks(layer.id)[0].fromValue).toBe(d);
     expect(preview(layer.id)).toBe(d);
     expect(
@@ -137,7 +136,7 @@ describe("world base path and motion parity", () => {
     expect(useEditorStore.getState().animation.blocks).toBe(original);
     useEditorStore.setState({
       layers: [changed, ...store.layers.slice(1)],
-      documentV2: useEditorStore.getState().documentV2,
+      document: useEditorStore.getState().document,
     });
     expect(useEditorStore.getState().animation.blocks).toBe(original);
     expect(tracks(layer.id)[0].fromValue).not.toBe(pathToString(changed.from));

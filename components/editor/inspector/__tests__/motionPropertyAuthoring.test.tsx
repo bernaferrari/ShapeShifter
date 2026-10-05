@@ -88,7 +88,22 @@ describe("supported motion authoring", () => {
       type: "number",
       fromValue: base,
     });
-    expect(button(`Remove ${label} animation`)).toBeInstanceOf(HTMLButtonElement);
+    expect(button(`Select ${label} keyframe`)).toBeInstanceOf(HTMLButtonElement);
+  });
+
+  it("adds and selects a pose without deleting the property's animation", () => {
+    const current = mount();
+    click(button("Animate Opacity"));
+    React.act(() => useEditorStore.getState().setProgress(0.3));
+    const time = useEditorStore.getState().animation.duration * 0.3;
+    click(button(`Add Opacity keyframe at ${Number(time.toFixed(2))} ms`));
+    const before = useEditorStore.getState().animation.blocks;
+    expect(
+      before.filter((block) => block.layerId === current.id && block.propertyName === "alpha"),
+    ).toHaveLength(2);
+    click(button("Select Opacity keyframe"));
+    expect(useEditorStore.getState().animation.blocks).toEqual(before);
+    expect(rendered!.container.textContent).toContain(`Keyframe · ${Number(time.toFixed(2))} ms`);
   });
 
   it("offers transforms and pivots for groups, and only geometry for clip paths", () => {

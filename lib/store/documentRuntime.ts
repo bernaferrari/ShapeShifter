@@ -1,19 +1,19 @@
 import {
-  createDocumentV2FromLegacy,
-  legacySnapshotFromDocumentV2,
-  type LegacyDocumentSnapshot,
+  buildEditorDocument,
+  workspaceFromDocument,
+  type WorkspaceSnapshot,
 } from "../shapeshifter/documentModel";
-import type { DocumentV2 } from "../shapeshifter/types";
+import type { EditorDocument } from "../shapeshifter/types";
 import { PAGE_ROOT_ID } from "../shapeshifter/scene/owners";
 import type { EditorState, HistoryEntry, HistorySession } from "./editorStore";
 import { saveActiveFrame, saveActiveRoot, buildLoadedDocumentState } from "./workspaceState";
 
-export function legacySnapshotFromEditor(state: EditorState): LegacyDocumentSnapshot {
+export function workspaceFromEditor(state: EditorState): WorkspaceSnapshot {
   const frames = saveActiveFrame(state);
   const root = saveActiveRoot(state);
   return {
-    id: state.documentV2?.id ?? String(state.vector.id ?? "document"),
-    name: state.documentV2?.name ?? state.vector.name ?? "ShapeShifter",
+    id: state.document?.id ?? String(state.vector.id ?? "document"),
+    name: state.document?.name ?? state.vector.name ?? "ShapeShifter",
     frames: frames.map((frame) => ({
       id: frame.id,
       name: frame.name,
@@ -27,27 +27,27 @@ export function legacySnapshotFromEditor(state: EditorState): LegacyDocumentSnap
     rootLayers: root.layers,
     rootVector: {
       id: "page",
-      name: state.documentV2?.page.name ?? "Page",
-      width: state.documentV2?.page.width ?? 24,
-      height: state.documentV2?.page.height ?? 24,
-      alpha: state.documentV2?.page.alpha ?? 1,
-      viewportWidth: state.documentV2?.page.viewportWidth,
-      viewportHeight: state.documentV2?.page.viewportHeight,
-      widthUnit: state.documentV2?.page.widthUnit,
-      heightUnit: state.documentV2?.page.heightUnit,
-      tint: state.documentV2?.page.tint,
-      tintMode: state.documentV2?.page.tintMode,
-      autoMirrored: state.documentV2?.page.autoMirrored,
-      minSdk: state.documentV2?.page.minSdk,
+      name: state.document?.page.name ?? "Page",
+      width: state.document?.page.width ?? 24,
+      height: state.document?.page.height ?? 24,
+      alpha: state.document?.page.alpha ?? 1,
+      viewportWidth: state.document?.page.viewportWidth,
+      viewportHeight: state.document?.page.viewportHeight,
+      widthUnit: state.document?.page.widthUnit,
+      heightUnit: state.document?.page.heightUnit,
+      tint: state.document?.page.tint,
+      tintMode: state.document?.page.tintMode,
+      autoMirrored: state.document?.page.autoMirrored,
+      minSdk: state.document?.page.minSdk,
     },
     rootAnimation: root.animation,
     rootHiddenLayerIds: root.hiddenLayerIds,
   };
 }
 
-/** Commit the flushed workspace into the live DocumentV2 graph. */
-export function commitDocumentV2(state: EditorState): DocumentV2 {
-  return createDocumentV2FromLegacy(legacySnapshotFromEditor(state));
+/** Commit the flushed workspace into the live EditorDocument graph. */
+export function buildDocumentFromEditor(state: EditorState): EditorDocument {
+  return buildEditorDocument(workspaceFromEditor(state));
 }
 
 export function historySessionFromEditor(state: EditorState): HistorySession {
@@ -70,13 +70,13 @@ export function historySessionFromEditor(state: EditorState): HistorySession {
 
 export function snapshotHistoryEntry(state: EditorState): HistoryEntry {
   return {
-    documentV2: commitDocumentV2(state),
+    document: state.document,
     session: historySessionFromEditor(state),
   };
 }
 
 export function restoreHistoryEntry(state: EditorState, entry: HistoryEntry): Partial<EditorState> {
-  const snapshot = legacySnapshotFromDocumentV2(entry.documentV2);
+  const snapshot = workspaceFromDocument(entry.document);
   const projected = buildLoadedDocumentState(snapshot);
   const session = entry.session;
   const selectedFrameId = session.selectedFrameId;
@@ -91,7 +91,7 @@ export function restoreHistoryEntry(state: EditorState, entry: HistoryEntry): Pa
     : (frame?.animation ?? projected.animation);
   return {
     ...projected,
-    documentV2: entry.documentV2,
+    document: entry.document,
     selectedFrameId,
     selectedFrameIds: [...session.selectedFrameIds],
     layers,

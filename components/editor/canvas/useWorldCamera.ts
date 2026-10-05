@@ -83,7 +83,9 @@ export function useWorldCamera({
     previousDocumentRef.current = { frameIdsSignature, selectedFrameId };
     if (!frames.length || !previous) return;
     if (previous.frameIdsSignature !== frameIdsSignature) {
-      onFitFrames();
+      // A newly created/loaded active artboard should remain large enough to edit.
+      const newlyFocused = !previous.frameIdsSignature.split("|").includes(selectedFrameId);
+      onFitFrames(newlyFocused ? [selectedFrameId] : undefined);
     } else if (selectedFrameId !== previous.selectedFrameId && selectionKind !== "layer") {
       onBringFrameIntoView(selectedFrameId, { animate: true });
     }

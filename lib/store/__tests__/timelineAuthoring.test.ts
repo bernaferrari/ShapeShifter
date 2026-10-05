@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "../editorStore";
+import {
+  buildEditorDocument,
+  workspaceFromDocument,
+  documentEditingIssues,
+} from "../../shapeshifter/documentModel";
+import { workspaceFromEditor } from "../documentRuntime";
+import { numberAtTime } from "../../shapeshifter/playheadResolve";
 import { parsePath, pathToString } from "../../shapeshifter/pathUtils";
 import type { TimelineBlock } from "../../shapeshifter/types";
 
@@ -39,7 +46,7 @@ function setup(propertyName = "rotation") {
   ];
   useEditorStore.setState({
     animation: { ...state.animation, duration: 1000, blocks },
-    layers: [{ ...layer, timeline: blocks }],
+    layers: [layer],
     selectedLayerId: layer.id,
     selectedLayerIds: [layer.id],
     selectedLayerRefs: [{ ownerId: state.selectedFrameId, layerId: layer.id }],
@@ -66,7 +73,7 @@ describe("timeline authoring actions", () => {
       [125.25, 625.25],
       [625.25, 1125.25],
     ]);
-    expect(useEditorStore.getState().layers[0].timeline).toEqual(blocks());
+    expect(useEditorStore.getState().animation.blocks).toEqual(blocks());
     expect(useEditorStore.getState().history).toHaveLength(historyLength + 1);
     store.undo();
     expect(blocks().map((block) => [block.startTime, block.endTime])).toEqual([
@@ -74,6 +81,55 @@ describe("timeline authoring actions", () => {
       [500, 1000],
     ]);
     expect(useEditorStore.getState().selectedBlockIds).toEqual(["left", "right"]);
+  });
+  it("deletes one endpoint without deleting its animation, persists the remaining pose, and adds a new pose", () => {
+    const layer = setup();
+    const store = useEditorStore.getState();
+    store.removeTimelineBlocks(["right"]);
+    store.removeTimelineKeyframe("left", "start");
+    expect(blocks()).toHaveLength(1);
+    expect(blocks()[0]).toMatchObject({ startTime: 500, endTime: 500, fromValue: 50, toValue: 50 });
+    const document = buildEditorDocument(workspaceFromEditor(useEditorStore.getState()));
+    expect(Object.values(document.tracks)[0].keyframeIds).toHaveLength(1);
+    expect(documentEditingIssues(document)).toEqual([]);
+    expect(workspaceFromDocument(document).frames[0].animation.blocks).toEqual(blocks());
+    expect(numberAtTime(layer, blocks(), "rotation", 200, 1000)).toBe(50);
+    expect(numberAtTime(layer, blocks(), "rotation", 900, 1000)).toBe(50);
+    store.updateTimelineKeyframe("left", "start", { time: 517.25, value: 60 });
+    expect(blocks()[0]).toMatchObject({
+      startTime: 517.25,
+      endTime: 517.25,
+      fromValue: 60,
+      toValue: 60,
+    });
+    store.setProgress(0.8);
+    store.setPropertiesAtPlayhead(layer.id, { rotation: 100 });
+    expect(blocks()).toHaveLength(1);
+    expect(blocks()[0]).toMatchObject({
+      startTime: 517.25,
+      endTime: 800,
+      fromValue: 60,
+      toValue: 100,
+    });
+    store.undo();
+    expect(blocks()[0]).toMatchObject({ startTime: 517.25, endTime: 517.25 });
+    store.removeTimelineKeyframe("left", "start");
+    expect(blocks()).toHaveLength(1);
+    store.removeTimelineProperty(layer.id, "rotation");
+    expect(blocks()).toHaveLength(0);
+  });
+  it("authors a pose in a gap without creating a backwards segment", () => {
+    const layer = setup();
+    const store = useEditorStore.getState();
+    store.updateTimelineBlock("right", { startTime: 700, fromValue: 75 });
+    store.setProgress(0.6);
+    store.setPropertiesAtPlayhead(layer.id, { rotation: 65 });
+    expect(blocks().find((block) => block.endTime === 600)).toMatchObject({
+      startTime: 500,
+      fromValue: 50,
+      toValue: 65,
+    });
+    expect(blocks().every((block) => block.endTime >= block.startTime)).toBe(true);
   });
   it("clamps an endpoint before an unrelated segment and refuses locked endpoint edits", () => {
     setup();
@@ -94,7 +150,7 @@ describe("timeline authoring actions", () => {
   it("preserves layer identities when a canonical timeline edit changes no per-layer metadata", () => {
     setup();
     useEditorStore.setState((state) => ({
-      layers: state.layers.map((layer) => ({ ...layer, timeline: undefined })),
+      layers: state.layers.map((layer) => layer),
     }));
     const layers = useEditorStore.getState().layers;
     useEditorStore.getState().updateTimelineKeyframe("right", "start", { value: 75 });
@@ -122,7 +178,7 @@ describe("timeline authoring actions", () => {
     expect(blocks()[2].fromValue).toBe(75);
     expect(store.getCurrentSelectedPoint()).toBeNull();
     expect(useEditorStore.getState().selectedBlockIds).toEqual([blocks()[2].id]);
-    expect(useEditorStore.getState().layers[0].timeline).toHaveLength(3);
+    expect(useEditorStore.getState().animation.blocks).toHaveLength(3);
     store.undo();
     expect(blocks()).toHaveLength(2);
     expect(useEditorStore.getState().selectedBlockIds).toEqual(["right"]);
@@ -344,7 +400,7 @@ describe("selected explicit path track editing", () => {
     useEditorStore.setState({
       layers: [{ ...layer, from: parsePath("M 22 22 L 30 30") }],
       selectedLayerId: layer.id,
-      documentV2: useEditorStore.getState().documentV2,
+      document: useEditorStore.getState().document,
     });
     expect(blocks()).toBe(selected);
   });

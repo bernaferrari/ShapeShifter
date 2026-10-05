@@ -85,9 +85,9 @@ describe("Stable ID System (k7zp)", () => {
     });
   });
 
-  describe("ensureStableCommandIds (legacy migration)", () => {
-    function makeLegacyPath(legacyIds: (string | undefined)[]): PathData {
-      const commands: Command[] = legacyIds.map((id, idx) => ({
+  describe("ensureStableCommandIds", () => {
+    function makePathWithIds(ids: (string | undefined)[]): PathData {
+      const commands: Command[] = ids.map((id, idx) => ({
         id: id ?? `cmd_${Date.now()}_${idx}`,
         type: idx === 0 ? "M" : "L",
         points: [{ x: idx, y: idx }],
@@ -112,18 +112,12 @@ describe("Stable ID System (k7zp)", () => {
       expect(out.subPaths[0].commands[0].id).toBe(good);
     });
 
-    it("upgrades legacy cmd_ timestamp IDs to proper ULIDs", () => {
-      const input = makeLegacyPath(["cmd_1712345678901_0", "cmd_1712345678901_1"]);
-      const out = ensureStableCommandIds(input);
-      expect(out).not.toBe(input);
-      expect(out.subPaths[0].commands[0].id).not.toMatch(/^cmd_\d+_\d+$/);
-      expect(out.subPaths[0].commands[0].id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/);
-      expect(out.subPaths[0].commands.every((c) => /^[0-9A-HJKMNP-TV-Z]{26}$/.test(c.id))).toBe(
-        true,
-      );
+    it("preserves any unique authored identity without compatibility rewriting", () => {
+      const input = makePathWithIds(["command-one", "command-two"]);
+      expect(ensureStableCommandIds(input)).toBe(input);
     });
 
-    it("is idempotent after mixed legacy IDs are migrated", () => {
+    it("is idempotent for mixed valid identities", () => {
       const mixed: PathData = {
         subPaths: [
           {
@@ -141,7 +135,7 @@ describe("Stable ID System (k7zp)", () => {
       const ids = once.subPaths[0].commands.map((command) => command.id);
 
       expect(twice).toBe(once);
-      expect(ids.every((id) => !/^cmd_\d+/.test(id))).toBe(true);
+      expect(ids).toEqual(mixed.subPaths[0].commands.map((command) => command.id));
       expect(new Set(ids).size).toBe(ids.length);
     });
 
@@ -165,7 +159,7 @@ describe("Stable ID System (k7zp)", () => {
     });
 
     it("is pure — never mutates the input PathData", () => {
-      const input = makeLegacyPath(["cmd_old_1"]);
+      const input = makePathWithIds(["cmd_old_1"]);
       const originalId = input.subPaths[0].commands[0].id;
       ensureStableCommandIds(input);
       expect(input.subPaths[0].commands[0].id).toBe(originalId);

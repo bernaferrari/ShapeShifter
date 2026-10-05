@@ -2,7 +2,6 @@ import { pathToString } from "../shapeshifter/pathUtils";
 import { linkedTimelineKeyframe } from "../shapeshifter/motion/timelineKeyframes";
 import type { Layer, TimelineBlock } from "../shapeshifter/types";
 import type { EditorState } from "./editorStore";
-import { mapLayerTimelines } from "./timelineLayerMapping";
 import { blocksFor } from "../shapeshifter/playheadResolve";
 
 export function timelinePathSelection(
@@ -114,7 +113,7 @@ export function syncEditedTimelinePath(
   if (
     !patch.layers ||
     "animation" in patch ||
-    "documentV2" in patch ||
+    "document" in patch ||
     (state.isActionMode && (patch.isActionMode === false || state.selectedBlockIds.length !== 1)) ||
     state.selectedLayerIds.length !== 1 ||
     state.selectedLayerRefs.length > 1 ||
@@ -136,12 +135,8 @@ export function syncEditedTimelinePath(
     state.isActionMode ? state.selectedBlockIds[0] : undefined,
   );
   if (blocks === state.animation.blocks) return patch;
-  const updated = new Map(blocks.map((block) => [block.id, block]));
   return {
     ...patch,
-    layers: mapLayerTimelines(patch.layers, (timeline) =>
-      timeline.map((block) => updated.get(block.id) ?? block),
-    ),
     animation: { ...state.animation, blocks },
   };
 }

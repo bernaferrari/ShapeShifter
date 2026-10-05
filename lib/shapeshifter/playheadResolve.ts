@@ -1,6 +1,6 @@
 /**
  * Resolve Android ObjectAnimator-style tracks at an absolute time in milliseconds.
- * The legacy UI still stores timeline blocks, so this module compiles that shape
+ * The workspace UI still stores timeline blocks, so this module compiles that shape
  * once per blocks array and gives every preview/export consumer identical values.
  */
 import { evaluateInterpolator } from "./interpolators";
@@ -333,7 +333,14 @@ export function layerAtTime(layer: Layer, blocks: TimelineBlock[], ms: number, d
   }
   for (const property of PLAYHEAD_COLOR_PROPERTIES) {
     if (animated.has(property))
-      patch[property] = colorAtTime(layer, own, property, ms, duration, layer[property] ?? "#000000");
+      patch[property] = colorAtTime(
+        layer,
+        own,
+        property,
+        ms,
+        duration,
+        layer[property] ?? "#000000",
+      );
   }
   return Object.keys(patch).length ? ({ ...layer, ...patch } as Layer) : layer;
 }

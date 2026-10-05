@@ -95,8 +95,7 @@ export function useEditorKeyboardShortcuts() {
       }
       if (command && !event.shiftKey && key === "d") {
         event.preventDefault();
-        store.copyLayers?.(selectedIds);
-        store.pasteLayers?.();
+        store.duplicateSelectedLayersOffset(2, 2);
         return;
       }
       if (command && key === "w") {
@@ -225,8 +224,7 @@ export function useEditorKeyboardShortcuts() {
         else if (store.selectedPoints.length > 0) {
           store.ensurePathKeyframeAtPlayhead();
           useEditorStore.getState().translateSelectedPoints(dx, dy);
-        }
-        else if (store.selection) {
+        } else if (store.selection) {
           const point = store.getCurrentSelectedPoint();
           if (point) store.updateSelectedPoint({ x: point.x + dx, y: point.y + dy });
         } else if (store.selectedSubPaths.length > 0) store.translateSelectedSubPaths(dx, dy);

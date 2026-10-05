@@ -993,8 +993,7 @@ export {
   getTaperedStrokeWidth,
 } from "./path/pathOptimization";
 
-// Stable ID foundation (ShapeShifter-k7zp / sogt) — single-import surface for v1 consumers
-// during the parallel migration window. All new structural edits now receive real ULIDs.
+// Stable path command identities for structural edits.
 export {
   generateId,
   ensureStableCommandIds,

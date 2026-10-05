@@ -3,7 +3,8 @@ import morphinganimals from "./demos/morphinganimals.json";
 import playtopause from "./demos/playtopause.json";
 import searchtoclose from "./demos/searchtoclose.json";
 import visibilitystrike from "./demos/visibilitystrike.json";
-import { flattenOriginalProject, type ShapeShifterProject } from "./project";
+import { workspaceFromDocument } from "./documentModel";
+import type { EditorDocument } from "./types";
 
 export const DEMO_INFOS = [
   { id: "playtopause", title: "Play-to-pause", project: playtopause },
@@ -18,6 +19,15 @@ export function getDemoProject(index: number) {
   const demo = DEMO_INFOS[wrappedIndex];
   return {
     info: demo,
-    project: flattenOriginalProject(demo.project as ShapeShifterProject),
+    project: (() => {
+      const frame = workspaceFromDocument(demo.project.document as unknown as EditorDocument)
+        .frames[0]!;
+      return {
+        layers: frame.layers,
+        vector: frame.vector,
+        animation: frame.animation,
+        hiddenLayerIds: frame.hiddenLayerIds,
+      };
+    })(),
   };
 }

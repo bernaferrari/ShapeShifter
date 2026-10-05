@@ -39,7 +39,6 @@ export function createPathLayer(layer: Omit<Layer, "type"> & Partial<Pick<Layer,
     rotation: 0,
     pivotX: 0,
     pivotY: 0,
-    timeline: [],
     ...layer,
     type: layer.type ?? "path",
   };

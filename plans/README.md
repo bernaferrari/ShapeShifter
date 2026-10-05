@@ -13,21 +13,21 @@ verification gates, and update the status below.
 
 ## Execution order and status
 
-| Plan | Title                                            | Priority | Effort | Depends on | Status                                                                                                      |
-| ---- | ------------------------------------------------ | -------: | -----: | ---------- | ----------------------------------------------------------------------------------------------------------- |
-| 001  | Establish Android semantic parity fixtures       |       P0 |      M | —          | SUPERSEDED — `androidParity.test.ts` + `fixtures/nested-clip.xml`; live tracker is `ShapeShifter-477y.2.1`  |
-| 002  | Make Android projects lossless and canonical     |       P0 |      L | 001        | SUPERSEDED — documentV2 adapter + `getLiveDocumentV2`; remaining runtime cutover is `ShapeShifter-477y.3.*` |
-| 003  | Build one Android-faithful evaluated scene       |       P0 |      L | 001, 002   | SUPERSEDED — `evaluateAndroidScene` is live and cached                                                      |
-| 004  | Make vector editing matrix- and curve-correct    |       P0 |      L | 003        | SUPERSEDED — world matrices + clip hit-tests landed; leftovers tracked in 477y                              |
-| 005  | Make AVD playback match ObjectAnimator semantics |       P0 |      L | 002, 003   | SUPERSEDED — `playheadResolve` + compiler interpolators                                                     |
-| 006  | Harden Android import, validation, and export    |       P0 |      L | 001–005    | SUPERSEDED — one compiler entry + aapt optional gate                                                        |
+| Plan | Title                                            | Priority | Effort | Depends on | Status                                                                                                     |
+| ---- | ------------------------------------------------ | -------: | -----: | ---------- | ---------------------------------------------------------------------------------------------------------- |
+| 001  | Establish Android semantic parity fixtures       |       P0 |      M | —          | SUPERSEDED — `androidParity.test.ts` + `fixtures/nested-clip.xml`; live tracker is `ShapeShifter-477y.2.1` |
+| 002  | Make Android projects lossless and canonical     |       P0 |      L | 001        | SUPERSEDED — single native `EditorDocument` format; see `docs/project-file.md`                             |
+| 003  | Build one Android-faithful evaluated scene       |       P0 |      L | 001, 002   | SUPERSEDED — `evaluateAndroidScene` is live and cached                                                     |
+| 004  | Make vector editing matrix- and curve-correct    |       P0 |      L | 003        | SUPERSEDED — world matrices + clip hit-tests landed; leftovers tracked in 477y                             |
+| 005  | Make AVD playback match ObjectAnimator semantics |       P0 |      L | 002, 003   | SUPERSEDED — `playheadResolve` + compiler interpolators                                                    |
+| 006  | Harden Android import, validation, and export    |       P0 |      L | 001–005    | SUPERSEDED — one compiler entry + aapt optional gate                                                       |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED | REJECTED
 
 ## Dependency notes
 
 - Plan 001 defines the fixtures and semantic contract every later migration must preserve.
-- Plan 002 removes lossy V1/V2 project projections before more Android behavior is stored.
+- Plan 002 removes lossy parallel project representations before more Android behavior is stored.
 - Plan 003 makes the browser preview, hit testing, and compiler consume the same hierarchy and transforms.
 - Plan 004 relies on the world matrices and evaluated geometry produced by Plan 003.
 - Plan 005 relies on the canonical document and evaluated scene, then adds complete AVD timing/property semantics.

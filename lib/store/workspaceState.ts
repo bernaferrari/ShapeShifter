@@ -4,7 +4,7 @@ import { PAGE_ROOT_ID } from "../shapeshifter/scene/owners";
 import type { AnimationState, Layer, PathData, VectorMetadata } from "../shapeshifter/types";
 import type { EditorState } from "./editorStore";
 import type { CanvasFrame } from "./defaultWorkspace";
-import type { LegacyDocumentSnapshot } from "../shapeshifter/documentModel";
+import type { WorkspaceSnapshot } from "../shapeshifter/documentModel";
 import { vectorCoordinateRect } from "../shapeshifter/vectorSpace";
 
 export const cloneLayers = (layers: Layer[]) => structuredClone(layers);
@@ -142,7 +142,7 @@ export function buildLoadedProjectState(
   };
 }
 
-export function buildLoadedDocumentState(snapshot: LegacyDocumentSnapshot): Partial<EditorState> {
+export function buildLoadedDocumentState(snapshot: WorkspaceSnapshot): Partial<EditorState> {
   const frames = snapshot.frames.map((source) => ({
     id: source.id,
     name: source.name,

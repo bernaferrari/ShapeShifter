@@ -23,7 +23,10 @@ function randomSuffix() {
 }
 
 /** Live layers + animation for a page or artboard owner, including the active projection. */
-export function resolveOwnerDocument(state: EditorState, ownerId: string): {
+export function resolveOwnerDocument(
+  state: EditorState,
+  ownerId: string,
+): {
   layers: Layer[];
   animation: AnimationState;
 } {
@@ -44,7 +47,7 @@ export function resolveOwnerDocument(state: EditorState, ownerId: string): {
 
 /** Drop ids that are descendants of another requested root so a group is cloned once. */
 export function uniqueSubtreeRoots(layers: Layer[], rootIds: Iterable<string | number>): string[] {
-  const requested = [...rootIds].map(String);
+  const requested = [...new Set([...rootIds].map(String))];
   const idSet = new Set(requested);
   const byId = new Map(layers.map((layer) => [String(layer.id), layer]));
   return requested.filter((id) => {
@@ -72,7 +75,7 @@ export function collectSubtreeWithAnimation(
   return {
     layers: layers
       .filter((layer) => subtreeIds.has(String(layer.id)))
-      .map((layer) => ({ ...structuredClone(layer), timeline: [] })),
+      .map((layer) => structuredClone(layer)),
     blocks: structuredClone(blocks.filter((block) => subtreeIds.has(String(block.layerId)))),
     rootIds: roots,
   };
@@ -88,19 +91,28 @@ export function remapClonedSubtree(
     idRemap.set(String(layer.id), `${options.prefix}-${index}-${randomSuffix()}`);
   });
   const rootSet = new Set(collected.rootIds.map(String));
-  const blocks = collected.blocks.map((block, index) => ({
-    ...structuredClone(block),
-    id: `${block.id}-${options.prefix}-${index}-${randomSuffix()}`,
-    layerId: idRemap.get(String(block.layerId))!,
-  }));
+  const blocks = collected.blocks.map((block, index) => {
+    const offset = rootSet.has(String(block.layerId))
+      ? block.propertyName === "translateX"
+        ? (options.offsetX ?? 0)
+        : block.propertyName === "translateY"
+          ? (options.offsetY ?? 0)
+          : 0
+      : 0;
+    return {
+      ...structuredClone(block),
+      id: `${block.id}-${options.prefix}-${index}-${randomSuffix()}`,
+      layerId: idRemap.get(String(block.layerId))!,
+      fromValue: offset ? Number(block.fromValue) + offset : block.fromValue,
+      toValue: offset ? Number(block.toValue) + offset : block.toValue,
+    };
+  });
   const layers = collected.layers.map((layer) => {
     const id = idRemap.get(String(layer.id))!;
     const isRoot = rootSet.has(String(layer.id));
-    const remappedParent =
-      layer.parentId != null ? idRemap.get(String(layer.parentId)) : undefined;
+    const remappedParent = layer.parentId != null ? idRemap.get(String(layer.parentId)) : undefined;
     const parentId =
-      remappedParent ??
-      (options.unmatchedParent === "keep" ? layer.parentId : undefined);
+      remappedParent ?? (options.unmatchedParent === "keep" ? layer.parentId : undefined);
     return {
       ...structuredClone(layer),
       id,
@@ -108,7 +120,6 @@ export function remapClonedSubtree(
       parentId,
       translateX: isRoot ? (layer.translateX ?? 0) + (options.offsetX ?? 0) : layer.translateX,
       translateY: isRoot ? (layer.translateY ?? 0) + (options.offsetY ?? 0) : layer.translateY,
-      timeline: blocks.filter((block) => String(block.layerId) === String(id)),
     } satisfies Layer;
   });
   return { layers, blocks, idRemap };
@@ -121,10 +132,12 @@ export function collectClipboardFromOwners(
 ): CollectedSubtree {
   const requested = new Set(layerIds.map(String));
   const matchingRefs = state.selectedLayerRefs.filter((ref) => requested.has(String(ref.layerId)));
-  const refs =
-    matchingRefs.length > 0
-      ? matchingRefs
-      : layerIds.map((layerId) => ({ ownerId: state.selectedFrameId, layerId }));
+  const refs = [
+    ...matchingRefs,
+    ...layerIds
+      .filter((layerId) => !matchingRefs.some((ref) => String(ref.layerId) === String(layerId)))
+      .map((layerId) => ({ ownerId: state.selectedFrameId, layerId })),
+  ];
 
   const layers: Layer[] = [];
   const blocks: TimelineBlock[] = [];

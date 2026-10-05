@@ -1,6 +1,10 @@
 import { PAGE_ROOT_ID } from "../../shapeshifter/scene/owners";
 import type { EditorState } from "../editorStore";
-import { commitDocumentV2, restoreHistoryEntry, snapshotHistoryEntry } from "../documentRuntime";
+import {
+  buildDocumentFromEditor,
+  restoreHistoryEntry,
+  snapshotHistoryEntry,
+} from "../documentRuntime";
 import { cloneLayers } from "../workspaceState";
 
 type HistoryActionKey =
@@ -90,7 +94,7 @@ export function createHistoryActions(
                 ),
               };
         const merged = { ...state, ...next };
-        return { ...next, documentV2: commitDocumentV2(merged) };
+        return { ...next, document: buildDocumentFromEditor(merged) };
       });
     },
 

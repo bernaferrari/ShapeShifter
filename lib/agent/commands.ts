@@ -1,7 +1,4 @@
-import {
-  createDocumentV2FromLegacy,
-  type LegacyDocumentSnapshot,
-} from "../shapeshifter/documentModel";
+import { buildEditorDocument, type WorkspaceSnapshot } from "../shapeshifter/documentModel";
 import { createPathLayer } from "../store/defaultWorkspace";
 import { generateId } from "../shapeshifter/ids";
 import { parsePath, pathToString } from "../shapeshifter/pathUtils";
@@ -9,7 +6,6 @@ import { PAGE_ROOT_ID } from "../shapeshifter/scene/owners";
 import { INTERPOLATOR_CURVES } from "../shapeshifter/interpolators";
 import { validatePathData } from "../shapeshifter/path/pathValidation";
 import { syncLayerPathEndpoints } from "../store/timelinePathEditing";
-import { mapLayerTimelines } from "../store/timelineLayerMapping";
 import type { Layer, TimelineBlock } from "../shapeshifter/types";
 
 export class AgentCommandError extends Error {
@@ -134,7 +130,7 @@ function validateInterpolator(value: unknown) {
     fail("Use a named easing or cubic-bezier(x1, y1, x2, y2) with time controls between 0 and 1.");
 }
 
-function owner(snapshot: LegacyDocumentSnapshot, ownerId: string) {
+function owner(snapshot: WorkspaceSnapshot, ownerId: string) {
   if (ownerId === PAGE_ROOT_ID)
     return { layers: snapshot.rootLayers, animation: snapshot.rootAnimation };
   const frame = snapshot.frames.find((candidate) => candidate.id === ownerId);
@@ -156,7 +152,7 @@ function editableLayer(layers: Layer[], layerId: string | number, allowUnlock = 
 }
 
 /** Validate and stage the entire batch before the store or undo history changes. */
-export function stageAgentCommands(source: LegacyDocumentSnapshot, commands: AgentCommand[]) {
+export function stageAgentCommands(source: WorkspaceSnapshot, commands: AgentCommand[]) {
   if (!Array.isArray(commands) || commands.length < 1 || commands.length > 100)
     fail("Provide 1–100 commands per transaction.");
   const snapshot = structuredClone(source);
@@ -201,25 +197,6 @@ export function stageAgentCommands(source: LegacyDocumentSnapshot, commands: Age
         );
         if (blocks !== target.animation.blocks) {
           target.animation.blocks = blocks;
-          const updated = new Map(
-            blocks
-              .filter(
-                (block) =>
-                  String(block.layerId) === String(layer.id) && block.propertyName === "pathData",
-              )
-              .map((block) => [block.id, block]),
-          );
-          const mirrored = mapLayerTimelines(target.layers, (timeline) =>
-            timeline.map((block) =>
-              String(block.layerId) === String(layer.id) && block.propertyName === "pathData"
-                ? (updated.get(block.id) ?? block)
-                : block,
-            ),
-          );
-          // The page-root owner is a projected view of the cloned snapshot.
-          // Update its existing array so the staged native graph sees mirrors too.
-          for (let index = 0; index < mirrored.length; index++)
-            target.layers[index] = mirrored[index]!;
         }
         break;
       }
@@ -280,10 +257,6 @@ export function stageAgentCommands(source: LegacyDocumentSnapshot, commands: Age
         const index = target.animation.blocks.findIndex((candidate) => candidate.id === block.id);
         if (index >= 0) target.animation.blocks[index] = block;
         else target.animation.blocks.push(block);
-        // The canonical animation owns track values. Drop a stale legacy mirror.
-        for (const layer of target.layers)
-          if (layer.timeline)
-            layer.timeline = layer.timeline.filter((candidate) => candidate.id !== block.id);
         break;
       }
       case "removeTimelineBlock": {
@@ -293,27 +266,16 @@ export function stageAgentCommands(source: LegacyDocumentSnapshot, commands: Age
         target.animation.blocks = target.animation.blocks.filter(
           (candidate) => candidate.id !== command.blockId,
         );
-        for (const layer of target.layers)
-          if (layer.timeline)
-            layer.timeline = layer.timeline.filter((candidate) => candidate.id !== command.blockId);
         break;
       }
       default:
         fail("Unsupported command type.");
     }
   }
-  return { document: createDocumentV2FromLegacy(snapshot), created };
+  return { document: buildEditorDocument(snapshot), created };
 }
 
 export function agentLayerSummary(layer: Layer) {
-  const {
-    from,
-    to,
-    pathData,
-    children: _children,
-    timeline: _timeline,
-    morphMapping: _mapping,
-    ...properties
-  } = layer;
+  const { from, to, pathData, children: _children, morphMapping: _mapping, ...properties } = layer;
   return { ...properties, from: pathToString(pathData ?? from), to: to ? pathToString(to) : null };
 }

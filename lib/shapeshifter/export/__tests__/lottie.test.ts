@@ -111,7 +111,9 @@ describe("exportLottieDocument animated scale and alpha tracks", () => {
   });
 
   it("keeps static scale when no scale blocks exist", () => {
-    const lottie = exportLottieDocument([makeLayer({ scaleX: 1.5, scaleY: 0.75 })], "doc", 1);
+    const lottie = exportLottieDocument([makeLayer({ scaleX: 1.5, scaleY: 0.75 })], "doc", {
+      duration: 1,
+    });
     const s = lottie.layers[0].ks.s;
     expect(s.a).toBe(0);
     expect(s.k).toEqual([150, 75]);

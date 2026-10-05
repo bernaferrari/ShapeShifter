@@ -120,7 +120,7 @@ export function createSelectionActions(
           : savedFrames.find((frame) => frame.id === primary.ownerId)?.layers;
       if (!ownerLayers?.some((layer) => String(layer.id) === String(primary.layerId))) return;
       const primaryFrame = savedFrames.find((frame) => frame.id === primary.ownerId);
-      const rootVector = vectorFromPageMetadata(state.documentV2.page, PAGE_ROOT_ID);
+      const rootVector = vectorFromPageMetadata(state.document.page, PAGE_ROOT_ID);
       set({
         frames: savedFrames,
         rootLayers: cloneLayers(savedRoot.layers),

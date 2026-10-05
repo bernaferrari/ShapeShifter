@@ -46,7 +46,7 @@ export type AutosaveStateToken = Pick<
   | "rootAnimation"
   | "rootHiddenLayerIds"
   | "selectedFrameId"
-  | "documentV2"
+  | "document"
 >;
 
 function autosaveStateToken(state: AutosaveState): AutosaveStateToken {
@@ -60,7 +60,7 @@ function autosaveStateToken(state: AutosaveState): AutosaveStateToken {
     rootAnimation: state.rootAnimation,
     rootHiddenLayerIds: state.rootHiddenLayerIds,
     selectedFrameId: state.selectedFrameId,
-    documentV2: state.documentV2,
+    document: state.document,
   };
 }
 
@@ -79,7 +79,7 @@ export function sameAutosaveState(
     left.rootAnimation === right.rootAnimation &&
     left.rootHiddenLayerIds === right.rootHiddenLayerIds &&
     left.selectedFrameId === right.selectedFrameId &&
-    left.documentV2 === right.documentV2
+    left.document === right.document
   );
 }
 
@@ -279,7 +279,7 @@ export function useDocumentAutosave(): DocumentAutosave {
   const rootAnimation = useEditorStore((state) => state.rootAnimation);
   const rootHiddenLayerIds = useEditorStore((state) => state.rootHiddenLayerIds);
   const selectedFrameId = useEditorStore((state) => state.selectedFrameId);
-  const documentV2 = useEditorStore((state) => state.documentV2);
+  const authoredDocument = useEditorStore((state) => state.document);
   const lastFlushedState = useRef<AutosaveStateToken | null>(null);
   const schedulerRef = useRef<DebouncedAutosaveScheduler | null>(null);
   const recoveryNoticeShown = useRef(false);
@@ -456,7 +456,7 @@ export function useDocumentAutosave(): DocumentAutosave {
       rootAnimation,
       rootHiddenLayerIds,
       selectedFrameId,
-      documentV2,
+      document: authoredDocument,
     };
     if (sameAutosaveState(lastFlushedState.current, currentState)) return;
     if (hydrationReady.current && !savingPaused.current) {
@@ -465,7 +465,7 @@ export function useDocumentAutosave(): DocumentAutosave {
     scheduler.schedule();
   }, [
     animation,
-    documentV2,
+    authoredDocument,
     frames,
     hiddenLayerIds,
     layers,

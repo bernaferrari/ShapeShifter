@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useEditorStore } from "@/lib/store/editorStore";
 import {
   historySessionFromEditor,
-  legacySnapshotFromEditor,
+  workspaceFromEditor,
   restoreHistoryEntry,
 } from "@/lib/store/documentRuntime";
 import { PAGE_ROOT_ID } from "@/lib/shapeshifter/scene/owners";
@@ -128,7 +128,7 @@ export function useWorldShapeDrawing({
       !state.frames.some((frame) => frame.id === session.ownerId)
     )
       return true;
-    const staged = stageAgentCommands(legacySnapshotFromEditor(state), [
+    const staged = stageAgentCommands(workspaceFromEditor(state), [
       {
         type: "createPath",
         ownerId: session.ownerId,
@@ -139,7 +139,7 @@ export function useWorldShapeDrawing({
     state.pushHistory();
     useEditorStore.setState(
       restoreHistoryEntry(state, {
-        documentV2: staged.document,
+        document: staged.document,
         session: historySessionFromEditor(state),
       }),
     );

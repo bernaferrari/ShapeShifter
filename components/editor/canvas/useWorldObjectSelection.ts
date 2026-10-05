@@ -514,7 +514,7 @@ export function useWorldObjectSelection({
       const state = useEditorStore.getState();
       const vector =
         owner.ownerId === PAGE_ROOT_ID
-          ? vectorFromPageMetadata(state.documentV2.page, PAGE_ROOT_ID)
+          ? vectorFromPageMetadata(state.document.page, PAGE_ROOT_ID)
           : owner.ownerId === state.selectedFrameId
             ? state.vector
             : frames.find((frame) => frame.id === owner.ownerId)?.vector;

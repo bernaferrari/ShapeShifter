@@ -76,7 +76,7 @@ export function gradientUsesUserSpace(gradient: Gradient): boolean {
 
 /**
  * Resolve a linear gradient to concrete endpoints. Exact imported endpoints take
- * precedence over the legacy angle model, keeping Android's viewport-space data
+ * precedence over the angle control, keeping Android's viewport-space data
  * intact while leaving UI-created angle gradients unchanged.
  */
 export function linearGradientCoordinates(

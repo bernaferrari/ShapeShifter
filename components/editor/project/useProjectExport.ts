@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
+import { recordExerciseExport } from "../animationExercise";
 import { toast } from "sonner";
 import {
   exportLiveDocument,
@@ -82,6 +83,7 @@ export function useProjectExport() {
             ) as ArrayBuffer)
           : exported.content;
       downloadContent(payload, exported.mimeType, exported.filename);
+      recordExerciseExport(exported.live.state.selectedFrameId, exportType);
       const warnings = summarizeAndroidWarnings(exported.androidDiagnostics);
       if (warnings) {
         const warningLabel = warnings.count === 1 ? "warning" : "warnings";

@@ -185,17 +185,28 @@ body {
   scrollbar-color: color-mix(in oklch, var(--muted-foreground) 35%, transparent) transparent;
 }
 
-/*
- * Touch devices keep the same type scale as desktop (the viewport's
- * maximum-scale stops Safari zooming into focused fields), but get finger-sized
- * targets. Pointer capability is the meaningful distinction here: viewport
- * width alone misclassifies larger iPads as desktop hardware.
- */
+/* Keep exact-value inputs readable without triggering iOS focus zoom. */
 @media (pointer: coarse) {
+  input:not([type="range"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
   [role="toolbar"] [data-slot="button"],
   header [data-slot="button"] {
     min-width: 44px;
     min-height: 44px;
+  }
+  .mobile-workspace button {
+    min-height: 40px;
+  }
+  .mobile-workspace input:not([type="range"]),
+  .mobile-workspace select {
+    min-height: 40px;
+  }
+  .mobile-workspace [data-timeline-keyframe-block-id] {
+    min-width: 24px;
+    min-height: 24px;
   }
 }
 

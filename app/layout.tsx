@@ -13,13 +13,10 @@ export const metadata: Metadata = {
     "Draw vectors, refine path morphs, and animate Android assets with precise property tracks.",
 };
 
-// An editor owns its gestures: pinch zooms the canvas, not the page, and
-// focusing a compact field must not zoom the whole UI on iOS.
+// Canvas gestures are handled locally; the page keeps accessible browser zoom.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   viewportFit: "cover",
   interactiveWidget: "resizes-content",
 };

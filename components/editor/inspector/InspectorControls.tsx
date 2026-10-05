@@ -2,7 +2,13 @@
 
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Ellipsis } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/lib/store/editorStore";
 
@@ -48,11 +54,16 @@ export function Section({
 
 export interface KeyframeToggleProps {
   active: boolean;
+  animated?: boolean;
+  removeAnimation?: () => void;
+  removeAnimationLabel?: string;
+  removeKeyframe?: () => void;
+  removeKeyframeLabel?: string;
   onClick: () => void;
   label: string;
 }
 
-/** The single animate affordance: hollow when static, filled when the property is animated. */
+/** A filled diamond marks a key at this time; whole-track removal is explicit. */
 export function KeyframeToggle({
   keyframe,
   className,
@@ -61,26 +72,53 @@ export function KeyframeToggle({
   className?: string;
 }) {
   return (
-    <button
-      type="button"
-      onClick={keyframe.onClick}
-      className={cn(
-        "grid size-6 shrink-0 place-items-center rounded-md transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring",
-        className,
-      )}
-      aria-label={keyframe.label}
-      aria-pressed={keyframe.active}
-      title={keyframe.label}
-    >
-      <span
+    <span className="flex shrink-0 items-center">
+      <button
+        type="button"
+        onClick={keyframe.onClick}
         className={cn(
-          "size-[7px] rotate-45 rounded-[1px] border transition-colors",
-          keyframe.active
-            ? "border-primary bg-primary"
-            : "border-muted-foreground/50 group-hover:border-muted-foreground",
+          "grid size-6 shrink-0 place-items-center rounded-md transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring",
+          className,
         )}
-      />
-    </button>
+        aria-label={keyframe.label}
+        aria-pressed={keyframe.active}
+        title={keyframe.label}
+      >
+        <span
+          className={cn(
+            "size-[7px] rotate-45 rounded-[1px] border transition-colors",
+            keyframe.active
+              ? "border-primary bg-primary"
+              : "border-muted-foreground/50 group-hover:border-muted-foreground",
+          )}
+        />
+      </button>
+      {keyframe.removeAnimation && (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <button
+                type="button"
+                aria-label={`${keyframe.removeAnimationLabel?.replace("Remove ", "")} options`}
+                className="grid size-6 place-items-center rounded hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+              />
+            }
+          >
+            <Ellipsis className="size-3 text-muted-foreground" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {keyframe.removeKeyframe && (
+              <DropdownMenuItem onClick={keyframe.removeKeyframe}>
+                {keyframe.removeKeyframeLabel}
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem variant="destructive" onClick={keyframe.removeAnimation}>
+              {keyframe.removeAnimationLabel}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </span>
   );
 }
 export function Row({ label, children }: { label?: string; children: React.ReactNode }) {

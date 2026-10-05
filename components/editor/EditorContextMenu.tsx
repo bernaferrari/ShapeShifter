@@ -63,8 +63,7 @@ function EditorContextMenuItems() {
         {paste}
         <DropdownMenuItem
           onClick={() => {
-            store().copyLayers(ids);
-            store().pasteLayers();
+            store().duplicateSelectedLayersOffset(2, 2);
           }}
         >
           Duplicate
@@ -150,7 +149,9 @@ function EditorContextMenuItems() {
     return (
       <>
         {paste}
-        <DropdownMenuItem onClick={() => store().duplicateFrame()}>Duplicate frame</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => store().duplicateFrame()}>
+          Duplicate frame
+        </DropdownMenuItem>
         <DropdownMenuItem
           variant="destructive"
           disabled={frameCount <= 1}
@@ -160,7 +161,9 @@ function EditorContextMenuItems() {
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => store().addLayer("path")}>New path layer</DropdownMenuItem>
-        <DropdownMenuItem onClick={() => store().bringFrameIntoView(selectedFrameId, { animate: true })}>
+        <DropdownMenuItem
+          onClick={() => store().bringFrameIntoView(selectedFrameId, { animate: true })}
+        >
           Zoom to frame
           <DropdownMenuShortcut>⇧2</DropdownMenuShortcut>
         </DropdownMenuItem>

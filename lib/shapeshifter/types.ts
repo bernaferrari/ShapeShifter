@@ -73,7 +73,7 @@ export interface Gradient {
   type: GradientType;
   /** >= 2 stops, kept sorted by offset. */
   stops: GradientStop[];
-  /** Defaults to `objectBoundingBox` for backward compatibility. */
+  /** Defaults to `objectBoundingBox`, as specified by SVG. */
   coordinateSpace?: GradientCoordinateSpace;
   /**
    * Linear-only exact endpoints. When all four are present they take precedence
@@ -181,7 +181,6 @@ export interface Layer extends PathStyle {
   pivotX?: number;
   pivotY?: number;
   duration?: number; // per-layer duration override
-  timeline?: TimelineBlock[];
   /** Last inspectable prepare-for-morph correspondence for this layer. */
   morphMapping?: MorphMapping;
 }
@@ -194,12 +193,7 @@ export function getTo(layer: Pick<Layer, "from" | "to">): PathData {
   return layer.to ?? layer.from;
 }
 
-/**
- * =============================================
- * SHAPESHIFTER 2.0 - FIRST-PRINCIPLES MODEL (vdeq / sogt)
- * Parallel to v1 during migration. Do not break existing behavior.
- * =============================================
- */
+/** Authored scene, immutable geometry, and motion identities. */
 
 export type NodeId = string;
 export type GeometryVersionId = string;
@@ -256,7 +250,7 @@ export type MorphAlignment =
       toSignature: string;
       compatible: boolean;
     }
-  | { kind: "legacy-aligned-endpoints" };
+  | { kind: "aligned-endpoints" };
 
 /** Explicit morph correspondence (output of prepareForMorph). */
 export interface MorphMapping {
@@ -282,7 +276,7 @@ export interface Node {
   alpha: number;
   /** Editable/base path geometry for path and clip-path nodes. */
   geometryVersionId?: GeometryVersionId;
-  /** Preserved legacy endpoint geometry; these prevent a project round trip from erasing morphs. */
+  /** Authored endpoint geometry; these prevent a project round trip from erasing morphs. */
   fromGeometryVersionId?: GeometryVersionId;
   toGeometryVersionId?: GeometryVersionId;
   /** Android's target name. Kept stable independently from the display name. */
@@ -344,8 +338,8 @@ export interface Keyframe {
   morphMappingId?: MorphMappingId; // only for geometry tracks
   /** Immutable path geometry when this is a pathData keyframe. */
   geometryVersionId?: GeometryVersionId;
-  /** Temporary migration marker so disjoint v1 timeline blocks round-trip losslessly. */
-  legacyBlockId?: string;
+  /** Authored segment identity, preserving disjoint timing and per-segment easing. */
+  segmentId: string;
 }
 
 export interface AnimationClip {
@@ -356,11 +350,11 @@ export interface AnimationClip {
   trackIds: TrackId[];
 }
 
-/** Top level v2 document (future replacement for current project + frames). */
-export interface DocumentV2 {
+/** Canonical authored document used by history, persistence, export, and commands. */
+export interface EditorDocument {
   id: string;
   name: string;
-  version: 2;
+  schema: "shapeshifter";
   frameIds: FrameId[];
   frames: Record<FrameId, Frame>;
   page: PageMetadata;

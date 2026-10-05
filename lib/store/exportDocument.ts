@@ -16,10 +16,10 @@ import {
   exportLottieDocumentWithDiagnostics,
   type LottieExportDiagnostic,
 } from "../shapeshifter/export/lottie";
-import { exportProjectJSON } from "../shapeshifter/export/projectJson";
+import { saveActiveFrame, saveActiveRoot } from "./workspaceState";
 import type { ExportOptions, StaticSvgDiagnostic } from "../shapeshifter/export/types";
 import { createZip } from "../shapeshifter/zip";
-import type { DocumentV2, Layer } from "../shapeshifter/types";
+import type { EditorDocument, Layer } from "../shapeshifter/types";
 import { vectorFromPageMetadata } from "../shapeshifter/vectorSpace";
 import { PAGE_ROOT_ID, useEditorStore } from "./editorStore";
 
@@ -80,9 +80,10 @@ export interface LiveExportResult {
 
 /** Flush the live artboard projection, then return the document used by every export path. */
 export function flushLiveExportDocument() {
-  useEditorStore.getState().syncActiveOwner({ includeAnimation: true });
   const state = useEditorStore.getState();
-  const selectedFrame = state.frames.find((frame) => frame.id === state.selectedFrameId);
+  const frames = saveActiveFrame(state);
+  const root = saveActiveRoot(state);
+  const selectedFrame = frames.find((frame) => frame.id === state.selectedFrameId);
   return {
     state,
     selectedFrame,
@@ -90,13 +91,12 @@ export function flushLiveExportDocument() {
     vector: state.vector,
     animation: state.animation,
     hiddenLayerIds: state.hiddenLayerIds,
-    frames: state.frames,
+    frames,
     pageRoot: {
-      layers: state.selectedFrameId === PAGE_ROOT_ID ? state.layers : state.rootLayers,
-      vector: vectorFromPageMetadata(state.documentV2.page, PAGE_ROOT_ID),
-      animation: state.selectedFrameId === PAGE_ROOT_ID ? state.animation : state.rootAnimation,
-      hiddenLayerIds:
-        state.selectedFrameId === PAGE_ROOT_ID ? state.hiddenLayerIds : state.rootHiddenLayerIds,
+      layers: root.layers,
+      vector: vectorFromPageMetadata(state.document.page, PAGE_ROOT_ID),
+      animation: root.animation,
+      hiddenLayerIds: root.hiddenLayerIds,
     },
   };
 }
@@ -107,26 +107,18 @@ export function serializeLiveProject() {
 
 /** Serialize an already-flushed document without choosing a second export scope. */
 export function serializeFlushedLiveProject(live: ReturnType<typeof flushLiveExportDocument>) {
-  const project = exportProjectJSON(
-    live.layers,
-    live.vector,
-    live.animation,
-    live.hiddenLayerIds,
-    live.frames,
-    live.pageRoot,
-  );
-  // The recovery envelope is legacy-shaped, but the V2 payload must stay the
-  // exact flushed graph. Rebuilding it with the active artboard vector corrupts
-  // page metadata whenever page and artboard dimensions differ.
-  return { ...project, documentV2: structuredClone(live.state.documentV2) };
+  return {
+    format: "shapeshifter" as const,
+    document: structuredClone(live.state.document),
+    activeOwnerId: live.state.selectedFrameId,
+  };
 }
 
-/** Canonical v2 snapshot of the flushed live document. */
-export function getLiveDocumentV2(): DocumentV2 {
+/** Canonical snapshot of the authored document. */
+export function getLiveDocument(): EditorDocument {
   const live = flushLiveExportDocument();
-  const documentV2 = live.state.documentV2;
-  useEditorStore.setState({ documentV2 });
-  return documentV2;
+  const document = live.state.document;
+  return document;
 }
 
 /** Single Android compiler entry used by the dialog, palette, and keyboard export. */
@@ -186,6 +178,40 @@ function liveFileBase(live: LiveExportDocument) {
     .toLowerCase();
 }
 
+/** All entry points resolve the same document-derived defaults. Explicit overrides win. */
+export function resolveExportOptions(
+  live: Pick<LiveExportDocument, "layers" | "vector" | "animation" | "state">,
+  options: ExportOptions = {},
+): Required<
+  Pick<
+    ExportOptions,
+    | "duration"
+    | "fps"
+    | "width"
+    | "height"
+    | "viewBoxWidth"
+    | "viewBoxHeight"
+    | "loop"
+    | "strokeWidth"
+  >
+> &
+  ExportOptions {
+  const layer = live.layers.find(
+    (layer) => String(layer.id) === String(live.state.selectedLayerId),
+  );
+  return {
+    duration: Math.max(0.001, live.animation.duration / 1000),
+    fps: 60,
+    width: live.vector.width,
+    height: live.vector.height,
+    viewBoxWidth: live.vector.viewportWidth ?? live.vector.width,
+    viewBoxHeight: live.vector.viewportHeight ?? live.vector.height,
+    loop: live.state.isRepeating,
+    strokeWidth: layer?.strokeWidth || 2.5,
+    ...options,
+  };
+}
+
 /**
  * One export service for the dialog, command hook, autosave callers, and tests.
  * Every format reads the same flushed live snapshot.
@@ -195,6 +221,7 @@ export async function exportLiveDocument(
   options: ExportOptions = {},
 ): Promise<LiveExportResult> {
   const live = flushLiveExportDocument();
+  options = resolveExportOptions(live, options);
   const scope = LIVE_EXPORT_SCOPE[kind];
   const layer = liveSelectedLayer(live);
   if (scope === "selected-layer") {
@@ -307,7 +334,13 @@ export async function exportLiveDocument(
     };
   }
 
-  const bundle = await compileLiveAndroidArtboardAsync();
+  const bundle = await compileAndroidArtboardAsync({
+    name: live.selectedFrame?.name || live.vector.name,
+    layers: live.layers,
+    vector: live.vector,
+    animation: live.animation,
+    hiddenLayerIds: live.hiddenLayerIds,
+  });
   if (kind === "vector") {
     return {
       ...empty,

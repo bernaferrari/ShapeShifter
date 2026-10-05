@@ -126,6 +126,7 @@ export function timelineKeyframeRange(
   edge: "start" | "end",
   duration: number,
 ): [number, number] {
+  if (target.startTime === target.endTime) return [0, duration];
   const adjacent = linkedTimelineKeyframe(blocks, target, edge);
   const sameTrack = blocks.filter(
     (block) =>
@@ -204,18 +205,20 @@ export function setTrackValueAt(
     return writeAtTime(blocks.flatMap((block) => (block.id === cover.id ? pair : [block])));
   }
   const first = track[0]!;
-  const last = track.at(-1)!;
-  const after = time > last.endTime;
-  const anchor = after ? last : first;
+  const previous = track.filter((block) => block.endTime < time).at(-1);
+  const next = track.find((block) => block.startTime > time);
+  const after = Boolean(previous);
+  const anchor = previous ?? next ?? first;
+  const singlePose = track.length === 1 && first.startTime === first.endTime;
   return [
-    ...blocks,
+    ...blocks.filter((block) => !singlePose || block.id !== first.id),
     {
       ...anchor,
-      id: newId,
-      startTime: after ? last.endTime : time,
-      endTime: after ? time : first.startTime,
-      fromValue: after ? last.toValue : value,
-      toValue: after ? value : first.fromValue,
+      id: singlePose ? first.id : newId,
+      startTime: after ? anchor.endTime : time,
+      endTime: after ? time : anchor.startTime,
+      fromValue: after ? anchor.toValue : value,
+      toValue: after ? value : anchor.fromValue,
     },
   ];
 }

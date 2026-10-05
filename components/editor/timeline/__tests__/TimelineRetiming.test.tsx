@@ -40,7 +40,7 @@ beforeEach(() => {
   ];
   useEditorStore.setState({
     animation: { ...useEditorStore.getState().animation, duration: 1000, blocks },
-    layers: [{ ...layer, timeline: blocks }],
+    layers: [layer],
     selectedBlockIds: ["a", "b"],
     history: [],
     future: [],
@@ -110,9 +110,7 @@ describe("owned timeline pointer transactions", () => {
     expect(useEditorStore.getState().history).toHaveLength(1);
     expect(useEditorStore.getState().dragState).toBeNull();
     expect(
-      useEditorStore
-        .getState()
-        .layers[0].timeline?.map((block) => [block.startTime, block.endTime]),
+      useEditorStore.getState().animation.blocks.map((block) => [block.startTime, block.endTime]),
     ).toEqual(times());
     React.act(() => useEditorStore.getState().undo());
     expect(times()).toEqual([
@@ -220,7 +218,6 @@ describe("owned timeline pointer transactions", () => {
           type: "group",
           locked: true,
           from: { subPaths: [] },
-          timeline: undefined,
         },
       ],
     });

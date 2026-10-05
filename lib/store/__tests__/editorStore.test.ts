@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { PAGE_ROOT_ID, useEditorStore } from "../editorStore";
 import { computeDetailViewport } from "../../shapeshifter/camera";
 import { parsePath, pathToString } from "../../shapeshifter/pathUtils";
-import { commitDocumentV2 } from "../documentRuntime";
+import { buildDocumentFromEditor } from "../documentRuntime";
 import { DEMO_INFOS } from "../../shapeshifter/demoProjects";
-import type { Selection, Layer, DocumentV2 } from "../../shapeshifter/types";
+import type { Selection, Layer, EditorDocument } from "../../shapeshifter/types";
 import type { EditorState } from "../editorStore";
-import type { LegacyDocumentSnapshot } from "../../shapeshifter/documentModel";
+import { buildEditorDocument, type WorkspaceSnapshot } from "../../shapeshifter/documentModel";
 
 // Helper: get a fresh store state by resetting
 function freshStore() {
@@ -57,11 +57,11 @@ describe("editorStore", () => {
   // Geometry versions are parsed from id-less path strings on every commit
   // (parsePath mints fresh ULIDs), so equality is asserted modulo the
   // regenerated command ids — everything else must match exactly.
-  function canonicalize(documentV2: DocumentV2): string {
+  function canonicalize(document: EditorDocument): string {
     return JSON.stringify({
-      ...documentV2,
+      ...document,
       geometryVersions: Object.fromEntries(
-        Object.entries(documentV2.geometryVersions).map(([id, version]) => [
+        Object.entries(document.geometryVersions).map(([id, version]) => [
           id,
           {
             ...version,
@@ -421,7 +421,7 @@ describe("editorStore", () => {
       useEditorStore.setState((state) => ({
         animation: { ...state.animation, blocks: [...state.animation.blocks, extraBlock] },
         layers: state.layers.map((candidate) =>
-          candidate.id === layer.id ? { ...candidate, timeline: [extraBlock] } : candidate,
+          candidate.id === layer.id ? candidate : candidate,
         ),
       }));
       const blocksBefore = getStore().animation.blocks;
@@ -440,16 +440,23 @@ describe("editorStore", () => {
       expect(newBlocks.every((block) => String(block.layerId) === String(cloneId))).toBe(true);
       const beforeIds = new Set(blocksBefore.map((block) => block.id));
       expect(newBlocks.every((block) => !beforeIds.has(block.id))).toBe(true);
-      // The clone's per-layer timeline mirrors its own remapped blocks.
+      // The canonical animation contains the clone's remapped blocks.
       const clone = getStore().layers.find(
         (candidate) => String(candidate.id) === String(cloneId),
       )!;
-      expect(clone.timeline!.map((block) => block.id).sort()).toEqual(
-        newBlocks.map((block) => block.id).sort(),
-      );
+      expect(
+        getStore()
+          .animation.blocks.filter((block) => String(block.layerId) === String(clone.id))
+          .map((block) => block.id)
+          .sort(),
+      ).toEqual(newBlocks.map((block) => block.id).sort());
       // Original layer keeps its own track.
       const original = getStore().layers.find((candidate) => candidate.id === layer.id)!;
-      expect(original.timeline!.map((block) => block.id)).toContain(extraBlock.id);
+      expect(
+        getStore()
+          .animation.blocks.filter((block) => String(block.layerId) === String(original.id))
+          .map((block) => block.id),
+      ).toContain(extraBlock.id);
       expect(beforeIds.has(extraBlock.id)).toBe(true);
       expect(
         getStore().animation.blocks.filter((block) => block.id === extraBlock.id),
@@ -475,7 +482,7 @@ describe("editorStore", () => {
       useEditorStore.setState((state) => ({
         animation: { ...state.animation, blocks: [...state.animation.blocks, childBlock] },
         layers: state.layers.map((candidate) =>
-          candidate.id === second.id ? { ...candidate, timeline: [childBlock] } : candidate,
+          candidate.id === second.id ? candidate : candidate,
         ),
       }));
       const blocksBefore = getStore().animation.blocks;
@@ -502,7 +509,11 @@ describe("editorStore", () => {
         (block) => String(block.layerId) === String(clonedChild.id),
       );
       expect(childBlocks).toHaveLength(1);
-      expect(clonedChild.timeline!.map((block) => block.id)).toEqual([childBlocks[0]!.id]);
+      expect(
+        getStore()
+          .animation.blocks.filter((block) => String(block.layerId) === String(clonedChild.id))
+          .map((block) => block.id),
+      ).toEqual([childBlocks[0]!.id]);
     });
 
     it("records position motion tracks for every selected owner", () => {
@@ -760,17 +771,17 @@ describe("editorStore", () => {
     });
   });
 
-  describe("documentV2 freshness", () => {
+  describe("document freshness", () => {
     /**
      * Track-block geometry versions are parsed from id-less path strings on every
      * commit (parsePath mints fresh ULIDs), so equality is asserted modulo the
      * regenerated command ids — everything else must match exactly.
      */
-    function canonicalize(documentV2: DocumentV2): string {
+    function canonicalize(document: EditorDocument): string {
       return JSON.stringify({
-        ...documentV2,
+        ...document,
         geometryVersions: Object.fromEntries(
-          Object.entries(documentV2.geometryVersions).map(([id, version]) => [
+          Object.entries(document.geometryVersions).map(([id, version]) => [
             id,
             {
               ...version,
@@ -784,7 +795,7 @@ describe("editorStore", () => {
         ),
       });
     }
-    it("commits live projection into documentV2 after burst writes settle, even mid-gesture without history", async () => {
+    it("commits live projection into document after burst writes settle, even mid-gesture without history", async () => {
       const layer = getStore().layers[0];
       const beforeHistory = getStore().history.length;
 
@@ -803,13 +814,13 @@ describe("editorStore", () => {
 
       expect(getStore().history).toHaveLength(beforeHistory);
       const node =
-        getStore().documentV2.nodes[
+        getStore().document.nodes[
           `node:${encodeURIComponent(getStore().selectedFrameId)}:${encodeURIComponent(String(layer.id))}`
         ]!;
       expect(node.transform.translateX).toBe(9);
     });
 
-    it("keeps documentV2 equal to a fresh commit of the flushed workspace after pushHistory", async () => {
+    it("keeps document equal to a fresh commit of the flushed workspace after pushHistory", async () => {
       useEditorStore.setState({
         layers: getStore().layers.map((candidate) => ({
           ...candidate,
@@ -822,7 +833,7 @@ describe("editorStore", () => {
       getStore().pushHistory();
 
       const state = getStore();
-      expect(canonicalize(state.documentV2)).toBe(canonicalize(commitDocumentV2(state)));
+      expect(canonicalize(state.document)).toBe(canonicalize(buildDocumentFromEditor(state)));
     });
 
     it("commits geometry through a magic-tool write", async () => {
@@ -833,9 +844,8 @@ describe("editorStore", () => {
         const nodeId = `node:${encodeURIComponent(state.selectedFrameId)}:${encodeURIComponent(
           String(layer.id),
         )}`;
-        return state.documentV2.geometryVersions[
-          state.documentV2.nodes[nodeId]!.geometryVersionId!
-        ]!.sourceHash;
+        return state.document.geometryVersions[state.document.nodes[nodeId]!.geometryVersionId!]!
+          .sourceHash;
       };
       const before = node();
 
@@ -845,12 +855,12 @@ describe("editorStore", () => {
       expect(node()).not.toBe(before);
     });
 
-    it("coalesces burst writes into one documentV2 rebuild at the microtask boundary", async () => {
+    it("publishes each content write and its document atomically", async () => {
       const layer = getStore().layers[0];
-      const before = getStore().documentV2;
+      const before = getStore().document;
       let commitCount = 0;
       const unsubscribe = useEditorStore.subscribe((state, prevState) => {
-        if (state.documentV2 !== prevState.documentV2) commitCount++;
+        if (state.document !== prevState.document) commitCount++;
       });
 
       for (let tick = 1; tick <= 5; tick++) {
@@ -863,15 +873,15 @@ describe("editorStore", () => {
         });
       }
 
-      // The rebuild is deferred: nothing has landed synchronously.
-      expect(commitCount).toBe(0);
+      // Every subscriber sees the complete authored document immediately.
+      expect(commitCount).toBe(5);
       await Promise.resolve();
       await Promise.resolve();
 
-      expect(commitCount).toBe(1);
-      expect(getStore().documentV2).not.toBe(before);
+      expect(commitCount).toBe(5);
+      expect(getStore().document).not.toBe(before);
       const node =
-        getStore().documentV2.nodes[
+        getStore().document.nodes[
           `node:${encodeURIComponent(getStore().selectedFrameId)}:${encodeURIComponent(String(layer.id))}`
         ]!;
       expect(node.transform.translateX).toBe(5);
@@ -892,12 +902,12 @@ describe("editorStore", () => {
       expect(getStore().layers).toEqual(baseline.layers);
     });
 
-    it("a patch carrying documentV2 supersedes a pending coalesced commit", async () => {
+    it("a document replacement has no deferred writes that can overwrite it", async () => {
       const layer = getStore().layers[0];
-      const replacement = structuredClone(getStore().documentV2);
+      const replacement = structuredClone(getStore().document);
       let commitCount = 0;
       const unsubscribe = useEditorStore.subscribe((state, prevState) => {
-        if (state.documentV2 !== prevState.documentV2) commitCount++;
+        if (state.document !== prevState.document) commitCount++;
       });
 
       useEditorStore.setState({
@@ -907,13 +917,13 @@ describe("editorStore", () => {
             : candidate,
         ),
       });
-      useEditorStore.setState({ documentV2: replacement });
+      useEditorStore.setState({ document: replacement });
 
       await Promise.resolve();
       await Promise.resolve();
 
-      expect(commitCount).toBe(1);
-      expect(getStore().documentV2).toBe(replacement);
+      expect(commitCount).toBe(2);
+      expect(getStore().document).toBe(replacement);
       unsubscribe();
     });
   });
@@ -1049,13 +1059,16 @@ describe("editorStore", () => {
         expect(getStore().selectedLayerId).toBe(getStore().layers[0].id);
       });
 
-      it("does NOT delete if only 1 layer remains", () => {
+      it("deletes the last layer without leaving animation targets", () => {
         while (getStore().layers.length > 1) {
           getStore().deleteLayer(getStore().layers[getStore().layers.length - 1].id);
         }
         expect(getStore().layers.length).toBe(1);
         getStore().deleteLayer(getStore().layers[0].id);
-        expect(getStore().layers.length).toBe(1);
+        expect(getStore().layers.length).toBe(0);
+        expect(getStore().animation.blocks).toHaveLength(0);
+        getStore().undo();
+        expect(getStore().layers).toHaveLength(1);
       });
 
       it("pushes history on delete", () => {
@@ -1314,7 +1327,7 @@ describe("editorStore", () => {
         duration: 1700,
         blocks: [],
       };
-      const snapshot: LegacyDocumentSnapshot = {
+      const snapshot: WorkspaceSnapshot = {
         id: "root-history-document",
         name: "Root history document",
         frames: [
@@ -1346,7 +1359,7 @@ describe("editorStore", () => {
         rootHiddenLayerIds: [String(rootLayer.id)],
       };
 
-      getStore().loadDocument(snapshot);
+      getStore().loadDocument(buildEditorDocument(snapshot));
       getStore().selectRootLayer(rootLayer.id);
       getStore().setAnimationDuration(2200);
 
@@ -1473,7 +1486,7 @@ describe("editorStore", () => {
       expect(getStore().historyOverflow).toBeNull();
     });
 
-    it("resetProject carries a fresh documentV2 in the same write", () => {
+    it("resetProject carries a fresh document in the same write", () => {
       useEditorStore.setState({
         layers: getStore().layers.map((candidate) => ({
           ...candidate,
@@ -1487,12 +1500,12 @@ describe("editorStore", () => {
       const fresh = getStore();
       // Same-task readers see the reset projection committed, not the previous
       // document; a later flush must be a no-op.
-      expect(canonicalize(fresh.documentV2)).toBe(canonicalize(commitDocumentV2(fresh)));
+      expect(canonicalize(fresh.document)).toBe(canonicalize(buildDocumentFromEditor(fresh)));
     });
 
-    it("updateVector on the page root keeps documentV2 fresh in-task, including omitted fields", async () => {
+    it("updateVector on the page root keeps document fresh in-task, including omitted fields", async () => {
       const rootLayer = structuredClone(getStore().frames[0]!.layers[0]!);
-      const snapshot: LegacyDocumentSnapshot = {
+      const snapshot: WorkspaceSnapshot = {
         id: "page-vector-fresh",
         name: "Page vector fresh",
         frames: [],
@@ -1510,25 +1523,25 @@ describe("editorStore", () => {
         rootAnimation: { id: "page-anim", name: "Page anim", duration: 1000, blocks: [] },
         rootHiddenLayerIds: [],
       };
-      getStore().loadDocument(snapshot);
+      getStore().loadDocument(buildEditorDocument(snapshot));
       getStore().selectRootLayer(rootLayer.id);
 
       // Patch only the name: every other page field must survive from live
-      // state, not from a stale documentV2.page spread.
+      // state, not from a stale document.page spread.
       getStore().updateVector({ name: "Renamed page" });
 
       let fresh = getStore();
-      expect(fresh.documentV2.page.name).toBe("Renamed page");
+      expect(fresh.document.page.name).toBe("Renamed page");
       expect(fresh.vector.name).toBe("Renamed page");
-      expect(fresh.documentV2.page.width).toBe(48);
-      expect(fresh.documentV2.page.tint).toBe("#112233");
-      expect(fresh.documentV2.page.widthUnit).toBe("dp");
-      expect(canonicalize(fresh.documentV2)).toBe(canonicalize(commitDocumentV2(fresh)));
+      expect(fresh.document.page.width).toBe(48);
+      expect(fresh.document.page.tint).toBe("#112233");
+      expect(fresh.document.page.widthUnit).toBe("dp");
+      expect(canonicalize(fresh.document)).toBe(canonicalize(buildDocumentFromEditor(fresh)));
 
       await Promise.resolve();
       await Promise.resolve();
       fresh = getStore();
-      expect(canonicalize(fresh.documentV2)).toBe(canonicalize(commitDocumentV2(fresh)));
+      expect(canonicalize(fresh.document)).toBe(canonicalize(buildDocumentFromEditor(fresh)));
     });
   });
 
@@ -2125,7 +2138,7 @@ describe("editorStore", () => {
       expect(getStore().animation.blocks.some((candidate) => candidate.id === block.id)).toBe(
         false,
       );
-      expect(getStore().layers[0]!.timeline?.some((candidate) => candidate.id === block.id)).toBe(
+      expect(getStore().animation.blocks.some((candidate) => candidate.id === block.id)).toBe(
         false,
       );
       getStore().undo();
@@ -2156,7 +2169,7 @@ describe("editorStore", () => {
       useEditorStore.setState((state) => ({
         animation: { ...state.animation, blocks: [left, right] },
         layers: state.layers.map((candidate) =>
-          candidate.id === layer.id ? { ...candidate, timeline: [left, right] } : candidate,
+          candidate.id === layer.id ? candidate : candidate,
         ),
         selectedBlockIds: [right.id],
       }));
@@ -2431,11 +2444,14 @@ describe("editorStore", () => {
       expect(getStore().clipboard).not.toBeNull();
     });
 
-    it("cutLayers is no-op when cutting all layers", () => {
+    it("cutLayers can empty an owner and restore it with one undo", () => {
       const allIds = getStore().layers.map((l) => l.id);
       const before = getStore().layers.length;
       getStore().cutLayers(allIds);
-      expect(getStore().layers.length).toBe(before);
+      expect(getStore().layers).toHaveLength(0);
+      expect(getStore().clipboard?.layers).toHaveLength(before);
+      getStore().undo();
+      expect(getStore().layers).toHaveLength(before);
     });
 
     it("copyLayers captures a group's whole subtree, not just the top-level layer", () => {
@@ -2485,7 +2501,7 @@ describe("editorStore", () => {
       useEditorStore.setState((state) => ({
         animation: { ...state.animation, blocks: [...state.animation.blocks, block] },
         layers: state.layers.map((candidate) =>
-          candidate.id === first.id ? { ...candidate, timeline: [block] } : candidate,
+          candidate.id === first.id ? candidate : candidate,
         ),
         selectedBlockIds: [block.id],
       }));
@@ -2548,7 +2564,7 @@ describe("editorStore", () => {
       useEditorStore.setState((state) => ({
         animation: { ...state.animation, blocks: [block] },
         layers: state.layers.map((candidate) =>
-          candidate.id === layer.id ? { ...candidate, timeline: [block] } : candidate,
+          candidate.id === layer.id ? candidate : candidate,
         ),
       }));
       getStore().copyLayers([layer.id]);
@@ -2563,7 +2579,11 @@ describe("editorStore", () => {
       expect(String(newBlocks[0]!.layerId)).toBe(String(pasted.id));
       expect(newBlocks[0]!.id).not.toBe(block.id);
       // The pasted layer's timeline mirrors its own remapped block.
-      expect(pasted.timeline!.map((candidate) => candidate.id)).toEqual([newBlocks[0]!.id]);
+      expect(
+        getStore()
+          .animation.blocks.filter((block) => String(block.layerId) === String(pasted.id))
+          .map((candidate) => candidate.id),
+      ).toEqual([newBlocks[0]!.id]);
     });
 
     it("pasteLayers animates the pasted layer even when its mirror was stale at copy time", () => {
@@ -2583,7 +2603,7 @@ describe("editorStore", () => {
       useEditorStore.setState((state) => ({
         animation: { ...state.animation, blocks: [block] },
       }));
-      expect(layer.timeline ?? []).toHaveLength(0);
+      expect(layer).not.toHaveProperty("timeline");
 
       getStore().copyLayers([layer.id]);
       // The original is gone before paste; only the copy-time block snapshot
@@ -2603,7 +2623,11 @@ describe("editorStore", () => {
       expect(newBlocks[0]!.endTime).toBe(block.endTime);
       expect(getStore().animation.duration).toBeGreaterThanOrEqual(block.endTime);
       // The pasted layer's timeline mirrors its own remapped block.
-      expect(pasted.timeline!.map((candidate) => candidate.id)).toEqual([newBlocks[0]!.id]);
+      expect(
+        getStore()
+          .animation.blocks.filter((block) => String(block.layerId) === String(pasted.id))
+          .map((candidate) => candidate.id),
+      ).toEqual([newBlocks[0]!.id]);
     });
 
     it("pasteLayers rebuilds tracks from the copied animation.blocks, ignoring a diverged mirror", () => {
@@ -2625,7 +2649,6 @@ describe("editorStore", () => {
           candidate.id === layer.id
             ? {
                 ...candidate,
-                timeline: [{ ...authoredBlock, id: "ghost-alpha", toValue: 0.25, endTime: 100 }],
               }
             : candidate,
         ),
@@ -2641,9 +2664,13 @@ describe("editorStore", () => {
       const newBlocks = getStore().animation.blocks.slice(blocksBefore.length);
       expect(newBlocks).toHaveLength(1);
       expect(String(newBlocks[0]!.layerId)).toBe(String(pasted.id));
-      // The authored snapshot won; the ghost mirror entry did not leak through.
+      // The authored snapshot is the sole motion source.
       expect(newBlocks[0]!.toValue).toBe(authoredBlock.toValue);
-      expect(pasted.timeline!.map((candidate) => candidate.toValue)).toEqual([1]);
+      expect(
+        getStore()
+          .animation.blocks.filter((block) => String(block.layerId) === String(pasted.id))
+          .map((candidate) => candidate.toValue),
+      ).toEqual([1]);
     });
 
     it("pasteLayers carries a copied group's children animation tracks too", () => {
@@ -2836,7 +2863,7 @@ describe("editorStore", () => {
       const beforeFrameIds = getStore().frames.map((frame) => frame.id);
       const sourceFrames = getStore().frames.slice(0, 2);
       const rootLayer = { ...structuredClone(getStore().layers[0]), id: "page-vector" };
-      const snapshot: LegacyDocumentSnapshot = {
+      const snapshot: WorkspaceSnapshot = {
         id: "imported-document",
         name: "Imported document",
         frames: sourceFrames.map((frame, index) => ({
@@ -2845,9 +2872,18 @@ describe("editorStore", () => {
           name: `Imported frame ${index + 1}`,
           x: index * 80,
           y: index * 24,
+          animation: {
+            ...frame.animation,
+            blocks: frame.animation.blocks.map((block) => ({
+              ...block,
+              layerId: `imported-${index}-${String(block.layerId)}`,
+            })),
+          },
+          hiddenLayerIds: frame.hiddenLayerIds.map((id) => `imported-${index}-${id}`),
           layers: frame.layers.map((layer) => ({
             ...structuredClone(layer),
             id: `imported-${index}-${String(layer.id)}`,
+            parentId: layer.parentId == null ? null : `imported-${index}-${String(layer.parentId)}`,
             name: `${layer.name} imported ${index}`,
           })),
         })),
@@ -2862,7 +2898,7 @@ describe("editorStore", () => {
         rootHiddenLayerIds: [String(rootLayer.id)],
       };
 
-      getStore().loadDocument(snapshot);
+      getStore().loadDocument(buildEditorDocument(snapshot));
 
       const state = getStore();
       expect(state.frames.map((frame) => frame.id)).toEqual([
@@ -2883,19 +2919,18 @@ describe("editorStore", () => {
       expect(getStore().frames.map((frame) => frame.id)).toEqual(beforeFrameIds);
     });
 
-    it("normalizes fragile command IDs at store boundaries", () => {
-      const legacyLayer: Layer = {
+    it("preserves valid command identities without compatibility rewriting", () => {
+      const layer: Layer = {
         ...getStore().layers[0],
         id: 300,
-        from: parsePath("M 0 0 L 10 10"),
-        to: parsePath("M 0 0 L 20 20"),
+        from: parsePath("M0 0 L10 10"),
+        to: parsePath("M0 0 L20 20"),
       };
-      legacyLayer.from.subPaths[0].commands[0].id = "cmd_1712345678901_0";
-      legacyLayer.to!.subPaths[0].commands[0].id = "cmd_1712345678901_1";
-
-      getStore().setLayers([legacyLayer]);
-
-      expect(getLayerCommandIds(getStore().layers).every((id) => !/^cmd_\d+/.test(id))).toBe(true);
+      layer.from.subPaths[0].commands[0].id = "first-command";
+      layer.to!.subPaths[0].commands[0].id = "end-command";
+      getStore().setLayers([layer]);
+      expect(getLayerCommandIds(getStore().layers)).toContain("first-command");
+      expect(getLayerCommandIds(getStore().layers)).toContain("end-command");
     });
   });
 
@@ -2998,10 +3033,10 @@ describe("editorStore", () => {
 
   // ─── loadSample ──────────────────────────────────────────────────────
   describe("loadSample", () => {
-    it("loads an original demo project and selects the first editable path", () => {
+    it("loads a native demo project and selects the first editable path", () => {
       getStore().loadSample(0);
 
-      expect(getStore().vector.name).toBe("playtopause");
+      expect(getStore().vector.name).toBe("Play-to-pause");
       expect(getStore().animation.duration).toBe(300);
       expect(getStore().animation.blocks).toHaveLength(2);
       expect(getStore().layers.some((layer) => layer.type === "group")).toBe(true);
@@ -3014,13 +3049,13 @@ describe("editorStore", () => {
 
     it("wraps around with modulo", () => {
       getStore().loadSample(10); // 10 % 5 = 0
-      expect(getStore().vector.name).toBe("playtopause");
+      expect(getStore().vector.name).toBe("Play-to-pause");
     });
 
     it("loads even when the current selected layer is missing", () => {
       useEditorStore.setState({ selectedLayerId: 99999 });
       getStore().loadSample(0);
-      expect(getStore().vector.name).toBe("playtopause");
+      expect(getStore().vector.name).toBe("Play-to-pause");
       expect(getStore().layers.find((layer) => layer.id === getStore().selectedLayerId)?.type).toBe(
         "path",
       );

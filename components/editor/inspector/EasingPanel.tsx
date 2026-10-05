@@ -66,7 +66,7 @@ export function EasingPanel({ block, onBack }: { block: TimelineBlock; onBack: (
   };
 
   return (
-    <div data-motion-block-id={block.id} className="flex h-full flex-col">
+    <div data-motion-block-id={block.id} className="flex h-full min-h-0 flex-col">
       <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2">
         <button
           type="button"
@@ -83,7 +83,7 @@ export function EasingPanel({ block, onBack }: { block: TimelineBlock; onBack: (
           </div>
         </div>
       </div>
-      <div className="space-y-2 p-3">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
         <div className="relative">
           <EasingIcon
             points={points}

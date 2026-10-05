@@ -1,11 +1,21 @@
 # ShapeShifter project file
 
-Exported `*.shapeshifter` JSON (and IndexedDB autosave) uses:
+Project downloads (`*.shapeshifter`) and local recovery snapshots use one native format:
 
-- `version` / legacy layer frames for recovery
-- `documentV2` — canonical forward format (`DocumentV2`)
-- `pageRoot` when the live page owns vectors
+```json
+{
+  "format": "shapeshifter",
+  "document": { "schema": "shapeshifter", "...": "authored document graph" },
+  "activeOwnerId": "artboard ID or __page_root__"
+}
+```
 
-Unknown future fields are ignored on import. Prefer `documentV2` when present; fall back to `frames` / `pageRoot` if v2 validation fails.
+`document` contains the page, ordered artboards, nodes, geometry, styles, animation clips, tracks, and keyframes. `activeOwnerId` restores the editing and export context; it is optional for programmatically generated files.
 
-See `lib/shapeshifter/types.ts` (`DocumentV2`) and `lib/shapeshifter/export/projectJson.ts`.
+There is no legacy envelope, versioned parallel model, migration, or fallback. Invalid references, invalid geometry, and unsupported document features fail import with a diagnostic. Old ShapeShifter JSON files are not accepted. SVG and Android XML import remain supported interchange formats.
+
+All document writes publish the authored graph and editor views in one transaction. History stores the graph with selection context. Exports and recovery read the committed graph without changing the document or creating undo entries. The workspace views are transient editing indexes, not a second serialized project.
+
+Motion is stored once, in document tracks and keyframes. Timeline segments join two endpoints; a retained single pose has one keyframe. Deleting a keyframe preserves the other poses. Removing an entire property animation is a separate command.
+
+See `lib/shapeshifter/types.ts` (`EditorDocument`), `lib/shapeshifter/documentModel.ts`, and `lib/store/exportDocument.ts`.

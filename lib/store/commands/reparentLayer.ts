@@ -56,8 +56,7 @@ export function layerReparentIssue(
           Math.abs(matrix.c) > 1e-9 ||
           Math.abs(matrix.e) > 1e-9 ||
           Math.abs(matrix.f) > 1e-9 ||
-          animation.blocks.some((block) => String(block.layerId) === String(layer.id)) ||
-          (layer.timeline?.length ?? 0) > 0
+          animation.blocks.some((block) => String(block.layerId) === String(layer.id))
         );
       })
     )

@@ -18,15 +18,11 @@ type RecoveryEntry = RecoveryCheckpoint & { current?: boolean };
 function checkpointDescription(payload: unknown) {
   const value = typeof payload === "string" ? JSON.parse(payload) : payload;
   const project = value as {
-    vector?: { name?: string };
-    frames?: unknown[];
-    layers?: unknown[];
+    document?: { name?: string; frameIds?: string[]; rootNodeIds?: string[] };
   } | null;
   return {
-    name: project?.vector?.name || "ShapeShifter project",
-    detail: project?.frames
-      ? `${project.frames.length} artboards`
-      : `${project?.layers?.length ?? 0} layers`,
+    name: project?.document?.name || "ShapeShifter project",
+    detail: `${project?.document?.frameIds?.length ?? 0} artboards · ${project?.document?.rootNodeIds?.length ?? 0} page layers`,
   };
 }
 

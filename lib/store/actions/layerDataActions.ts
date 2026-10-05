@@ -1,4 +1,8 @@
-import { createDocumentV2FromLegacy } from "../../shapeshifter/documentModel";
+import {
+  workspaceFromDocument,
+  validateEditorDocument,
+  documentEditingIssues,
+} from "../../shapeshifter/documentModel";
 import { prepareForMorph } from "../../shapeshifter/pathUtils";
 import { getDemoProject } from "../../shapeshifter/demoProjects";
 import { PAGE_ROOT_ID } from "../../shapeshifter/scene/owners";
@@ -135,12 +139,14 @@ export function createLayerDataActions(
       get().pushHistory();
       set(buildLoadedProjectState(project, initialRootAnimation, "Imported frame"));
     },
-    loadDocument: (snapshot) => {
+    loadDocument: (document) => {
+      const invalid = validateEditorDocument(document);
+      if (invalid.length) throw new Error(`Cannot open this project: ${invalid[0]}`);
+      const unsupported = documentEditingIssues(document);
+      if (unsupported.length) throw new Error(`Cannot open this project: ${unsupported[0]}`);
+      const snapshot = workspaceFromDocument(document);
       get().pushHistory();
-      set({
-        ...buildLoadedDocumentState(snapshot),
-        documentV2: createDocumentV2FromLegacy(snapshot),
-      });
+      set({ ...buildLoadedDocumentState(snapshot), document: structuredClone(document) });
     },
     replaceSelectedLayerPaths: (paths) => {
       const { layers, selectedLayerId } = get();

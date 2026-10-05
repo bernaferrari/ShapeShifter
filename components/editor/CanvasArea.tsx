@@ -51,11 +51,7 @@ interface CanvasAreaProps {
   onToggleRulers?: () => void;
 }
 
-export function CanvasArea({
-  resetAllViews,
-  showRulers = false,
-  onToggleRulers,
-}: CanvasAreaProps) {
+export function CanvasArea({ resetAllViews, showRulers = false, onToggleRulers }: CanvasAreaProps) {
   const {
     isPlaying,
     progress,
@@ -94,7 +90,7 @@ export function CanvasArea({
     spacePanActive,
     animation,
     syncActiveOwner,
-    documentV2,
+    document,
   } = useEditorStore(
     useShallow((state) => ({
       isPlaying: state.isPlaying,
@@ -134,7 +130,7 @@ export function CanvasArea({
       spacePanActive: state.spacePanActive,
       animation: state.animation,
       syncActiveOwner: state.syncActiveOwner,
-      documentV2: state.documentV2,
+      document: state.document,
     })),
   );
 
@@ -144,8 +140,8 @@ export function CanvasArea({
 
   const compatibility = getCompatibilityStatus();
   const rootVector = useMemo(
-    () => vectorFromPageMetadata(documentV2.page, PAGE_ROOT_ID),
-    [documentV2.page],
+    () => vectorFromPageMetadata(document.page, PAGE_ROOT_ID),
+    [document.page],
   );
 
   const {

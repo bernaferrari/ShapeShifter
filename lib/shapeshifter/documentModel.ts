@@ -4,7 +4,7 @@ import type {
   AnimationClip,
   AnimationState,
   AnimationValue,
-  DocumentV2,
+  EditorDocument,
   Frame,
   Keyframe,
   Layer,
@@ -18,7 +18,7 @@ import type {
   VectorMetadata,
 } from "./types";
 
-export interface LegacyArtboardSnapshot {
+export interface ArtboardSnapshot {
   id: string;
   name: string;
   x: number;
@@ -29,10 +29,10 @@ export interface LegacyArtboardSnapshot {
   hiddenLayerIds: string[];
 }
 
-export interface LegacyDocumentSnapshot {
+export interface WorkspaceSnapshot {
   id: string;
   name: string;
-  frames: LegacyArtboardSnapshot[];
+  frames: ArtboardSnapshot[];
   rootLayers: Layer[];
   rootVector: VectorMetadata;
   rootAnimation: AnimationState;
@@ -118,7 +118,7 @@ function normalizeAnimationValue(
   return pathToString(parsePath(value));
 }
 
-function addGeometryVersion(document: DocumentV2, id: string, pathData: Layer["from"]): string {
+function addGeometryVersion(document: EditorDocument, id: string, pathData: Layer["from"]): string {
   document.geometryVersions[id] = {
     id,
     pathData,
@@ -128,8 +128,8 @@ function addGeometryVersion(document: DocumentV2, id: string, pathData: Layer["f
   return id;
 }
 
-/** Legacy block strings have no command IDs; derive durable IDs from their endpoint. */
-function addTimelineGeometryVersion(document: DocumentV2, id: string, value: string): string {
+/** Segment path strings have no command IDs; derive durable IDs from their endpoint. */
+function addTimelineGeometryVersion(document: EditorDocument, id: string, value: string): string {
   const parsed = parsePath(value);
   const pathData = {
     ...parsed,
@@ -145,7 +145,7 @@ function addTimelineGeometryVersion(document: DocumentV2, id: string, value: str
 }
 
 function addMorphMapping(
-  document: DocumentV2,
+  document: EditorDocument,
   id: string,
   fromGeometryId: string,
   toGeometryId: string,
@@ -154,9 +154,9 @@ function addMorphMapping(
     id,
     fromGeometryId,
     toGeometryId,
-    // Legacy documents only persist aligned paths. Preserve that fact rather than
+    // Workspace documents only persist aligned paths. Preserve that fact rather than
     // pretending the correspondence can be reconstructed from display geometry.
-    alignments: { kind: "legacy-aligned-endpoints" },
+    alignments: { kind: "aligned-endpoints" },
     polePositions: [],
     createdAt: 0,
   };
@@ -165,7 +165,7 @@ function addMorphMapping(
 }
 
 function addOwner(
-  document: DocumentV2,
+  document: EditorDocument,
   ownerId: string,
   layers: Layer[],
   animation: AnimationState,
@@ -302,16 +302,18 @@ function addOwner(
         interpolator: block.interpolator,
         geometryVersionId: fromGeometryId,
         morphMappingId: mappingId,
-        legacyBlockId: block.id,
+        segmentId: block.id,
       };
-      document.keyframes[toId] = {
-        id: toId,
-        time: block.endTime,
-        value: normalizeAnimationValue(block.toValue, valueType),
-        geometryVersionId: toGeometryId,
-        legacyBlockId: block.id,
-      };
-      track.keyframeIds.push(fromId, toId);
+      if (block.startTime !== block.endTime)
+        document.keyframes[toId] = {
+          id: toId,
+          time: block.endTime,
+          value: normalizeAnimationValue(block.toValue, valueType),
+          geometryVersionId: toGeometryId,
+          segmentId: block.id,
+        };
+      track.keyframeIds.push(fromId);
+      if (block.startTime !== block.endTime) track.keyframeIds.push(toId);
     }
     document.tracks[trackId] = track;
     clip.trackIds.push(trackId);
@@ -320,11 +322,11 @@ function addOwner(
   return rootIds;
 }
 
-export function createDocumentV2FromLegacy(snapshot: LegacyDocumentSnapshot): DocumentV2 {
-  const document: DocumentV2 = {
+export function buildEditorDocument(snapshot: WorkspaceSnapshot): EditorDocument {
+  const document: EditorDocument = {
     id: snapshot.id,
     name: snapshot.name,
-    version: 2,
+    schema: "shapeshifter",
     frameIds: [],
     frames: {},
     page: {
@@ -404,7 +406,7 @@ function localId(nodeId: string): string {
   return decodeURIComponent(parts.slice(2).join(":"));
 }
 
-function ownerLayers(document: DocumentV2, rootIds: string[]): Layer[] {
+function ownerLayers(document: EditorDocument, rootIds: string[]): Layer[] {
   const ordered: Node[] = [];
   const visit = (nodeId: string) => {
     const node = document.nodes[nodeId];
@@ -446,7 +448,7 @@ function ownerLayers(document: DocumentV2, rootIds: string[]): Layer[] {
 }
 
 function clipAnimation(
-  document: DocumentV2,
+  document: EditorDocument,
   clipId: string | undefined,
   fallbackId: string,
 ): AnimationState {
@@ -456,14 +458,14 @@ function clipAnimation(
   for (const trackId of clip.trackIds) {
     const track = document.tracks[trackId];
     if (!track) continue;
-    const byLegacyBlock = new Map<string, Keyframe[]>();
+    const bySegment = new Map<string, Keyframe[]>();
     for (const keyframeId of track.keyframeIds) {
       const keyframe = document.keyframes[keyframeId];
       if (!keyframe) continue;
-      const blockId = keyframe.legacyBlockId ?? `${track.id}:${Math.floor(byLegacyBlock.size / 2)}`;
-      byLegacyBlock.set(blockId, [...(byLegacyBlock.get(blockId) ?? []), keyframe]);
+      const blockId = keyframe.segmentId;
+      bySegment.set(blockId, [...(bySegment.get(blockId) ?? []), keyframe]);
     }
-    for (const [blockId, keyframes] of byLegacyBlock) {
+    for (const [blockId, keyframes] of bySegment) {
       const sorted = [...keyframes].sort((a, b) => a.time - b.time);
       const from = sorted[0];
       const to = sorted.at(-1);
@@ -482,15 +484,15 @@ function clipAnimation(
     }
   }
   const ownerPrefix = scopedId("clip", clip.frameId ?? "page", "");
-  // The migration adapter scopes clip IDs once. Returning that scoped ID as a
-  // legacy animation ID would encode it again on every undo/import round trip.
+  // The document builder scopes clip IDs once. Returning that scoped ID as a
+  // workspace animation ID would encode it again on every undo/import round trip.
   const animationId = clip.id.startsWith(ownerPrefix)
     ? decodeURIComponent(clip.id.slice(ownerPrefix.length))
     : clip.id;
   return { id: animationId, name: clip.name, duration: clip.duration, blocks };
 }
 
-export function legacySnapshotFromDocumentV2(document: DocumentV2): LegacyDocumentSnapshot {
+export function workspaceFromDocument(document: EditorDocument): WorkspaceSnapshot {
   const frames = document.frameIds.flatMap((frameId) => {
     const frame = document.frames[frameId];
     if (!frame) return [];
@@ -538,11 +540,11 @@ export function legacySnapshotFromDocumentV2(document: DocumentV2): LegacyDocume
 }
 
 /**
- * Report valid V2 constructs the legacy runtime cannot project and then recreate
+ * Report valid document constructs the workspace runtime cannot project and then recreate
  * without changing their meaning. Callers must refuse these documents instead of
- * silently flattening them into the legacy model.
+ * silently flattening them into the workspace model.
  */
-export function legacyProjectionIssues(document: DocumentV2): string[] {
+export function documentEditingIssues(document: EditorDocument): string[] {
   const issues: string[] = [];
   if (Object.keys(document.components ?? {}).length > 0) issues.push("reusable components");
   if (Object.values(document.nodes).some((node) => node.type === "boolean"))
@@ -562,26 +564,21 @@ export function legacyProjectionIssues(document: DocumentV2): string[] {
     const hasNativeKeyframeMapping = keyframes.some((keyframe) => {
       if (!keyframe.morphMappingId) return false;
       const mapping = document.morphMappings[keyframe.morphMappingId];
-      // The legacy adapter recreates its own endpoint mapping for a paired
-      // legacy morph block. Any richer per-keyframe mapping would be erased.
-      return !keyframe.legacyBlockId || mapping?.alignments.kind !== "legacy-aligned-endpoints";
+      // Editing a morph segment preserves its aligned endpoints. Richer per-key
+      // correspondence requires an authoring representation the editor does not yet expose.
+      return !keyframe.segmentId || mapping?.alignments.kind !== "aligned-endpoints";
     });
     if (hasNativeKeyframeMapping) {
       issues.push(`keyframe morph mappings on track ${track.id}`);
       continue;
     }
-    const withoutLegacyBlockId = keyframes.filter((keyframe) => !keyframe.legacyBlockId);
-    if (withoutLegacyBlockId.length > 0 && keyframes.length !== 2) {
-      issues.push(`native keyframe sequence on track ${track.id}`);
-      continue;
-    }
     const blocks = new Map<string, number>();
     for (const keyframe of keyframes) {
-      if (!keyframe.legacyBlockId) continue;
-      blocks.set(keyframe.legacyBlockId, (blocks.get(keyframe.legacyBlockId) ?? 0) + 1);
+      if (!keyframe.segmentId) continue;
+      blocks.set(keyframe.segmentId, (blocks.get(keyframe.segmentId) ?? 0) + 1);
     }
-    if ([...blocks.values()].some((count) => count !== 2))
-      issues.push(`non-pair legacy keyframes on track ${track.id}`);
+    if ([...blocks.values()].some((count) => count < 1 || count > 2))
+      issues.push(`invalid motion segment on track ${track.id}`);
   }
   return issues;
 }
@@ -732,6 +729,8 @@ function isKeyframeRecord(value: unknown): value is Keyframe {
   return (
     isRecord(value) &&
     typeof value.id === "string" &&
+    typeof value.segmentId === "string" &&
+    value.segmentId.length > 0 &&
     isFiniteNumber(value.time) &&
     (typeof value.value === "string" || isFiniteNumber(value.value)) &&
     (value.interpolator === undefined || typeof value.interpolator === "string") &&
@@ -748,13 +747,13 @@ interface DocumentOwner {
 }
 
 /**
- * A V2 document is a collection of graphs, not a bag of independently useful
- * records. The legacy projection starts from page/frame roots, so accepting an
+ * A document is a collection of graphs, not a bag of independently useful
+ * records. The workspace projection starts from page/frame roots, so accepting an
  * unowned record here would quietly discard authored data during import. Keep
  * immutable geometry and mapping history permissive, but require every mutable
  * scene and timeline record to be reachable from exactly one owner.
  */
-function validateDocumentOwnership(document: DocumentV2, issues: string[]): void {
+function validateDocumentOwnership(document: EditorDocument, issues: string[]): void {
   const pageOwner: DocumentOwner = { key: "page", label: "the page", frameId: null };
   const nodeOwners = new Map<string, DocumentOwner>();
   const clipOwners = new Map<string, DocumentOwner>();
@@ -881,15 +880,15 @@ function validateDocumentOwnership(document: DocumentV2, issues: string[]): void
 }
 
 /**
- * Verify a persisted document before attempting the legacy projection. This accepts
+ * Verify a persisted document before attempting the workspace projection. This accepts
  * unknown input deliberately: import data is untrusted, and validation itself must
  * never become the reason a recoverable project cannot be opened.
  */
-export function validateDocumentV2(document: unknown): string[] {
+export function validateEditorDocument(document: unknown): string[] {
   const issues: string[] = [];
   try {
-    if (!isRecord(document)) return ["Document v2 must be an object."];
-    if (document.version !== 2) issues.push("Document version must be 2.");
+    if (!isRecord(document)) return ["Document must be an object."];
+    if (document.schema !== "shapeshifter") issues.push("Document schema must be shapeshifter.");
     if (typeof document.id !== "string") issues.push("Document id is missing.");
     if (typeof document.name !== "string") issues.push("Document name is missing.");
     if (!isStringArray(document.frameIds)) issues.push("Document frameIds must be an array.");
@@ -911,7 +910,7 @@ export function validateDocumentV2(document: unknown): string[] {
     if (!isStringArray(document.rootClipIds)) issues.push("Document rootClipIds must be an array.");
     if (issues.length > 0) return issues;
 
-    const candidate = document as unknown as DocumentV2;
+    const candidate = document as unknown as EditorDocument;
     for (const frameId of candidate.frameIds) {
       const frame = candidate.frames[frameId];
       if (!isFrameRecord(frame)) {
@@ -1008,8 +1007,8 @@ export function validateDocumentV2(document: unknown): string[] {
     validateDocumentOwnership(candidate, issues);
   } catch {
     // A proxy or an unexpectedly-shaped object should surface as an invalid document,
-    // never as an import-time exception that blocks legacy recovery.
-    issues.push("Document v2 could not be validated safely.");
+    // never as an import-time exception that blocks workspace recovery.
+    issues.push("Document could not be validated safely.");
   }
   return issues;
 }

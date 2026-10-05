@@ -460,7 +460,7 @@ function layerFromPathData(
   let parsed = parsePath(pathData);
   parsed = transformPathData(parsed, matrix);
   // k7zp/3t0c: guarantee stable ULID command IDs even for freshly parsed imported geometry.
-  // Harmless no-op on already-good data; upgrades any legacy cmd_ patterns.
+  // Harmless no-op on already-good data; upgrades any workspace cmd_ patterns.
   parsed = ensureStableCommandIds(parsed);
   return {
     id,

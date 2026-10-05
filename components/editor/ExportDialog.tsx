@@ -15,20 +15,19 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Info, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { recordExerciseExport } from "./animationExercise";
 import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { type ExportOptions } from "@/lib/shapeshifter/exporter";
 import {
   exportLiveDocument,
+  resolveExportOptions,
+  type LiveExportResult,
   LIVE_EXPORT_SCOPE,
-  selectedLayerExportIssue,
   summarizeAndroidWarnings,
   type LiveExportKind,
 } from "@/lib/store/exportDocument";
-import { vectorCoordinateSize } from "@/lib/shapeshifter/vectorSpace";
 import { CAPABILITY_MATRIX, type ExportFormatId } from "@/lib/shapeshifter/formatCapabilities";
-import { commitDocumentV2 } from "@/lib/store/documentRuntime";
-import { exportAgentSnapshot, type AgentExportFormat } from "@/lib/agent/export";
 
 interface ExportDialogProps {
   children: React.ReactNode;
@@ -38,30 +37,31 @@ export function ExportDialog({ children }: ExportDialogProps) {
   const layers = useEditorStore((state) => state.layers);
   const selectedLayerId = useEditorStore((state) => state.selectedLayerId);
   const vector = useEditorStore((state) => state.vector);
+  const isRepeating = useEditorStore((state) => state.isRepeating);
   const animation = useEditorStore((state) => state.animation);
   const frames = useEditorStore((state) => state.frames);
   const selectedFrameId = useEditorStore((state) => state.selectedFrameId);
   const currentLayer = layers.find((l) => String(l.id) === String(selectedLayerId)) || layers[0];
   const selectedFrame = frames.find((frame) => frame.id === selectedFrameId);
-  const viewportSize = vectorCoordinateSize(selectedFrame?.vector ?? vector);
-  const androidAnimation = animation;
-  const androidTrackCount = new Set(
-    androidAnimation.blocks.map((block) => `${String(block.layerId)}:${block.propertyName}`),
-  ).size;
 
   const [open, setOpen] = useState(false);
   const storedFormat = useEditorStore((state) => state.preferredExportFormat);
   const setPreferredExportFormat = useEditorStore((state) => state.setPreferredExportFormat);
   const [format, setFormat] = useState(storedFormat);
-  const [options, setOptions] = useState<ExportOptions>({
-    duration: 1.4,
-    fps: 60,
-    width: 512,
-    height: 512,
-    loop: true,
-    strokeWidth: 2.8,
-  });
-  const [dimensions, setDimensions] = useState({ width: "512", height: "512" });
+  const [overrides, setOptions] = useState<ExportOptions>({});
+  const options = React.useMemo(
+    () =>
+      resolveExportOptions(
+        { layers, vector, animation, state: useEditorStore.getState() },
+        overrides,
+      ),
+    [layers, vector, animation, selectedLayerId, isRepeating, overrides],
+  );
+  const [dimensionDrafts, setDimensions] = useState<{ width: string; height: string } | null>(null);
+  const dimensions = dimensionDrafts ?? {
+    width: String(options.width),
+    height: String(options.height),
+  };
   const [dimensionsTouched, setDimensionsTouched] = useState(false);
   const hasDimensions = ["svg", "static", "pdf", "spritesheet"].includes(format);
   const validDimension = (value: string) =>
@@ -90,73 +90,68 @@ export function ExportDialog({ children }: ExportDialogProps) {
     ready: true,
     messages: [],
   });
+  const [generated, setGenerated] = useState<LiveExportResult | null>(null);
   React.useEffect(() => {
     if (!open) return;
-    if (!["static", "json", "vector", "avd", "pdf", "lottie"].includes(format)) {
-      const issue = selectedLayerExportIssue(currentLayer);
-      setPreview({ ready: !issue, messages: issue ? [issue] : [] });
-      return;
-    }
-    try {
-      const result = exportAgentSnapshot(commitDocumentV2(useEditorStore.getState()), 0, {
-        ownerId: selectedFrameId,
-        format: format as AgentExportFormat,
+    let cancelled = false;
+    setGenerated(null);
+    setPreview({ ready: false, messages: ["Generating output preview…"] });
+    exportLiveDocument(format as LiveExportKind, options)
+      .then((result) => {
+        if (cancelled) return;
+        setGenerated(result);
+        const diagnostics = [
+          ...result.androidDiagnostics,
+          ...result.staticDiagnostics,
+          ...result.formatDiagnostics,
+        ];
+        setPreview({
+          ready: !result.androidDiagnostics.some((d) => d.severity === "error"),
+          messages: [...new Set(diagnostics.map((d) => d.message))],
+        });
+      })
+      .catch((error) => {
+        if (!cancelled)
+          setPreview({
+            ready: false,
+            messages: [
+              error instanceof Error ? error.message : "This document could not be exported.",
+            ],
+          });
       });
-      setPreview({
-        ready: result.ready,
-        messages: [...new Set(result.diagnostics.map((item) => item.message))],
-      });
-    } catch (error) {
-      setPreview({
-        ready: false,
-        messages: [error instanceof Error ? error.message : "This document could not be exported."],
-      });
-    }
-  }, [
-    open,
-    format,
-    selectedFrameId,
-    selectedLayerId,
-    currentLayer,
-    layers,
-    animation,
-    vector,
-    frames,
-  ]);
+    return () => {
+      cancelled = true;
+    };
+  }, [open, format, selectedFrameId, selectedLayerId, layers, animation, vector, frames, options]);
 
   const formatOptions: Array<{
     key: typeof format;
     label: string;
     hint: string;
     beta?: boolean;
+    experimental?: boolean;
   }> = [
     { key: "avd", label: "Animated Vector", hint: "Android · XML" },
     { key: "vector", label: "Vector Drawable", hint: "Android · static" },
-    { key: "svg", label: "Animated SVG", hint: "Web · layer" },
+    { key: "svg", label: "Morph demo SVG", hint: "Restyled endpoints", experimental: true },
     { key: "static", label: "SVG", hint: "Web · static" },
-    { key: "css", label: "CSS", hint: "Web · layer" },
+    { key: "css", label: "Morph demo CSS", hint: "Endpoint geometry", experimental: true },
     { key: "lottie", label: "Lottie", hint: "JSON", beta: true },
     { key: "pdf", label: "PDF", hint: "Print", beta: true },
-    { key: "spritesheet", label: "Sprite sheet", hint: "SVG frames", beta: true },
+    {
+      key: "spritesheet",
+      label: "Morph sprite sheet",
+      hint: "Endpoint frames",
+      experimental: true,
+    },
     { key: "json", label: "Project", hint: "Reopen later" },
   ];
 
-  // A still of the artwork being exported, so you can see what you are about to ship.
-  const [thumbnail, setThumbnail] = useState<string | null>(null);
-  React.useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    exportLiveDocument("static", { width: 256, height: 256 })
-      .then((result) => {
-        if (cancelled || typeof result.content !== "string") return;
-        setThumbnail(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(result.content)}`);
-      })
-      .catch(() => !cancelled && setThumbnail(null));
-    return () => {
-      cancelled = true;
-    };
-  }, [open, selectedFrameId, layers, animation, vector]);
-
+  const svgOutput =
+    generated?.mimeType === "image/svg+xml" && typeof generated.content === "string"
+      ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(generated.content)}`
+      : null;
+  const demo = ["svg", "css", "spritesheet"].includes(format);
   const handleExport = async () => {
     if (!currentLayer && LIVE_EXPORT_SCOPE[format as LiveExportKind] === "selected-layer") {
       toast.error("No layer selected");
@@ -202,6 +197,7 @@ export function ExportDialog({ children }: ExportDialogProps) {
         a.download = filename;
         document.body.appendChild(a);
         a.click();
+        recordExerciseExport(exported.live.state.selectedFrameId, format);
         document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(url), 1000);
 
@@ -272,74 +268,114 @@ export function ExportDialog({ children }: ExportDialogProps) {
         </DialogHeader>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 pb-4">
-          <figure className="flex items-center gap-3 rounded-xl bg-secondary/70 p-3">
-            <div className="grid size-16 shrink-0 place-items-center overflow-hidden rounded-lg bg-[repeating-conic-gradient(var(--muted)_0_25%,var(--background)_0_50%)] bg-[length:10px_10px] ring-1 ring-border">
-              {thumbnail && (
+          <div className="space-y-2">
+            <p className="text-[12px] text-muted-foreground">
+              {demo
+                ? `Selected path · ${currentLayer?.name ?? "No path selected"}`
+                : format === "json"
+                  ? "Whole document"
+                  : `${selectedFrameId === "__page_root__" ? "Page" : "Artboard"} · ${selectedFrame?.name || vector.name}`}
+            </p>
+            {svgOutput ? (
+              format === "svg" ? (
+                <iframe
+                  title="Generated morph demo preview"
+                  sandbox="allow-scripts"
+                  src={svgOutput}
+                  className="h-48 w-full rounded-lg border border-border"
+                />
+              ) : (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={thumbnail}
-                  alt=""
-                  className="max-h-full max-w-full object-contain p-1.5"
+                  src={svgOutput}
+                  alt="Generated SVG output"
+                  className="h-40 w-full rounded-lg border border-border object-contain"
                 />
-              )}
-            </div>
-            <figcaption className="min-w-0">
-              <div className="truncate text-[13px] font-medium">
-                {selectedFrame?.name || vector.name}
-              </div>
-              <div className="text-[12px] text-muted-foreground tabular-nums">
-                {viewportSize.width} × {viewportSize.height}
-                {androidTrackCount > 0 &&
-                  ` · ${androidTrackCount} animated ${androidTrackCount === 1 ? "property" : "properties"}`}
-              </div>
-            </figcaption>
-          </figure>
+              )
+            ) : generated && typeof generated.content === "string" ? (
+              <pre
+                aria-label="Generated export output"
+                className="max-h-32 overflow-auto rounded-lg bg-secondary p-2 text-[11px]"
+              >
+                {generated.content.slice(0, 6000)}
+              </pre>
+            ) : (
+              <p className="rounded-lg bg-secondary p-3 text-[12px] text-muted-foreground">
+                {generated
+                  ? "Output ready to download. This format has no visual preview."
+                  : "Generating output preview…"}
+              </p>
+            )}
+            {demo && (
+              <p className="rounded-lg bg-secondary p-3 text-[12px] leading-relaxed text-muted-foreground">
+                Experimental morph demo. Uses this path’s From → To geometry, with separate styling
+                and timing. It does not export authored fills, transforms, masks, or timeline
+                motion.
+                {format === "svg" &&
+                  " Includes a dark background, ghost endpoints, a colored outline, and demo easing."}
+              </p>
+            )}
+          </div>
 
-          <div role="radiogroup" aria-label="Export format" className="grid grid-cols-3 gap-1.5">
-            {formatOptions.map((item) => {
-              const selected = format === item.key;
-              return (
-                <button
-                  key={item.key}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  onClick={() => {
-                    setFormat(item.key);
-                    setPreferredExportFormat(item.key);
-                  }}
-                  className={cn(
-                    "flex min-h-14 flex-col items-start justify-start rounded-lg px-2.5 py-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    selected
-                      ? "bg-primary/10 shadow-[inset_0_0_0_1.5px_var(--primary)]"
-                      : "shadow-[inset_0_0_0_1px_var(--border)] hover:bg-muted",
-                  )}
-                >
-                  <span className="text-[12px] leading-tight font-medium">{item.label}</span>
-                  <span className="mt-0.5 text-[11px] leading-tight text-muted-foreground">
-                    {item.hint}
-                    {item.beta && " · Beta"}
-                  </span>
-                </button>
-              );
-            })}
+          <div role="radiogroup" aria-label="Export format" className="space-y-3">
+            {[false, true].map((experimental) => (
+              <div key={String(experimental)} className="space-y-1.5">
+                <p className="text-[12px] font-medium">
+                  {experimental ? "Experimental demos" : "Artwork and project"}
+                </p>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {formatOptions
+                    .filter((item) => Boolean(item.experimental) === experimental)
+                    .map((item) => {
+                      const selected = format === item.key;
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          onClick={() => {
+                            setFormat(item.key);
+                            setPreferredExportFormat(item.key);
+                          }}
+                          className={cn(
+                            "flex min-h-14 flex-col items-start justify-start rounded-lg px-2.5 py-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            selected
+                              ? "bg-primary/10 shadow-[inset_0_0_0_1.5px_var(--primary)]"
+                              : "shadow-[inset_0_0_0_1px_var(--border)] hover:bg-muted",
+                          )}
+                        >
+                          <span className="text-[12px] leading-tight font-medium">
+                            {item.label}
+                          </span>
+                          <span className="mt-0.5 text-[11px] leading-tight text-muted-foreground">
+                            {item.hint}
+                            {item.beta && " · Beta"}
+                            {item.experimental && " · Experimental"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
+            ))}
           </div>
 
           {hasOptions && (
             <div className="space-y-3">
               {["svg", "css", "spritesheet"].includes(format) &&
-                sliderRow("Duration", options.duration || 1.4, "s", {
+                sliderRow("Duration", options.duration, "s", {
                   min: 0.4,
                   max: 4,
                   ariaLabel: "Export duration in seconds",
-                  onChange: (duration) => setOptions({ ...options, duration }),
+                  onChange: (duration) => setOptions({ ...overrides, duration }),
                 })}
               {["svg", "spritesheet"].includes(format) &&
-                sliderRow("Stroke width", options.strokeWidth || 2.8, "px", {
+                sliderRow("Stroke width", options.strokeWidth, "px", {
                   min: 0.5,
                   max: 8,
                   ariaLabel: "Export stroke width",
-                  onChange: (strokeWidth) => setOptions({ ...options, strokeWidth }),
+                  onChange: (strokeWidth) => setOptions({ ...overrides, strokeWidth }),
                 })}
               {hasDimensions && (
                 <div className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-3">
@@ -359,7 +395,8 @@ export function ExportDialog({ children }: ExportDialogProps) {
                       onBlur={() => setDimensionsTouched(true)}
                       onChange={(value) => {
                         setDimensions({ ...dimensions, width: value });
-                        if (validDimension(value)) setOptions({ ...options, width: Number(value) });
+                        if (validDimension(value))
+                          setOptions({ ...overrides, width: Number(value) });
                       }}
                     />
                     <SizeField
@@ -372,7 +409,7 @@ export function ExportDialog({ children }: ExportDialogProps) {
                       onChange={(value) => {
                         setDimensions({ ...dimensions, height: value });
                         if (validDimension(value))
-                          setOptions({ ...options, height: Number(value) });
+                          setOptions({ ...overrides, height: Number(value) });
                       }}
                     />
                   </div>

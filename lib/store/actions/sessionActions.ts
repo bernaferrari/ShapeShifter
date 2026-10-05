@@ -1,11 +1,7 @@
+import { toast } from "sonner";
+import { planLayerDeletion } from "../commands/deleteLayers";
 import { zoomAtWorldPoint } from "../../shapeshifter/camera";
-import { PAGE_ROOT_ID } from "../../shapeshifter/scene/owners";
-import {
-  collectClipboardFromOwners,
-  collectSubtreeWithAnimation,
-  remapClonedSubtree,
-  resolveOwnerDocument,
-} from "../cloneSubtree";
+import { collectClipboardFromOwners, remapClonedSubtree } from "../cloneSubtree";
 import type { EditorState } from "../editorStore";
 
 type SessionAction =
@@ -47,108 +43,6 @@ function uniqueClipboardRoots(layers: EditorState["layers"]): string[] {
   return layers
     .filter((layer) => layer.parentId == null || !ids.has(String(layer.parentId)))
     .map((layer) => String(layer.id));
-}
-
-function removeRequestedSubtrees(
-  state: EditorState,
-  layerIds: Array<string | number>,
-): Partial<EditorState> {
-  const requested = new Set(layerIds.map(String));
-  const matchingRefs = state.selectedLayerRefs.filter((ref) => requested.has(String(ref.layerId)));
-  const refs =
-    matchingRefs.length > 0
-      ? matchingRefs
-      : layerIds.map((layerId) => ({ ownerId: state.selectedFrameId, layerId }));
-
-  const idsByOwner = new Map<string, Set<string>>();
-  for (const ref of refs) {
-    const owner = resolveOwnerDocument(state, ref.ownerId);
-    const collected = collectSubtreeWithAnimation(owner.layers, owner.animation.blocks, [
-      ref.layerId,
-    ]);
-    const ids = idsByOwner.get(ref.ownerId) ?? new Set<string>();
-    for (const layer of collected.layers) ids.add(String(layer.id));
-    idsByOwner.set(ref.ownerId, ids);
-  }
-
-  const strip = (
-    layers: EditorState["layers"],
-    animation: EditorState["animation"],
-    ids?: Set<string>,
-  ) => {
-    if (!ids) return { layers, animation };
-    return {
-      layers: layers.filter((layer) => !ids.has(String(layer.id))),
-      animation: {
-        ...animation,
-        blocks: animation.blocks.filter((block) => !ids.has(String(block.layerId))),
-      },
-    };
-  };
-
-  const nextFrames = state.frames.map((frame) => {
-    const ids = idsByOwner.get(frame.id);
-    if (!ids) return frame;
-    const ownerLayers = frame.id === state.selectedFrameId ? state.layers : frame.layers;
-    const ownerAnimation = frame.id === state.selectedFrameId ? state.animation : frame.animation;
-    const next = strip(ownerLayers, ownerAnimation, ids);
-    return {
-      ...frame,
-      layers: next.layers,
-      animation: next.animation,
-      hiddenLayerIds: frame.hiddenLayerIds.filter((id) => !ids.has(String(id))),
-    };
-  });
-  const rootIds = idsByOwner.get(PAGE_ROOT_ID);
-  const rootSource =
-    state.selectedFrameId === PAGE_ROOT_ID
-      ? { layers: state.layers, animation: state.animation }
-      : { layers: state.rootLayers, animation: state.rootAnimation };
-  const nextRoot = strip(rootSource.layers, rootSource.animation, rootIds);
-  const nextRootHidden = rootIds
-    ? (state.selectedFrameId === PAGE_ROOT_ID
-        ? state.hiddenLayerIds
-        : state.rootHiddenLayerIds
-      ).filter((id) => !rootIds.has(String(id)))
-    : state.selectedFrameId === PAGE_ROOT_ID
-      ? state.hiddenLayerIds
-      : state.rootHiddenLayerIds;
-  const activeFrame = nextFrames.find((frame) => frame.id === state.selectedFrameId);
-  const nextLayers =
-    state.selectedFrameId === PAGE_ROOT_ID
-      ? nextRoot.layers
-      : (activeFrame?.layers ?? state.layers);
-  const nextAnimation =
-    state.selectedFrameId === PAGE_ROOT_ID
-      ? nextRoot.animation
-      : (activeFrame?.animation ?? state.animation);
-  const nextHidden =
-    state.selectedFrameId === PAGE_ROOT_ID
-      ? nextRootHidden
-      : (activeFrame?.hiddenLayerIds ?? state.hiddenLayerIds);
-  return {
-    frames: nextFrames,
-    rootLayers: nextRoot.layers,
-    rootAnimation: nextRoot.animation,
-    rootHiddenLayerIds:
-      state.selectedFrameId === PAGE_ROOT_ID ? state.rootHiddenLayerIds : nextRootHidden,
-    layers: nextLayers,
-    animation: nextAnimation,
-    hiddenLayerIds: nextHidden,
-    selectedBlockIds: state.selectedBlockIds.filter((blockId) =>
-      nextAnimation.blocks.some((block) => block.id === blockId),
-    ),
-    selectedLayerId: nextLayers[0]?.id ?? 0,
-    selectedLayerIds: nextLayers[0] ? [nextLayers[0].id] : [],
-    selectedLayerRefs: nextLayers[0]
-      ? [{ ownerId: state.selectedFrameId, layerId: nextLayers[0].id }]
-      : [],
-    hasCanvasSelection: nextLayers.length > 0,
-    selectionKind: nextLayers.length > 0 ? "layer" : "none",
-    selection: null,
-    selectedPoints: [],
-    selectedSubPaths: [],
-  };
 }
 
 function zoomDetailAtCenter(state: EditorState, scale: number) {
@@ -301,13 +195,23 @@ export function createSessionActions(set: SetEditorState, get: () => EditorState
     cutLayers: (layerIds) => {
       const state = get();
       const requested = new Set(layerIds.map(String));
-      const activeRequested = state.layers.filter((layer) => requested.has(String(layer.id)));
-      // Refuse emptying the active owner when every live layer is explicitly requested.
-      if (activeRequested.length > 0 && activeRequested.length >= state.layers.length) return;
+      const selectedRefs = state.selectedLayerRefs.filter((ref) =>
+        requested.has(String(ref.layerId)),
+      );
+      const refs = [
+        ...selectedRefs,
+        ...layerIds
+          .filter((layerId) => !selectedRefs.some((ref) => String(ref.layerId) === String(layerId)))
+          .map((layerId) => ({ ownerId: state.selectedFrameId, layerId })),
+      ];
+      const result = planLayerDeletion(state, refs);
+      if (!result.ok) {
+        toast.error("Cannot cut selection", { description: result.message });
+        return;
+      }
       state.copyLayers(layerIds);
-      const afterCopy = get();
-      afterCopy.pushHistory();
-      set(removeRequestedSubtrees(afterCopy, layerIds));
+      get().pushHistory();
+      set(result.patch);
     },
   };
 }

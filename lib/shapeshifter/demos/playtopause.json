@@ -1,79 +1,695 @@
 {
-  "version": 1,
-  "layers": {
-    "vectorLayer": {
-      "id": "31",
-      "name": "playtopause",
-      "type": "vector",
+  "format": "shapeshifter",
+  "document": {
+    "id": "playtopause",
+    "name": "Play-to-pause",
+    "schema": "shapeshifter",
+    "frameIds": ["demo-frame"],
+    "frames": {
+      "demo-frame": {
+        "id": "demo-frame",
+        "name": "Play-to-pause",
+        "x": 0,
+        "y": 0,
+        "width": 24,
+        "height": 24,
+        "alpha": 1,
+        "childrenNodeIds": ["node:demo-frame:9439"],
+        "clipIds": ["clip:demo-frame:33"]
+      }
+    },
+    "page": {
+      "name": "Page",
       "width": 24,
       "height": 24,
-      "alpha": 1,
-      "children": [
-        {
-          "id": "9439",
-          "name": "group",
-          "type": "group",
-          "rotation": 0,
-          "scaleX": 1,
-          "scaleY": 1,
-          "pivotX": 12,
-          "pivotY": 12,
+      "alpha": 1
+    },
+    "rootNodeIds": [],
+    "rootClipIds": ["clip:page:page-motion"],
+    "nodes": {
+      "node:demo-frame:9439": {
+        "id": "node:demo-frame:9439",
+        "name": "group",
+        "type": "group",
+        "childrenIds": ["node:demo-frame:32"],
+        "visible": true,
+        "locked": false,
+        "transform": {
           "translateX": 0,
           "translateY": 0,
-          "children": [
+          "scaleX": 1,
+          "scaleY": 1,
+          "rotation": 0,
+          "pivotX": 12,
+          "pivotY": 12
+        },
+        "style": {},
+        "alpha": 1,
+        "androidName": "group"
+      },
+      "node:demo-frame:32": {
+        "id": "node:demo-frame:32",
+        "name": "path",
+        "type": "path",
+        "parentId": "node:demo-frame:9439",
+        "visible": true,
+        "locked": false,
+        "transform": {
+          "translateX": 0,
+          "translateY": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "rotation": 0,
+          "pivotX": 0,
+          "pivotY": 0
+        },
+        "style": {
+          "fillColor": "#000000",
+          "fillAlpha": 1,
+          "strokeColor": "",
+          "strokeAlpha": 1,
+          "strokeWidth": 1,
+          "strokeLinecap": "butt",
+          "strokeLinejoin": "miter",
+          "strokeMiterLimit": 4,
+          "trimPathStart": 0,
+          "trimPathEnd": 1,
+          "trimPathOffset": 0,
+          "fillType": "nonZero"
+        },
+        "alpha": 1,
+        "geometryVersionId": "geometry:demo-frame:32%3Abase",
+        "fromGeometryVersionId": "geometry:demo-frame:32%3Afrom",
+        "toGeometryVersionId": "geometry:demo-frame:32%3Ato",
+        "androidName": "path"
+      }
+    },
+    "geometryVersions": {
+      "geometry:demo-frame:32%3Abase": {
+        "id": "geometry:demo-frame:32%3Abase",
+        "pathData": {
+          "subPaths": [
             {
-              "id": "32",
-              "name": "path",
-              "type": "path",
-              "pathData": "M 8 5 L 8 19 L 19 12 Z",
-              "fillColor": "#000000",
-              "fillAlpha": 1,
-              "strokeColor": "",
-              "strokeAlpha": 1,
-              "strokeWidth": 1,
-              "strokeLinecap": "butt",
-              "strokeLinejoin": "miter",
-              "strokeMiterLimit": 4,
-              "trimPathStart": 0,
-              "trimPathEnd": 1,
-              "trimPathOffset": 0,
-              "fillType": "nonZero"
+              "commands": [
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBE0",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 8,
+                      "y": 5
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBE1",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 8,
+                      "y": 19
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBE2",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 19,
+                      "y": 12
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBE3",
+                  "type": "Z",
+                  "points": []
+                }
+              ]
             }
           ]
-        }
-      ]
-    },
-    "hiddenLayerIds": []
-  },
-  "timeline": {
-    "animation": {
-      "id": "33",
-      "name": "anim",
-      "duration": 300,
-      "blocks": [
-        {
-          "id": "34",
-          "layerId": "32",
-          "propertyName": "pathData",
-          "startTime": 0,
-          "endTime": 300,
-          "interpolator": "FAST_OUT_SLOW_IN",
-          "type": "path",
-          "fromValue": "M 8 5 L 8 12 L 19 12 L 19 12 L 8 5 M 8 12 L 8 19 L 19 12 L 19 12 L 8 12",
-          "toValue": "M 5 6 L 5 10 L 19 10 L 19 6 L 5 6 M 5 14 L 5 18 L 19 18 L 19 14 L 5 14"
         },
-        {
-          "id": "9440",
-          "layerId": "9439",
-          "propertyName": "rotation",
-          "startTime": 0,
-          "endTime": 300,
-          "interpolator": "FAST_OUT_SLOW_IN",
-          "type": "number",
-          "fromValue": 0,
-          "toValue": 90
-        }
-      ]
+        "sourceHash": "M8 5 L8 19 L19 12 Z",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:32%3Afrom": {
+        "id": "geometry:demo-frame:32%3Afrom",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "01M46JZWCGYRCGS8C5FNAKQGKR",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 8,
+                      "y": 5
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBDD",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 8,
+                      "y": 12
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBDE",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 19,
+                      "y": 12
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBDF",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 19,
+                      "y": 12
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBDG",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 8,
+                      "y": 5
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "commands": [
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBDH",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 8,
+                      "y": 12
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBDJ",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 8,
+                      "y": 19
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBDK",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 19,
+                      "y": 12
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBDM",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 19,
+                      "y": 12
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBDN",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 8,
+                      "y": 12
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M8 5 L8 12 L19 12 L19 12 L8 5 M8 12 L8 19 L19 12 L19 12 L8 12",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:32%3Ato": {
+        "id": "geometry:demo-frame:32%3Ato",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBDP",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 5,
+                      "y": 6
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBDQ",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 5,
+                      "y": 10
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBDR",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 19,
+                      "y": 10
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBDS",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 19,
+                      "y": 6
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBDT",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 5,
+                      "y": 6
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "commands": [
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBDV",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 5,
+                      "y": 14
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBDW",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 5,
+                      "y": 18
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBDX",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 19,
+                      "y": 18
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBDY",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 19,
+                      "y": 14
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWCJTCZ0T1N0TB42MBDZ",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 5,
+                      "y": 14
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M5 6 L5 10 L19 10 L19 6 L5 6 M5 14 L5 18 L19 18 L19 14 L5 14",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:34%3Afrom": {
+        "id": "geometry:demo-frame:34%3Afrom",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "command:geometry%3Ademo-frame%3A34%253Afrom:0%3A0",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 8,
+                      "y": 5
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A34%253Afrom:0%3A1",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 8,
+                      "y": 12
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A34%253Afrom:0%3A2",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 19,
+                      "y": 12
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A34%253Afrom:0%3A3",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 19,
+                      "y": 12
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A34%253Afrom:0%3A4",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 8,
+                      "y": 5
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "commands": [
+                {
+                  "id": "command:geometry%3Ademo-frame%3A34%253Afrom:1%3A0",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 8,
+                      "y": 12
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A34%253Afrom:1%3A1",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 8,
+                      "y": 19
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A34%253Afrom:1%3A2",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 19,
+                      "y": 12
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A34%253Afrom:1%3A3",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 19,
+                      "y": 12
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A34%253Afrom:1%3A4",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 8,
+                      "y": 12
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M8 5 L8 12 L19 12 L19 12 L8 5 M8 12 L8 19 L19 12 L19 12 L8 12",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:34%3Ato": {
+        "id": "geometry:demo-frame:34%3Ato",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "command:geometry%3Ademo-frame%3A34%253Ato:0%3A0",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 5,
+                      "y": 6
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A34%253Ato:0%3A1",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 5,
+                      "y": 10
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A34%253Ato:0%3A2",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 19,
+                      "y": 10
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A34%253Ato:0%3A3",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 19,
+                      "y": 6
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A34%253Ato:0%3A4",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 5,
+                      "y": 6
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "commands": [
+                {
+                  "id": "command:geometry%3Ademo-frame%3A34%253Ato:1%3A0",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 5,
+                      "y": 14
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A34%253Ato:1%3A1",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 5,
+                      "y": 18
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A34%253Ato:1%3A2",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 19,
+                      "y": 18
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A34%253Ato:1%3A3",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 19,
+                      "y": 14
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A34%253Ato:1%3A4",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 5,
+                      "y": 14
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M5 6 L5 10 L19 10 L19 6 L5 6 M5 14 L5 18 L19 18 L19 14 L5 14",
+        "createdAt": 0
+      }
+    },
+    "morphMappings": {
+      "mapping:demo-frame:32%3Aendpoints": {
+        "id": "mapping:demo-frame:32%3Aendpoints",
+        "fromGeometryId": "geometry:demo-frame:32%3Afrom",
+        "toGeometryId": "geometry:demo-frame:32%3Ato",
+        "alignments": {
+          "kind": "aligned-endpoints"
+        },
+        "polePositions": [],
+        "createdAt": 0
+      },
+      "mapping:demo-frame:track%3A34": {
+        "id": "mapping:demo-frame:track%3A34",
+        "fromGeometryId": "geometry:demo-frame:34%3Afrom",
+        "toGeometryId": "geometry:demo-frame:34%3Ato",
+        "alignments": {
+          "kind": "aligned-endpoints"
+        },
+        "polePositions": [],
+        "createdAt": 0
+      }
+    },
+    "clips": {
+      "clip:page:page-motion": {
+        "id": "clip:page:page-motion",
+        "name": "Motion",
+        "duration": 300,
+        "frameId": null,
+        "trackIds": []
+      },
+      "clip:demo-frame:33": {
+        "id": "clip:demo-frame:33",
+        "name": "anim",
+        "duration": 300,
+        "frameId": "demo-frame",
+        "trackIds": ["track:demo-frame:32%3ApathData", "track:demo-frame:9439%3Arotation"]
+      }
+    },
+    "tracks": {
+      "track:demo-frame:32%3ApathData": {
+        "id": "track:demo-frame:32%3ApathData",
+        "target": {
+          "nodeId": "node:demo-frame:32",
+          "property": "pathData"
+        },
+        "valueType": "path",
+        "keyframeIds": ["keyframe:demo-frame:34%3Afrom", "keyframe:demo-frame:34%3Ato"]
+      },
+      "track:demo-frame:9439%3Arotation": {
+        "id": "track:demo-frame:9439%3Arotation",
+        "target": {
+          "nodeId": "node:demo-frame:9439",
+          "property": "rotation"
+        },
+        "valueType": "number",
+        "keyframeIds": ["keyframe:demo-frame:9440%3Afrom", "keyframe:demo-frame:9440%3Ato"]
+      }
+    },
+    "keyframes": {
+      "keyframe:demo-frame:34%3Afrom": {
+        "id": "keyframe:demo-frame:34%3Afrom",
+        "time": 0,
+        "value": "M8 5 L8 12 L19 12 L19 12 L8 5 M8 12 L8 19 L19 12 L19 12 L8 12",
+        "interpolator": "FAST_OUT_SLOW_IN",
+        "geometryVersionId": "geometry:demo-frame:34%3Afrom",
+        "morphMappingId": "mapping:demo-frame:track%3A34",
+        "segmentId": "34"
+      },
+      "keyframe:demo-frame:34%3Ato": {
+        "id": "keyframe:demo-frame:34%3Ato",
+        "time": 300,
+        "value": "M5 6 L5 10 L19 10 L19 6 L5 6 M5 14 L5 18 L19 18 L19 14 L5 14",
+        "geometryVersionId": "geometry:demo-frame:34%3Ato",
+        "segmentId": "34"
+      },
+      "keyframe:demo-frame:9440%3Afrom": {
+        "id": "keyframe:demo-frame:9440%3Afrom",
+        "time": 0,
+        "value": 0,
+        "interpolator": "FAST_OUT_SLOW_IN",
+        "segmentId": "9440"
+      },
+      "keyframe:demo-frame:9440%3Ato": {
+        "id": "keyframe:demo-frame:9440%3Ato",
+        "time": 300,
+        "value": 90,
+        "segmentId": "9440"
+      }
     }
   }
 }

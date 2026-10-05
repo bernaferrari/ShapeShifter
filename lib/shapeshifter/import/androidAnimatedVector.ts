@@ -195,7 +195,7 @@ function hasMeaningfulRepeat(el: Element): boolean {
  * The editor has a flat timeline. A plain parallel AnimatorSet is equivalent
  * to independent blocks, but serial or nested sets can add inherited timing
  * that the current model cannot encode. Flag every such source construct
- * before the legacy flat parser reads the ObjectAnimators beneath it.
+ * before the workspace flat parser reads the ObjectAnimators beneath it.
  */
 function inspectAnimatorTimingSemantics(
   root: Element,

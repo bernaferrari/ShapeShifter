@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { parsePath, pathToString } from "../pathUtils";
 import {
-  createDocumentV2FromLegacy,
-  legacyProjectionIssues,
-  legacySnapshotFromDocumentV2,
-  validateDocumentV2,
-  type LegacyDocumentSnapshot,
+  buildEditorDocument,
+  documentEditingIssues,
+  workspaceFromDocument,
+  validateEditorDocument,
+  type WorkspaceSnapshot,
 } from "../documentModel";
 import type { Layer } from "../types";
 
@@ -21,7 +21,7 @@ const path = (id: string, parentId: string | null = null): Layer => ({
   fillColor: "#ff0000",
 });
 
-const snapshot = (): LegacyDocumentSnapshot => ({
+const snapshot = (): WorkspaceSnapshot => ({
   id: "document",
   name: "Android motion",
   rootLayers: [path("page-path")],
@@ -59,7 +59,7 @@ const snapshot = (): LegacyDocumentSnapshot => ({
   ],
 });
 
-describe("DocumentV2 migration adapter", () => {
+describe("EditorDocument migration adapter", () => {
   it("keeps native graph and timeline endpoint command identities stable across no-op commits", () => {
     const original = snapshot();
     original.frames[0]!.animation.blocks.push({
@@ -72,11 +72,11 @@ describe("DocumentV2 migration adapter", () => {
       startTime: 0,
       endTime: 600,
     });
-    const first = createDocumentV2FromLegacy(original);
-    const second = createDocumentV2FromLegacy(original);
+    const first = buildEditorDocument(original);
+    const second = buildEditorDocument(original);
     expect(second).toEqual(first);
     const endpointIds = Object.values(first.keyframes)
-      .filter((frame) => frame.legacyBlockId === "morph")
+      .filter((frame) => frame.segmentId === "morph")
       .map((frame) => frame.geometryVersionId!);
     const commandIds = endpointIds.flatMap((id) =>
       first.geometryVersions[id]!.pathData.subPaths.flatMap((subPath) =>
@@ -91,9 +91,9 @@ describe("DocumentV2 migration adapter", () => {
     ).toBe(original.frames[0]!.layers[1]!.from.subPaths[0]!.commands[0]!.id);
   });
   it("normalizes page, artboards, hierarchy, geometry and animation tracks", () => {
-    const document = createDocumentV2FromLegacy(snapshot());
+    const document = buildEditorDocument(snapshot());
 
-    expect(document.version).toBe(2);
+    expect(document.schema).toBe("shapeshifter");
     expect(document.frameIds).toEqual(["frame-1"]);
     expect(document.frames["frame-1"]?.width).toBe(24);
     expect(document.rootNodeIds).toHaveLength(1);
@@ -108,12 +108,12 @@ describe("DocumentV2 migration adapter", () => {
     ).toBe(true);
     expect(Object.values(document.tracks)[0]?.target.property).toBe("translateX");
     expect(Object.values(document.keyframes).map((keyframe) => keyframe.time)).toEqual([100, 500]);
-    expect(validateDocumentV2(document)).toEqual([]);
+    expect(validateEditorDocument(document)).toEqual([]);
   });
 
-  it("round-trips disjoint legacy block identity and frame placement", () => {
+  it("round-trips disjoint segment identity and artboard placement", () => {
     const original = snapshot();
-    const restored = legacySnapshotFromDocumentV2(createDocumentV2FromLegacy(original));
+    const restored = workspaceFromDocument(buildEditorDocument(original));
 
     expect(restored.frames[0]).toMatchObject({ id: "frame-1", x: 120, y: 80 });
     expect(restored.frames[0]?.layers.find((layer) => layer.id === "glyph")?.parentId).toBe(
@@ -144,10 +144,10 @@ describe("DocumentV2 migration adapter", () => {
       startTime: 0,
       endTime: 600,
     });
-    const baseline = JSON.stringify(createDocumentV2FromLegacy(original));
-    let document = createDocumentV2FromLegacy(original);
+    const baseline = JSON.stringify(buildEditorDocument(original));
+    let document = buildEditorDocument(original);
     for (let index = 0; index < 10; index++) {
-      document = createDocumentV2FromLegacy(legacySnapshotFromDocumentV2(document));
+      document = buildEditorDocument(workspaceFromDocument(document));
       expect(JSON.stringify(document)).toBe(baseline);
     }
   });
@@ -169,7 +169,7 @@ describe("DocumentV2 migration adapter", () => {
       minSdk: 24,
     };
 
-    const document = createDocumentV2FromLegacy(original);
+    const document = buildEditorDocument(original);
     const node = Object.values(document.nodes).find(
       (candidate) => candidate.androidName === "animated_glyph",
     );
@@ -182,7 +182,7 @@ describe("DocumentV2 migration adapter", () => {
       ]),
     );
 
-    const restored = legacySnapshotFromDocumentV2(document);
+    const restored = workspaceFromDocument(document);
     const restoredGlyph = restored.frames[0]!.layers.find((layer) => layer.id === "glyph")!;
     expect(pathToString(restoredGlyph.from)).toBe("M0 0 L10 10");
     expect(pathToString(restoredGlyph.to!)).toBe("M0 0 L20 20");
@@ -198,23 +198,23 @@ describe("DocumentV2 migration adapter", () => {
   });
 
   it("reports broken graph references before persistence", () => {
-    const document = createDocumentV2FromLegacy(snapshot());
+    const document = buildEditorDocument(snapshot());
     document.frames["frame-1"]!.childrenNodeIds.push("missing");
-    expect(validateDocumentV2(document)).toContain(
+    expect(validateEditorDocument(document)).toContain(
       "Frame frame-1 references missing node missing.",
     );
   });
 
   it("reports a missing page animation clip instead of projecting an empty fallback", () => {
-    const document = createDocumentV2FromLegacy(snapshot());
+    const document = buildEditorDocument(snapshot());
     document.rootClipIds.push("missing-page-motion");
-    expect(validateDocumentV2(document)).toContain(
+    expect(validateEditorDocument(document)).toContain(
       "Page references missing clip missing-page-motion.",
     );
   });
 
   it("rejects orphaned scene and timeline records before projection can drop them", () => {
-    const document = createDocumentV2FromLegacy(snapshot());
+    const document = buildEditorDocument(snapshot());
     const pageNodeId = document.rootNodeIds[0]!;
     const frame = document.frames["frame-1"]!;
     const frameClipId = frame.clipIds[0]!;
@@ -224,7 +224,7 @@ describe("DocumentV2 migration adapter", () => {
     document.rootNodeIds = [];
     frame.clipIds = [];
 
-    expect(validateDocumentV2(document)).toEqual(
+    expect(validateEditorDocument(document)).toEqual(
       expect.arrayContaining([
         `Node ${pageNodeId} is not reachable from page or frame roots.`,
         `Clip ${frameClipId} is not reachable from page or frame clip lists.`,
@@ -234,15 +234,15 @@ describe("DocumentV2 migration adapter", () => {
     );
   });
 
-  it("identifies valid native V2 data that the legacy projection would lose", () => {
-    const document = createDocumentV2FromLegacy(snapshot());
+  it("identifies authored features that are not yet editable", () => {
+    const document = buildEditorDocument(snapshot());
     document.components = { button: { id: "button" } };
     const nativeTrack = Object.values(document.tracks)[0]!;
     const extraKeyframe = {
       ...document.keyframes[nativeTrack.keyframeIds[1]!]!,
       id: "native-midpoint",
       time: 300,
-      legacyBlockId: undefined,
+      segmentId: document.keyframes[nativeTrack.keyframeIds[0]!]!.segmentId,
     };
     document.keyframes[extraKeyframe.id] = extraKeyframe;
     nativeTrack.keyframeIds = [
@@ -251,11 +251,11 @@ describe("DocumentV2 migration adapter", () => {
       nativeTrack.keyframeIds[1]!,
     ];
 
-    expect(validateDocumentV2(document)).toEqual([]);
-    expect(legacyProjectionIssues(document)).toEqual(
+    expect(validateEditorDocument(document)).toEqual([]);
+    expect(documentEditingIssues(document)).toEqual(
       expect.arrayContaining([
         "reusable components",
-        `native keyframe sequence on track ${nativeTrack.id}`,
+        `invalid motion segment on track ${nativeTrack.id}`,
       ]),
     );
   });

@@ -608,19 +608,16 @@ function styleOpacity(
 
 /**
  * Exports a complete visible document, including parent groups and timeline
- * transform/style tracks. The legacy numeric third argument remains supported.
+ * transform/style tracks.
  */
 export function exportLottieDocument(
   layers: Layer[],
   name: string,
-  options: number | LottieDocumentOptions = 1.2,
+  options: LottieDocumentOptions = {},
 ) {
-  const sourceAnimation = typeof options === "number" ? undefined : options.animation;
-  const duration =
-    typeof options === "number"
-      ? options
-      : (options.duration ?? Math.max(0.001, (sourceAnimation?.duration ?? 1200) / 1000));
-  const sourceVector = typeof options === "number" ? undefined : options.vector;
+  const sourceAnimation = options.animation;
+  const duration = options.duration ?? Math.max(0.001, (sourceAnimation?.duration ?? 1200) / 1000);
+  const sourceVector = options.vector;
   const tree = createLayerTreeModel(layers);
   const projection = lottieProjection(sourceVector);
   const exportableLayers = flattenLottieLayers(layers);
@@ -818,7 +815,7 @@ export interface LottieExportDiagnostic {
 export function exportLottieDocumentWithDiagnostics(
   layers: Layer[],
   name: string,
-  options: number | LottieDocumentOptions = 1.2,
+  options: LottieDocumentOptions = {},
 ) {
   const tree = createLayerTreeModel(layers);
   const diagnostics: LottieExportDiagnostic[] = [];

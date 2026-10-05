@@ -38,6 +38,13 @@ export function TimelineKeyframeEditor({
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   const timeRef = React.useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const returnFocus = React.useRef<HTMLElement | null>(null);
+  const blocks = useEditorStore((state) => state.animation.blocks);
+  const lastPose =
+    block.startTime === block.endTime &&
+    blocks.filter(
+      (item) =>
+        String(item.layerId) === String(block.layerId) && item.propertyName === block.propertyName,
+    ).length === 1;
   const layers = useEditorStore((state) => state.layers);
   const locked = React.useMemo(() => {
     if (!open) return false;
@@ -99,11 +106,13 @@ export function TimelineKeyframeEditor({
           <button
             type="button"
             aria-label={`Delete ${label} ${edge} keyframe`}
-            disabled={locked}
+            disabled={locked || lastPose}
             title={
-              linkedTimelineKeyframe(useEditorStore.getState().animation.blocks, block, edge)
-                ? "Delete keyframe (joins the adjacent segments)"
-                : "Delete keyframe and its segment"
+              lastPose
+                ? "Use Remove animation to stop animating this property"
+                : linkedTimelineKeyframe(useEditorStore.getState().animation.blocks, block, edge)
+                  ? "Delete keyframe (joins the adjacent segments)"
+                  : "Delete this keyframe; keep the remaining poses"
             }
             onClick={() => {
               returnFocus.current =

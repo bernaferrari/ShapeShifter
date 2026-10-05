@@ -14,7 +14,6 @@ import {
   timelineKeyframeRange,
 } from "@/lib/shapeshifter/motion/timelineKeyframes";
 
-
 export function TimelineKeyframeDiamond({
   active,
   size = 7,
@@ -161,7 +160,10 @@ export function TimelinePropertyBlock({
           )}
         />
       </button>
-      {(["start", "end"] as const).map((edge) => {
+      {(block.startTime === block.endTime
+        ? ["start" as const]
+        : ["start" as const, "end" as const]
+      ).map((edge) => {
         const milliseconds = edge === "start" ? block.startTime : block.endTime;
         return (
           <TimelineKeyframeEditor

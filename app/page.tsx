@@ -28,7 +28,10 @@ import { EditorContextMenu } from "@/components/editor/EditorContextMenu";
 import { AgentToolsDialog } from "@/components/editor/AgentToolsDialog";
 import { RecoveryHistoryDialog } from "@/components/editor/RecoveryHistoryDialog";
 import { MobileWorkspace, type MobileSheet } from "@/components/editor/MobileWorkspace";
-import { useCompactLayout } from "@/components/editor/hooks/useCompactLayout";
+import {
+  useCompactLayout,
+  useVisualViewportHeight,
+} from "@/components/editor/hooks/useCompactLayout";
 import { registerEditorAgentTools } from "@/lib/agent/browserTools";
 
 // Below this viewport width the fixed w-80 inspector + timeline get cramped, so
@@ -79,6 +82,7 @@ export default function ShapeShifter2026() {
   const [isNarrow, setIsNarrow] = React.useState(false);
   const [narrowPanel, setNarrowPanel] = React.useState<"layers" | "inspector" | null>(null);
   const compact = useCompactLayout();
+  const visibleHeight = useVisualViewportHeight();
   const [mobileSheet, setMobileSheet] = React.useState<MobileSheet | null>(null);
 
   React.useEffect(() => {
@@ -213,12 +217,21 @@ export default function ShapeShifter2026() {
         showRulers={rulersVisible}
         onToggleRulers={toggleRulers}
       />
-      <div className="pointer-events-none absolute bottom-3 left-1/2 z-30 -translate-x-1/2">
-        <div className="pointer-events-auto" onContextMenu={(event) => event.stopPropagation()}>
-          <BottomToolPalette />
+      {(!compact || !mobileSheet) && (
+        <div className="pointer-events-none absolute bottom-3 left-1/2 z-30 -translate-x-1/2">
+          <div className="pointer-events-auto" onContextMenu={(event) => event.stopPropagation()}>
+            <BottomToolPalette />
+          </div>
         </div>
-      </div>
-      <Onboarding />
+      )}
+      {!compact && (
+        <Onboarding
+          onShowDesign={() => {
+            if (compact) setMobileSheet("design");
+            else setInspectorCollapsed(false);
+          }}
+        />
+      )}
       {timelineCollapsed && !compact && (
         <button
           type="button"
@@ -237,7 +250,11 @@ export default function ShapeShifter2026() {
   // Playback + animation state flows from Zustand
 
   return (
-    <div className="relative flex h-dvh flex-col bg-background text-foreground" {...dragHandlers}>
+    <div
+      className="relative flex h-dvh flex-col bg-background text-foreground"
+      style={compact && visibleHeight ? { height: visibleHeight } : undefined}
+      {...dragHandlers}
+    >
       <a
         href="#editor-canvas"
         className="sr-only z-50 rounded-md bg-card px-4 py-2 focus:not-sr-only focus:absolute focus:left-2 focus:top-2"
@@ -287,7 +304,15 @@ export default function ShapeShifter2026() {
       />
 
       {compact ? (
-        <MobileWorkspace canvas={canvas} sheet={mobileSheet} onSheetChange={setMobileSheet} />
+        <>
+          <Onboarding inline onShowDesign={() => setMobileSheet("design")} />
+          <MobileWorkspace
+            canvas={canvas}
+            sheet={mobileSheet}
+            onSheetChange={setMobileSheet}
+            constrained={Boolean(visibleHeight && visibleHeight < 500)}
+          />
+        </>
       ) : (
         <>
           {/* Figma Motion model: the timeline is a document-wide bottom workspace,

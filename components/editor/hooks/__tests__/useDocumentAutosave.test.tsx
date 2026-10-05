@@ -29,8 +29,8 @@ afterEach(() => {
 describe("document autosave scheduling", () => {
   it("includes durable endpoint and authored geometry identities in save equality", () => {
     const payload = (generatedId: string, authoredId: string) => ({
-      documentV2: {
-        keyframes: { start: { legacyBlockId: "morph", geometryVersionId: "endpoint" } },
+      document: {
+        keyframes: { start: { segmentId: "morph", geometryVersionId: "endpoint" } },
         geometryVersions: {
           endpoint: {
             pathData: {
@@ -53,7 +53,7 @@ describe("document autosave scheduling", () => {
     expect(autosaveSignature(first)).not.toBe(
       autosaveSignature(payload("generated-1", "authored-2")),
     );
-    expect(first.documentV2.geometryVersions.endpoint.pathData.subPaths[0]!.commands[0]!.id).toBe(
+    expect(first.document.geometryVersions.endpoint.pathData.subPaths[0]!.commands[0]!.id).toBe(
       "generated-1",
     );
   });
@@ -110,7 +110,7 @@ describe("document autosave scheduling", () => {
     });
     const scheduler = createDebouncedAutosaveScheduler({ snapshot, enqueue });
 
-    expect(restoreStoredAutosave({ documentV2: { version: 2 } }, restore)).toBe("unrecoverable");
+    expect(restoreStoredAutosave({ document: { version: 2 } }, restore)).toBe("unrecoverable");
     scheduler.preserveStoredSnapshot();
     scheduler.schedule();
     vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS * 2);

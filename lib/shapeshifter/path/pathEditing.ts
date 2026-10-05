@@ -97,7 +97,7 @@ export function updateCommandPoint(
 /**
  * Change the type of a command while doing a best-effort geometry preservation.
  * Very useful for the editable command surface (user can cycle M/L/C etc.).
- * For v1 we keep it simple and safe:
+ * Supported command editing rules:
  *  - M/L/H/V <-> each other: keep the endpoint
  *  - Anything <-> C: create reasonable control points or take endpoint
  *  - Z is special (no points)

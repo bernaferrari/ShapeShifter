@@ -369,10 +369,13 @@ export function Inspector() {
               ) : (
                 <span>Group</span>
               )}
+              {animatedPropertyCount === 0 && <span>· Base artwork</span>}
               {animatedPropertyCount > 0 && (
                 <>
                   <span aria-hidden="true">·</span>
-                  <span className="text-primary">{animatedPropertyCount} animated</span>
+                  <span className="text-primary">
+                    Keyframe · {Number(playheadMs.toFixed(2))} ms
+                  </span>
                 </>
               )}
             </span>
@@ -424,6 +427,11 @@ export function Inspector() {
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
+        {animatedPropertyCount > 0 && multiCount <= 1 && (
+          <p className="border-b border-border px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+            Animated fields edit this pose. Other fields edit the base artwork.
+          </p>
+        )}
         <MorphPrepareSection />
         {multiCount > 1 && allPaths && <BooleanOperationsPanel />}
         <LayerTransformSection
@@ -571,7 +579,7 @@ function InspectorHeader({
     else setDraft(title);
   };
   return (
-    <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border pl-3 pr-2">
+    <div className="inspector-header flex min-h-12 shrink-0 items-center gap-2 border-b border-border py-1.5 pl-3 pr-2">
       <div className="grid size-6 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground">
         {icon}
       </div>

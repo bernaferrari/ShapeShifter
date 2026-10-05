@@ -99,11 +99,7 @@ export function canMoveLayerRootsBetweenOwners(
   const tree = createLayerTreeModel(layers);
   const roots = moveRoots(tree, selectedIds);
   if (!roots.length) return false;
-  const animated = new Set(
-    [...animation.blocks, ...tree.allLayers.flatMap((layer) => layer.timeline ?? [])].map((block) =>
-      String(block.layerId),
-    ),
-  );
+  const animated = new Set(animation.blocks.map((block) => String(block.layerId)));
   return roots.every((layer) =>
     inheritedContainers(tree, layer).every(
       ({ ancestor, clips }) =>
@@ -185,7 +181,6 @@ export function preserveLayerRootContainers(
           id: generateId(),
           parentId: id,
           children: undefined,
-          timeline: undefined,
           visible: clip.visible !== false && !hiddenLayerIds.includes(String(clip.id)),
         });
       parentId = id;
@@ -241,8 +236,7 @@ export function moveLayersBetweenOwners({
           Math.abs(matrix.c) > 1e-9 ||
           Math.abs(matrix.e) > 1e-9 ||
           Math.abs(matrix.f) > 1e-9 ||
-          target.animation.blocks.some((block) => String(block.layerId) === String(layer.id)) ||
-          (layer.timeline?.length ?? 0) > 0
+          target.animation.blocks.some((block) => String(block.layerId) === String(layer.id))
         );
       })
     )
@@ -286,20 +280,6 @@ export function moveLayersBetweenOwners({
       (layer.parentId != null && actualMovedIds.has(String(layer.parentId))
         ? layer.parentId
         : null),
-    timeline: layer.timeline?.map((block) => {
-      const offset = offsetRoots.has(String(layer.id))
-        ? block.propertyName === "translateX"
-          ? offsetX
-          : block.propertyName === "translateY"
-            ? offsetY
-            : 0
-        : 0;
-      return {
-        ...block,
-        fromValue: offset ? Number(block.fromValue) + offset : block.fromValue,
-        toValue: offset ? Number(block.toValue) + offset : block.toValue,
-      };
-    }),
   }));
   const movedBlocks = source.animation.blocks
     .filter((block) => actualMovedIds.has(String(block.layerId)))

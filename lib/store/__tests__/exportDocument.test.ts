@@ -1,3 +1,4 @@
+import { workspaceFromDocument } from "../../shapeshifter/documentModel";
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it } from "vitest";
 import { parsePath, pathToString } from "../../shapeshifter/pathUtils";
@@ -6,6 +7,8 @@ import {
   compileLiveAndroidArtboard,
   createAndroidExportZip,
   exportLiveDocument,
+  flushLiveExportDocument,
+  resolveExportOptions,
   exportLiveLottieDocument,
   LIVE_EXPORT_SCOPE,
   selectedLayerExportIssue,
@@ -19,6 +22,36 @@ describe("live project export", () => {
     useEditorStore.getState().resetProject();
   });
 
+  it("resolves document defaults once and generating previews does not write the store", async () => {
+    const store = useEditorStore.getState();
+    store.setAnimationDuration(2375);
+    store.updateVector({ width: 64, height: 32, viewportWidth: 128, viewportHeight: 64 });
+    store.updateSelectedLayer({ strokeWidth: 4 });
+    const state = useEditorStore.getState();
+    let writes = 0;
+    const unsubscribe = useEditorStore.subscribe(() => writes++);
+    try {
+      const defaults = resolveExportOptions(flushLiveExportDocument());
+      expect(defaults).toMatchObject({
+        duration: 2.375,
+        width: 64,
+        height: 32,
+        viewBoxWidth: 128,
+        viewBoxHeight: 64,
+        strokeWidth: 4,
+      });
+      expect((await exportLiveDocument("svg", defaults)).content).toBe(
+        (await exportLiveDocument("svg")).content,
+      );
+      await exportLiveDocument("json");
+      await exportLiveDocument("static");
+      expect(useEditorStore.getState()).toBe(state);
+      expect(writes).toBe(0);
+      expect(serializeLiveProject().activeOwnerId).toBe(state.selectedFrameId);
+    } finally {
+      unsubscribe();
+    }
+  });
   it("rejects selected-group and empty-path morph exports while whole-owner export remains available", async () => {
     const store = useEditorStore.getState();
     const group = {
@@ -44,7 +77,7 @@ describe("live project export", () => {
   it("preserves page metadata while a differently sized artboard is active", () => {
     const initial = useEditorStore.getState();
     const page = {
-      ...initial.documentV2.page,
+      ...initial.document.page,
       name: "Document page",
       width: 360,
       height: 180,
@@ -54,7 +87,7 @@ describe("live project export", () => {
       widthUnit: "dp",
       heightUnit: "dp",
     };
-    useEditorStore.setState({ documentV2: { ...initial.documentV2, page } });
+    useEditorStore.setState({ document: { ...initial.document, page } });
     useEditorStore.getState().updateVector({
       name: "Active artboard",
       width: 24,
@@ -65,9 +98,9 @@ describe("live project export", () => {
 
     const project = serializeLiveProject();
 
-    expect(project.documentV2.page).toEqual(page);
-    expect(project.pageRoot.vector).toMatchObject({
-      id: PAGE_ROOT_ID,
+    expect(project.document.page).toEqual(page);
+    expect(workspaceFromDocument(project.document).rootVector).toMatchObject({
+      id: "page",
       name: "Document page",
       width: 360,
       height: 180,
@@ -85,10 +118,10 @@ describe("live project export", () => {
       .rootLayers.find((layer) => layer.id === selected.id)!;
     const afterMove = useEditorStore.getState();
     useEditorStore.setState({
-      documentV2: {
-        ...afterMove.documentV2,
+      document: {
+        ...afterMove.document,
         page: {
-          ...afterMove.documentV2.page,
+          ...afterMove.document.page,
           name: "Page geometry",
           width: 24,
           height: 24,
@@ -132,7 +165,7 @@ describe("live project export", () => {
     });
 
     expect(useEditorStore.getState().selectedFrameId).toBe(PAGE_ROOT_ID);
-    expect(useEditorStore.getState().documentV2.page).toMatchObject({
+    expect(useEditorStore.getState().document.page).toMatchObject({
       name: "Imported page vector",
       width: 32,
       height: 20,
@@ -146,7 +179,7 @@ describe("live project export", () => {
     });
 
     const project = serializeLiveProject();
-    expect(project.documentV2.page).toMatchObject({
+    expect(project.document.page).toMatchObject({
       name: "Imported page vector",
       width: 32,
       height: 20,
@@ -158,8 +191,8 @@ describe("live project export", () => {
       autoMirrored: true,
       minSdk: 24,
     });
-    expect(project.pageRoot.vector).toMatchObject({
-      id: PAGE_ROOT_ID,
+    expect(workspaceFromDocument(project.document).rootVector).toMatchObject({
+      id: "page",
       name: "Imported page vector",
     });
     expect(useEditorStore.getState().rootLayers).toContainEqual(
@@ -238,8 +271,10 @@ describe("live project export", () => {
     const project = serializeLiveProject();
     const dialogProject = JSON.parse((await exportLiveDocument("json")).content as string);
     const commandProject = JSON.parse((await exportLiveDocument("json")).content as string);
-    const hasMovedLayer = (payload: { pageRoot?: { layers?: Array<{ id: string }> } }) =>
-      Boolean(payload.pageRoot?.layers?.some((layer) => String(layer.id) === String(moved.id)));
+    const hasMovedLayer = (payload: { document: typeof project.document }) =>
+      workspaceFromDocument(payload.document).rootLayers.some(
+        (layer) => String(layer.id) === String(moved.id),
+      );
     expect(hasMovedLayer(project)).toBe(true);
     expect(hasMovedLayer(dialogProject)).toBe(true);
     expect(hasMovedLayer(commandProject)).toBe(true);

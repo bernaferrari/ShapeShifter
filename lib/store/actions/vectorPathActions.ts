@@ -434,7 +434,6 @@ export function createVectorPathActions(
         name: `${layer.name} subpath`,
         from: fromExtract.extracted,
         to: toExtract?.extracted,
-        timeline: [], // start fresh for the new layer's animations
       };
       newLayer.pathData = editingSide === "from" ? newLayer.from : (newLayer.to ?? newLayer.from);
 

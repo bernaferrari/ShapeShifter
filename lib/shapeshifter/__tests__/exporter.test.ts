@@ -1,3 +1,4 @@
+import { workspaceFromDocument } from "../documentModel";
 /**
  * ShapeShifter 2026 — Exporter Tests
  * Comprehensive Vitest coverage for all 7 export formats.
@@ -5,7 +6,7 @@
 
 import { describe, it, expect } from "vitest";
 import { parsePath, pathToString, getInterpolatedPath } from "../pathUtils";
-import type { AnimationState, Layer, PathData, VectorMetadata } from "../types";
+import type { Layer, PathData } from "../types";
 import {
   exportAnimatedSVG,
   exportCSSKeyframes,
@@ -882,7 +883,7 @@ describe("exportLottie", () => {
         makeLayer({ id: "two", name: "Two", rotation: 15, alpha: 0.5 }),
       ],
       "document",
-      2,
+      { duration: 2 },
     );
 
     expect(lottie.nm).toBe("document");
@@ -1000,150 +1001,22 @@ describe("exportLottie", () => {
 
 // ── 8. Project JSON ──────────────────────────────────────────────────────────
 
-describe("exportProjectJSON", () => {
-  const layer1 = makeLayer({
-    id: 1,
-    name: "path1",
-    fillColor: "#3b82f6",
-    strokeColor: "#000",
-    strokeWidth: 2,
-  });
-  const groupLayer: Layer = {
-    id: 10,
-    name: "group1",
-    type: "group",
-    from: makePath(""),
-    to: makePath(""),
-    visible: true,
-    locked: false,
-    rotation: 45,
-    scaleX: 1.5,
-    scaleY: 1.5,
-    translateX: 10,
-    translateY: 20,
-    children: [layer1],
-  };
-  const childLayer = makeLayer({
-    id: 2,
-    name: "child",
-    parentId: 10,
-    fillColor: "#ef4444",
-  });
-
-  it("produces a valid JSON-serializable object", () => {
-    const project = exportProjectJSON([layer1]);
-    const json = JSON.stringify(project);
-    expect(json).toBeTruthy();
-    const parsed = JSON.parse(json);
-    expect(parsed).toEqual(project);
-  });
-
-  it("has version 1 and required top-level keys", () => {
-    const project = exportProjectJSON([]);
-    expect(project.version).toBe(1);
-    expect(project.layers).toBeDefined();
-    expect(project.timeline).toBeDefined();
-  });
-
-  it("includes vector metadata", () => {
-    const vector: VectorMetadata = { id: "v1", name: "MyVec", width: 48, height: 48, alpha: 0.8 };
-    const project = exportProjectJSON([], vector);
-    expect(project.layers.vectorLayer.id).toBe("v1");
-    expect(project.layers.vectorLayer.name).toBe("MyVec");
-    expect(project.layers.vectorLayer.width).toBe(48);
-    expect(project.layers.vectorLayer.height).toBe(48);
-    expect(project.layers.vectorLayer.alpha).toBe(0.8);
-  });
-
-  it("serializes path layers with all style properties", () => {
-    const project = exportProjectJSON([layer1]);
-    const child = project.layers.vectorLayer.children[0] as Record<string, unknown>;
-    expect(child.name).toBe("path1");
-    expect(child.fillColor).toBe("#3b82f6");
-    expect(child.strokeColor).toBe("#000");
-    expect(child.strokeWidth).toBe(2);
-    expect(child.pathData).toBeDefined();
-    expect(typeof child.pathData).toBe("string");
-  });
-
-  it("serializes group layers with transform and children", () => {
-    const project = exportProjectJSON([groupLayer, childLayer]);
-    const group = project.layers.vectorLayer.children.find(
-      (c: Record<string, unknown>) => c.type === "group",
-    ) as Record<string, unknown>;
-    expect(group).toBeDefined();
-    expect(group.rotation).toBe(45);
-    expect(group.scaleX).toBe(1.5);
-    expect(group.scaleY).toBe(1.5);
-    expect(group.translateX).toBe(10);
-    expect(group.translateY).toBe(20);
-    expect(Array.isArray(group.children)).toBe(true);
-  });
-
-  it("nests child layers under their parent group", () => {
-    const project = exportProjectJSON([groupLayer, childLayer]);
-    const group = project.layers.vectorLayer.children.find(
-      (c: Record<string, unknown>) => c.type === "group",
-    ) as Record<string, unknown>;
-    expect(group.children).toHaveLength(1);
-    expect((group.children as Record<string, unknown>[])[0].name).toBe("child");
-  });
-
-  it("includes animation state in timeline", () => {
-    const animation: AnimationState = {
-      id: "anim1",
-      name: "TestAnim",
-      duration: 2000,
-      blocks: [
-        {
-          id: "b1",
-          layerId: 1,
-          propertyName: "pathData",
-          fromValue: "M0 0 L10 0",
-          toValue: "M5 5 L15 5",
-          startTime: 0,
-          endTime: 2000,
-          interpolator: "LINEAR",
-        },
-      ],
-    };
-    const project = exportProjectJSON([], undefined, animation);
-    expect(project.timeline.animation.id).toBe("anim1");
-    expect(project.timeline.animation.blocks).toHaveLength(1);
-  });
-
-  it("includes hiddenLayerIds", () => {
-    const project = exportProjectJSON([], undefined, undefined, ["layer3", "layer5"]);
-    expect(project.layers.hiddenLayerIds).toEqual(["layer3", "layer5"]);
-  });
-
-  it("handles empty project (no layers)", () => {
-    const project = exportProjectJSON([]);
-    expect(project.layers.vectorLayer.children).toEqual([]);
-  });
-
-  it("serializes clipPath type correctly", () => {
-    const clipLayer = makeLayer({ id: 3, name: "clip", type: "clipPath" });
-    const project = exportProjectJSON([clipLayer]);
-    const child = project.layers.vectorLayer.children[0] as Record<string, unknown>;
-    expect(child.type).toBe("clipPath");
-  });
-
-  it("defaults to 'path' type for unknown layer types", () => {
-    // 'vector' type is not 'clipPath' or 'group', so it should be 'path'
-    const vectorLike = makeLayer({ id: 4, name: "vec", type: "vector" });
-    const project = exportProjectJSON([vectorLike]);
-    const child = project.layers.vectorLayer.children[0] as Record<string, unknown>;
-    expect(child.type).toBe("path");
-  });
-
-  it("uses defaults for vector metadata and animation when not provided", () => {
-    const project = exportProjectJSON([]);
-    expect(project.layers.vectorLayer.id).toBe("vector");
-    expect(project.layers.vectorLayer.name).toBe("ShapeShifter");
-    expect(project.timeline.animation.id).toBe("anim");
-    expect(project.timeline.animation.duration).toBe(1000);
-    expect(project.timeline.animation.blocks).toEqual([]);
+describe("native project export", () => {
+  it("exports one complete modern document without compatibility envelopes", () => {
+    const layers = [
+      makeLayer({ id: "group", type: "group", rotation: 45 }),
+      makeLayer({ id: "child", parentId: "group", fillColor: "#336699", locked: true }),
+    ];
+    const project = exportProjectJSON(layers);
+    expect(Object.keys(project).sort()).toEqual(["document", "format"]);
+    expect(project.document.schema).toBe("shapeshifter");
+    const child = Object.values(project.document.nodes).find(
+      (node) => node.name === layers[1]!.name && node.type === "path",
+    )!;
+    expect(child.locked).toBe(true);
+    expect(child.style.fillColor).toBe("#336699");
+    expect(child.parentId).toBeDefined();
+    expect(JSON.stringify(project)).not.toContain("documentV2");
   });
 });
 
@@ -1241,39 +1114,6 @@ describe("exporter edge cases", () => {
     expect(toShape.c).toBe(true);
   });
 
-  it("exportProjectJSON layer with all optional fields uses defaults", () => {
-    const minimal: Layer = {
-      id: 99,
-      name: "minimal",
-      type: "path",
-      from: makePath("M 0 0"),
-      to: makePath("M 0 0"),
-      visible: true,
-      locked: false,
-    };
-    const project = exportProjectJSON([minimal]);
-    const child = project.layers.vectorLayer.children[0] as Record<string, unknown>;
-    expect(child.fillColor).toBe("");
-    expect(child.fillAlpha).toBe(1);
-    expect(child.strokeColor).toBe("");
-    expect(child.strokeAlpha).toBe(1);
-    expect(child.strokeWidth).toBe(0);
-    expect(child.strokeLinecap).toBe("butt");
-    expect(child.strokeLinejoin).toBe("miter");
-    expect(child.strokeMiterLimit).toBe(4);
-    expect(child.fillType).toBe("nonZero");
-    expect(child.trimPathStart).toBe(0);
-    expect(child.trimPathEnd).toBe(1);
-    expect(child.trimPathOffset).toBe(0);
-  });
-
-  it("layer with numeric id is serialized as string in project JSON", () => {
-    const numericId = makeLayer({ id: 42, name: "numeric" });
-    const project = exportProjectJSON([numericId]);
-    const child = project.layers.vectorLayer.children[0] as Record<string, unknown>;
-    expect(child.id).toBe("42");
-  });
-
   it("safeName handles leading digits", () => {
     // Android resource names must start with a letter.
     const leadingDigit = makeLayer({ id: 1, name: "123layer" });
@@ -1328,9 +1168,9 @@ describe("kus 24t export fidelity", () => {
     const layers = [makeLayer()];
     const frames = [{ id: "f1", name: "Frame 1", x: 10, y: 20, layers }];
     const project = exportProjectJSON(layers, undefined, undefined, undefined, frames as any);
-    expect((project as any).frames).toBeDefined();
-    expect((project as any).frames[0].x).toBe(10);
-    expect((project as any).frames[0].y).toBe(20);
+    expect(workspaceFromDocument(project.document).frames).toBeDefined();
+    expect(workspaceFromDocument(project.document).frames[0].x).toBe(10);
+    expect(workspaceFromDocument(project.document).frames[0].y).toBe(20);
   });
 
   it("exportProjectJSON preserves page-root vectors and motion tracks", () => {
@@ -1358,9 +1198,9 @@ describe("kus 24t export fidelity", () => {
       hiddenLayerIds: [],
     });
 
-    expect((project as any).pageRoot.layers[0].id).toBe("root-vector");
-    expect((project as any).pageRoot.layers[0].translateX).toBe(120);
-    expect((project as any).pageRoot.animation.blocks[0].id).toBe("root-x");
+    expect(workspaceFromDocument(project.document).rootLayers[0].id).toBe("root-vector");
+    expect(workspaceFromDocument(project.document).rootLayers[0].translateX).toBe(120);
+    expect(workspaceFromDocument(project.document).rootAnimation.blocks[0].id).toBe("root-x");
   });
 
   it("exportPDF produces valid minimal PDF structure (no crash on real paths)", () => {

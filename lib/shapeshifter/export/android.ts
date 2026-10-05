@@ -5,7 +5,7 @@ import type { ExportOptions } from "./types";
 
 function vectorMetadata(layer: Layer, options: ExportOptions): VectorMetadata {
   return {
-    id: "legacy-vector",
+    id: "vector",
     name: layer.name || "vector",
     width: options.width ?? 48,
     height: options.height ?? 48,
@@ -28,13 +28,13 @@ function canonicalLayerBundle(
     layers: [layer],
     vector: vectorMetadata(layer, options),
     animation: {
-      id: "legacy-motion",
-      name: "Legacy motion",
+      id: "morph-motion",
+      name: "Morph motion",
       duration,
       blocks: animate
         ? [
             {
-              id: "legacy-path-morph",
+              id: "path-morph",
               layerId: layer.id,
               propertyName: "pathData",
               fromValue: from,

@@ -56,7 +56,7 @@ function buildOwnerMoveState(
     frames: saveActiveFrame(state),
     root: {
       ...saveActiveRoot(state),
-      vector: vectorFromPageMetadata(state.documentV2.page, PAGE_ROOT_ID),
+      vector: vectorFromPageMetadata(state.document.page, PAGE_ROOT_ID),
     },
     sourceOwnerId: state.selectedFrameId,
     targetOwnerId,
@@ -262,7 +262,7 @@ export function createFrameActions(
         selectedLayerRefs: [] as LayerSelectionRef[],
         hasCanvasSelection: true,
         selectionKind: "frame" as const,
-        selectedFrameIds: [id],
+        selectedFrameIds: id === PAGE_ROOT_ID ? [] : [id],
         toolMode: "select" as const,
       };
       if (id === state.selectedFrameId) {
@@ -271,9 +271,32 @@ export function createFrameActions(
       }
       const savedFrames = saveActiveFrame(state);
       const savedRoot = saveActiveRoot(state);
+      if (id === PAGE_ROOT_ID) {
+        const vector = vectorFromPageMetadata(state.document.page, PAGE_ROOT_ID);
+        set({
+          document: state.document,
+          frames: savedFrames,
+          rootLayers: savedRoot.layers,
+          rootAnimation: savedRoot.animation,
+          rootHiddenLayerIds: savedRoot.hiddenLayerIds,
+          layers: cloneLayers(savedRoot.layers),
+          vector,
+          animation: structuredClone(savedRoot.animation),
+          hiddenLayerIds: [...savedRoot.hiddenLayerIds],
+          selectedFrameId: id,
+          detailViewport: vectorViewport(vector),
+          selectedLayerId: getFirstEditableLayerId(savedRoot.layers),
+          ...clearChildSelection,
+          selectedFrameIds: [],
+          hasCanvasSelection: false,
+          selectionKind: "none",
+        });
+        return;
+      }
       const frame = savedFrames.find((candidate) => candidate.id === id);
       if (!frame) return;
       set({
+        document: state.document,
         frames: savedFrames,
         rootLayers: savedRoot.layers,
         rootAnimation: savedRoot.animation,
@@ -312,8 +335,9 @@ export function createFrameActions(
       const savedFrames = saveActiveFrame(state);
       const savedRoot = saveActiveRoot(state);
       if (!savedRoot.layers.some((layer) => String(layer.id) === String(id))) return;
-      const rootVector = vectorFromPageMetadata(state.documentV2.page, PAGE_ROOT_ID);
+      const rootVector = vectorFromPageMetadata(state.document.page, PAGE_ROOT_ID);
       set({
+        document: state.document,
         frames: savedFrames,
         rootLayers: cloneLayers(savedRoot.layers),
         rootAnimation: structuredClone(savedRoot.animation),
@@ -340,7 +364,7 @@ export function createFrameActions(
     moveFrame: (id, dx, dy, options) => {
       if (dx === 0 && dy === 0) return;
       const state = get();
-      // Frame x/y is document content (it round-trips through DocumentV2 and every
+      // Frame x/y is document content (it round-trips through EditorDocument and every
       // export), so panel moves are undoable exactly like renameFrame/deleteFrame.
       // Canvas drags push their own transaction at drag start and pass
       // recordHistory:false per tick, mirroring translateSelectedLayer.

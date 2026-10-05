@@ -85,7 +85,6 @@ describe("vectorPathActions morph parity", () => {
         id: `${layer.id}-static`,
         name: "Static",
         to: undefined,
-        timeline: [],
       };
       useEditorStore.setState((state) => ({ layers: [...state.layers, staticLayer] }));
       getStore().selectLayer(staticLayer.id);

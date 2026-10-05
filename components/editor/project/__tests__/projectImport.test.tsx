@@ -1,13 +1,11 @@
 // @vitest-environment happy-dom
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { legacyProjectionIssues, validateDocumentV2 } from "@/lib/shapeshifter/documentModel";
+import { documentEditingIssues, validateEditorDocument } from "@/lib/shapeshifter/documentModel";
 import { exportProjectJSON } from "@/lib/shapeshifter/exporter";
-import type { DocumentV2 } from "@/lib/shapeshifter/types";
 import { createZip } from "@/lib/shapeshifter/zip";
+import { serializeLiveProject } from "@/lib/store/exportDocument";
 import { PAGE_ROOT_ID, useEditorStore } from "@/lib/store/editorStore";
-import malformedDocumentV2LegacyEnvelope from "./fixtures/malformed-document-v2-legacy-envelope.json";
-import oldMultiframeLegacyEnvelope from "./fixtures/old-multiframe-legacy-envelope.json";
 import { importEditorText, importEditorZip } from "../useProjectImport";
 
 describe("project import pipeline", () => {
@@ -15,6 +13,22 @@ describe("project import pipeline", () => {
     useEditorStore.getState().resetProject();
   });
 
+  it("reopens the active page and preserves the native graph while navigating owners", () => {
+    const store = useEditorStore.getState();
+    store.selectLayer(store.layers[0].id);
+    store.moveSelectedLayersToRoot();
+    const project = serializeLiveProject();
+    expect(project.activeOwnerId).toBe(PAGE_ROOT_ID);
+    useEditorStore.getState().resetProject();
+    importEditorText("page.shapeshifter", JSON.stringify(project));
+    expect(useEditorStore.getState().selectedFrameId).toBe(PAGE_ROOT_ID);
+    expect(useEditorStore.getState().document).toEqual(project.document);
+    const document = useEditorStore.getState().document;
+    useEditorStore.getState().selectFrame(document.frameIds[1]);
+    expect(useEditorStore.getState().document).toBe(document);
+    useEditorStore.getState().selectFrame(PAGE_ROOT_ID);
+    expect(useEditorStore.getState().document).toBe(document);
+  });
   it("undoes VectorDrawable geometry and root metadata together", () => {
     const before = useEditorStore.getState();
     const originalLayerIds = before.layers.map((layer) => layer.id);
@@ -43,7 +57,7 @@ describe("project import pipeline", () => {
     expect(useEditorStore.getState().vector.viewportWidth).toBe(160);
   });
 
-  it("round-trips every frame, animation owner, and page-root vector through documentV2", () => {
+  it("round-trips every frame, animation owner, and page-root vector through document", () => {
     const store = useEditorStore.getState();
     const firstFrameId = store.frames[0].id;
     const firstLayerId = store.layers[0].id;
@@ -96,192 +110,20 @@ describe("project import pipeline", () => {
     );
   });
 
-  it("recovers every legacy frame and page-root owner when documentV2 is malformed", () => {
-    expect(() => validateDocumentV2(malformedDocumentV2LegacyEnvelope.documentV2)).not.toThrow();
-    expect(validateDocumentV2(malformedDocumentV2LegacyEnvelope.documentV2)).not.toEqual([]);
-
-    const summary = importEditorText(
-      "malformed-v2.shapeshifter",
-      JSON.stringify(malformedDocumentV2LegacyEnvelope),
-    );
-    const restored = useEditorStore.getState();
-    const sun = restored.frames.find((frame) => frame.id === "frame-sun");
-    const moon = restored.frames.find((frame) => frame.id === "frame-moon");
-
-    expect(summary.description).toContain("Recovered 2 frame(s)");
-    expect(restored.frames.map((frame) => frame.id)).toEqual(["frame-sun", "frame-moon"]);
-    expect(sun).toMatchObject({
-      name: "Sun",
-      x: 120,
-      y: -40,
-      vector: {
-        width: 24,
-        height: 18,
-        viewportWidth: 48,
-        viewportHeight: 36,
-        tint: "#ffcc00",
-        autoMirrored: true,
-        minSdk: 24,
-      },
-      animation: {
-        id: "sun-motion",
-        blocks: [expect.objectContaining({ id: "sun-move", layerId: "sun-ray" })],
-      },
-      hiddenLayerIds: ["sun-hidden"],
-    });
-    expect(sun?.layers).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "sun-group", rotation: 15 }),
-        expect.objectContaining({
-          id: "sun-ray",
-          parentId: "sun-group",
-          fillType: "evenOdd",
-          morphMapping: expect.objectContaining({ id: "sun-ray-mapping" }),
-        }),
-        expect.objectContaining({
-          id: "sun-hidden",
-          parentId: "sun-group",
-          locked: true,
-          visible: false,
-        }),
-      ]),
-    );
-    expect(moon).toMatchObject({
-      name: "Moon",
-      x: -16,
-      y: 72,
-      vector: { viewportWidth: 64, viewportHeight: 64 },
-      animation: { id: "moon-motion" },
-    });
-
-    expect(restored.documentV2.page).toMatchObject({
-      name: "Canvas illustration",
-      width: 144,
-      height: 88,
-      viewportWidth: 288,
-      viewportHeight: 176,
-      widthUnit: "px",
-      tint: "#1d4ed8",
-      tintMode: "multiply",
-      autoMirrored: true,
-      minSdk: 26,
-    });
-    expect(restored.rootAnimation).toMatchObject({
-      id: "page-motion",
-      blocks: [expect.objectContaining({ id: "page-shift", layerId: "page-visible" })],
-    });
-    expect(restored.rootHiddenLayerIds).toEqual(["page-hidden"]);
-    expect(restored.rootLayers).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "page-visible", fillGradient: expect.any(Object) }),
-        expect.objectContaining({ id: "page-hidden", fillColor: "#ffffff", visible: false }),
-      ]),
-    );
-    expect(
-      Object.values(restored.documentV2.nodes).find((node) => node.id.endsWith(":sun-hidden"))
-        ?.visible,
-    ).toBe(false);
-    expect(
-      Object.values(restored.documentV2.nodes).find((node) => node.id.endsWith(":page-hidden"))
-        ?.visible,
-    ).toBe(false);
-    expect(validateDocumentV2(restored.documentV2)).toEqual([]);
-  });
-
-  it("recovers old multi-frame exports that predate the pageRoot envelope", () => {
-    expect(validateDocumentV2(oldMultiframeLegacyEnvelope.documentV2)).not.toEqual([]);
-
-    const summary = importEditorText(
-      "old-multiframe.shapeshifter",
-      JSON.stringify(oldMultiframeLegacyEnvelope),
-    );
-    const restored = useEditorStore.getState();
-
-    expect(summary.description).toContain("Recovered 2 frame(s)");
-    expect(restored.frames.map((frame) => frame.id)).toEqual(["old-frame-one", "old-frame-two"]);
-    expect(restored.frames.map((frame) => frame.layers[0]?.name)).toEqual([
-      "Frame one path",
-      "Frame two path",
-    ]);
-    expect(restored.rootLayers).toContainEqual(
-      expect.objectContaining({ id: "old-page-path", name: "Legacy page path" }),
-    );
-    expect(restored.documentV2.page).toMatchObject({
-      name: "Legacy page vector",
-      width: 48,
-      height: 32,
-    });
-  });
-
-  it("recovers the legacy envelope instead of silently dropping orphaned V2 records", () => {
-    const source = useEditorStore.getState();
-    const sourceFrameId = source.selectedFrameId;
-    const sourceLayerId = source.layers[0]!.id;
-    const payload = exportProjectJSON(
-      source.layers,
-      source.vector,
-      source.animation,
-      source.hiddenLayerIds,
-      source.frames,
-      {
-        layers: source.rootLayers,
-        animation: source.rootAnimation,
-        hiddenLayerIds: source.rootHiddenLayerIds,
-      },
-    );
-    const document = payload.documentV2 as DocumentV2;
-    const frame = document.frames[sourceFrameId]!;
-    const orphanNodeId = frame.childrenNodeIds[0]!;
-    const orphanClipId = frame.clipIds[0]!;
-    const orphanTrackId = document.clips[orphanClipId]!.trackIds[0]!;
-    const orphanKeyframeId = document.tracks[orphanTrackId]!.keyframeIds[0]!;
-
-    expect(validateDocumentV2(document)).toEqual([]);
-    frame.childrenNodeIds = [];
-    frame.clipIds = [];
-    expect(validateDocumentV2(document)).toEqual(
-      expect.arrayContaining([
-        `Node ${orphanNodeId} is not reachable from page or frame roots.`,
-        `Clip ${orphanClipId} is not reachable from page or frame clip lists.`,
-        `Track ${orphanTrackId} is not reachable from an animation clip.`,
-        `Keyframe ${orphanKeyframeId} is not reachable from an animation track.`,
-      ]),
-    );
-
-    const summary = importEditorText("orphaned-v2.shapeshifter", JSON.stringify(payload));
-    const restored = useEditorStore.getState();
-
-    expect(summary.description).toContain(`Recovered ${source.frames.length} frame(s)`);
-    expect(restored.frames.find((frame) => frame.id === sourceFrameId)?.layers).toContainEqual(
-      expect.objectContaining({ id: sourceLayerId }),
-    );
-  });
-
-  it("refuses a damaged V2 envelope instead of collapsing it to the top-level legacy vector", () => {
-    const source = useEditorStore.getState();
-    const before = structuredClone(source.documentV2);
-    const payload = exportProjectJSON(
-      source.layers,
-      source.vector,
-      source.animation,
-      source.hiddenLayerIds,
-      source.frames,
-      {
-        layers: source.rootLayers,
-        animation: source.rootAnimation,
-        hiddenLayerIds: source.rootHiddenLayerIds,
-      },
-    );
-    const document = payload.documentV2 as DocumentV2;
-    document.frameIds.push("missing-frame");
-    // Simulate an envelope damaged alongside the canonical graph. Its top-level
-    // original-project wrapper remains parseable but does not contain every owner.
-    payload.pageRoot = null;
-
-    expect(() => importEditorText("broken-envelope.shapeshifter", JSON.stringify(payload))).toThrow(
-      "Invalid document: Frame missing-frame is missing or malformed.",
-    );
-    expect(useEditorStore.getState().documentV2).toEqual(before);
+  it("rejects damaged and obsolete project payloads without changing artwork", () => {
+    const before = structuredClone(useEditorStore.getState().document);
+    const damaged = structuredClone(before);
+    damaged.frameIds.push("missing-frame");
+    expect(() =>
+      importEditorText(
+        "damaged.shapeshifter",
+        JSON.stringify({ format: "shapeshifter", document: damaged }),
+      ),
+    ).toThrow("Invalid project");
+    expect(() =>
+      importEditorText("old.shapeshifter", JSON.stringify({ version: 1, layers: [] })),
+    ).toThrow("native ShapeShifter project");
+    expect(useEditorStore.getState().document).toEqual(before);
   });
 
   it("surfaces unsupported AVD timing in the import summary", () => {
@@ -323,16 +165,19 @@ describe("project import pipeline", () => {
     expect(summary.description).toContain("sequential");
   });
 
-  it("refuses a valid native V2 graph that the legacy runtime would downgrade", () => {
-    const before = structuredClone(useEditorStore.getState().documentV2);
+  it("refuses unsupported content explicitly", () => {
+    const before = structuredClone(useEditorStore.getState().document);
     const native = structuredClone(before);
     native.components = { button: { id: "button" } };
 
-    expect(validateDocumentV2(native)).toEqual([]);
-    expect(legacyProjectionIssues(native)).toContain("reusable components");
+    expect(validateEditorDocument(native)).toEqual([]);
+    expect(documentEditingIssues(native)).toContain("reusable components");
     expect(() =>
-      importEditorText("native-v2.shapeshifter", JSON.stringify({ documentV2: native })),
-    ).toThrow("cannot be opened without loss");
-    expect(useEditorStore.getState().documentV2).toEqual(before);
+      importEditorText(
+        "native-v2.shapeshifter",
+        JSON.stringify({ format: "shapeshifter", document: native }),
+      ),
+    ).toThrow("Unsupported project content");
+    expect(useEditorStore.getState().document).toEqual(before);
   });
 });
