@@ -111,6 +111,44 @@ describe("canvas touch gestures", () => {
     expect(handlers.onPointerUp).not.toHaveBeenCalled();
   });
 
+  it.each([1, 2])(
+    "hands off to panning when pinch finger %s lifts, then resumes pinching",
+    (lifted) => {
+      const { handlers, views, pointer } = mount();
+      pointer("pointerdown", 1, 40, 50);
+      pointer("pointerdown", 2, 60, 50);
+      pointer("pointermove", 1, 30, 50);
+      pointer("pointermove", 2, 70, 50);
+      const zoomed = views.at(-1)!;
+      const kept = lifted === 1 ? 2 : 1;
+      const x = kept === 1 ? 30 : 70;
+      pointer("pointerup", lifted, lifted === 1 ? 30 : 70, 50);
+      pointer("pointermove", kept, x, 50);
+      expect(views.at(-1)).toEqual(zoomed);
+      pointer("pointermove", kept, x + 20, 40);
+      expect(views.at(-1)).toEqual({ ...zoomed, x: zoomed.x - 10, y: zoomed.y + 5 });
+      const panned = views.at(-1)!;
+      pointer("pointerdown", 3, x + 60, 40);
+      pointer("pointermove", 3, x + 60, 40);
+      expect(views.at(-1)).toEqual(panned);
+      pointer("pointermove", 3, x + 80, 40);
+      expect(views.at(-1)!.scale).toBeCloseTo(3);
+      const pinchedAgain = views.at(-1)!;
+      pointer("pointerup", 3, x + 80, 40);
+      pointer("pointermove", kept, x + 20, 40);
+      expect(views.at(-1)).toEqual(pinchedAgain);
+      pointer("pointerup", kept, x + 20, 40);
+      expect(handlers.onPointerCancel).toHaveBeenCalledTimes(1);
+      expect(handlers.onPointerMove).not.toHaveBeenCalled();
+      expect(handlers.onPointerUp).not.toHaveBeenCalled();
+      pointer("pointerdown", 4, 10, 10);
+      pointer("pointermove", 4, 20, 20);
+      pointer("pointerup", 4, 20, 20);
+      expect(handlers.onPointerMove).toHaveBeenCalledTimes(1);
+      expect(handlers.onPointerUp).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("does not turn the next single-finger drag into zoom when the last pinch finger ends outside the canvas", () => {
     const { views, pointer, outside } = mount();
     pointer("pointerdown", 1, 40, 50);

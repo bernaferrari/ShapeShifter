@@ -228,14 +228,27 @@ for (const kind of ["frame-title", "artwork", "frame-resize"] as const) {
       await touch("touchMove", [a, b]);
       await expect.poll(async () => (await view()).width).toBeCloseTo(initial.width / 1.5, 3);
       const pinched = await view();
-      // Lifting one finger does not resume the cancelled artwork drag.
-      await touch("touchEnd", [a]);
-      a.x += 40;
-      await touch("touchMove", [a]);
+      // Either surviving finger pans at the pinched zoom, without resuming edits.
+      const remaining = kind === "artwork" ? b : a;
+      await touch("touchEnd", [remaining === a ? b : a]);
+      expect(await view()).toEqual(pinched);
+      const canvasBounds = (await canvas.boundingBox())!;
+      remaining.x += 40;
+      remaining.y += 20;
+      await touch("touchMove", [remaining]);
+      await expect
+        .poll(async () => (await view()).x)
+        .toBeCloseTo(pinched.x - (40 * pinched.width) / canvasBounds.width, 3);
+      await expect
+        .poll(async () => (await view()).y)
+        .toBeCloseTo(pinched.y - (20 * pinched.height) / canvasBounds.height, 3);
+      const panned = await view();
+      expect(panned.width).toBe(pinched.width);
+      expect(panned.height).toBe(pinched.height);
       await touch("touchEnd", []);
-      expect(await view()).toEqual(pinched);
+      expect(await view()).toEqual(panned);
       await page.waitForTimeout(250);
-      expect(await view()).toEqual(pinched);
+      expect(await view()).toEqual(panned);
       const after = await project(page);
       expect(after.frames).toEqual(before.frames);
       expect(after.nodes).toEqual(before.nodes);

@@ -21,8 +21,13 @@ interface Pinch {
   anchor: { x: number; y: number };
   distance: number;
 }
+interface Pan {
+  id: number;
+  view: Viewport;
+  anchor: { x: number; y: number };
+}
 
-/** One finger edits; two fingers own the camera until the whole sequence ends. */
+/** A pinch owns the camera, handing off to panning until all contacts end. */
 export function useCanvasTouchGestures({
   svgRef,
   view,
@@ -43,6 +48,7 @@ export function useCanvasTouchGestures({
 } {
   const touches = React.useRef(new Map<number, Touch>());
   const pinch = React.useRef<Pinch | null>(null);
+  const pan = React.useRef<Pan | null>(null);
   const suppress = React.useRef(false);
   const viewRef = React.useRef(view);
   viewRef.current = view;
@@ -61,6 +67,7 @@ export function useCanvasTouchGestures({
   };
   const startPinch = () => {
     pinch.current = null;
+    pan.current = null;
     const bounds = svgRef.current?.getBoundingClientRect();
     const pair = measure();
     // Nearly coincident contacts are not a reliable zoom baseline.
@@ -72,11 +79,27 @@ export function useCanvasTouchGestures({
       distance: pair.distance,
     };
   };
+  const startPan = () => {
+    pan.current = null;
+    const remaining = touches.current.entries().next().value;
+    const bounds = svgRef.current?.getBoundingClientRect();
+    if (!remaining || !bounds?.width || !bounds.height) return;
+    const [id, touch] = remaining;
+    pan.current = {
+      id,
+      view: viewRef.current,
+      anchor: clientToWorld(touch.x, touch.y, bounds, viewRef.current),
+    };
+  };
   const release = (pointerId: number) => {
     if (!touches.current.delete(pointerId)) return;
     if (touches.current.size < 2) pinch.current = null;
     else if (pinch.current?.ids.includes(pointerId)) startPinch();
-    if (touches.current.size === 0) suppress.current = false;
+    if (touches.current.size === 1 && suppress.current) startPan();
+    if (touches.current.size === 0) {
+      pan.current = null;
+      suppress.current = false;
+    }
   };
   const capture = (pointerId: number) => {
     try {
@@ -107,6 +130,21 @@ export function useCanvasTouchGestures({
     viewRef.current = next;
     setView(next);
   };
+  const updatePan = () => {
+    if (!pan.current) return startPan();
+    const start = pan.current;
+    const touch = touches.current.get(start.id);
+    const bounds = svgRef.current?.getBoundingClientRect();
+    if (!touch || !bounds?.width || !bounds.height) return;
+    const under = clientToWorld(touch.x, touch.y, bounds, start.view);
+    const next = {
+      ...start.view,
+      x: start.view.x + (start.anchor.x - under.x),
+      y: start.view.y + (start.anchor.y - under.y),
+    };
+    viewRef.current = next;
+    setView(next);
+  };
 
   const cancelTouch = (pointerId: number) => {
     const touch = touches.current.get(pointerId);
@@ -120,6 +158,7 @@ export function useCanvasTouchGestures({
     const ids = [...touches.current.keys()];
     touches.current.clear();
     pinch.current = null;
+    pan.current = null;
     suppress.current = false;
     for (const id of ids) {
       try {
@@ -190,7 +229,10 @@ export function useCanvasTouchGestures({
       if (touches.current.size >= 2) {
         updatePinch();
         event.stopPropagation();
-      } else if (suppress.current) event.stopPropagation();
+      } else if (suppress.current) {
+        updatePan();
+        event.stopPropagation();
+      }
     },
     onPointerUpCapture: (event) => {
       if (event.pointerType === "touch" && suppress.current) {
