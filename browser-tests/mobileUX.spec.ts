@@ -5,7 +5,7 @@ async function practice(page: Page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Make an icon move", exact: true }).click();
   await page.getByRole("button", { name: "Close animation exercise" }).click();
-  await page.getByRole("button", { name: "Return to canvas" }).click();
+  await page.getByRole("button", { name: "Close panel" }).click();
   await expect(page.getByRole("region", { name: "Design", exact: true })).toHaveCount(0);
 }
 async function project(page: Page) {

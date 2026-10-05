@@ -136,10 +136,10 @@ test("guided animation and exact mobile values survive panels, landscape, and a 
     await page.getByRole("button", { name: "Back to properties", exact: true }).click();
     await expect(page.getByRole("textbox", { name: "X", exact: true })).toHaveValue("8");
     await page.setViewportSize({ width: 390, height: 420 });
-    await expect(page.getByRole("button", { name: "Return to canvas" })).toBeInViewport();
+    await expect(page.getByRole("button", { name: "Close panel" })).toBeInViewport();
     await page.getByRole("textbox", { name: "X", exact: true }).fill("9");
     await page.getByRole("textbox", { name: "X", exact: true }).press("Enter");
-    await page.getByRole("button", { name: "Return to canvas" }).click();
+    await page.getByRole("button", { name: "Close panel" }).click();
     await page.setViewportSize({ width: 844, height: 390 });
     await expect(page.getByRole("navigation", { name: "Panels" })).toBeVisible();
     await page.getByRole("button", { name: "Design", exact: true }).click();
@@ -147,7 +147,7 @@ test("guided animation and exact mobile values survive panels, landscape, and a 
     await landscapeX.fill("10");
     await landscapeX.press("Enter");
     await expect(landscapeX).toBeInViewport();
-    await page.getByRole("button", { name: "Return to canvas" }).click();
+    await page.getByRole("button", { name: "Close panel" }).click();
   }
   await page.getByRole("button", { name: "Preview motion", exact: true }).click();
   await expect(

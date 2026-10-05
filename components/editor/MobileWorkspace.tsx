@@ -11,7 +11,7 @@ import {
   type MotionValue,
   type MotionStyle,
 } from "framer-motion";
-import { Clapperboard, Layers, SlidersHorizontal } from "lucide-react";
+import { Clapperboard, Layers, SlidersHorizontal, X } from "lucide-react";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { cn } from "@/lib/utils";
 import { Inspector } from "./Inspector";
@@ -208,11 +208,11 @@ export function MobileWorkspace({
               />
               <button
                 type="button"
-                aria-label="Return to canvas"
+                aria-label="Close panel"
                 onClick={close}
-                className="min-h-11 touch-manipulation px-2 text-[12px]"
+                className="grid size-11 touch-manipulation place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
               >
-                Canvas
+                <X className="size-4" aria-hidden="true" />
               </button>
             </div>
             {visibleSheet === "layers" && (

@@ -4,7 +4,7 @@ async function openPractice(page: Page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Make an icon move", exact: true }).click();
   await page.getByRole("button", { name: "Close animation exercise" }).click();
-  const closePanel = page.getByRole("button", { name: "Return to canvas" });
+  const closePanel = page.getByRole("button", { name: "Close panel" });
   if (await closePanel.isVisible()) await closePanel.click();
   await expect(page.getByRole("region", { name: "Design", exact: true })).toHaveCount(0);
 }
@@ -36,7 +36,7 @@ test("opening and resizing mobile sheets preserves artwork scale and uses a vert
     .poll(async () => (await art(page).boundingBox())!.width)
     .toBeCloseTo(before.width, 0);
   await expect(page.getByRole("button", { name: "Zoom options" })).toBeInViewport();
-  await page.getByRole("button", { name: "Return to canvas" }).click();
+  await page.getByRole("button", { name: "Close panel" }).click();
   await expect
     .poll(async () => (await art(page).boundingBox())!.width)
     .toBeCloseTo(before.width, 0);
