@@ -60,7 +60,7 @@ const TOUCH_TIPS: Tip[] = [
   {
     icon: <Hand className="size-3.5" />,
     title: "Move around",
-    body: <>Drag with two fingers to pan, pinch to zoom.</>,
+    body: <>Drag empty space to pan, pinch to zoom.</>,
   },
 ];
 

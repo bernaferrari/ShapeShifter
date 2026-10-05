@@ -21,8 +21,8 @@ export const PROPERTY_LABELS: Record<string, string> = {
   scaleY: "Scale Y",
   pivotX: "Pivot X",
   pivotY: "Pivot Y",
-  translateX: "Position X",
-  translateY: "Position Y",
+  translateX: "X",
+  translateY: "Y",
   alpha: "Opacity",
 };
 

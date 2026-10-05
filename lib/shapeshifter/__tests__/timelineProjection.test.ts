@@ -65,7 +65,7 @@ const frame = {
 } satisfies CanvasFrame;
 
 describe("timeline projection", () => {
-  it("shows the active frame with Path, Position X, and Position Y property rows", () => {
+  it("shows the active frame with Path, X, and Y property rows", () => {
     const projection = buildTimelineProjection({
       frames: [frame, { ...frame, id: "other", name: "Other" }],
       selectedFrameId: frame.id,
@@ -365,9 +365,9 @@ describe("timeline projection", () => {
     ]);
     expect(projection.rows[1]!.frameId).toBe("__page_root__");
     expect(projection.blocksForLayer("__page_root__", "page-shape")).toHaveLength(1);
-    expect(
-      projection.blocksForProperty("__page_root__", "page-shape", "translateX"),
-    ).toEqual([rootAnimation.blocks[0]]);
+    expect(projection.blocksForProperty("__page_root__", "page-shape", "translateX")).toEqual([
+      rootAnimation.blocks[0],
+    ]);
     expect(projection.contentForFrame("__page_root__")).toEqual({
       layers: [rootLayer],
       animation: rootAnimation,

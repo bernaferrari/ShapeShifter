@@ -40,6 +40,7 @@ interface ToolbarProps {
   onExport: (type: string) => void;
   onLoadSample: (index: number) => void;
   onTogglePlay: () => void;
+  showPlayback?: boolean;
   onOpenSVGImport: () => void;
   onShowHelp: () => void;
   onOpenCommand: () => void;
@@ -67,6 +68,7 @@ export function Toolbar({
   onExport,
   onLoadSample,
   onTogglePlay,
+  showPlayback = true,
   onOpenSVGImport,
   onShowHelp,
   onOpenCommand,
@@ -185,31 +187,34 @@ export function Toolbar({
             <Redo2 className="size-[18px]" />
           </Button>
         </div>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className={cn(
-                  "size-8 text-muted-foreground hover:text-foreground",
-                  isPlaying && "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary",
-                )}
-                onClick={onTogglePlay}
-                aria-label={isPlaying ? "Pause" : "Play"}
-              />
-            }
-          >
-            {isPlaying ? (
-              <Pause className="size-4 fill-current" strokeWidth={0} />
-            ) : (
-              <Play className="size-4 fill-current" strokeWidth={0} />
-            )}
-          </TooltipTrigger>
-          <TooltipContent>
-            {isPlaying ? "Pause" : "Play"} <Kbd>Space</Kbd>
-          </TooltipContent>
-        </Tooltip>
+        {showPlayback && (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className={cn(
+                    "size-8 text-muted-foreground hover:text-foreground",
+                    isPlaying &&
+                      "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary",
+                  )}
+                  onClick={onTogglePlay}
+                  aria-label={isPlaying ? "Pause" : "Play"}
+                />
+              }
+            >
+              {isPlaying ? (
+                <Pause className="size-4 fill-current" strokeWidth={0} />
+              ) : (
+                <Play className="size-4 fill-current" strokeWidth={0} />
+              )}
+            </TooltipTrigger>
+            <TooltipContent>
+              {isPlaying ? "Pause" : "Play"} <Kbd>Space</Kbd>
+            </TooltipContent>
+          </Tooltip>
+        )}
         <ExportDialog>
           <Button size="sm" className="h-8 px-3.5 text-[12px] font-medium">
             Export

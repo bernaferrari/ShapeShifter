@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "@/lib/utils";
 import { ChevronDown } from "lucide-react";
 import {
   DropdownMenu,
@@ -18,6 +19,8 @@ import {
 
 interface CanvasNavigationControlsProps {
   zoomPercent: number;
+  compact?: boolean;
+  onFitFrame?: () => void;
   showWorldControls: boolean;
   gridDivisions: number;
   onZoomOut: () => void;
@@ -33,6 +36,8 @@ interface CanvasNavigationControlsProps {
 /** A single quiet zoom readout; every view command lives in its menu. */
 export function CanvasNavigationControls({
   zoomPercent,
+  compact = false,
+  onFitFrame,
   showWorldControls,
   gridDivisions,
   onZoomOut,
@@ -47,23 +52,40 @@ export function CanvasNavigationControls({
   return (
     <div
       aria-label="Canvas navigation"
-      className="absolute right-3 bottom-3 z-30 max-md:top-3 max-md:bottom-auto"
+      className="absolute right-3 bottom-3 z-30 flex items-center gap-1 max-md:top-3 max-md:bottom-auto"
       onContextMenu={(event) => event.stopPropagation()}
     >
+      {compact && (
+        <button
+          type="button"
+          aria-label="Fit active frame"
+          onClick={onFitFrame ?? onReset}
+          className="h-11 min-w-11 touch-manipulation rounded-lg bg-card px-3 text-[12px] font-medium [box-shadow:var(--elevation-floating)]"
+        >
+          Fit
+        </button>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
             <button
               type="button"
               aria-label="Zoom options"
-              className="flex h-8 items-center gap-1 rounded-lg bg-card px-2.5 text-[11px] tabular-nums text-muted-foreground [box-shadow:var(--elevation-floating)] transition-colors hover:text-foreground data-popup-open:text-foreground"
+              className={cn(
+                "flex h-8 items-center gap-1 rounded-lg bg-card px-2.5 text-[11px] tabular-nums text-muted-foreground [box-shadow:var(--elevation-floating)] transition-colors hover:text-foreground data-popup-open:text-foreground",
+                compact && "h-11 touch-manipulation text-[12px]",
+              )}
             />
           }
         >
           {Math.round(zoomPercent)}%
           <ChevronDown className="size-3" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent side="top" align="end" className="w-52">
+        <DropdownMenuContent
+          side="top"
+          align="end"
+          className={cn("w-52", compact && "[&_[data-slot=dropdown-menu-shortcut]]:hidden")}
+        >
           <DropdownMenuItem onClick={onZoomIn}>
             Zoom in
             <DropdownMenuShortcut>+</DropdownMenuShortcut>

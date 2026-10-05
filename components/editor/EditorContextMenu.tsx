@@ -31,7 +31,7 @@ export function EditorContextMenu({
   );
 }
 
-function EditorContextMenuItems() {
+export function EditorContextMenuItems() {
   const selectionKind = useEditorStore((state) => state.selectionKind);
   const hasCanvasSelection = useEditorStore((state) => state.hasCanvasSelection);
   const selectedLayerId = useEditorStore((state) => state.selectedLayerId);

@@ -374,7 +374,11 @@ export function LayerTimeline({
         >
           <button
             type="button"
-            className="grid size-7 place-items-center rounded-md text-foreground transition-colors hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+            className={cn(
+              "grid size-7 place-items-center rounded-md text-foreground transition-colors hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring",
+              compact &&
+                "flex h-11 w-auto shrink-0 gap-1.5 px-2 text-[12px] font-medium touch-manipulation",
+            )}
             aria-label={isPlaying ? "Pause" : "Play"}
             title={isPlaying ? "Pause · Space" : "Play · Space"}
             onClick={() => togglePlayback()}
@@ -384,11 +388,12 @@ export function LayerTimeline({
             ) : (
               <Play className="size-3.5 fill-current" strokeWidth={0} />
             )}
+            {compact && <span>{isPlaying ? "Pause" : "Play"}</span>}
           </button>
-          <TimelineInsertKeyframeButton iconOnly label="Add keyframe at playhead" />
+          {!compact && <TimelineInsertKeyframeButton iconOnly label="Add keyframe at playhead" />}
           <div className="flex h-6 min-w-0 items-center gap-[3px] rounded-md bg-secondary px-1.5 text-[11px] tabular-nums leading-none">
             <TimelineCurrentTimeInput color={PLAYHEAD} unit={timeUnit} fps={fps} />
-            {(compact || LAYERS_W >= 200) && (
+            {!compact && LAYERS_W >= 200 && (
               <>
                 <span className="text-muted-foreground">/</span>
                 <TimelineDurationInput unit={timeUnit} fps={fps} />
@@ -397,6 +402,9 @@ export function LayerTimeline({
             <span className="text-muted-foreground">{timeUnit === "frames" ? "f" : "ms"}</span>
           </div>
           <div className="flex-1" />
+          {compact && (
+            <TimelineInsertKeyframeButton label="Add keyframe at playhead" explainUnavailable />
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
@@ -724,6 +732,7 @@ export function LayerTimeline({
           <TimelineLayersPane
             rows={timelineRows}
             width={LAYERS_W}
+            compact={compact}
             onToggleFrame={toggleFrameExpanded}
             onToggleGroup={toggleGroupExpanded}
             blocksForLayer={blocksForLayerInFrame}
@@ -732,6 +741,7 @@ export function LayerTimeline({
 
           <TimelineTracksPane
             rows={timelineRows}
+            compact={compact}
             blocksForLayer={blocksForLayerInFrame}
             blocksForProperty={blocksForPropertyInFrame}
             contentWidth={navigation.contentWidth}

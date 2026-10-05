@@ -17,6 +17,7 @@ const ROW_PROPERTY_HEIGHT = 28;
 interface TimelineLayersPaneProps {
   rows: TimelineRow[];
   width: number;
+  compact?: boolean;
   onToggleFrame: (frameId: string) => void;
   onToggleGroup: (rowKey: string) => void;
   blocksForLayer: TimelineProjection["blocksForLayer"];
@@ -26,6 +27,7 @@ interface TimelineLayersPaneProps {
 export function TimelineLayersPane({
   rows,
   width,
+  compact = false,
   onToggleFrame,
   onToggleGroup,
   blocksForLayer,
@@ -67,7 +69,7 @@ export function TimelineLayersPane({
                 "group flex w-full items-center gap-1 pr-2 text-left",
                 isActive ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted",
               )}
-              style={{ height: ROW_LAYER_HEIGHT, paddingLeft: 8 }}
+              style={{ height: compact ? 44 : ROW_LAYER_HEIGHT, paddingLeft: 8 }}
               onClick={() => useEditorStore.getState().selectFrame(row.frameId)}
               onKeyDown={(event) => {
                 if (
@@ -126,7 +128,7 @@ export function TimelineLayersPane({
                 "group flex w-full items-center gap-1 pr-1.5 text-left",
                 isSelected ? `${ROW_SELECTED} text-foreground` : "text-foreground hover:bg-muted",
               )}
-              style={{ height: ROW_LAYER_HEIGHT, paddingLeft: 6 + row.depth * 12 }}
+              style={{ height: compact ? 44 : ROW_LAYER_HEIGHT, paddingLeft: 6 + row.depth * 12 }}
               onClick={(event) => {
                 const store = useEditorStore.getState();
                 if (event.shiftKey) {
@@ -261,7 +263,10 @@ export function TimelineLayersPane({
               "group flex w-full items-center gap-0.5 pr-1.5 text-left",
               isSelected ? ROW_SELECTED : "hover:bg-muted/60",
             )}
-            style={{ height: ROW_PROPERTY_HEIGHT, paddingLeft: 24 + row.depth * 6 }}
+            style={{
+              height: compact ? 44 : ROW_PROPERTY_HEIGHT,
+              paddingLeft: (compact ? 12 : 24) + row.depth * 6,
+            }}
             role="button"
             tabIndex={0}
             aria-pressed={isSelected}
@@ -285,56 +290,58 @@ export function TimelineLayersPane({
             >
               {propertyLabel(row.propertyName)}
             </span>
-            <div
-              className={cn(
-                "flex shrink-0 items-center transition-opacity",
-                isSelected
-                  ? "opacity-100"
-                  : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
-              )}
-            >
-              <button
-                type="button"
-                aria-label={`Jump to first ${propertyLabel(row.propertyName)} keyframe`}
-                className="grid size-4 place-items-center rounded text-muted-foreground hover:bg-muted disabled:opacity-20"
-                disabled={!Number.isFinite(earliest)}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  if (Number.isFinite(earliest)) {
+            {!compact && (
+              <div
+                className={cn(
+                  "flex shrink-0 items-center transition-opacity",
+                  isSelected
+                    ? "opacity-100"
+                    : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+                )}
+              >
+                <button
+                  type="button"
+                  aria-label={`Jump to first ${propertyLabel(row.propertyName)} keyframe`}
+                  className="grid size-4 place-items-center rounded text-muted-foreground hover:bg-muted disabled:opacity-20"
+                  disabled={!Number.isFinite(earliest)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (Number.isFinite(earliest)) {
+                      selectProperty();
+                      jumpTo(earliest);
+                    }
+                  }}
+                >
+                  <ChevronRight className="h-2.5 w-2.5 rotate-180" strokeWidth={2} />
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Select ${propertyLabel(row.propertyName)} keyframes`}
+                  className="grid size-4 place-items-center rounded hover:bg-muted"
+                  onClick={(event) => {
+                    event.stopPropagation();
                     selectProperty();
-                    jumpTo(earliest);
-                  }
-                }}
-              >
-                <ChevronRight className="h-2.5 w-2.5 rotate-180" strokeWidth={2} />
-              </button>
-              <button
-                type="button"
-                aria-label={`Select ${propertyLabel(row.propertyName)} keyframes`}
-                className="grid size-4 place-items-center rounded hover:bg-muted"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  selectProperty();
-                }}
-              >
-                <TimelineKeyframeDiamond active={isSelected} size={6} />
-              </button>
-              <button
-                type="button"
-                aria-label={`Jump to last ${propertyLabel(row.propertyName)} keyframe`}
-                className="grid size-4 place-items-center rounded text-muted-foreground hover:bg-muted disabled:opacity-20"
-                disabled={!latest}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  if (latest) {
-                    selectProperty();
-                    jumpTo(latest);
-                  }
-                }}
-              >
-                <ChevronRight className="h-2.5 w-2.5" strokeWidth={2} />
-              </button>
-            </div>
+                  }}
+                >
+                  <TimelineKeyframeDiamond active={isSelected} size={6} />
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Jump to last ${propertyLabel(row.propertyName)} keyframe`}
+                  className="grid size-4 place-items-center rounded text-muted-foreground hover:bg-muted disabled:opacity-20"
+                  disabled={!latest}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (latest) {
+                      selectProperty();
+                      jumpTo(latest);
+                    }
+                  }}
+                >
+                  <ChevronRight className="h-2.5 w-2.5" strokeWidth={2} />
+                </button>
+              </div>
+            )}
             {width >= 200 && (
               <TimelinePropertyValue
                 block={first}

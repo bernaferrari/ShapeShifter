@@ -8,10 +8,12 @@ export function TimelineInsertKeyframeButton({
   blockId,
   label = "Insert keyframe at playhead",
   iconOnly = false,
+  explainUnavailable = false,
 }: {
   blockId?: string;
   label?: string;
   iconOnly?: boolean;
+  explainUnavailable?: boolean;
 }) {
   const progress = useEditorStore((state) => state.progress);
   const animation = useEditorStore((state) => state.animation);
@@ -37,6 +39,15 @@ export function TimelineInsertKeyframeButton({
   const retimesCurve = candidates.some(
     (block) => !block.interpolator || block.interpolator === "ACCELERATE_DECELERATE",
   );
+  if (explainUnavailable && !candidates.length)
+    return (
+      <span
+        role="status"
+        className="flex min-h-11 w-28 shrink-0 items-center px-2 text-[11px] leading-tight text-muted-foreground"
+      >
+        {tracks.size ? "Move between keys" : "Select a track"}
+      </span>
+    );
   return (
     <button
       type="button"
@@ -66,11 +77,11 @@ export function TimelineInsertKeyframeButton({
       className={
         iconOnly
           ? "grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-35"
-          : "flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-35"
+          : "flex h-6 pointer-coarse:h-11 touch-manipulation shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-35"
       }
     >
       <DiamondPlus className="size-3.5" />
-      {!iconOnly && <span>Keyframe</span>}
+      {!iconOnly && <span>Add keyframe</span>}
     </button>
   );
 }

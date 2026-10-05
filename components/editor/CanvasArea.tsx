@@ -47,11 +47,17 @@ import type { PathData } from "@/lib/shapeshifter/types";
 
 interface CanvasAreaProps {
   resetAllViews: () => void;
+  compact?: boolean;
   showRulers?: boolean;
   onToggleRulers?: () => void;
 }
 
-export function CanvasArea({ resetAllViews, showRulers = false, onToggleRulers }: CanvasAreaProps) {
+export function CanvasArea({
+  resetAllViews,
+  compact = false,
+  showRulers = false,
+  onToggleRulers,
+}: CanvasAreaProps) {
   const {
     isPlaying,
     progress,
@@ -616,6 +622,10 @@ export function CanvasArea({ resetAllViews, showRulers = false, onToggleRulers }
   });
   const handleWorldContextMenu = useCallback(
     (event: React.MouseEvent) => {
+      if (compact) {
+        event.preventDefault();
+        return;
+      }
       const point = worldPointFromEvent(event.clientX, event.clientY);
       if (!point || isPointTool) return;
       const layerHit = hitLayerAtWorld(point);
@@ -635,6 +645,7 @@ export function CanvasArea({ resetAllViews, showRulers = false, onToggleRulers }
     },
     [
       worldPointFromEvent,
+      compact,
       isPointTool,
       hitLayerAtWorld,
       selectedLayerRefKeys,
@@ -698,6 +709,14 @@ export function CanvasArea({ resetAllViews, showRulers = false, onToggleRulers }
               >
                 <CanvasNavigationControls
                   zoomPercent={worldView.scale * 100}
+                  compact={compact}
+                  onFitFrame={() =>
+                    useEditorStore
+                      .getState()
+                      .fitWorldToFrames(
+                        selectedFrameId === PAGE_ROOT_ID ? undefined : [selectedFrameId],
+                      )
+                  }
                   showWorldControls
                   gridDivisions={gridDivisions}
                   onZoomOut={() => zoomWorldAtCenter(0.8)}
@@ -762,16 +781,18 @@ export function CanvasArea({ resetAllViews, showRulers = false, onToggleRulers }
                       cursor:
                         isWorldPanning || isDraggingArtboards || isLayerDragPending
                           ? "grabbing"
-                          : toolMode === "paint"
-                            ? paintBucketCursor
-                            : toolMode === "pen" ||
-                                toolMode === "pencil" ||
-                                toolMode === "rectangle" ||
-                                toolMode === "ellipse"
-                              ? "crosshair"
-                              : hoveredLayerKey
-                                ? "move"
-                                : "default",
+                          : toolMode === "hand"
+                            ? "grab"
+                            : toolMode === "paint"
+                              ? paintBucketCursor
+                              : toolMode === "pen" ||
+                                  toolMode === "pencil" ||
+                                  toolMode === "rectangle" ||
+                                  toolMode === "ellipse"
+                                ? "crosshair"
+                                : hoveredLayerKey
+                                  ? "move"
+                                  : "default",
                     }}
                   >
                     <defs>
@@ -957,6 +978,7 @@ export function CanvasArea({ resetAllViews, showRulers = false, onToggleRulers }
                     hoveredFrameId={hoveredFrameId}
                     draggingFrameIds={draggingArtboardIds}
                     isDragging={isDraggingArtboards}
+                    interactive={toolMode !== "hand" && !spacePanActive}
                     onStartDrag={startWorldArtboardDrag}
                   />
                 )}

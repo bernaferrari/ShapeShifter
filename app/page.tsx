@@ -10,6 +10,7 @@ import { CanvasArea } from "@/components/editor/CanvasArea";
 import { Inspector } from "@/components/editor/Inspector";
 import { LayerTimeline } from "@/components/editor/LayerTimeline";
 import { LayersPanel } from "@/components/editor/LayersPanel";
+import { MobileCanvasTools } from "@/components/editor/MobileCanvasTools";
 import { BottomToolPalette } from "@/components/editor/BottomToolPalette";
 import { Onboarding } from "@/components/editor/Onboarding";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
@@ -201,26 +202,18 @@ export default function ShapeShifter2026() {
     else toggleRulers();
   };
 
-  const canvas = (
-    <EditorContextMenu
-      render={
-        <main
-          id="editor-canvas"
-          tabIndex={-1}
-          aria-label="Editor canvas"
-          className="relative flex min-w-0 flex-1 overflow-hidden"
-        />
-      }
-    >
+  const canvasContents = (
+    <>
       <CanvasArea
         resetAllViews={resetAllViews}
+        compact={compact}
         showRulers={rulersVisible}
         onToggleRulers={toggleRulers}
       />
       {(!compact || !mobileSheet) && (
         <div className="pointer-events-none absolute bottom-3 left-1/2 z-30 -translate-x-1/2">
           <div className="pointer-events-auto" onContextMenu={(event) => event.stopPropagation()}>
-            <BottomToolPalette />
+            {compact ? <MobileCanvasTools /> : <BottomToolPalette />}
           </div>
         </div>
       )}
@@ -244,7 +237,19 @@ export default function ShapeShifter2026() {
           Timeline
         </button>
       )}
-    </EditorContextMenu>
+    </>
+  );
+  const canvasProps = {
+    id: "editor-canvas",
+    tabIndex: -1,
+    "aria-label": "Editor canvas",
+    className: "relative flex min-w-0 flex-1 overflow-hidden",
+  };
+  // Touch actions have an explicit menu; a long press must not steal a canvas gesture.
+  const canvas = compact ? (
+    <main {...canvasProps}>{canvasContents}</main>
+  ) : (
+    <EditorContextMenu render={<main {...canvasProps} />}>{canvasContents}</EditorContextMenu>
   );
 
   // Playback + animation state flows from Zustand
@@ -284,6 +289,7 @@ export default function ShapeShifter2026() {
         onExport={handleExport}
         onLoadSample={loadSample}
         onTogglePlay={togglePlay}
+        showPlayback={!compact || mobileSheet !== "motion"}
         onOpenSVGImport={openSVGImport}
         onShowHelp={() => setHelpOpen(true)}
         onOpenCommand={() => setCommandOpen(true)}

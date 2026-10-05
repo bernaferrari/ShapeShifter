@@ -120,11 +120,18 @@ function releasePointer(svg: SVGSVGElement | null, pointerId: number) {
 
 /** Routes pointer input to one active canvas gesture without owning document state. */
 export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
+  const touchPan = React.useRef<{
+    id: number;
+    x: number;
+    y: number;
+    moved: boolean;
+    frameId: string | null;
+  } | null>(null);
   const handlePointerDown = React.useCallback(
     (event: React.PointerEvent) => {
       if (!event.isPrimary || (event.button !== 0 && event.button !== 1)) return;
       const point = options.worldPointFromEvent(event.clientX, event.clientY);
-      if (event.button === 1 || options.spacePanActive) {
+      if (event.button === 1 || options.spacePanActive || options.toolMode === "hand") {
         if (options.spacePanActive) {
           (window as unknown as { __ssSpacePanUsed?: boolean }).__ssSpacePanUsed = true;
         }
@@ -246,6 +253,19 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
       }
 
       const frameId = options.hitArtboard(point);
+      if (event.pointerType === "touch" && options.toolMode === "select") {
+        // Empty space is for navigation on touch. A tap still selects a frame
+        // or clears selection, but a drag preserves selection and pans.
+        touchPan.current = {
+          id: event.pointerId,
+          x: event.clientX,
+          y: event.clientY,
+          moved: false,
+          frameId,
+        };
+        options.startWorldPan(event.clientX, event.clientY, event.pointerId);
+        return;
+      }
       if (frameId) {
         if (additive && options.selectionKind === "frame") {
           if (options.worldSelectedIds.includes(frameId) && options.hasCanvasSelection) {
@@ -293,6 +313,13 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
         }
         return;
       }
+      const tap = touchPan.current;
+      if (
+        tap &&
+        tap.id === event.pointerId &&
+        Math.hypot(event.clientX - tap.x, event.clientY - tap.y) > 6
+      )
+        tap.moved = true;
       if (options.updateWorldPan(event.clientX, event.clientY)) return;
       const point = options.worldPointFromEvent(event.clientX, event.clientY);
       if (!point) return;
@@ -340,6 +367,17 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
 
   const handlePointerUp = React.useCallback(
     (event: React.PointerEvent) => {
+      const tap = touchPan.current;
+      if (tap && tap.id === event.pointerId) {
+        touchPan.current = null;
+        options.finishWorldPan();
+        releasePointer(options.svgRef.current, event.pointerId);
+        if (!tap.moved) {
+          if (tap.frameId) options.selectFrame(tap.frameId);
+          else useEditorStore.getState().deselectAll();
+        }
+        return;
+      }
       if (options.finishShapeDrawing?.()) {
         releasePointer(options.svgRef.current, event.pointerId);
         return;
@@ -387,6 +425,7 @@ export function useWorldPointerRouter(options: WorldPointerRouterOptions) {
 
   const handlePointerCancel = React.useCallback(
     (event: React.PointerEvent) => {
+      touchPan.current = null;
       options.cancelObjectDrag();
       options.cancelShapeDrawing?.();
       options.penPointerCancel?.();

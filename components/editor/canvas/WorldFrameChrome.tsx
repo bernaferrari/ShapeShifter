@@ -29,6 +29,7 @@ export function WorldFrameChrome({
   draggingFrameIds,
   isDragging,
   onStartDrag,
+  interactive = true,
 }: {
   frames: CanvasFrame[];
   viewport: Viewport;
@@ -36,6 +37,7 @@ export function WorldFrameChrome({
   hoveredFrameId: string | null;
   draggingFrameIds: string[];
   isDragging: boolean;
+  interactive?: boolean;
   onStartDrag: (clientX: number, clientY: number, frameIds: string[]) => void;
 }) {
   const selectedFrameId = useEditorStore((state) => state.selectedFrameId);
@@ -97,7 +99,10 @@ export function WorldFrameChrome({
           return (
             <div
               key={frame.id}
-              className="pointer-events-auto absolute"
+              className={cn(
+                "absolute",
+                interactive ? "pointer-events-auto" : "pointer-events-none",
+              )}
               style={{
                 left: Math.round(screen.x),
                 top: Math.round(screen.y) - 8,
@@ -147,6 +152,7 @@ export function WorldFrameChrome({
                     title="Click to select frame · double-click to rename frame"
                     aria-label={`Select frame ${frame.name}`}
                     aria-pressed={selected}
+                    disabled={!interactive}
                     onPointerDown={(event) => {
                       if (!event.isPrimary || event.button !== 0) return;
                       event.stopPropagation();

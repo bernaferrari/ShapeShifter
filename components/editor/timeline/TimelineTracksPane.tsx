@@ -137,6 +137,7 @@ function TimelineObjectClip({
 
 interface TimelineTracksPaneProps {
   rows: TimelineRow[];
+  compact?: boolean;
   blocksForLayer: TimelineProjection["blocksForLayer"];
   blocksForProperty: TimelineProjection["blocksForProperty"];
   contentWidth: number;
@@ -154,6 +155,7 @@ interface TimelineTracksPaneProps {
 
 export function TimelineTracksPane({
   rows,
+  compact = false,
   blocksForLayer,
   blocksForProperty,
   contentWidth,
@@ -220,7 +222,7 @@ export function TimelineTracksPane({
                   "relative border-b border-border/50",
                   row.frameId === selectedFrameId && "bg-muted/35",
                 )}
-                style={{ height: ROW_LAYER_HEIGHT }}
+                style={{ height: compact ? 44 : ROW_LAYER_HEIGHT }}
                 onClick={() => useEditorStore.getState().selectFrame(row.frameId)}
               />
             );
@@ -282,7 +284,7 @@ export function TimelineTracksPane({
                 row.kind === "property" && !propertySelected && "hover:bg-muted/35",
                 isObject && !objectSelected && "hover:bg-muted/35",
               )}
-              style={{ height: isObject ? ROW_LAYER_HEIGHT : ROW_PROPERTY_HEIGHT }}
+              style={{ height: compact ? 44 : isObject ? ROW_LAYER_HEIGHT : ROW_PROPERTY_HEIGHT }}
               onClick={() => {
                 const store = useEditorStore.getState();
                 if (row.frameId !== store.selectedFrameId) store.selectFrame(row.frameId);
