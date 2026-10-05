@@ -61,9 +61,7 @@ test("mobile tools switch modes and keep object actions in a compact toolbar", a
     "aria-pressed",
     "true",
   );
-  await expect(
-    page.getByRole("button", { name: "Fit active frame", exact: true }),
-  ).toBeInViewport();
+  await expect(page.getByRole("button", { name: "Fit frame", exact: true })).toBeInViewport();
 });
 
 test("Motion labels playback and keyframe actions and inserts only into the selected track", async ({
@@ -161,7 +159,7 @@ test("native touch navigation pans empty space and artwork in Move view without 
     await expect.poll(async () => (await art.boundingBox())!.x).toBeCloseTo(selected.x + 40, 0);
     expect((await art.boundingBox())!.width).toBeCloseTo(initial.width, 4);
     expect(await project(page)).toEqual(before);
-    await page.getByRole("button", { name: "Fit active frame", exact: true }).tap();
+    await page.getByRole("button", { name: "Fit frame", exact: true }).tap();
     await expect(
       page.getByRole("button", { name: "Actions for Moving icon", exact: true }),
     ).toBeVisible();

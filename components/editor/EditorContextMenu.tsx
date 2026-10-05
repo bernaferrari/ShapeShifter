@@ -161,11 +161,12 @@ export function EditorContextMenuItems() {
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => store().addLayer("path")}>New path layer</DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => store().bringFrameIntoView(selectedFrameId, { animate: true })}
-        >
-          Zoom to frame
-          <DropdownMenuShortcut>⇧2</DropdownMenuShortcut>
+        <DropdownMenuItem onClick={() => store().fitWorldToFrames([selectedFrameId])}>
+          Fit frame
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => store().fitWorldToFrames()}>
+          Fit all frames
+          <DropdownMenuShortcut>⇧1</DropdownMenuShortcut>
         </DropdownMenuItem>
       </>
     );
@@ -178,7 +179,7 @@ export function EditorContextMenuItems() {
       <DropdownMenuItem onClick={() => store().addLayer("path")}>New path layer</DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem onClick={() => store().fitWorldToFrames()}>
-        Zoom to fit
+        Fit all frames
         <DropdownMenuShortcut>⇧1</DropdownMenuShortcut>
       </DropdownMenuItem>
     </>

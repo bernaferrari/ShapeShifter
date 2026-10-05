@@ -33,7 +33,7 @@ interface CanvasNavigationControlsProps {
   onToggleRulers?: () => void;
 }
 
-/** A single quiet zoom readout; every view command lives in its menu. */
+/** Fit commands name their scope; mobile keeps the active frame one tap away. */
 export function CanvasNavigationControls({
   zoomPercent,
   compact = false,
@@ -58,11 +58,13 @@ export function CanvasNavigationControls({
       {compact && (
         <button
           type="button"
-          aria-label="Fit active frame"
-          onClick={onFitFrame ?? onReset}
-          className="h-11 min-w-11 touch-manipulation rounded-lg bg-card px-3 text-[12px] font-medium [box-shadow:var(--elevation-floating)]"
+          aria-label="Fit frame"
+          title={onFitFrame ? "Fit the active frame" : "Select a frame to fit it"}
+          disabled={!onFitFrame}
+          onClick={onFitFrame}
+          className="h-11 min-w-11 touch-manipulation rounded-lg bg-card px-3 text-[12px] font-medium [box-shadow:var(--elevation-floating)] disabled:opacity-40"
         >
-          Fit
+          Fit frame
         </button>
       )}
       <DropdownMenu>
@@ -99,13 +101,18 @@ export function CanvasNavigationControls({
             <DropdownMenuShortcut>0</DropdownMenuShortcut>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
+          {showWorldControls && (
+            <DropdownMenuItem disabled={!onFitFrame} onClick={onFitFrame}>
+              Fit frame
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={onReset}>
-            Zoom to fit
+            Fit all frames
             <DropdownMenuShortcut>⇧1</DropdownMenuShortcut>
           </DropdownMenuItem>
           {showWorldControls && (
             <DropdownMenuItem onClick={onFitSelection}>
-              Zoom to selection
+              Fit selection
               <DropdownMenuShortcut>⇧2</DropdownMenuShortcut>
             </DropdownMenuItem>
           )}

@@ -108,8 +108,8 @@ const SHORTCUT_SECTIONS: ReadonlyArray<{
     rows: [
       ["Zoom in / out", "+ / −"],
       ["Zoom to 100%", "0"],
-      ["Zoom to fit", "⇧1"],
-      ["Zoom to selection", "⇧2"],
+      ["Fit all frames", "⇧1"],
+      ["Fit selection", "⇧2"],
     ],
   },
   {
@@ -235,6 +235,9 @@ export function EditorCommandPalette({
     (state) => state.selectionKind === "layer" && state.hasCanvasSelection,
   );
   const isPlaying = useEditorStore((state) => state.isPlaying);
+  const activeFrameId = useEditorStore(
+    (state) => state.frames.find((frame) => frame.id === state.selectedFrameId)?.id,
+  );
   const store = () => useEditorStore.getState();
   const tool = (mode: Parameters<ReturnType<typeof store>["setToolMode"]>[0]) => () =>
     store().setToolMode(mode);
@@ -349,7 +352,20 @@ export function EditorCommandPalette({
     {
       heading: "View",
       commands: [
-        { label: "Zoom to fit", icon: Maximize, shortcut: "⇧1", action: onResetViews },
+        {
+          label: "Fit frame",
+          icon: Frame,
+          keywords: ["zoom", "active", "artboard"],
+          disabled: !activeFrameId,
+          action: () => store().fitWorldToFrames([activeFrameId!]),
+        },
+        {
+          label: "Fit all frames",
+          icon: Maximize,
+          shortcut: "⇧1",
+          keywords: ["zoom", "overview"],
+          action: onResetViews,
+        },
         { label: "Toggle layers", icon: PanelLeft, action: onToggleLayers },
         { label: "Toggle properties", icon: PanelRight, action: onToggleInspector },
         { label: "Toggle timeline", icon: PanelBottom, action: onToggleTimeline },

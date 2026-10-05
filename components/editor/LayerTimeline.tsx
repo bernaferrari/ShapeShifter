@@ -469,7 +469,7 @@ export function LayerTimeline({
                   >
                     Zoom out
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={navigation.fit}>Zoom to fit</DropdownMenuItem>
+                  <DropdownMenuItem onClick={navigation.fit}>Fit animation</DropdownMenuItem>
                   <DropdownMenuItem onClick={navigation.focusPlayhead}>
                     Go to playhead
                   </DropdownMenuItem>

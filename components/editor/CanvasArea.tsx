@@ -720,12 +720,10 @@ export function CanvasArea({
                 <CanvasNavigationControls
                   zoomPercent={worldView.scale * 100}
                   compact={compact}
-                  onFitFrame={() =>
-                    useEditorStore
-                      .getState()
-                      .fitWorldToFrames(
-                        selectedFrameId === PAGE_ROOT_ID ? undefined : [selectedFrameId],
-                      )
+                  onFitFrame={
+                    selectedFrameId === PAGE_ROOT_ID
+                      ? undefined
+                      : () => useEditorStore.getState().fitWorldToFrames([selectedFrameId])
                   }
                   showWorldControls
                   gridDivisions={gridDivisions}

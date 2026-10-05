@@ -217,7 +217,7 @@ describe("timeline navigation", () => {
     });
     expect(ruler.style.left).toBe("-300px");
     expect(parseFloat(head().style.left)).toBeCloseTo(240 + 600 * Math.sqrt(2) - 300);
-    await timelineOption("Zoom to fit");
+    await timelineOption("Fit animation");
     expect(content.style.width).toBe("1000px");
     expect(tracks.scrollLeft).toBe(0);
     expect(head().style.left).toBe("840px");

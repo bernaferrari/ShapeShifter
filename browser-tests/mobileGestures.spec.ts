@@ -22,7 +22,31 @@ async function openPractice(page: Page) {
 }
 const art = (page: Page) => page.locator('#editor-canvas path[fill="#6366f1"]').first();
 
-test("Zoom to fit glides through intermediate camera positions through the canvas controls", async ({
+test("Fit frame focuses one frame and Fit all frames restores the overview", async ({
+  page,
+}, info) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dismiss onboarding", exact: true }).click();
+  const canvas = page.locator('#editor-canvas svg[aria-label="World canvas"]');
+  const width = () => canvas.evaluate((svg) => (svg as SVGSVGElement).viewBox.baseVal.width);
+  const overviewWidth = await width();
+  if (info.project.name === "phone") {
+    const fit = page.getByRole("button", { name: "Fit frame", exact: true });
+    await expect(fit).toHaveText("Fit frame");
+    await fit.click();
+  } else {
+    await page.getByRole("button", { name: "Zoom options", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Fit frame", exact: true }).click();
+  }
+  await expect.poll(width).toBeLessThan(overviewWidth * 0.75);
+  await page.getByRole("button", { name: "Zoom options", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: "Fit frame", exact: true })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Fit selection", exact: false })).toBeVisible();
+  await page.getByRole("menuitem", { name: "Fit all frames", exact: false }).click();
+  await expect.poll(width).toBeCloseTo(overviewWidth, 4);
+});
+
+test("Fit all frames glides through intermediate camera positions through the canvas controls", async ({
   page,
 }) => {
   await openPractice(page);
@@ -45,7 +69,7 @@ test("Zoom to fit glides through intermediate camera positions through the canva
     };
     requestAnimationFrame(sample);
   });
-  await page.getByRole("menuitem", { name: "Zoom to fit", exact: false }).click();
+  await page.getByRole("menuitem", { name: "Fit all frames", exact: false }).click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -290,7 +314,7 @@ test("native phone touches pinch, release outside, edit with one finger, and dra
     expect(await page.evaluate(() => window.visualViewport?.scale)).toBe(1);
     await expect(page.getByRole("button", { name: "Zoom options" })).toBeInViewport();
     await page.getByRole("button", { name: "Zoom options" }).tap();
-    await page.getByRole("menuitem", { name: "Zoom to selection", exact: false }).click();
+    await page.getByRole("menuitem", { name: "Fit selection", exact: false }).click();
     await page.screenshot({ path: "/tmp/shapeshifter-mobile-motion.png" });
     expect(errors).toEqual([]);
   } finally {

@@ -270,6 +270,9 @@ function MainMenu({
   | "canRedo"
 >) {
   const { theme, setTheme } = useTheme();
+  const activeFrameId = useEditorStore(
+    (state) => state.frames.find((frame) => frame.id === state.selectedFrameId)?.id,
+  );
   const addLayer = useEditorStore((state) => state.addLayer);
   const reverseSelectedLayer = useEditorStore((state) => state.reverseSelectedLayer);
   const shiftSelectedLayer = useEditorStore((state) => state.shiftSelectedLayer);
@@ -459,8 +462,14 @@ function MainMenu({
               Slow motion
             </DropdownMenuCheckboxItem>
             <DropdownMenuSeparator />
+            <DropdownMenuItem
+              disabled={!activeFrameId}
+              onClick={() => useEditorStore.getState().fitWorldToFrames([activeFrameId!])}
+            >
+              Fit frame
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={resetAllViews}>
-              Zoom to fit
+              Fit all frames
               <DropdownMenuShortcut>⇧1</DropdownMenuShortcut>
             </DropdownMenuItem>
           </DropdownMenuSubContent>
