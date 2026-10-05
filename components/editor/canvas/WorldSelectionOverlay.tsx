@@ -10,6 +10,7 @@ import {
 } from "@/lib/shapeshifter/scene/layerTransform";
 import type { EvaluatedTransform } from "@/lib/shapeshifter/scene/evaluate";
 import { buildWorldTransformSelection } from "./worldLayerTransforms";
+import { useCoarsePointer } from "../hooks/useCompactLayout";
 
 export interface FrozenLayerTransform {
   id: string | number;
@@ -102,6 +103,7 @@ function WorldSelectionOverlayComponent({
   onResizeStart,
   onRotateStart,
 }: WorldSelectionOverlayProps) {
+  const coarsePointer = useCoarsePointer();
   const selection = useMemo(() => {
     if (!activeOrigin || selectedOwnerCount > 1 || activeLayerIds.length === 0) return null;
     return buildWorldTransformSelection(activeLayers, activeLayerIds, animation, progress);
@@ -131,6 +133,8 @@ function WorldSelectionOverlayComponent({
     return { x: activeOrigin.x + ownerPoint.x, y: activeOrigin.y + ownerPoint.y };
   };
   const handleSize = worldPerPx * 3;
+  // Invisible grab area around each handle; fingers need a much larger one.
+  const handleHit = handleSize * (coarsePointer ? 12 : 5);
   const handles = (
     [
       { handle: "nw", x: local.x, y: local.y },
@@ -302,10 +306,10 @@ function WorldSelectionOverlayComponent({
               onPointerDown={(event) => beginResize(event, handle)}
             >
               <rect
-                x={x - handleSize * 2.5}
-                y={y - handleSize * 2.5}
-                width={handleSize * 5}
-                height={handleSize * 5}
+                x={x - handleHit / 2}
+                y={y - handleHit / 2}
+                width={handleHit}
+                height={handleHit}
                 fill="transparent"
               />
               {handle.length === 2 && (

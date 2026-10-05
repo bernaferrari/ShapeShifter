@@ -27,6 +27,8 @@ import { EditorCommandPalette, EditorHelpDialog } from "@/components/editor/Edit
 import { EditorContextMenu } from "@/components/editor/EditorContextMenu";
 import { AgentToolsDialog } from "@/components/editor/AgentToolsDialog";
 import { RecoveryHistoryDialog } from "@/components/editor/RecoveryHistoryDialog";
+import { MobileWorkspace, type MobileSheet } from "@/components/editor/MobileWorkspace";
+import { useCompactLayout } from "@/components/editor/hooks/useCompactLayout";
 import { registerEditorAgentTools } from "@/lib/agent/browserTools";
 
 // Below this viewport width the fixed w-80 inspector + timeline get cramped, so
@@ -76,6 +78,8 @@ export default function ShapeShifter2026() {
   const [rulersVisible, setRulersVisible] = React.useState(false);
   const [isNarrow, setIsNarrow] = React.useState(false);
   const [narrowPanel, setNarrowPanel] = React.useState<"layers" | "inspector" | null>(null);
+  const compact = useCompactLayout();
+  const [mobileSheet, setMobileSheet] = React.useState<MobileSheet | null>(null);
 
   React.useEffect(() => {
     try {
@@ -193,6 +197,43 @@ export default function ShapeShifter2026() {
     else toggleRulers();
   };
 
+  const canvas = (
+    <EditorContextMenu
+      render={
+        <main
+          id="editor-canvas"
+          tabIndex={-1}
+          aria-label="Editor canvas"
+          className="relative flex min-w-0 flex-1 overflow-hidden"
+        />
+      }
+    >
+      <CanvasArea
+        resetAllViews={resetAllViews}
+        showRulers={rulersVisible}
+        onToggleRulers={toggleRulers}
+      />
+      <div className="pointer-events-none absolute bottom-3 left-1/2 z-30 -translate-x-1/2">
+        <div className="pointer-events-auto" onContextMenu={(event) => event.stopPropagation()}>
+          <BottomToolPalette />
+        </div>
+      </div>
+      <Onboarding />
+      {timelineCollapsed && !compact && (
+        <button
+          type="button"
+          onClick={toggleTimeline}
+          aria-label="Show timeline"
+          aria-expanded={false}
+          className="absolute bottom-3 left-3 z-30 flex h-8 items-center gap-1.5 rounded-lg bg-card px-2.5 text-[12px] text-muted-foreground [box-shadow:var(--elevation-floating)] transition-colors hover:text-foreground"
+        >
+          <PanelBottomOpen className="size-3.5" />
+          Timeline
+        </button>
+      )}
+    </EditorContextMenu>
+  );
+
   // Playback + animation state flows from Zustand
 
   return (
@@ -245,109 +286,82 @@ export default function ShapeShifter2026() {
         canRedo={canRedo}
       />
 
-      {/* Figma Motion model: the timeline is a document-wide bottom workspace,
+      {compact ? (
+        <MobileWorkspace canvas={canvas} sheet={mobileSheet} onSheetChange={setMobileSheet} />
+      ) : (
+        <>
+          {/* Figma Motion model: the timeline is a document-wide bottom workspace,
           not a canvas-only panel trapped between the sidebars. */}
-      <div className="relative min-h-0 flex-1 overflow-hidden bg-muted">
-        <ResizablePanelGroup orientation="vertical" className="min-h-0">
-          <ResizablePanel
-            id="workspace"
-            minSize="54%"
-            defaultSize={timelineCollapsed ? "100%" : "72%"}
-          >
-            <div className="relative flex h-full min-h-0 overflow-hidden">
-              {!layersHidden && (
-                <LayersPanel
-                  onCollapse={isNarrow ? () => setNarrowPanel(null) : toggleLayers}
-                  className={
-                    isNarrow
-                      ? "absolute inset-y-0 left-0 z-40 shadow-[8px_0_24px_rgba(0,0,0,0.16)]"
-                      : undefined
-                  }
-                />
-              )}
-              <EditorContextMenu
-                render={
-                  <main
-                    id="editor-canvas"
-                    tabIndex={-1}
-                    aria-label="Editor canvas"
-                    className="relative flex min-w-0 flex-1 overflow-hidden"
-                  />
-                }
+          <div className="relative min-h-0 flex-1 overflow-hidden bg-muted">
+            <ResizablePanelGroup orientation="vertical" className="min-h-0">
+              <ResizablePanel
+                id="workspace"
+                minSize="54%"
+                defaultSize={timelineCollapsed ? "100%" : "72%"}
               >
-                <CanvasArea
-                  resetAllViews={resetAllViews}
-                  showRulers={rulersVisible}
-                  onToggleRulers={toggleRulers}
-                />
-                <div className="pointer-events-none absolute bottom-3 left-1/2 z-30 -translate-x-1/2">
-                  <div className="pointer-events-auto" onContextMenu={(event) => event.stopPropagation()}>
-                    <BottomToolPalette />
-                  </div>
-                </div>
-                <Onboarding />
-                {timelineCollapsed && (
-                  <button
-                    type="button"
-                    onClick={toggleTimeline}
-                    aria-label="Show timeline"
-                    aria-expanded={false}
-                    className="absolute bottom-3 left-3 z-30 flex h-8 items-center gap-1.5 rounded-lg bg-card px-2.5 text-[12px] text-muted-foreground [box-shadow:var(--elevation-floating)] transition-colors hover:text-foreground"
-                  >
-                    <PanelBottomOpen className="size-3.5" />
-                    Timeline
-                  </button>
-                )}
-              </EditorContextMenu>
-
-              {!inspectorHidden && (
-                <aside
-                  aria-label="Properties"
-                  className={cn(
-                    "flex h-full w-64 shrink-0 flex-col overflow-hidden border-l bg-sidebar",
+                <div className="relative flex h-full min-h-0 overflow-hidden">
+                  {!layersHidden && (
+                    <LayersPanel
+                      onCollapse={isNarrow ? () => setNarrowPanel(null) : toggleLayers}
+                      className={
+                        isNarrow
+                          ? "absolute inset-y-0 left-0 z-40 shadow-[8px_0_24px_rgba(0,0,0,0.16)]"
+                          : undefined
+                      }
+                    />
                   )}
-                >
-                  <Inspector />
-                </aside>
-              )}
+                  {canvas}
 
-              {layersHidden && (
-                <button
-                  type="button"
-                  onClick={toggleLayersPanel}
-                  aria-label="Show layers"
-                  title="Show layers"
-                  className="absolute left-2 top-2 z-30 grid size-8 place-items-center rounded-lg bg-card text-muted-foreground [box-shadow:var(--elevation-floating)] transition-colors hover:text-foreground"
-                >
-                  <PanelLeftOpen className="size-4" />
-                </button>
-              )}
+                  {!inspectorHidden && (
+                    <aside
+                      aria-label="Properties"
+                      className={cn(
+                        "flex h-full w-64 shrink-0 flex-col overflow-hidden border-l bg-sidebar",
+                      )}
+                    >
+                      <Inspector />
+                    </aside>
+                  )}
 
-              {inspectorHidden && (
-                <button
-                  type="button"
-                  onClick={toggleInspectorPanel}
-                  aria-label="Show inspector"
-                  title="Show properties"
-                  aria-expanded={false}
-                  className="absolute right-2 top-2 z-30 grid size-8 place-items-center rounded-lg bg-card text-muted-foreground [box-shadow:var(--elevation-floating)] transition-colors hover:text-foreground"
-                >
-                  <PanelRightOpen className="size-4" />
-                </button>
-              )}
-            </div>
-          </ResizablePanel>
+                  {layersHidden && (
+                    <button
+                      type="button"
+                      onClick={toggleLayersPanel}
+                      aria-label="Show layers"
+                      title="Show layers"
+                      className="absolute left-2 top-2 z-30 grid size-8 place-items-center rounded-lg bg-card text-muted-foreground [box-shadow:var(--elevation-floating)] transition-colors hover:text-foreground"
+                    >
+                      <PanelLeftOpen className="size-4" />
+                    </button>
+                  )}
 
-          {!timelineCollapsed && (
-            <>
-              <ResizableHandle className="bg-border/80" />
-              <ResizablePanel id="timeline" minSize="16%" defaultSize="28%">
-                <LayerTimeline onCollapse={toggleTimeline} />
+                  {inspectorHidden && (
+                    <button
+                      type="button"
+                      onClick={toggleInspectorPanel}
+                      aria-label="Show inspector"
+                      title="Show properties"
+                      aria-expanded={false}
+                      className="absolute right-2 top-2 z-30 grid size-8 place-items-center rounded-lg bg-card text-muted-foreground [box-shadow:var(--elevation-floating)] transition-colors hover:text-foreground"
+                    >
+                      <PanelRightOpen className="size-4" />
+                    </button>
+                  )}
+                </div>
               </ResizablePanel>
-            </>
-          )}
-        </ResizablePanelGroup>
-      </div>
+
+              {!timelineCollapsed && (
+                <>
+                  <ResizableHandle className="bg-border/80" />
+                  <ResizablePanel id="timeline" minSize="16%" defaultSize="28%">
+                    <LayerTimeline onCollapse={toggleTimeline} />
+                  </ResizablePanel>
+                </>
+              )}
+            </ResizablePanelGroup>
+          </div>
+        </>
+      )}
 
       <input
         type="file"

@@ -64,7 +64,7 @@ export function LayersPanel({
   onCollapse,
   className,
 }: {
-  onCollapse: () => void;
+  onCollapse?: () => void;
   className?: string;
 }) {
   const frames = useEditorStore((state) => state.frames);
@@ -129,7 +129,7 @@ export function LayersPanel({
       })),
       {
         id: PAGE_ROOT_ID,
-        name: "Page vectors",
+        name: "Canvas",
         layers: selectedFrameId === PAGE_ROOT_ID ? activeLayers : rootLayers,
         blocks: selectedFrameId === PAGE_ROOT_ID ? activeAnimation.blocks : rootAnimation.blocks,
       },
@@ -461,7 +461,7 @@ export function LayersPanel({
                       type="button"
                       data-tree-menu=""
                       tabIndex={selected ? 0 : -1}
-                      className="grid size-6 place-items-center rounded text-muted-foreground/55 opacity-0 hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+                      className="grid size-6 place-items-center rounded text-muted-foreground/55 opacity-0 pointer-coarse:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
                       aria-label={`Move ${layer.name || "layer"} to another frame`}
                       onPointerDown={(event) => event.stopPropagation()}
                       onClick={(event) => event.stopPropagation()}
@@ -492,7 +492,7 @@ export function LayersPanel({
                   "grid size-6 place-items-center rounded text-muted-foreground/55 hover:bg-muted hover:text-foreground focus-visible:opacity-100",
                   layer.locked
                     ? "opacity-100"
-                    : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+                    : "opacity-0 pointer-coarse:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100",
                 )}
                 onClick={() => toggleOwnedLayerLock(owner.id, layer.id)}
                 aria-label={layer.locked ? `Unlock ${layer.name}` : `Lock ${layer.name}`}
@@ -506,7 +506,7 @@ export function LayersPanel({
                   "grid size-6 place-items-center rounded text-muted-foreground/55 hover:bg-muted hover:text-foreground focus-visible:opacity-100",
                   layer.visible === false
                     ? "opacity-100"
-                    : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+                    : "opacity-0 pointer-coarse:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100",
                 )}
                 onClick={() => toggleOwnedLayerVisibility(owner.id, layer.id)}
                 aria-label={layer.visible === false ? `Show ${layer.name}` : `Hide ${layer.name}`}
@@ -529,11 +529,14 @@ export function LayersPanel({
 
   const visibleOwners = owners.filter(
     (owner) =>
-      !normalizedQuery ||
-      owner.name.toLocaleLowerCase().includes(normalizedQuery) ||
-      createLayerTreeModel(owner.layers).allLayers.some((layer) =>
-        (layer.name || "Layer").toLocaleLowerCase().includes(normalizedQuery),
-      ),
+      // Loose canvas layers only get a section once there are some, or while
+      // a layer is being dragged out of its frame.
+      (owner.id !== PAGE_ROOT_ID || owner.layers.length > 0 || draggedLayer) &&
+      (!normalizedQuery ||
+        owner.name.toLocaleLowerCase().includes(normalizedQuery) ||
+        createLayerTreeModel(owner.layers).allLayers.some((layer) =>
+          (layer.name || "Layer").toLocaleLowerCase().includes(normalizedQuery),
+        )),
   );
 
   const handleTreeKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -681,9 +684,11 @@ export function LayersPanel({
             <DropdownMenuItem onClick={() => addLayer("group")}>Group</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button size="icon-xs" variant="ghost" onClick={onCollapse} aria-label="Hide layers">
-          <PanelLeftClose className="size-3.5" />
-        </Button>
+        {onCollapse && (
+          <Button size="icon-xs" variant="ghost" onClick={onCollapse} aria-label="Hide layers">
+            <PanelLeftClose className="size-3.5" />
+          </Button>
+        )}
       </div>
       {searchOpen && (
         <div className="relative border-b border-border p-2">
@@ -793,7 +798,7 @@ export function LayersPanel({
                     clearLayerDrag();
                   }}
                 >
-                  {draggedLayer ? "Move here" : "No vectors"}
+                  {draggedLayer ? "Move here" : "Empty"}
                 </div>
               )}
             </div>

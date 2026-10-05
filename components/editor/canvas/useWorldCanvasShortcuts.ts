@@ -1,4 +1,5 @@
 "use client";
+import { selectedPathLayer } from "@/lib/store/playheadPathEditing";
 import { useEditorStore } from "@/lib/store/editorStore";
 
 import React from "react";
@@ -100,6 +101,18 @@ export function useWorldCanvasShortcuts({
         return;
       }
       if (event.metaKey || event.ctrlKey) return;
+
+      // Figma: Enter on a selected vector starts editing its points.
+      if (event.key === "Enter" && isObjectTool && !event.shiftKey && !event.altKey) {
+        const state = useEditorStore.getState();
+        const layer = selectedPathLayer(state);
+        if (layer && !layer.locked) {
+          event.preventDefault();
+          state.clearSelection?.();
+          state.setToolMode("direct");
+          return;
+        }
+      }
 
       if (event.shiftKey && event.code === "Digit1") {
         event.preventDefault();

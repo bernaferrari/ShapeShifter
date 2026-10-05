@@ -27,12 +27,10 @@ afterEach(() => {
 });
 
 describe("editor selection contracts", () => {
-  it("always exposes the page-root layer destination, even when it is empty", () => {
+  it("only lists loose canvas layers once there are some", () => {
     useEditorStore.setState({ rootLayers: [] });
     rendered = renderEditorComponent(<LayersPanel onCollapse={() => {}} />);
-
-    expect(buttonWithText(rendered.container, "Page vectors")).toBeDefined();
-    expect(rendered.container.textContent).toContain("No vectors");
+    expect(rendered.container.textContent).not.toContain("Canvas");
   });
 
   it("selects an artboard from the left scene navigator without selecting its children", () => {

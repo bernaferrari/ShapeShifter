@@ -335,18 +335,20 @@ export function TimelineLayersPane({
                 <ChevronRight className="h-2.5 w-2.5" strokeWidth={2} />
               </button>
             </div>
-            <TimelinePropertyValue
-              block={first}
-              blocks={blocks}
-              duration={
-                row.frameId === selectedFrameId
-                  ? animationDuration
-                  : (frames.find((frame) => frame.id === row.frameId)?.animation?.duration ??
-                    animationDuration)
-              }
-              propertyName={row.propertyName}
-              selected={isSelected}
-            />
+            {width >= 200 && (
+              <TimelinePropertyValue
+                block={first}
+                blocks={blocks}
+                duration={
+                  row.frameId === selectedFrameId
+                    ? animationDuration
+                    : (frames.find((frame) => frame.id === row.frameId)?.animation?.duration ??
+                      animationDuration)
+                }
+                propertyName={row.propertyName}
+                selected={isSelected}
+              />
+            )}
           </div>
         );
       })}

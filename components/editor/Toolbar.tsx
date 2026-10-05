@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { ChevronDown, Pause, Play, Sparkles } from "lucide-react";
+import { ChevronDown, Pause, Play, Redo2, Sparkles, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -91,7 +91,7 @@ export function Toolbar({
   return (
     <header
       aria-label="Editor toolbar"
-      className="relative grid h-11 shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b bg-background px-2 text-foreground"
+      className="relative grid h-11 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] border-b bg-background px-2 text-foreground"
     >
       <div className="flex min-w-0 items-center gap-1">
         <MainMenu
@@ -115,12 +115,14 @@ export function Toolbar({
           <span className="truncate text-[13px] font-medium tracking-tight">
             {vector?.name || "Untitled"}
           </span>
-          <DocumentSaveStatus autosave={autosave} />
+          <span className="hidden sm:contents">
+            <DocumentSaveStatus autosave={autosave} />
+          </span>
         </div>
       </div>
 
       {/* Center: only appears for the dedicated From/To morph editor. */}
-      <div className="flex items-center justify-center gap-2">
+      <div className="hidden items-center justify-center gap-2 md:flex">
         {isActionMode && (
           <>
             <div
@@ -160,6 +162,29 @@ export function Toolbar({
       </div>
 
       <div className="flex items-center justify-end gap-1.5">
+        {/* Phones have no keyboard shortcuts, so undo and redo live in the bar. */}
+        <div className="flex items-center md:hidden">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="size-9 text-muted-foreground"
+            onClick={undo}
+            disabled={!canUndo}
+            aria-label="Undo"
+          >
+            <Undo2 className="size-[18px]" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="size-9 text-muted-foreground"
+            onClick={redo}
+            disabled={!canRedo}
+            aria-label="Redo"
+          >
+            <Redo2 className="size-[18px]" />
+          </Button>
+        </div>
         <Tooltip>
           <TooltipTrigger
             render={

@@ -5,12 +5,23 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "sonner";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 
 export const metadata: Metadata = {
   title: "ShapeShifter — Vector & Motion Editor",
   description:
     "Draw vectors, refine path morphs, and animate Android assets with precise property tracks.",
+};
+
+// An editor owns its gestures: pinch zooms the canvas, not the page, and
+// focusing a compact field must not zoom the whole UI on iOS.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
 };
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
@@ -37,6 +48,7 @@ export default function RootLayout({
           <Toaster
             position="top-center"
             offset={56}
+            mobileOffset={{ top: 56, left: 12, right: 12 }}
             gap={8}
             toastOptions={{
               classNames: {

@@ -47,7 +47,7 @@ export function CanvasNavigationControls({
   return (
     <div
       aria-label="Canvas navigation"
-      className="absolute bottom-3 right-3 z-30"
+      className="absolute right-3 bottom-3 z-30 max-md:top-3 max-md:bottom-auto"
       onContextMenu={(event) => event.stopPropagation()}
     >
       <DropdownMenu>

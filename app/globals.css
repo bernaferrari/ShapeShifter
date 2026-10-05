@@ -186,18 +186,12 @@ body {
 }
 
 /*
- * Keep the dense desktop property UI without triggering Safari's automatic
- * viewport zoom when a compact control receives focus on a touch device.
- * Pointer capability is the meaningful distinction here: viewport width alone
- * misclassifies larger iPads as desktop hardware.
+ * Touch devices keep the same type scale as desktop (the viewport's
+ * maximum-scale stops Safari zooming into focused fields), but get finger-sized
+ * targets. Pointer capability is the meaningful distinction here: viewport
+ * width alone misclassifies larger iPads as desktop hardware.
  */
 @media (pointer: coarse) {
-  input:not([type="file"]),
-  textarea,
-  select {
-    font-size: 16px !important;
-  }
-
   [role="toolbar"] [data-slot="button"],
   header [data-slot="button"] {
     min-width: 44px;

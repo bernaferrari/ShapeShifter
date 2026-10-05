@@ -47,9 +47,16 @@ const PLAYHEAD = "var(--primary)";
 const SURFACE = "bg-card";
 
 const HEADER_H = 36;
-const LAYERS_W = 240;
+const DEFAULT_LAYERS_W = 240;
 
-export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
+export function LayerTimeline({
+  onCollapse,
+  layersWidth: LAYERS_W = DEFAULT_LAYERS_W,
+}: {
+  onCollapse?: () => void;
+  /** Width of the layer-name column; phones use a narrower one. */
+  layersWidth?: number;
+}) {
   const frames = useEditorStore((state) => state.frames);
   const selectedFrameId = useEditorStore((state) => state.selectedFrameId);
   const layers = useEditorStore((state) => state.layers);
@@ -369,8 +376,12 @@ export function LayerTimeline({ onCollapse }: { onCollapse?: () => void }) {
           <TimelineInsertKeyframeButton iconOnly label="Add keyframe at playhead" />
           <div className="flex h-6 min-w-0 items-center gap-[3px] rounded-md bg-secondary px-1.5 text-[11px] tabular-nums leading-none">
             <TimelineCurrentTimeInput color={PLAYHEAD} unit={timeUnit} fps={fps} />
-            <span className="text-muted-foreground">/</span>
-            <TimelineDurationInput unit={timeUnit} fps={fps} />
+            {LAYERS_W >= 200 && (
+              <>
+                <span className="text-muted-foreground">/</span>
+                <TimelineDurationInput unit={timeUnit} fps={fps} />
+              </>
+            )}
             <span className="text-muted-foreground">{timeUnit === "frames" ? "f" : "ms"}</span>
           </div>
           <div className="flex-1" />

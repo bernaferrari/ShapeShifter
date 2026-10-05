@@ -248,7 +248,7 @@ export function TimelinePropertyBlock({
       >
         <button
           type="button"
-          className="grid size-5 place-items-center rounded-md border border-border bg-card text-primary opacity-0 shadow-sm outline-none transition-opacity hover:bg-muted focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover/segment:opacity-100"
+          className="grid size-5 place-items-center rounded-md border border-border bg-card text-primary opacity-0 pointer-coarse:opacity-100 shadow-sm outline-none transition-opacity hover:bg-muted focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover/segment:opacity-100"
           title="Easing"
           aria-label={`Edit ${label} easing`}
           onPointerDown={(event) => event.stopPropagation()}

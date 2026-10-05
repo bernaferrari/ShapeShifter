@@ -10,6 +10,8 @@ import { WorldDraggedLayers } from "./canvas/WorldDraggedLayers";
 import { WorldFrameChrome } from "./canvas/WorldFrameChrome";
 import { useArtboardDrag } from "./canvas/useArtboardDrag";
 import { getCanvasFrameBounds, useWorldCamera } from "./canvas/useWorldCamera";
+import { useCanvasTouchGestures } from "./canvas/useCanvasTouchGestures";
+import { useCoarsePointer } from "./hooks/useCompactLayout";
 import { useWorldObjectSelection } from "./canvas/useWorldObjectSelection";
 import { useWorldPen } from "./canvas/useWorldPen";
 import { useWorldPenCreation } from "./canvas/useWorldPenCreation";
@@ -236,7 +238,8 @@ export function CanvasArea({
 
   // Anchor handles stay a constant on-screen size while the grid progressively
   // reveals finer subdivisions as the camera zooms in.
-  const anchorR = worldPerPx * 4;
+  const coarsePointer = useCoarsePointer();
+  const anchorR = worldPerPx * (coarsePointer ? 5 : 4);
   const pxPerUnit = worldPerPx > 0 ? 1 / worldPerPx : 1;
   const gridSpec = useMemo(
     () => computeGridSpec(pxPerUnit, { divisions: gridDivisions }),
@@ -259,7 +262,8 @@ export function CanvasArea({
     locked: editLayerLocked,
     layerId: selectedLayerId,
     editingSide,
-    hitRadius: Math.max(anchorR * 2.8, worldPerPx * 10),
+    // Fingers need a far larger target than a cursor.
+    hitRadius: coarsePointer ? worldPerPx * 24 : Math.max(anchorR * 2.8, worldPerPx * 10),
     snapStep: snapToGrid ? editSnap : undefined,
     syncActiveOwner,
   });
@@ -603,6 +607,17 @@ export function CanvasArea({
   );
 
   // Figma: right-click selects what is under the cursor before the menu opens.
+  const worldTouchHandlers = useCanvasTouchGestures({
+    svgRef: worldSvgRef,
+    view: worldView,
+    setView: setWorldView,
+    handlers: {
+      onPointerDown: handleWorldPointerDown,
+      onPointerMove: handleWorldPointerMove,
+      onPointerUp: handleWorldPointerUp,
+      onPointerCancel: handleWorldPointerCancel,
+    },
+  });
   const handleWorldContextMenu = useCallback(
     (event: React.MouseEvent) => {
       const point = worldPointFromEvent(event.clientX, event.clientY);
@@ -742,10 +757,7 @@ export function CanvasArea({
                     aria-label="World canvas"
                     className="touch-none"
                     onWheel={handleWorldWheel}
-                    onPointerDown={handleWorldPointerDown}
-                    onPointerMove={handleWorldPointerMove}
-                    onPointerUp={handleWorldPointerUp}
-                    onPointerCancel={handleWorldPointerCancel}
+                    {...worldTouchHandlers}
                     onPointerLeave={handlePointerLeave}
                     onDoubleClick={handleWorldDoubleClick}
                     onContextMenu={handleWorldContextMenu}

@@ -24,6 +24,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/lib/store/editorStore";
 import type { ToolMode } from "@/lib/shapeshifter/toolModes";
+import { selectedPathLayer } from "@/lib/store/playheadPathEditing";
 
 interface ToolDef {
   mode: ToolMode;
@@ -48,7 +49,7 @@ const VECTOR_TOOLS: ToolDef[] = [
 const VECTOR_MODES = new Set<ToolMode>(["direct", "pencil", "paint", "knife"]);
 
 const toolButton =
-  "grid size-8 place-items-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring";
+  "grid size-8 place-items-center rounded-lg transition-colors pointer-coarse:size-10 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring";
 const idle = "text-foreground/75 hover:bg-muted hover:text-foreground";
 const active = "bg-primary text-primary-foreground";
 
@@ -66,6 +67,10 @@ export function BottomToolPalette() {
   const setToolMode = useEditorStore((state) => state.setToolMode);
   const [lastShape, setLastShape] = React.useState<ToolDef>(SHAPES[0]!);
   const editingPoints = VECTOR_MODES.has(toolMode);
+  const canEditPoints = useEditorStore((state) => {
+    const layer = selectedPathLayer(state);
+    return Boolean(layer && !layer.locked);
+  });
 
   const choose = (mode: ToolMode) => {
     if (mode === "rectangle" || mode === "ellipse") useEditorStore.getState().closeActionMode();
@@ -109,7 +114,7 @@ export function BottomToolPalette() {
             useEditorStore.getState().closeActionMode();
             setToolMode("select");
           }}
-          className="h-8 rounded-lg px-3 text-[12px] font-medium text-foreground hover:bg-muted"
+          className="h-8 rounded-lg px-3 text-[12px] font-medium text-foreground hover:bg-muted pointer-coarse:h-10"
           title="Done editing points · Esc"
         >
           Done
@@ -171,7 +176,7 @@ export function BottomToolPalette() {
                 type="button"
                 aria-label="Choose shape"
                 className={cn(
-                  "grid h-8 w-4 place-items-center rounded-r-lg transition-colors",
+                  "grid h-8 w-4 place-items-center rounded-r-lg transition-colors pointer-coarse:h-10 pointer-coarse:w-5",
                   shapeActive ? active : idle,
                 )}
               />
@@ -202,6 +207,29 @@ export function BottomToolPalette() {
         icon: <PenTool className="size-4" />,
         shortcut: "P",
       })}
+      {canEditPoints && (
+        <>
+          <div className="mx-1 h-4 w-px bg-border" aria-hidden />
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  className={cn(toolButton, idle)}
+                  onClick={() => {
+                    useEditorStore.getState().clearSelection?.();
+                    setToolMode("direct");
+                  }}
+                  aria-label="Edit points"
+                >
+                  <Waypoints className="size-4" />
+                </button>
+              }
+            />
+            <Tip label="Edit points" shortcut="Enter" />
+          </Tooltip>
+        </>
+      )}
     </div>
   );
 }
