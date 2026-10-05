@@ -117,7 +117,13 @@ export function Toolbar({
           <span className="truncate text-[13px] font-medium tracking-tight">
             {vector?.name || "Untitled"}
           </span>
-          <span className="hidden sm:contents">
+          <span
+            className={
+              autosave.status === "error" || autosave.status === "conflict"
+                ? "contents"
+                : "hidden sm:contents"
+            }
+          >
             <DocumentSaveStatus autosave={autosave} />
           </span>
         </div>

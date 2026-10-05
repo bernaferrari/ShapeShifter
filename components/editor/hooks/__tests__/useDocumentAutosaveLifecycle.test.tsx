@@ -17,6 +17,7 @@ interface PendingTransaction {
 }
 
 function createIndexedDbHarness() {
+  let failOpen = false;
   const writes: PendingTransaction[] = [];
   const records = new Map<string, unknown>();
   const db = {
@@ -63,10 +64,20 @@ function createIndexedDbHarness() {
   return {
     writes,
     records,
+    failNextOpen() {
+      failOpen = true;
+    },
     indexedDB: {
       open() {
-        const request = { result: db, onsuccess: null as (() => void) | null };
-        queueMicrotask(() => request.onsuccess?.());
+        const failed = failOpen;
+        failOpen = false;
+        const request = {
+          result: db,
+          error: new Error("Local storage is unavailable"),
+          onsuccess: null as (() => void) | null,
+          onerror: null as (() => void) | null,
+        };
+        queueMicrotask(() => (failed ? request.onerror?.() : request.onsuccess?.()));
         return request;
       },
     },
@@ -117,6 +128,96 @@ afterEach(async () => {
 });
 
 describe("autosave lifecycle and truthful status", () => {
+  it("retries a failed startup read without restoring over edits made during the failure", async () => {
+    await React.act(async () => {
+      root.unmount();
+      await settle();
+      storage.writes.forEach((write) => write.complete());
+      await settle();
+      storage.writes.length = 0;
+      storage.failNextOpen();
+      root = createRoot(container);
+      root.render(<Probe />);
+      await settle();
+    });
+    const previous = storage.records.get("document");
+    expect(latest.status).toBe("error");
+    expect(latest.error).toBe("Local storage is unavailable");
+    await React.act(async () => {
+      useEditorStore.getState().updateVector({ name: "New edits" });
+      await settle();
+      vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+      await settle();
+    });
+    expect(storage.writes).toHaveLength(0);
+    await React.act(async () => {
+      latest.retry();
+      await settle();
+    });
+    expect(latest.status).toBe("saving");
+    expect(useEditorStore.getState().vector.name).toBe("New edits");
+    await React.act(async () => {
+      vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+      await settle();
+      storage.writes[0]!.complete();
+      await settle();
+    });
+    expect(latest.status).toBe("saved");
+    expect(storage.records.get("recovery-history")).toEqual([
+      expect.objectContaining({ payload: previous }),
+    ]);
+  });
+
+  it("archives an unreadable startup save atomically and keeps saving new work", async () => {
+    await import("@/components/editor/project/useProjectImport");
+    const unreadable = { version: 1, oldProject: "previous artwork" };
+    const recent = { savedAt: Date.now(), payload: "recent checkpoint" };
+    await React.act(async () => {
+      root.unmount();
+      await settle();
+      storage.writes.forEach((write) => write.complete());
+      await settle();
+      storage.writes.length = 0;
+      storage.records.set("document", unreadable);
+      storage.records.set("recovery-history", [recent]);
+      root = createRoot(container);
+      root.render(<Probe />);
+      await settle();
+    });
+    expect(latest.status).toBe("saving");
+    await React.act(async () => {
+      vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+      await settle();
+    });
+    expect(storage.records.get("document")).toBe(unreadable);
+    expect(storage.writes).toHaveLength(1);
+    await React.act(async () => {
+      storage.writes[0]!.fail();
+      await settle();
+    });
+    expect(latest.status).toBe("error");
+    expect(storage.records.get("document")).toBe(unreadable);
+    expect(storage.records.get("recovery-history")).toEqual([recent]);
+    await React.act(async () => {
+      latest.retry();
+      await settle();
+      storage.writes[1]!.complete();
+      await settle();
+    });
+    expect(latest.status).toBe("saved");
+    expect(storage.records.get("recovery-history")).toEqual([
+      { savedAt: Date.now(), payload: unreadable },
+      recent,
+    ]);
+    await React.act(async () => {
+      useEditorStore.getState().addLayer("path");
+      await settle();
+      vi.advanceTimersByTime(AUTOSAVE_DEBOUNCE_MS);
+      await settle();
+    });
+    expect(storage.writes).toHaveLength(3);
+  });
+
   it("resumes autosave after restoring a checkpoint and retains the newer disk copy", async () => {
     await import("@/components/editor/project/useProjectImport");
     await React.act(async () => {

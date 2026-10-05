@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, CircleAlert, HardDrive, LoaderCircle, ShieldCheck } from "lucide-react";
+import { Check, CircleAlert, HardDrive, LoaderCircle } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { useDocumentAutosave } from "./hooks/useDocumentAutosave";
@@ -31,12 +31,6 @@ export function DocumentSaveStatus({ autosave }: { autosave: DocumentAutosave })
       detail: "Your latest changes could not be saved. Click to retry, or export a project backup.",
       icon: CircleAlert,
     },
-    paused: {
-      label: "Recovery preserved",
-      detail:
-        "The previous autosave is preserved. Export your current project, then use File → Version history to download or restore a saved copy.",
-      icon: ShieldCheck,
-    },
     conflict: {
       label: "Newer save found",
       detail:
@@ -58,8 +52,7 @@ export function DocumentSaveStatus({ autosave }: { autosave: DocumentAutosave })
             className={cn(
               "flex h-6 shrink-0 items-center gap-1 rounded-md px-1 text-[11px] text-muted-foreground/70 aria-disabled:cursor-default",
               (status === "error" || status === "conflict") &&
-                "text-destructive hover:bg-destructive/10",
-              status === "paused" && "text-amber-600 dark:text-amber-400",
+                "text-destructive hover:bg-destructive/10 max-sm:size-11 max-sm:justify-center max-sm:p-0",
             )}
           />
         }

@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
 import { serializeLiveProject } from "@/lib/store/exportDocument";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { AutosaveConflictError, readAutosave, writeAutosave } from "@/lib/store/localRecovery";
@@ -9,13 +8,7 @@ export { readAutosave } from "@/lib/store/localRecovery";
 
 export const AUTOSAVE_DEBOUNCE_MS = 400;
 
-export type DocumentAutosaveStatus =
-  | "restoring"
-  | "saving"
-  | "saved"
-  | "error"
-  | "paused"
-  | "conflict";
+export type DocumentAutosaveStatus = "restoring" | "saving" | "saved" | "error" | "conflict";
 
 export interface DocumentAutosaveState {
   status: DocumentAutosaveStatus;
@@ -137,8 +130,8 @@ export function createCoalescingAutosaveWriter<T>(
 export interface DebouncedAutosaveScheduler {
   markHydrated(): void;
   /**
-   * Keep a stored snapshot intact when it could not be opened. Automatic writes
-   * remain paused for this session instead of replacing the only recovery copy.
+   * Block automatic writes while storage cannot be read, a conflict is unresolved,
+   * or a checkpoint is being restored. markHydrated resumes scheduling.
    */
   preserveStoredSnapshot(): void;
   schedule(): void;
@@ -210,8 +203,7 @@ export function createDebouncedAutosaveScheduler(options: {
     },
     preserveStoredSnapshot() {
       // This can run after Strict Mode's first effect cleanup. Keep the same
-      // scheduler instance paused when the second, live effect observes the
-      // malformed payload too.
+      // scheduler instance blocked until the read or conflict is resolved.
       disposed = false;
       hydrated = true;
       preserveStoredSnapshot = true;
@@ -282,8 +274,9 @@ export function useDocumentAutosave(): DocumentAutosave {
   const authoredDocument = useEditorStore((state) => state.document);
   const lastFlushedState = useRef<AutosaveStateToken | null>(null);
   const schedulerRef = useRef<DebouncedAutosaveScheduler | null>(null);
-  const recoveryNoticeShown = useRef(false);
   const hydrationReady = useRef(false);
+  const hydrationBaseline = useRef<AutosaveStateToken | null>(null);
+  const [hydrationAttempt, setHydrationAttempt] = useState(0);
   const savingPaused = useRef(false);
   const lastSavedSignature = useRef<string | null>(null);
   const storedSignature = useRef<string | null>(null);
@@ -377,72 +370,52 @@ export function useDocumentAutosave(): DocumentAutosave {
 
   useEffect(() => {
     let cancelled = false;
-    let preserveStoredSnapshot = false;
-    let attemptedRestore = false;
-    // Do not restore an old IndexedDB payload over a document the user changed
-    // while the asynchronous read was pending.
-    const hydrationStart = autosaveStateToken(useEditorStore.getState());
+    hydrationBaseline.current ??= autosaveStateToken(useEditorStore.getState());
+    const hydrationStart = hydrationBaseline.current;
     void (async () => {
       try {
         const payload = await readAutosave();
-        if (!cancelled)
-          storedSignature.current = payload == null ? null : (autosaveSignature(payload) ?? null);
-        if (
-          !cancelled &&
-          payload !== null &&
-          sameAutosaveState(hydrationStart, autosaveStateToken(useEditorStore.getState()))
-        ) {
-          const { importEditorText } = await import("@/components/editor/project/useProjectImport");
-          if (
-            cancelled ||
-            !sameAutosaveState(hydrationStart, autosaveStateToken(useEditorStore.getState()))
-          )
-            return;
-          attemptedRestore = true;
-          const result = restoreStoredAutosave(payload, (text) =>
-            importEditorText("autosave.shapeshifter", text),
-          );
-          if (result === "restored") discardHydrationHistory();
-          else preserveStoredSnapshot = true;
+        if (cancelled) return;
+        storedSignature.current = payload == null ? null : (autosaveSignature(payload) ?? null);
+        if (payload !== null) {
+          if (sameAutosaveState(hydrationStart, autosaveStateToken(useEditorStore.getState()))) {
+            const { importEditorText } =
+              await import("@/components/editor/project/useProjectImport");
+            if (cancelled) return;
+            if (sameAutosaveState(hydrationStart, autosaveStateToken(useEditorStore.getState()))) {
+              const result = restoreStoredAutosave(payload, (text) =>
+                importEditorText("autosave.shapeshifter", text),
+              );
+              if (result === "restored") discardHydrationHistory();
+              else forceCheckpoint.current = true;
+            } else forceCheckpoint.current = true;
+          } else forceCheckpoint.current = true;
         }
-      } catch {
-        // A failed read or import may still leave a recoverable payload in
-        // IndexedDB. Do not allow the fresh workspace to overwrite it.
-        preserveStoredSnapshot =
-          !cancelled &&
-          (attemptedRestore ||
-            sameAutosaveState(hydrationStart, autosaveStateToken(useEditorStore.getState())));
-      } finally {
-        if (!cancelled) {
-          if (preserveStoredSnapshot) {
-            savingPaused.current = true;
-            hydrationReady.current = true;
-            scheduler.preserveStoredSnapshot();
-            setSaveState((current) => ({
-              ...current,
-              status: "paused",
-              error:
-                "Your previous save could not be opened. It is kept in Version history. Export to save new edits.",
-            }));
-            if (!recoveryNoticeShown.current) {
-              recoveryNoticeShown.current = true;
-              toast.warning("Autosave paused", {
-                description: "Your previous save could not open. Export to save new edits.",
-              });
-            }
-          } else {
-            savingPaused.current = false;
-            hydrationReady.current = true;
-            setSaveState((current) => ({ ...current, status: "saving", error: null }));
-            scheduler.markHydrated();
-          }
-        }
+        // An unreadable or superseded startup copy is retained in the same
+        // compare-and-write transaction that saves the current document. It
+        // must not disable autosave permanently on every subsequent opening.
+        savingPaused.current = false;
+        hydrationReady.current = true;
+        setSaveState((current) => ({ ...current, status: "saving", error: null }));
+        scheduler.markHydrated();
+      } catch (error) {
+        if (cancelled) return;
+        // A failed read has no safe compare-and-write baseline. Keep disk intact
+        // and let Retry repeat hydration without overwriting edits made meanwhile.
+        savingPaused.current = true;
+        hydrationReady.current = false;
+        scheduler.preserveStoredSnapshot();
+        setSaveState((current) => ({
+          ...current,
+          status: "error",
+          error: error instanceof Error ? error.message : "Local storage could not be opened.",
+        }));
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [scheduler]);
+  }, [scheduler, hydrationAttempt]);
 
   useEffect(() => {
     const currentState = {
@@ -494,7 +467,12 @@ export function useDocumentAutosave(): DocumentAutosave {
   }, [scheduler]);
 
   const retry = useCallback(() => {
-    if (!hydrationReady.current || savingPaused.current) return;
+    if (!hydrationReady.current) {
+      setSaveState((current) => ({ ...current, status: "restoring", error: null }));
+      setHydrationAttempt((attempt) => attempt + 1);
+      return;
+    }
+    if (savingPaused.current) return;
     scheduler.flush({ force: true });
   }, [scheduler]);
 

@@ -172,12 +172,14 @@ test("native touch navigation pans empty space and artwork in Move view without 
   }
 });
 
-test("recovery notice stays inside a narrow viewport and preserves the unopened save", async ({
+test("an unreadable startup save goes to history and autosave resumes across reloads", async ({
   page,
 }, info) => {
   await page.setViewportSize({ width: 320, height: 700 });
   await page.goto("/");
-  await page.getByRole("button", { name: "Dismiss onboarding", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Saved locally", exact: true, includeHidden: true }),
+  ).toHaveCount(1);
   const preserved = "unreadable saved project";
   await page.evaluate(async (payload) => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -194,14 +196,10 @@ test("recovery notice stays inside a narrow viewport and preserves the unopened 
     db.close();
   }, preserved);
   await page.reload();
-  const notice = page.locator("[data-sonner-toast]").filter({ hasText: "Autosave paused" });
-  await expect(notice).toBeVisible();
-  await expect(notice).toContainText("Export to save new edits.");
-  await expect.poll(async () => (await notice.boundingBox())!.y).toBeCloseTo(56, 0);
-  const box = (await notice.boundingBox())!;
-  expect(box.x).toBeGreaterThanOrEqual(12);
-  expect(box.x + box.width).toBeLessThanOrEqual(308);
-  expect(await notice.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await expect(
+    page.getByRole("button", { name: "Saved locally", exact: true, includeHidden: true }),
+  ).toHaveCount(1);
+  await expect(page.getByText("Autosave paused", { exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
   const stored = await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve) => {
@@ -212,13 +210,26 @@ test("recovery notice stays inside a narrow viewport and preserves the unopened 
       const request = db
         .transaction("autosave", "readonly")
         .objectStore("autosave")
-        .get("document");
+        .get("recovery-history");
       request.onsuccess = () => resolve(request.result);
     });
     db.close();
     return payload;
   });
-  expect(stored).toBe(preserved);
+  expect(stored).toEqual(expect.arrayContaining([expect.objectContaining({ payload: preserved })]));
+  await page.getByRole("button", { name: "Make an icon move", exact: true }).click();
+  await page.getByRole("button", { name: "Close animation exercise" }).click();
+  await expect(
+    page.getByRole("button", { name: "Saved locally", exact: true, includeHidden: true }),
+  ).toHaveCount(1);
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Saved locally", exact: true, includeHidden: true }),
+  ).toHaveCount(1);
+  await expect(
+    page.getByRole("button", { name: "Select frame Make this icon move", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Autosave paused", { exact: true })).toHaveCount(0);
   await page.screenshot({ path: `/tmp/shapeshifter-recovery-${info.project.name}.png` });
 });
 

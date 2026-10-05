@@ -1,8 +1,7 @@
 "use client";
 
 import React from "react";
-
-type Theme = "light" | "dark" | "system";
+import { initializeTheme, type Theme } from "@/lib/theme";
 
 type ThemeContextValue = {
   theme: Theme;
@@ -31,13 +30,12 @@ function ThemeProvider({ children }: { children: React.ReactNode }) {
   // Existing user preference still wins when one has already been stored.
   const [theme, setThemeState] = React.useState<Theme>("dark");
   const [systemTheme, setSystemTheme] = React.useState<"light" | "dark">("dark");
+  const [ready, setReady] = React.useState(false);
 
-  React.useEffect(() => {
-    const storedTheme = window.localStorage.getItem("theme") as Theme | null;
-    if (storedTheme === "light" || storedTheme === "dark" || storedTheme === "system") {
-      setThemeState(storedTheme);
-    }
+  React.useLayoutEffect(() => {
+    setThemeState(initializeTheme().theme);
     setSystemTheme(getSystemTheme());
+    setReady(true);
   }, []);
 
   React.useEffect(() => {
@@ -49,12 +47,16 @@ function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const resolvedTheme = theme === "system" ? systemTheme : theme;
 
-  React.useEffect(() => {
-    applyTheme(resolvedTheme);
-  }, [resolvedTheme]);
+  React.useLayoutEffect(() => {
+    if (ready) applyTheme(resolvedTheme);
+  }, [ready, resolvedTheme]);
 
   const setTheme = React.useCallback((nextTheme: Theme) => {
-    window.localStorage.setItem("theme", nextTheme);
+    try {
+      window.localStorage.setItem("theme", nextTheme);
+    } catch {
+      // Theme switching remains available without persistent browser storage.
+    }
     setThemeState(nextTheme);
   }, []);
 
