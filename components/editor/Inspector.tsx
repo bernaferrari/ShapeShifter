@@ -32,7 +32,7 @@ import {
   getInspectorSelectionBounds,
   resolveOwnedLayers,
 } from "@/lib/shapeshifter/scene/inspectorSelection";
-import { NumberRow, Section } from "./inspector/InspectorControls";
+import { InlineSelect, NumberRow, Section } from "./inspector/InspectorControls";
 import { LayerAppearanceSections } from "./inspector/LayerAppearanceSections";
 import { FrameDesignPanel, LayerTransformSection } from "./inspector/InspectorPanels";
 import { MorphPrepareSection } from "./inspector/MorphPrepareSection";
@@ -377,15 +377,16 @@ export function Inspector() {
           ) : (
             <span className="flex items-center gap-1">
               {isPathLike ? (
-                <select
-                  aria-label="Layer type"
-                  value={currentLayer.type}
-                  onChange={(event) => updateLayer({ type: event.target.value as Layer["type"] })}
-                  className="-ml-1 rounded bg-transparent px-0.5 text-[11px] text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <option value="path">Path</option>
-                  <option value="clipPath">Mask</option>
-                </select>
+                <InlineSelect
+                  label="Layer type"
+                  value={currentLayer.type as "path" | "clipPath"}
+                  options={[
+                    { value: "path", label: "Path" },
+                    { value: "clipPath", label: "Mask" },
+                  ]}
+                  onChange={(type) => updateLayer({ type })}
+                  className="-ml-1"
+                />
               ) : (
                 <span>Group</span>
               )}
@@ -658,7 +659,7 @@ function InspectorHeader({
               }
               event.stopPropagation();
             }}
-            className="-ml-1 h-5 w-full truncate rounded px-1 in-[.mobile-workspace]:!min-h-5 text-[12px] font-semibold leading-tight outline-none hover:bg-muted focus:bg-background focus:ring-1 focus:ring-primary"
+            className="-ml-1 h-5 w-full truncate rounded px-1 text-[12px] font-semibold leading-tight outline-none hover:bg-muted focus:bg-background focus:ring-1 focus:ring-primary"
           />
         ) : (
           <div className="truncate text-[12px] font-semibold leading-tight">{title}</div>

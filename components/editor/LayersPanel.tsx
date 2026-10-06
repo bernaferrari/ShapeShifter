@@ -61,6 +61,7 @@ interface LayerDropTarget {
 }
 
 import { PanelHeader } from "./PanelHeader";
+import { TextSizedInput } from "./TextSizedInput";
 
 export function LayersPanel({
   onCollapse,
@@ -413,8 +414,12 @@ export function LayersPanel({
               <LayerIcon type={layer.type} />
             </span>
             {renaming ? (
-              <input
+              <TextSizedInput
                 autoFocus
+                fit="fill"
+                fontSize={12}
+                lineHeight={20}
+                className="-ml-0.5"
                 value={renameDraft}
                 onChange={(event) => setRenameDraft(event.target.value)}
                 onFocus={(event) => event.currentTarget.select()}
@@ -431,7 +436,6 @@ export function LayersPanel({
                   }
                 }}
                 onClick={(event) => event.stopPropagation()}
-                className="h-6 min-w-0 flex-1 rounded border border-primary bg-background px-1.5 text-[12px] text-foreground outline-none ring-2 ring-primary/15"
                 aria-label={`Rename ${layer.name}`}
               />
             ) : (
@@ -707,7 +711,7 @@ export function LayersPanel({
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Find a layer"
             aria-label="Find a layer"
-            className="h-7 w-full rounded-md border border-input bg-background pl-7 pr-2 text-[12px] outline-none placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2 focus:ring-primary/15"
+            className="h-7 pointer-coarse:h-9 w-full rounded-md border border-input bg-background pl-7 pr-2 text-[12px] outline-none placeholder:text-muted-foreground/60 focus:border-primary focus:ring-2 focus:ring-primary/15"
           />
         </div>
       )}

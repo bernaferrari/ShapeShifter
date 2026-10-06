@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Viewport } from "@/lib/shapeshifter/camera";
 import type { CanvasFrame } from "@/lib/store/editorStore";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { vectorCoordinateRect } from "@/lib/shapeshifter/vectorSpace";
 import { cn } from "@/lib/utils";
+import { TextSizedInput } from "../TextSizedInput";
 
 interface Size {
   w: number;
@@ -17,6 +18,49 @@ const frameBounds = (frame: CanvasFrame) => ({
   y: frame.y || 0,
   ...vectorCoordinateRect(frame.vector, 48),
 });
+
+function FrameTitleInput({
+  name,
+  emphasized,
+  onCommit,
+  onCancel,
+}: {
+  name: string;
+  emphasized: boolean;
+  onCommit: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState(name);
+  // Enter commits and unmounts, which also blurs; settle only once.
+  const settled = useRef(false);
+  const settle = (commit: boolean) => {
+    if (settled.current) return;
+    settled.current = true;
+    if (commit) onCommit(draft);
+    else onCancel();
+  };
+  return (
+    // Same box as the title button: 20px tall, text on the bottom 16px.
+    <div className="flex h-5 items-end">
+      <TextSizedInput
+        autoFocus
+        fontSize={11}
+        lineHeight={16}
+        value={draft}
+        className={cn("-mx-0.5", emphasized && "font-medium")}
+        onFocus={(event) => event.currentTarget.select()}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => settle(true)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") settle(true);
+          else if (event.key === "Escape") settle(false);
+        }}
+        onPointerDown={(event) => event.stopPropagation()}
+        aria-label={`Rename ${name}`}
+      />
+    </div>
+  );
+}
 
 const formatDimension = (value: number) =>
   Number.isInteger(value) ? String(value) : Number(value.toFixed(2)).toString();
@@ -107,28 +151,20 @@ export function WorldFrameChrome({
                 left: Math.round(screen.x),
                 top: Math.round(screen.y) - 3,
                 transform: "translateY(-100%)",
-                maxWidth: Math.max(48, Math.round(screen.width)),
+                // While renaming the field may outgrow the frame, as in Figma.
+                maxWidth:
+                  renamingFrameId === frame.id ? undefined : Math.max(48, Math.round(screen.width)),
               }}
             >
               {renamingFrameId === frame.id ? (
-                <input
-                  autoFocus
-                  defaultValue={frame.name}
-                  onBlur={(event) => {
-                    renameFrame(frame.id, event.target.value);
+                <FrameTitleInput
+                  name={frame.name}
+                  emphasized={selected}
+                  onCommit={(name) => {
+                    if (name.trim() && name !== frame.name) renameFrame(frame.id, name);
                     setRenamingFrameId(null);
                   }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      renameFrame(frame.id, event.currentTarget.value);
-                      setRenamingFrameId(null);
-                    } else if (event.key === "Escape") {
-                      setRenamingFrameId(null);
-                    }
-                  }}
-                  className="h-5 w-36 select-text rounded border border-primary bg-card px-1 text-[11px] text-foreground outline-none"
-                  onPointerDown={(event) => event.stopPropagation()}
-                  aria-label={`Rename ${frame.name}`}
+                  onCancel={() => setRenamingFrameId(null)}
                 />
               ) : (
                 <div

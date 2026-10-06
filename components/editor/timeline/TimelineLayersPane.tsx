@@ -5,6 +5,7 @@ import { ChevronRight, Crop, Folder } from "lucide-react";
 import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { cn } from "@/lib/utils";
+import { TextSizedInput } from "../TextSizedInput";
 import { TimelineKeyframeDiamond } from "./TimelinePropertyBlock";
 import { TimelinePropertyValue } from "./TimelineLiveState";
 import type { TimelineProjection, TimelineRow } from "./timelineProjection";
@@ -63,6 +64,47 @@ interface TimelineLayersPaneProps {
   onToggleGroup: (rowKey: string) => void;
   blocksForLayer: TimelineProjection["blocksForLayer"];
   blocksForProperty: TimelineProjection["blocksForProperty"];
+}
+
+function TimelineRenameInput({
+  name,
+  onCommit,
+  onCancel,
+}: {
+  name: string;
+  onCommit: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = React.useState(name);
+  // Enter commits and unmounts, which also blurs; settle only once.
+  const settled = React.useRef(false);
+  const settle = (commit: boolean) => {
+    if (settled.current) return;
+    settled.current = true;
+    if (commit) onCommit(draft.trim());
+    else onCancel();
+  };
+  return (
+    <TextSizedInput
+      autoFocus
+      fit="fill"
+      fontSize={11}
+      lineHeight={18}
+      className="-ml-0.5"
+      value={draft}
+      aria-label={`Rename ${name}`}
+      onFocus={(event) => event.currentTarget.select()}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => settle(true)}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== "Escape") return;
+        event.preventDefault();
+        settle(event.key === "Enter");
+      }}
+      onClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+    />
+  );
 }
 
 export function TimelineLayersPane({
@@ -254,30 +296,14 @@ export function TimelineLayersPane({
                 </span>
               )}
               {renamingLayerKey === row.key ? (
-                <input
-                  autoFocus
-                  aria-label={`Rename ${row.name}`}
-                  defaultValue={row.name}
-                  onFocus={(event) => event.currentTarget.select()}
-                  onBlur={(event) => {
-                    const name = event.currentTarget.value.trim();
+                <TimelineRenameInput
+                  name={row.name}
+                  onCommit={(name) => {
                     if (name && name !== row.name)
                       useEditorStore.getState().renameOwnedLayer(row.frameId, row.layer.id, name);
                     setRenamingLayerKey(null);
                   }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      event.currentTarget.blur();
-                    } else if (event.key === "Escape") {
-                      event.preventDefault();
-                      event.currentTarget.value = row.name;
-                      setRenamingLayerKey(null);
-                    }
-                  }}
-                  onClick={(event) => event.stopPropagation()}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  className="h-4 min-w-0 flex-1 rounded-sm border border-primary bg-background px-1 text-[11px] text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  onCancel={() => setRenamingLayerKey(null)}
                 />
               ) : (
                 <span

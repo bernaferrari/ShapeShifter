@@ -2,19 +2,75 @@
 
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, Ellipsis } from "lucide-react";
+import { ChevronDown, ChevronRight, Ellipsis } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { horizontalIntent } from "@/lib/touchIntent";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/lib/store/editorStore";
 
+/**
+ * Touch sizing has one rule: fields type at 16px (so iOS never zooms on
+ * focus) inside a 36px box that suits it; everything else keeps its own size.
+ */
 export const fieldBase =
-  "h-7 w-full rounded-md border border-transparent bg-secondary px-2 text-[11px] text-foreground outline-none transition-[background-color,border-color,box-shadow] placeholder:text-muted-foreground/50 hover:border-border focus:border-primary focus:bg-background";
+  "h-7 pointer-coarse:h-9 w-full rounded-md border border-transparent bg-secondary px-2 text-[11px] text-foreground outline-none transition-[background-color,border-color,box-shadow] placeholder:text-muted-foreground/50 hover:border-border focus:border-primary focus:bg-background";
+
+/**
+ * A choice that reads as text with a chevron (Figma's inline dropdowns). It
+ * opens the app's menu rather than a native select, so it stays text-sized on
+ * phones without triggering focus zoom.
+ */
+export function InlineSelect<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+  className,
+}: {
+  label: string;
+  value: T | "";
+  options: { value: T; label: string }[];
+  onChange: (value: T) => void;
+  className?: string;
+}) {
+  const current = options.find((option) => option.value === value)?.label ?? "Mixed";
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <button
+            type="button"
+            aria-label={`${label}: ${current}`}
+            className={cn(
+              "flex h-6 items-center gap-0.5 rounded-md px-1 text-[11px] text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-muted data-popup-open:text-foreground",
+              className,
+            )}
+          />
+        }
+      >
+        {current}
+        <ChevronDown className="size-3 opacity-70" aria-hidden />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-32">
+        <DropdownMenuRadioGroup value={value} onValueChange={(next) => onChange(next as T)}>
+          {options.map((option) => (
+            <DropdownMenuRadioItem key={option.value} value={option.value}>
+              {option.label}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 export function Section({
   title,
@@ -64,7 +120,22 @@ export interface KeyframeToggleProps {
   label: string;
 }
 
-/** A filled diamond marks a key at this time; whole-track removal is explicit. */
+/**
+ * Every row ends in the same column, so fields never shift. The phone layout
+ * (narrow viewport) shows only the diamond, with options on long-press; the
+ * desktop layout also shows a ⋯ beside it.
+ */
+const KEYFRAME_SLOT = "flex w-12 shrink-0 items-center in-[.mobile-workspace]:w-6";
+
+/** Holds a row's place when it has no keyframe control, keeping columns aligned. */
+export function KeyframeSlot() {
+  return <span className={KEYFRAME_SLOT} aria-hidden />;
+}
+
+/**
+ * Tap the diamond to toggle a key at the playhead. On an animated property,
+ * removal lives in a menu: ⋯ on desktop, long-press or right-click anywhere.
+ */
 export function KeyframeToggle({
   keyframe,
   className,
@@ -72,56 +143,67 @@ export function KeyframeToggle({
   keyframe: KeyframeToggleProps;
   className?: string;
 }) {
-  return (
-    <span className="flex shrink-0 items-center">
-      <button
-        type="button"
-        onClick={keyframe.onClick}
-        className={cn(
-          "grid size-6 shrink-0 place-items-center rounded-md transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring",
-          className,
-        )}
-        aria-label={keyframe.label}
-        aria-pressed={keyframe.active}
-        title={keyframe.label}
-      >
-        <span
-          className={cn(
-            "size-[7px] rotate-45 rounded-[1px] border transition-colors",
-            keyframe.active
-              ? "border-primary bg-primary"
-              : "border-muted-foreground/50 group-hover:border-muted-foreground",
-          )}
-        />
-      </button>
-      {keyframe.removeAnimation && (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <button
-                type="button"
-                aria-label={`${keyframe.removeAnimationLabel?.replace("Remove ", "")} options`}
-                className="grid size-6 place-items-center rounded hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
-              />
-            }
-          >
-            <Ellipsis className="size-3 text-muted-foreground" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {keyframe.removeKeyframe && (
-              <DropdownMenuItem onClick={keyframe.removeKeyframe}>
-                {keyframe.removeKeyframeLabel}
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem variant="destructive" onClick={keyframe.removeAnimation}>
-              {keyframe.removeAnimationLabel}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+  const diamond = (
+    <button
+      type="button"
+      onClick={keyframe.onClick}
+      className={cn(
+        "grid size-6 shrink-0 place-items-center rounded-md transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring",
+        className,
       )}
+      aria-label={keyframe.label}
+      aria-pressed={keyframe.active}
+      title={keyframe.label}
+    >
+      <span
+        className={cn(
+          "size-[7px] rotate-45 rounded-[1px] border transition-colors",
+          keyframe.active
+            ? "border-primary bg-primary"
+            : "border-muted-foreground/50 group-hover:border-muted-foreground",
+        )}
+      />
+    </button>
+  );
+  if (!keyframe.removeAnimation) return <span className={KEYFRAME_SLOT}>{diamond}</span>;
+  const items = (
+    <>
+      {keyframe.removeKeyframe && (
+        <DropdownMenuItem onClick={keyframe.removeKeyframe}>
+          {keyframe.removeKeyframeLabel}
+        </DropdownMenuItem>
+      )}
+      <DropdownMenuItem variant="destructive" onClick={keyframe.removeAnimation}>
+        {keyframe.removeAnimationLabel}
+      </DropdownMenuItem>
+    </>
+  );
+  return (
+    <span className={KEYFRAME_SLOT}>
+      <ContextMenu>
+        <ContextMenuTrigger render={<span className="flex" />}>{diamond}</ContextMenuTrigger>
+        <ContextMenuContent className="min-w-44">{items}</ContextMenuContent>
+      </ContextMenu>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <button
+              type="button"
+              aria-label={`${keyframe.removeAnimationLabel?.replace("Remove ", "")} options`}
+              className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring data-popup-open:bg-muted in-[.mobile-workspace]:hidden"
+            />
+          }
+        >
+          <Ellipsis className="size-3" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-44">
+          {items}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </span>
   );
 }
+
 export function Row({ label, children }: { label?: string; children: React.ReactNode }) {
   return (
     <div className="grid grid-cols-[64px_minmax(0,1fr)] items-center gap-2">
@@ -353,7 +435,7 @@ export function NumberRow({
         {keyframe ? (
           <KeyframeToggle keyframe={keyframe} />
         ) : (
-          reserveKeyframeSlot && <span className="size-6 shrink-0" aria-hidden />
+          reserveKeyframeSlot && <KeyframeSlot />
         )}
       </div>
     );

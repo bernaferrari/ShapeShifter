@@ -96,7 +96,7 @@ export function EasingPanel({ block, onBack }: { block: TimelineBlock; onBack: (
             onChange={(event) => {
               if (event.target.value !== "custom") update({ interpolator: event.target.value });
             }}
-            className="h-8 w-full appearance-none rounded-md border border-transparent bg-secondary pl-8 pr-7 text-[12px] text-foreground outline-none hover:border-border focus:border-primary"
+            className="h-8 pointer-coarse:h-9 w-full appearance-none rounded-md border border-transparent bg-secondary pl-8 pr-7 text-[12px] text-foreground outline-none hover:border-border focus:border-primary"
           >
             {!isNamedEasing && <option value="custom">Custom bezier</option>}
             {EASING_OPTIONS.map(([value, text]) => (

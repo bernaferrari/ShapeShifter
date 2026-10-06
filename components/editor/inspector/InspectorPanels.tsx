@@ -21,6 +21,7 @@ import {
 } from "@/lib/shapeshifter/scene/inspectorSelection";
 import {
   KeyframeToggle,
+  KeyframeSlot,
   NumberRow,
   Row,
   Section,
@@ -305,7 +306,8 @@ export function LayerTransformSection({
       </PairRow>
       {size && <LayerSizeRow {...size} count={count} linked={scaleLinked} />}
       {!clipOnly && (
-        <div className="grid grid-cols-2 gap-1.5">
+        // Half-width fields share the pair grid, so their diamond lines up too.
+        <PairRow keyframe={keyframeFor("rotation")} reserve={showKeyframes}>
           <NumberRow
             label="Rotation"
             glyph={<RotateCw className="size-3" />}
@@ -314,13 +316,12 @@ export function LayerTransformSection({
             mixed={rotation.mixed}
             suffix="°"
             onChange={(value) => onPatch({ rotation: value })}
-            keyframe={keyframeFor("rotation")}
-            reserveKeyframeSlot={showKeyframes}
           />
-        </div>
+          <span aria-hidden />
+        </PairRow>
       )}
       {showScale && scaleLinked && (
-        <div className="grid grid-cols-2 gap-1.5">
+        <PairRow keyframe={keyframeFor(["scaleX", "scaleY"], "Scale")} reserve={showKeyframes}>
           <NumberRow
             label="Scale"
             glyph={<Scaling className="size-3" />}
@@ -330,10 +331,9 @@ export function LayerTransformSection({
             step={1}
             suffix="%"
             onChange={(value) => onPatch({ scaleX: value / 100, scaleY: value / 100 })}
-            keyframe={keyframeFor(["scaleX", "scaleY"], "Scale")}
-            reserveKeyframeSlot={showKeyframes}
           />
-        </div>
+          <span aria-hidden />
+        </PairRow>
       )}
       {showScale && !scaleLinked && (
         <PairRow keyframe={keyframeFor(["scaleX", "scaleY"], "Scale")} reserve={showKeyframes}>
@@ -402,11 +402,7 @@ export function PairRow({
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-1.5">
       {children}
-      {keyframe ? (
-        <KeyframeToggle keyframe={keyframe} />
-      ) : (
-        reserve && <span className="size-6" aria-hidden />
-      )}
+      {keyframe ? <KeyframeToggle keyframe={keyframe} /> : reserve && <KeyframeSlot />}
     </div>
   );
 }

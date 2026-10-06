@@ -217,17 +217,6 @@ body {
     min-width: 44px;
     min-height: 44px;
   }
-  .mobile-workspace button {
-    min-height: 44px;
-  }
-  .mobile-workspace input:not([type="range"]),
-  .mobile-workspace select {
-    min-height: 40px;
-  }
-  .mobile-workspace [data-timeline-keyframe-block-id] {
-    min-width: 24px;
-    min-height: 24px;
-  }
 }
 
 /*

@@ -9,7 +9,7 @@ import { sharedValue } from "@/lib/shapeshifter/scene/inspectorSelection";
 import type { FillType, GradientType, Layer } from "@/lib/shapeshifter/types";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { ColorRow, GradientEditor } from "./InspectorColorControls";
-import { NumberRow, Row, Section, Segmented, TextInput } from "./InspectorControls";
+import { InlineSelect, NumberRow, Row, Section, Segmented, TextInput } from "./InspectorControls";
 import { useKeyframeToggles } from "./InspectorPanels";
 
 type StrokeCap = NonNullable<Layer["strokeLinecap"]>;
@@ -309,17 +309,16 @@ export function LayerAppearanceSections({
       <Section
         title="Fill"
         action={
-          <select
-            aria-label="Fill type"
-            value={fillKind.mixed ? "" : fillKind.value}
-            onChange={(event) => setFillKind(event.target.value as "solid" | GradientType)}
-            className="h-6 rounded-md bg-transparent px-1 text-[11px] text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {fillKind.mixed && <option value="">Mixed</option>}
-            <option value="solid">Solid</option>
-            <option value="linear">Linear</option>
-            <option value="radial">Radial</option>
-          </select>
+          <InlineSelect
+            label="Fill type"
+            value={fillKind.mixed ? "" : (fillKind.value as "solid" | GradientType)}
+            options={[
+              { value: "solid", label: "Solid" },
+              { value: "linear", label: "Linear" },
+              { value: "radial", label: "Radial" },
+            ]}
+            onChange={setFillKind}
+          />
         }
       >
         {fillKind.mixed ? (
