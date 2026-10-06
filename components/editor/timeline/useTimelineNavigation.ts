@@ -9,6 +9,8 @@ export function useTimelineNavigation(
   sectionRef: React.RefObject<HTMLElement | null>,
   viewportRef: React.RefObject<HTMLDivElement | null>,
   layersWidth: number,
+  /** Lane gutter after the last frame; the leading gutter is part of `layersWidth`. */
+  trailingInset = 0,
 ) {
   const storedZoom = useEditorStore((state) => state.timelineZoom);
   const scrollLeft = useEditorStore((state) => state.timelineScrollX);
@@ -22,13 +24,18 @@ export function useTimelineNavigation(
     if (!element) return;
     const measure = () =>
       setWidth(
-        Math.max(1, (element.clientWidth || element.getBoundingClientRect().width) - layersWidth),
+        Math.max(
+          1,
+          (element.clientWidth || element.getBoundingClientRect().width) -
+            layersWidth -
+            trailingInset,
+        ),
       );
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [viewportRef, layersWidth]);
+  }, [viewportRef, layersWidth, trailingInset]);
 
   React.useLayoutEffect(() => {
     const element = viewportRef.current;

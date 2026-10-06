@@ -1,5 +1,6 @@
 import { test, expect, devices, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
+import { TOUCH_HOLD_MS } from "../lib/touchIntent";
 
 async function project(page: Page) {
   await page.getByRole("button", { name: "Export", exact: true }).click();
@@ -153,6 +154,8 @@ for (const mobile of [true, false]) {
         const width = () => ruler(page).evaluate((el) => el.getBoundingClientRect().width);
         const a = { id: 1, x: box.x + box.width / 2, y: box.y + box.height / 2 };
         await touch("touchStart", [a]);
+        // Keyframes pick up only after a still hold; a quick swipe scrolls.
+        if (kind === "keyframe") await page.waitForTimeout(TOUCH_HOLD_MS + 100);
         a.x -= 20;
         await touch("touchMove", [a]);
         if (kind === "duration")

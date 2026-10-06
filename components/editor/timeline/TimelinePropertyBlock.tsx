@@ -5,6 +5,7 @@ import { useInspectorView } from "../inspector/inspectorView";
 import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
 import type { TimelineBlock } from "@/lib/shapeshifter/types";
 import { useEditorStore } from "@/lib/store/editorStore";
+import { holdToDrag, usePressType } from "@/lib/touchIntent";
 import { cn } from "@/lib/utils";
 import type { TimelineSnapTarget } from "./timelineTiming";
 import { useTimelineGesture } from "./useTimelineGesture";
@@ -69,9 +70,18 @@ export function TimelinePropertyBlock({
   const startPct = (block.startTime / duration) * 100;
   const endPct = (block.endTime / duration) * 100;
 
-  const handleDragStart = (event: React.PointerEvent<HTMLElement>) => {
-    if (event.button !== 0) return;
-    event.stopPropagation();
+  const press = usePressType();
+  // Touch picks a segment or keyframe up only after a still hold, so a swipe
+  // that starts on one scrolls the timeline instead of retiming it.
+  const pickUp =
+    (start: (event: React.PointerEvent<HTMLElement>) => void) =>
+    (event: React.PointerEvent<HTMLElement>) => {
+      if (event.button !== 0) return;
+      if (event.pointerType !== "touch") event.stopPropagation();
+      holdToDrag(start)(event);
+    };
+
+  const handleDragStart = pickUp((event) => {
     const store = useEditorStore.getState();
     const previous = store.selectedBlockIds;
     const modified = event.shiftKey || event.metaKey || event.ctrlKey;
@@ -87,17 +97,16 @@ export function TimelinePropertyBlock({
     store.selectBlocks(ids);
     suppressClickRef.current = false;
     if (ids.includes(block.id)) gesture.begin(event, ids);
-  };
+  });
 
-  const handleResizeStart = (edge: "start" | "end") => (event: React.PointerEvent<HTMLElement>) => {
-    if (event.button !== 0) return;
-    event.stopPropagation();
-    const store = useEditorStore.getState();
-    store.selectLayer(block.layerId);
-    store.selectBlocks([block.id]);
-    suppressClickRef.current = false;
-    gesture.begin(event, [block.id], edge);
-  };
+  const handleResizeStart = (edge: "start" | "end") =>
+    pickUp((event) => {
+      const store = useEditorStore.getState();
+      store.selectLayer(block.layerId);
+      store.selectBlocks([block.id]);
+      suppressClickRef.current = false;
+      gesture.begin(event, [block.id], edge);
+    });
 
   const endGesture = (event: React.PointerEvent<HTMLElement>, cancelled = false) => {
     suppressClickRef.current = gesture.moved.current;
@@ -123,6 +132,7 @@ export function TimelinePropertyBlock({
         )}
         style={{ left: `${startPct}%`, width: `${Math.max(0, endPct - startPct)}%` }}
         title={`${label}: ${block.startTime}–${block.endTime} ms · Snap to keys and playhead · Alt-drag for precise timing`}
+        onPointerDownCapture={press.onPointerDownCapture}
         onPointerDown={handleDragStart}
         onPointerMove={gesture.move}
         onPointerUp={(event) => endGesture(event)}
@@ -134,7 +144,7 @@ export function TimelinePropertyBlock({
             suppressClickRef.current = false;
             return;
           }
-          if (event.detail === 0) {
+          if (event.detail === 0 || press.ref.current === "touch") {
             const store = useEditorStore.getState();
             store.selectLayer(block.layerId);
             store.selectBlocks([block.id]);
@@ -250,7 +260,9 @@ export function TimelinePropertyBlock({
       >
         <button
           type="button"
-          className="grid size-5 place-items-center rounded-md border border-border bg-card text-primary opacity-0 pointer-coarse:opacity-100 shadow-sm outline-none transition-opacity hover:bg-muted focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover/segment:opacity-100"
+          className="grid size-5 place-items-center rounded-md border border-border bg-card text-primary opacity-0 shadow-sm outline-none transition-opacity hover:bg-muted focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover/segment:opacity-100 pointer-coarse:size-6 pointer-coarse:opacity-100"
+          // Keep the chip square on phones, where buttons otherwise default to 44px tall.
+          style={{ minHeight: 0 }}
           title="Easing"
           aria-label={`Edit ${label} easing`}
           onPointerDown={(event) => event.stopPropagation()}

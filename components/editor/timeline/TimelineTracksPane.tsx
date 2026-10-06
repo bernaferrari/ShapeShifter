@@ -3,21 +3,16 @@
 import React from "react";
 import { TriangleAlert, X } from "lucide-react";
 import type { FormatProfile } from "@/lib/shapeshifter/formatCapabilities";
-import { pathToString } from "@/lib/shapeshifter/pathUtils";
 import type { TimelineBlock } from "@/lib/shapeshifter/types";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { cn } from "@/lib/utils";
 import { TimelineKeyframeDiamond, TimelinePropertyBlock } from "./TimelinePropertyBlock";
 import type { TimelineProjection, TimelineRow } from "./timelineProjection";
 import type { TimelineSnapTarget } from "./timelineTiming";
-import { useTimelineGesture } from "./useTimelineGesture";
+import { ROW_COMPACT_HEIGHT, ROW_LAYER_HEIGHT, ROW_PROPERTY_HEIGHT } from "./timelineLayout";
 
 const ROW_SELECTED = "bg-primary/10";
-const ROW_LAYER_HEIGHT = 30;
-const ROW_PROPERTY_HEIGHT = 28;
-const OBJECT_CLIP_HEIGHT = 16;
 
-type ObjectSpan = { start: number; end: number; blocks: TimelineBlock[] };
 function ReadonlyPropertyRail({ block, duration }: { block: TimelineBlock; duration: number }) {
   const start = (block.startTime / duration) * 100;
   const end = (block.endTime / duration) * 100;
@@ -40,101 +35,6 @@ function ReadonlyPropertyRail({ block, duration }: { block: TimelineBlock; durat
   );
 }
 
-function TimelineObjectClip({
-  span,
-  duration,
-  selected,
-  interactive,
-  gridStep,
-  keyboardStep,
-  snapping,
-  onSnapChange,
-}: {
-  span: ObjectSpan;
-  duration: number;
-  selected: boolean;
-  interactive: boolean;
-  gridStep: number;
-  keyboardStep: number;
-  snapping: boolean;
-  onSnapChange: (target: TimelineSnapTarget | null) => void;
-}) {
-  const gesture = useTimelineGesture({ gridStep, snapping, onSnapChange });
-  const left = (span.start / duration) * 100;
-  const width = Math.max(1.2, ((span.end - span.start) / duration) * 100);
-  const primaryId = span.blocks[0]?.id;
-
-  return (
-    <button
-      type="button"
-      tabIndex={interactive ? 0 : -1}
-      data-timeline-block-id={primaryId}
-      aria-label={`Path animation from ${span.start} to ${span.end} milliseconds`}
-      aria-pressed={selected}
-      className={cn(
-        "absolute top-1/2 z-[1] flex -translate-y-1/2 items-center justify-center overflow-hidden rounded-sm border touch-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring",
-        interactive ? "cursor-grab active:cursor-grabbing" : "pointer-events-none",
-        selected
-          ? "border-primary bg-primary/20 text-primary"
-          : "border-primary/25 bg-primary/[0.07] text-muted-foreground hover:bg-primary/15",
-      )}
-      style={{ left: `${left}%`, width: `${width}%`, height: OBJECT_CLIP_HEIGHT }}
-      title={`Morph · ${span.start}–${span.end} ms · drag to retime · Alt for 1 ms precision`}
-      onPointerDown={
-        interactive
-          ? (event) => {
-              if (event.button !== 0) return;
-              event.stopPropagation();
-              const store = useEditorStore.getState();
-              const ids = span.blocks.map((block) => block.id);
-              if (span.blocks[0]) store.selectLayer(span.blocks[0].layerId);
-              store.selectBlocks(ids);
-              gesture.begin(event, ids);
-            }
-          : undefined
-      }
-      onPointerMove={gesture.move}
-      onPointerUp={(event) => gesture.end(event)}
-      onPointerCancel={(event) => gesture.end(event, true)}
-      onLostPointerCapture={(event) => gesture.end(event, true)}
-      onClick={(event) => {
-        event.stopPropagation();
-        if (span.blocks.length) {
-          const store = useEditorStore.getState();
-          store.selectLayer(span.blocks[0]!.layerId);
-          store.selectBlocks(span.blocks.map((block) => block.id));
-        }
-      }}
-      onKeyDown={(event) => {
-        if (
-          !interactive ||
-          !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)
-        )
-          return;
-        event.preventDefault();
-        if (event.key === "ArrowUp" || event.key === "ArrowDown") return;
-        useEditorStore.getState().moveTimelineBlocks(
-          span.blocks.map((block) => block.id),
-          (event.key === "ArrowLeft" ? -1 : 1) * keyboardStep * (event.shiftKey ? 10 : 1),
-        );
-      }}
-    >
-      <span className="pointer-events-none absolute inset-y-[2px] left-[2.5px] w-[1.5px] rounded-full bg-current opacity-40" />
-      <span className="pointer-events-none absolute inset-y-[2px] right-[2.5px] w-[1.5px] rounded-full bg-current opacity-40" />
-      {width > 12 && (
-        <span
-          className={cn(
-            "pointer-events-none truncate px-2 text-[10px] font-medium",
-            selected ? "text-primary" : "text-muted-foreground",
-          )}
-        >
-          Morph
-        </span>
-      )}
-    </button>
-  );
-}
-
 interface TimelineTracksPaneProps {
   rows: TimelineRow[];
   compact?: boolean;
@@ -151,6 +51,8 @@ interface TimelineTracksPaneProps {
   onDismissEmptyHint: () => void;
   /** When set, property rows carrying a capabilityNote get a warning glyph. */
   formatProfile?: FormatProfile;
+  /** Lane inset on both ends, matching the ruler's offset. */
+  gutter: number;
 }
 
 export function TimelineTracksPane({
@@ -168,6 +70,7 @@ export function TimelineTracksPane({
   emptyHintDismissed,
   onDismissEmptyHint,
   formatProfile,
+  gutter,
 }: TimelineTracksPaneProps) {
   const frames = useEditorStore((state) => state.frames);
   const selectedFrameId = useEditorStore((state) => state.selectedFrameId);
@@ -183,11 +86,12 @@ export function TimelineTracksPane({
         data-timeline-content
         className="relative min-h-full"
         style={{
-          width: contentWidth,
+          width: contentWidth + gutter * 2,
           minWidth: "100%",
           ...(!empty && {
             backgroundImage: "linear-gradient(to right, var(--border) 1px, transparent 1px)",
             backgroundSize: `${(contentWidth * majorStep) / Math.max(1, animation.duration)}px 100%`,
+            backgroundPosition: `${gutter}px 0`,
           }),
         }}
       >
@@ -222,7 +126,7 @@ export function TimelineTracksPane({
                   "relative border-b border-border/50",
                   row.frameId === selectedFrameId && "bg-muted/35",
                 )}
-                style={{ height: compact ? 44 : ROW_LAYER_HEIGHT }}
+                style={{ height: compact ? ROW_COMPACT_HEIGHT : ROW_LAYER_HEIGHT }}
                 onClick={() => useEditorStore.getState().selectFrame(row.frameId)}
               />
             );
@@ -256,23 +160,7 @@ export function TimelineTracksPane({
             selectionKind === "layer" &&
             row.frameId === selectedFrameId &&
             String(selectedLayerId) === String(row.layer.id);
-          const implicitMorph =
-            isObject &&
-            morphBlocks.length === 0 &&
-            row.layer.type !== "group" &&
-            row.layer.to &&
-            pathToString(row.layer.from) !== pathToString(row.layer.to);
-          const objectSpan: ObjectSpan | null = isObject
-            ? morphBlocks.length
-              ? {
-                  start: Math.min(...morphBlocks.map((block) => block.startTime)),
-                  end: Math.max(...morphBlocks.map((block) => block.endTime)),
-                  blocks: morphBlocks,
-                }
-              : implicitMorph
-                ? { start: 0, end: duration, blocks: [] }
-                : null
-            : null;
+          const trackBlocks = isObject ? morphBlocks : propertyBlocks;
 
           return (
             <div
@@ -284,7 +172,13 @@ export function TimelineTracksPane({
                 row.kind === "property" && !propertySelected && "hover:bg-muted/35",
                 isObject && !objectSelected && "hover:bg-muted/35",
               )}
-              style={{ height: compact ? 44 : isObject ? ROW_LAYER_HEIGHT : ROW_PROPERTY_HEIGHT }}
+              style={{
+                height: compact
+                  ? ROW_COMPACT_HEIGHT
+                  : isObject
+                    ? ROW_LAYER_HEIGHT
+                    : ROW_PROPERTY_HEIGHT,
+              }}
               onClick={() => {
                 const store = useEditorStore.getState();
                 if (row.frameId !== store.selectedFrameId) store.selectFrame(row.frameId);
@@ -293,13 +187,11 @@ export function TimelineTracksPane({
                   store.selectBlocks(propertyBlocks.map((block) => block.id));
                 } else {
                   store.selectLayer(row.layer.id);
-                  if (objectSpan?.blocks.length) {
-                    store.selectBlocks(objectSpan.blocks.map((block) => block.id));
-                  }
+                  if (morphBlocks.length) store.selectBlocks(morphBlocks.map((block) => block.id));
                 }
               }}
             >
-              {formatProfile && row.kind === "property" && row.capabilityNote && (
+              {formatProfile && row.capabilityNote && (
                 <span
                   className="absolute left-1 top-1/2 z-[2] flex -translate-y-1/2 items-center gap-1 rounded bg-muted px-1 py-px text-[10px] text-muted-foreground"
                   title={row.capabilityNote}
@@ -307,8 +199,12 @@ export function TimelineTracksPane({
                   <TriangleAlert className="size-3" />
                 </span>
               )}
-              {row.kind === "property" &&
-                propertyBlocks.map((block) =>
+              <div
+                data-timeline-lane
+                className="absolute inset-y-0"
+                style={{ left: gutter, width: contentWidth }}
+              >
+                {trackBlocks.map((block) =>
                   row.frameId === selectedFrameId ? (
                     <TimelinePropertyBlock
                       key={block.id}
@@ -324,22 +220,7 @@ export function TimelineTracksPane({
                     <ReadonlyPropertyRail key={block.id} block={block} duration={duration} />
                   ),
                 )}
-              {objectSpan && (
-                <TimelineObjectClip
-                  span={objectSpan}
-                  duration={duration}
-                  selected={
-                    objectSelected ||
-                    (row.frameId === selectedFrameId &&
-                      objectSpan.blocks.some((block) => selectedBlockIds.includes(block.id)))
-                  }
-                  interactive={row.frameId === selectedFrameId && objectSpan.blocks.length > 0}
-                  gridStep={gridStep}
-                  keyboardStep={keyboardStep}
-                  snapping={snapping}
-                  onSnapChange={onSnapChange}
-                />
-              )}
+              </div>
             </div>
           );
         })}

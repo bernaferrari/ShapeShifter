@@ -75,8 +75,8 @@ const SHORTCUT_SECTIONS: ReadonlyArray<{
     title: "Playback",
     rows: [
       ["Play / pause", "Space"],
-      ["Previous / next frame", ", / ."],
-      ["Jump 10 frames", "⇧, / ⇧."],
+      ["Previous / next keyframe", ", / ."],
+      ["Previous / next frame", "⇧, / ⇧."],
       ["Precise timing while dragging", "⌥"],
     ],
   },

@@ -26,6 +26,8 @@ export type TimelineRow =
       key: string;
       expandable?: boolean;
       expanded?: boolean;
+      /** Set when the layer's own morph (its Path track) is unsupported by the export format. */
+      capabilityNote?: string;
     }
   | {
       kind: "property";
@@ -171,6 +173,11 @@ export function buildTimelineProjection({
     const key = `object-${frameId}-${layer.id}`;
     const children = tree.childrenOf(layer);
     const expanded = !collapsedGroupKeys.has(key);
+    const tracks = propertyNames(animation, layer.id);
+    const morph =
+      formatProfile && tracks.includes("pathData")
+        ? capabilityFor(formatProfile.id, "pathMorph")
+        : undefined;
     rows.push({
       kind: "object",
       frameId,
@@ -180,8 +187,10 @@ export function buildTimelineProjection({
       key,
       expandable: children.length > 0 || layer.type === "group",
       expanded: children.length > 0 ? expanded : undefined,
+      ...(morph && !morph.supported ? { capabilityNote: morph.note } : {}),
     });
-    for (const propertyName of propertyNames(animation, layer.id)) {
+    // A layer's shape is its Path track, so the morph lives on the layer row itself.
+    for (const propertyName of tracks.filter((name) => name !== "pathData")) {
       const trackCapability = mapPropertyNameToTrackCapability(propertyName);
       const capability =
         formatProfile && trackCapability

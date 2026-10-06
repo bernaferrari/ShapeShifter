@@ -2,6 +2,7 @@
 
 import React from "react";
 import { useEditorStore } from "@/lib/store/editorStore";
+import { isTouchClaimed, TOUCH_SLOP_PX } from "@/lib/touchIntent";
 import { useTouchViewportGestures } from "../hooks/useTouchViewportGestures";
 import type { useTimelineNavigation } from "./useTimelineNavigation";
 
@@ -92,9 +93,12 @@ export function useTimelineTouchNavigation({
       onPointerMove: (event) => {
         const pan = singlePan.current;
         if (!pan || pan.id !== event.pointerId) return;
+        // A held keyframe or segment owns this finger now.
+        if (isTouchClaimed(event.pointerId)) return void (singlePan.current = null);
         const dx = event.clientX - pan.x,
           dy = event.clientY - pan.y;
-        if (!pan.moved && Math.hypot(dx, dy) <= 6) return;
+        // Same slop as hold-to-drag: the move that cancels a pick-up starts the pan.
+        if (!pan.moved && Math.hypot(dx, dy) <= TOUCH_SLOP_PX) return;
         pan.moved = true;
         blockClick.current = true;
         try {

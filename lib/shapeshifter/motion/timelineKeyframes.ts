@@ -222,3 +222,22 @@ export function setTrackValueAt(
     },
   ];
 }
+
+/**
+ * The nearest keyframe time strictly before or after `time`, counting the
+ * animation's start and end as stops (as Glyphrise's ‹ › transport does).
+ */
+export function adjacentKeyframeTime(
+  blocks: readonly Pick<TimelineBlock, "startTime" | "endTime">[],
+  duration: number,
+  time: number,
+  direction: -1 | 1,
+): number | undefined {
+  const epsilon = 0.5;
+  const times = [0, duration, ...blocks.flatMap((block) => [block.startTime, block.endTime])];
+  const candidates = times.filter((candidate) =>
+    direction < 0 ? candidate < time - epsilon : candidate > time + epsilon,
+  );
+  if (!candidates.length) return undefined;
+  return direction < 0 ? Math.max(...candidates) : Math.min(...candidates);
+}

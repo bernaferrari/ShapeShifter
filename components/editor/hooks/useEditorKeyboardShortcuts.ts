@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { stepToKeyframe } from "../timeline/timelineTransport";
 import { useTimelineViewSettings } from "../timeline/timelineViewSettings";
 import { useEditorStore } from "@/lib/store/editorStore";
 
@@ -200,17 +201,20 @@ export function useEditorKeyboardShortcuts() {
         return;
       }
 
-      if (
-        (event.key === "," || event.key === "." || event.key === "<" || event.key === ">") &&
-        !command
-      ) {
+      // Same stepping as Glyphrise: `,` `.` jump between keyframes (the ‹ ›
+      // transport), `<` `>` (Shift) move one frame.
+      if ((event.key === "," || event.key === ".") && !command) {
+        event.preventDefault();
+        stepToKeyframe(event.key === "," ? -1 : 1);
+        return;
+      }
+      if ((event.key === "<" || event.key === ">") && !command) {
         event.preventDefault();
         if (store.isPlaying) store.togglePlayback();
-        const frames =
-          (event.key === "," || event.key === "<" ? -1 : 1) * (event.shiftKey ? 10 : 1);
         const duration = Math.max(1, store.animation.duration);
         const time =
-          store.progress * duration + (frames * 1000) / useTimelineViewSettings.getState().fps;
+          store.progress * duration +
+          ((event.key === "<" ? -1 : 1) * 1000) / useTimelineViewSettings.getState().fps;
         store.setProgress(Math.max(0, Math.min(1, time / duration)));
         return;
       }

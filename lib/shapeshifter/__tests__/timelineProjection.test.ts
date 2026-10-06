@@ -65,7 +65,7 @@ const frame = {
 } satisfies CanvasFrame;
 
 describe("timeline projection", () => {
-  it("shows the active frame with Path, X, and Y property rows", () => {
+  it("keeps the morph on the layer row and gives X and Y their own property rows", () => {
     const projection = buildTimelineProjection({
       frames: [frame, { ...frame, id: "other", name: "Other" }],
       selectedFrameId: frame.id,
@@ -77,7 +77,6 @@ describe("timeline projection", () => {
     expect(projection.rows.map((row) => row.key)).toEqual([
       "frame-frame",
       "object-frame-shape",
-      "prop-frame-shape-pathData",
       "prop-frame-shape-translateX",
       "prop-frame-shape-translateY",
     ]);
@@ -94,11 +93,7 @@ describe("timeline projection", () => {
       collapsedGroupKeys: new Set(),
     });
     const propertyRows = projection.rows.filter((row) => row.kind === "property");
-    expect(propertyRows.map((row) => row.propertyName)).toEqual([
-      "pathData",
-      "translateX",
-      "translateY",
-    ]);
+    expect(propertyRows.map((row) => row.propertyName)).toEqual(["translateX", "translateY"]);
     expect(projection.blocksForProperty("frame", "shape", "translateX")).toEqual([
       animation.blocks[1],
     ]);

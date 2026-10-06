@@ -42,6 +42,7 @@ export function TimelinePlayhead({
   contentWidth,
   viewportWidth,
   scrollLeft = 0,
+  bleed = 0,
 }: {
   visible: boolean;
   layersWidth: number;
@@ -49,12 +50,15 @@ export function TimelinePlayhead({
   contentWidth?: number;
   viewportWidth?: number;
   scrollLeft?: number;
+  /** Visible lane gutter on each side of the viewport the needle may still enter. */
+  bleed?: number;
 }) {
   const progress = useEditorStore((state) => state.progress);
   const position = contentWidth === undefined ? undefined : progress * contentWidth - scrollLeft;
   if (
     !visible ||
-    (position !== undefined && (position < 0 || position > (viewportWidth ?? contentWidth!)))
+    (position !== undefined &&
+      (position < -bleed || position > (viewportWidth ?? contentWidth!) + bleed))
   )
     return null;
   return (

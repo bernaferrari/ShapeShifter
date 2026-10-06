@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { ChevronDown, Ellipsis, Pause, Play, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Ellipsis, Pause, Play, X } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -37,6 +37,8 @@ import {
 } from "./timeline/timelineScale";
 import { PanelHeader } from "./PanelHeader";
 import { TimelineInsertKeyframeButton } from "./timeline/TimelineInsertKeyframeButton";
+import { timelineTrackGutter } from "./timeline/timelineLayout";
+import { stepToKeyframe, useKeyframeStops } from "./timeline/timelineTransport";
 import { handleTimelineClipboardShortcut } from "./timeline/TimelineClipboardControls";
 import { TIMELINE_FRAME_RATES, useTimelineViewSettings } from "./timeline/timelineViewSettings";
 import { resolveTimelinePreviewRange } from "@/lib/shapeshifter/motion/previewRange";
@@ -62,6 +64,9 @@ export function LayerTimeline({
   compact?: boolean;
 }) {
   const HEADER_H = compact ? 44 : DEFAULT_HEADER_H;
+  const GUTTER = timelineTrackGutter(compact);
+  // Where time zero sits: past the name column and the lane's leading gutter.
+  const TRACK_X = LAYERS_W + GUTTER;
   const frames = useEditorStore((state) => state.frames);
   const selectedFrameId = useEditorStore((state) => state.selectedFrameId);
   const layers = useEditorStore((state) => state.layers);
@@ -77,6 +82,7 @@ export function LayerTimeline({
   const storedPreviewRange = useEditorStore((state) => state.timelinePreviewRange);
   const preferredExportFormat = useEditorStore((state) => state.preferredExportFormat);
   const formatProfile = CAPABILITY_MATRIX[preferredExportFormat as ExportFormatId] ?? null;
+  const keyframeStops = useKeyframeStops();
 
   const timeUnit = useTimelineViewSettings((state) => state.unit);
   const setTimeUnit = useTimelineViewSettings((state) => state.setUnit);
@@ -111,7 +117,7 @@ export function LayerTimeline({
     },
     [selectedFrameId],
   );
-  const navigation = useTimelineNavigation(sectionRef, timelineScrollRef, LAYERS_W);
+  const navigation = useTimelineNavigation(sectionRef, timelineScrollRef, TRACK_X, GUTTER);
   const editCancellations = React.useRef(new Set<() => void>());
   const registerCancellation = React.useCallback((cancel: () => void) => {
     editCancellations.current.add(cancel);
@@ -122,7 +128,7 @@ export function LayerTimeline({
   const timelineTouch = useTimelineTouchNavigation({
     sectionRef,
     viewportRef: timelineScrollRef,
-    layersWidth: LAYERS_W,
+    layersWidth: TRACK_X,
     headerHeight: compact ? HEADER_H : 0,
     navigation,
     cancelEditing: () => {
@@ -233,7 +239,8 @@ export function LayerTimeline({
       useEditorStore.getState().togglePlayback();
     }
     const element = e.currentTarget;
-    setProgressFromClientX(e.clientX, element, e.altKey);
+    const track = rulerRef.current ?? element;
+    setProgressFromClientX(e.clientX, track, e.altKey);
     try {
       element.setPointerCapture(e.pointerId);
     } catch {
@@ -241,7 +248,7 @@ export function LayerTimeline({
     }
     const onMove = (moveEvent: PointerEvent) => {
       if (moveEvent.pointerId === e.pointerId)
-        setProgressFromClientX(moveEvent.clientX, element, moveEvent.altKey);
+        setProgressFromClientX(moveEvent.clientX, track, moveEvent.altKey);
     };
     const finish = () => {
       scrubCleanupRef.current = null;
@@ -324,7 +331,8 @@ export function LayerTimeline({
       >
         <TimelinePlayhead
           visible={!isTimelineEmpty}
-          layersWidth={LAYERS_W}
+          layersWidth={TRACK_X}
+          bleed={GUTTER}
           color={PLAYHEAD}
           contentWidth={navigation.contentWidth}
           viewportWidth={navigation.width}
@@ -336,12 +344,12 @@ export function LayerTimeline({
           const x =
             (snapGuide.time / Math.max(1, animation.duration)) * navigation.contentWidth -
             navigation.scrollLeft;
-          if (x < 0 || x > navigation.width) return null;
+          if (x < -GUTTER || x > navigation.width + GUTTER) return null;
           return (
             <div
               data-timeline-snap-guide
               className="pointer-events-none absolute top-0 bottom-0 z-[15] border-l border-dashed border-primary/65"
-              style={{ left: LAYERS_W + x, top: compact ? HEADER_H : 0 }}
+              style={{ left: TRACK_X + x, top: compact ? HEADER_H : 0 }}
             >
               <span
                 role="status"
@@ -370,7 +378,7 @@ export function LayerTimeline({
           aria-hidden
           className="pointer-events-none absolute top-0 bottom-0 z-[2] border-x border-primary/35 bg-primary/5"
           style={{
-            left: LAYERS_W + previewLeft,
+            left: TRACK_X + previewLeft,
             width: previewRight - previewLeft,
             top: compact ? HEADER_H : 0,
           }}
@@ -382,7 +390,7 @@ export function LayerTimeline({
         <div
           className="absolute bottom-2 z-[16] flex h-6 items-center gap-1 rounded-full bg-primary pl-2.5 pr-0.5 text-[11px] tabular-nums text-primary-foreground shadow-sm"
           style={{
-            left: LAYERS_W + Math.min(previewLeft + 6, Math.max(0, navigation.width - 150)),
+            left: TRACK_X + Math.min(previewLeft + 6, Math.max(0, navigation.width - 150)),
           }}
         >
           <span data-timeline-preview-range-label>
@@ -536,6 +544,13 @@ export function LayerTimeline({
           }
           style={{ width: compact ? "100%" : LAYERS_W, height: HEADER_H }}
         >
+          {!compact && (
+            <KeyframeStepButton
+              direction={-1}
+              compact={false}
+              disabled={!keyframeStops.hasPrevious}
+            />
+          )}
           <button
             type="button"
             className={cn(
@@ -553,6 +568,9 @@ export function LayerTimeline({
             )}
           </button>
           {!compact && (
+            <KeyframeStepButton direction={1} compact={false} disabled={!keyframeStops.hasNext} />
+          )}
+          {!compact && (
             <TimelineInsertKeyframeButton presentation="icon" label="Add keyframe at playhead" />
           )}
           <div className="flex h-6 min-w-0 items-center gap-[3px] rounded-md bg-secondary px-1.5 text-[11px] tabular-nums leading-none">
@@ -569,34 +587,39 @@ export function LayerTimeline({
         </PanelHeader>
 
         {compact && (
+          // The phone header row keeps its centered grab handle, so keyframe
+          // stepping sits in the cell above the names, as in Glyphrise.
           <div
-            aria-hidden
-            className="absolute bottom-0 left-0 flex items-center border-r border-border px-3 text-[11px] text-muted-foreground"
+            className="absolute bottom-0 left-0 flex items-center justify-center border-r border-border"
             style={{ width: LAYERS_W, height: HEADER_H }}
           >
-            Layers
+            <KeyframeStepButton direction={-1} compact disabled={!keyframeStops.hasPrevious} />
+            <KeyframeStepButton direction={1} compact disabled={!keyframeStops.hasNext} />
           </div>
         )}
         {/* Ruler — Figma motion: continuous baseline, major labels, minor ticks */}
         <div
-          className="relative min-w-0 flex-1 overflow-hidden"
+          className={cn(
+            "relative min-w-0 flex-1 touch-none overflow-hidden",
+            !isTimelineEmpty && "cursor-ew-resize",
+          )}
           style={{ marginLeft: compact ? LAYERS_W : 0, height: HEADER_H }}
+          onPointerDown={isTimelineEmpty ? undefined : beginScrub}
+          onLostPointerCapture={(event) => {
+            if (event.target === event.currentTarget) scrubCleanupRef.current?.();
+          }}
         >
           <div
             ref={rulerRef}
             style={{
               width: navigation.contentWidth,
-              left: -navigation.scrollLeft,
+              left: GUTTER - navigation.scrollLeft,
               height: HEADER_H,
             }}
             className={cn(
               "absolute top-0 select-none touch-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2",
               isTimelineEmpty ? "cursor-default" : "cursor-ew-resize",
             )}
-            onPointerDown={isTimelineEmpty ? undefined : beginScrub}
-            onLostPointerCapture={(event) => {
-              if (event.target === event.currentTarget) scrubCleanupRef.current?.();
-            }}
             role="slider"
             aria-label="Timeline playhead"
             aria-valuemin={0}
@@ -799,7 +822,10 @@ export function LayerTimeline({
           useEditorStore.getState().setTimelineScroll(element.scrollLeft, element.scrollTop);
         }}
       >
-        <div className="flex min-h-full" style={{ width: LAYERS_W + navigation.contentWidth }}>
+        <div
+          className="flex min-h-full"
+          style={{ width: TRACK_X + navigation.contentWidth + GUTTER }}
+        >
           <TimelineLayersPane
             rows={timelineRows}
             width={LAYERS_W}
@@ -826,10 +852,43 @@ export function LayerTimeline({
               emptyHintDismissed={emptyHintDismissed}
               onDismissEmptyHint={() => setEmptyHintDismissed(true)}
               formatProfile={formatProfile}
+              gutter={GUTTER}
             />
           </TimelineNavigationCancellation.Provider>
         </div>
       </div>
     </section>
+  );
+}
+
+/** ‹ and › around Play, shared with Glyphrise's transport (`,` and `.`). */
+function KeyframeStepButton({
+  direction,
+  compact,
+  disabled,
+  className,
+}: {
+  direction: -1 | 1;
+  compact: boolean;
+  disabled: boolean;
+  className?: string;
+}) {
+  const Icon = direction < 0 ? ChevronLeft : ChevronRight;
+  const label = direction < 0 ? "Previous keyframe" : "Next keyframe";
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={`${label} · ${direction < 0 ? "," : "."}`}
+      disabled={disabled}
+      onClick={() => stepToKeyframe(direction)}
+      className={cn(
+        "grid h-7 w-4 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring",
+        compact && "size-11 touch-manipulation",
+        className,
+      )}
+    >
+      <Icon className={compact ? "size-4" : "size-3.5"} />
+    </button>
   );
 }

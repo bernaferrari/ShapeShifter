@@ -123,7 +123,9 @@ export function useTimelineGesture({
       ? new Set([block.id, ...(adjacent ? [adjacent.id] : [])])
       : new Set(plan.edges.keys());
     const element = event.currentTarget;
-    const row = element.closest<HTMLElement>("[data-timeline-row]");
+    const row =
+      element.closest<HTMLElement>("[data-timeline-lane]") ??
+      element.closest<HTMLElement>("[data-timeline-row]");
     useEditorStore.setState({ isPlaying: false });
     ref.current = {
       marker: beginLiveGesture("timeline-retime"),

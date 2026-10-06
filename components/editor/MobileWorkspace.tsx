@@ -40,7 +40,8 @@ export function MobilePanelTabs({
   return (
     <nav
       aria-label="Panels"
-      className="flex shrink-0 items-stretch border-t border-border bg-background pb-[env(safe-area-inset-bottom)]"
+      // Same bar as Glyphrise: neutral tiles, accent kept for selection and playhead.
+      className="grid shrink-0 grid-cols-3 gap-1 border-t border-border bg-background p-1 pb-[calc(0.25rem+env(safe-area-inset-bottom))] select-none"
     >
       {TABS.map((tab) => {
         const active = sheet === tab.id;
@@ -51,8 +52,10 @@ export function MobilePanelTabs({
             aria-pressed={active}
             onClick={() => onSheetChange(active ? null : tab.id)}
             className={cn(
-              "relative flex h-14 flex-1 touch-manipulation flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition-colors",
-              active ? "text-primary" : "text-muted-foreground active:text-foreground",
+              "relative flex h-14 touch-manipulation flex-col items-center justify-center gap-1 rounded-lg text-[11px] font-medium transition-[background-color,color,transform] duration-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring active:scale-[0.96]",
+              active
+                ? "bg-muted text-foreground"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
             )}
           >
             {tab.icon}
@@ -257,7 +260,7 @@ export function MobileWorkspace({
                   <Inspector />
                 </div>
               )}
-              {visibleSheet === "motion" && <LayerTimeline layersWidth={112} compact />}
+              {visibleSheet === "motion" && <LayerTimeline layersWidth={128} compact />}
             </MobilePanelHeaderProvider>
           </motion.section>
         )}

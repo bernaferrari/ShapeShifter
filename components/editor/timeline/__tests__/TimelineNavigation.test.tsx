@@ -12,6 +12,7 @@ import { TimelineInsertKeyframeButton } from "../TimelineInsertKeyframeButton";
 import { useTimelineViewSettings } from "../timelineViewSettings";
 import { anchoredTimelineScroll, formatTimelineMark, timelineMajorStep } from "../timelineScale";
 import { useEditorKeyboardShortcuts } from "../../hooks/useEditorKeyboardShortcuts";
+import { TOUCH_HOLD_MS } from "@/lib/touchIntent";
 
 let rendered: RenderedEditorComponent | null;
 let baseline: ReturnType<typeof useEditorStore.getState>;
@@ -20,9 +21,10 @@ beforeEach(() => {
   useEditorStore.getState().resetProject();
   useEditorStore.setState({ timelineZoom: 1, timelineScrollX: 0, timelineScrollY: 0 });
   useTimelineViewSettings.setState({ unit: "milliseconds", fps: 30, snapping: true });
-  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1240);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1260);
 });
 afterEach(() => {
+  vi.useRealTimers();
   rendered?.unmount();
   rendered = null;
   vi.restoreAllMocks();
@@ -38,7 +40,7 @@ function click(label: string) {
 function timelineOption(itemText: string) {
   return chooseMenuItem(button("Timeline options"), itemText);
 }
-function stepFrame(key: "," | ".") {
+function stepFrame(key: "<" | ">") {
   React.act(() =>
     window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })),
   );
@@ -69,11 +71,11 @@ function touch(element: Element, type: string, id: number, x: number, y = 300) {
 function mountTouchTimeline() {
   rendered = renderEditorComponent(<LayerTimeline />);
   rendered.container.querySelector("section")!.getBoundingClientRect = () =>
-    new DOMRect(0, 0, 1240, 600);
+    new DOMRect(0, 0, 1260, 600);
   for (const row of rendered.container.querySelectorAll<HTMLElement>("[data-timeline-row]"))
-    row.getBoundingClientRect = () => new DOMRect(240, 200, 1000, 30);
+    row.getBoundingClientRect = () => new DOMRect(250, 200, 1000, 30);
   const ruler = rendered.container.querySelector<HTMLElement>('[aria-label="Timeline playhead"]')!;
-  ruler.getBoundingClientRect = () => new DOMRect(240, 0, 1000, 36);
+  ruler.getBoundingClientRect = () => new DOMRect(250, 0, 1000, 36);
   return {
     viewport: rendered.container.querySelector<HTMLElement>('[aria-label="Animation tracks"]')!,
     ruler,
@@ -88,9 +90,28 @@ function addMotion() {
 }
 
 describe("timeline navigation", () => {
+  it("scrolls instead of retiming when a quick swipe starts on a segment", () => {
+    vi.useFakeTimers();
+    const id = addMotion();
+    useEditorStore.getState().selectBlocks([]);
+    const original = useEditorStore.getState().animation;
+    const { viewport } = mountTouchTimeline();
+    const segment = rendered!.container.querySelector(`[data-timeline-block-id="${id}"]`)!;
+    React.act(() => useEditorStore.setState({ timelineZoom: 2 }));
+    touch(segment, "pointerdown", 1, 600);
+    touch(segment, "pointermove", 1, 540);
+    React.act(() => vi.advanceTimersByTime(TOUCH_HOLD_MS * 2));
+    touch(segment, "pointermove", 1, 500);
+    touch(viewport, "pointerup", 1, 500);
+    expect(useEditorStore.getState().animation).toBe(original);
+    expect(useEditorStore.getState().selectedBlockIds).not.toContain(id);
+    expect(useEditorStore.getState().timelineScrollX).toBeGreaterThan(0);
+  });
+
   it("pinches around the touched time and continues scrolling with the remaining finger", () => {
     const { viewport } = mountTouchTimeline();
-    const pointer = (type: string, id: number, x: number) => touch(viewport, type, id, x);
+    // Time zero sits past the 240px names column and the 10px lane gutter.
+    const pointer = (type: string, id: number, x: number) => touch(viewport, type, id, x + 10);
     pointer("pointerdown", 1, 600);
     pointer("pointerdown", 2, 800);
     pointer("pointermove", 1, 500);
@@ -112,6 +133,7 @@ describe("timeline navigation", () => {
   it.each(["keyframe", "segment", "duration", "scrub"])(
     "cancels an active %s edit before pinching without leaving an undo step",
     (kind) => {
+      vi.useFakeTimers();
       const id = addMotion();
       useEditorStore.setState({ progress: 0.25 });
       const original = useEditorStore.getState();
@@ -127,6 +149,8 @@ describe("timeline navigation", () => {
                 )!
               : rendered!.container.querySelector(`[data-timeline-block-id="${id}"]`)!;
       touch(target, "pointerdown", 1, 500);
+      // Keyframes and segments only pick up after a still hold on touch.
+      React.act(() => vi.advanceTimersByTime(TOUCH_HOLD_MS));
       touch(target, "pointermove", 1, 560);
       if (kind === "scrub") expect(useEditorStore.getState().progress).not.toBe(original.progress);
       else expect(useEditorStore.getState().animation).not.toEqual(original.animation);
@@ -147,8 +171,8 @@ describe("timeline navigation", () => {
       expect(click.defaultPrevented).toBe(true);
       expect(useEditorStore.getState().progress).toBe(original.progress);
       // A fresh tap is still a normal edit, rather than being swallowed after navigation.
-      touch(ruler, "pointerdown", 3, 640);
-      touch(ruler, "pointerup", 3, 640);
+      touch(ruler, "pointerdown", 3, 650);
+      touch(ruler, "pointerup", 3, 650);
       expect(useEditorStore.getState().progress).toBeCloseTo(0.4);
     },
   );
@@ -276,7 +300,7 @@ describe("timeline navigation", () => {
     const range = rendered.container.querySelector<HTMLElement>("[data-timeline-preview-range]")!;
     const label = () =>
       rendered!.container.querySelector("[data-timeline-preview-range-label]")?.textContent;
-    expect(range.style.left).toBe("340px");
+    expect(range.style.left).toBe("350px");
     expect(range.style.width).toBe("600px");
     expect(label()).toBe("Looping 100–700 ms");
     await timelineOption("Show frames");
@@ -349,22 +373,44 @@ describe("timeline navigation", () => {
       '[aria-label="Animation tracks"]',
     )!;
     const head = () => rendered!.container.querySelector<HTMLElement>("[data-timeline-playhead]")!;
-    expect(head().style.left).toBe("840px");
+    expect(head().style.left).toBe("850px");
     await timelineOption("Zoom in");
     expect(useEditorStore.getState().timelineZoom).toBeCloseTo(Math.sqrt(2));
     expect(parseFloat(ruler.style.width)).toBeCloseTo(1000 * Math.sqrt(2));
-    expect(content.style.width).toBe(ruler.style.width);
-    expect(parseFloat(head().style.left)).toBeCloseTo(840);
+    // Lanes carry a 10px gutter on both ends around the ruler's time span.
+    expect(parseFloat(content.style.width)).toBeCloseTo(parseFloat(ruler.style.width) + 20);
+    expect(parseFloat(head().style.left)).toBeCloseTo(850);
     React.act(() => {
       tracks.scrollLeft = 300;
       tracks.dispatchEvent(new Event("scroll"));
     });
-    expect(ruler.style.left).toBe("-300px");
-    expect(parseFloat(head().style.left)).toBeCloseTo(240 + 600 * Math.sqrt(2) - 300);
+    expect(ruler.style.left).toBe("-290px");
+    expect(parseFloat(head().style.left)).toBeCloseTo(250 + 600 * Math.sqrt(2) - 300);
     await timelineOption("Fit animation");
-    expect(content.style.width).toBe("1000px");
+    expect(content.style.width).toBe("1020px");
     expect(tracks.scrollLeft).toBe(0);
-    expect(head().style.left).toBe("840px");
+    expect(head().style.left).toBe("850px");
+  });
+
+  it("jumps between keyframes with , and . and the transport chevrons", () => {
+    addMotion();
+    useEditorStore.setState({ progress: 0.25 });
+    rendered = renderEditorComponent(<KeyboardTimeline />);
+    const duration = useEditorStore.getState().animation.duration;
+    const time = () => Math.round(useEditorStore.getState().progress * duration);
+    stepFrame(">");
+    expect(time()).toBe(Math.round(250 + 1000 / 30));
+    React.act(() =>
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: ".", bubbles: true })),
+    );
+    expect(time()).toBe(700);
+    click("Previous keyframe");
+    expect(time()).toBe(100);
+    click("Previous keyframe");
+    expect(time()).toBe(0);
+    expect(button("Previous keyframe").disabled).toBe(true);
+    click("Next keyframe");
+    expect(time()).toBe(100);
   });
 
   it("displays and steps exact frames without rounding fractional milliseconds", async () => {
@@ -375,12 +421,12 @@ describe("timeline navigation", () => {
       '[aria-label="Current frame"]',
     )!;
     expect(frame.value).toBe("15");
-    stepFrame(".");
+    stepFrame(">");
     expect(useEditorStore.getState().progress * 1000).toBeCloseTo(500 + 1000 / 30, 10);
     expect(frame.value).toBe("16");
     React.act(() => useTimelineViewSettings.getState().setFps(24));
     const previous = useEditorStore.getState().progress;
-    stepFrame(".");
+    stepFrame(">");
     expect(useEditorStore.getState().progress * 1000).toBeCloseTo(previous * 1000 + 1000 / 24, 10);
   });
 

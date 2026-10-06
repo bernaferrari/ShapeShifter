@@ -1,18 +1,59 @@
 "use client";
 
 import React from "react";
-import { ChevronRight, Crop, Folder, Spline } from "lucide-react";
+import { ChevronRight, Crop, Folder } from "lucide-react";
 import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { cn } from "@/lib/utils";
 import { TimelineKeyframeDiamond } from "./TimelinePropertyBlock";
 import { TimelinePropertyValue } from "./TimelineLiveState";
 import type { TimelineProjection, TimelineRow } from "./timelineProjection";
+import {
+  ROW_COMPACT_HEIGHT,
+  ROW_LAYER_HEIGHT,
+  ROW_PROPERTY_HEIGHT,
+  TIMELINE_ROW_PADDING,
+  timelineTreeColumns,
+} from "./timelineLayout";
 
 const SELECTION_COLOR = "var(--primary)";
 const ROW_SELECTED = "bg-primary/10";
-const ROW_LAYER_HEIGHT = 30;
-const ROW_PROPERTY_HEIGHT = 28;
+
+const sameLayer = (row: TimelineRow | undefined, frameId: string, layerId: string | number) =>
+  row?.kind === "property" && row.frameId === frameId && String(row.layer.id) === String(layerId);
+
+/** Connects a layer to its property rows: a stem from the icon, then an elbow into the last row. */
+function TreeGuide({
+  left,
+  label,
+  part,
+  active,
+}: {
+  left: number;
+  label: number;
+  part: "stem" | "through" | "last";
+  active: boolean;
+}) {
+  const color = active ? "border-primary/45" : "border-muted-foreground/25";
+  if (part === "last")
+    return (
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute top-0 h-1/2 rounded-bl-[4px] border-b border-l",
+          color,
+        )}
+        style={{ left, width: label - left - 3 }}
+      />
+    );
+  return (
+    <span
+      aria-hidden
+      className={cn("pointer-events-none absolute bottom-0 border-l", color)}
+      style={{ left, top: part === "stem" ? "calc(50% + 7px)" : 0 }}
+    />
+  );
+}
 
 interface TimelineLayersPaneProps {
   rows: TimelineRow[];
@@ -42,6 +83,13 @@ export function TimelineLayersPane({
   const frames = useEditorStore((state) => state.frames);
   const [renamingLayerKey, setRenamingLayerKey] = React.useState<string | null>(null);
 
+  const isLayerSelected = (frameId: string, layerId: string | number) =>
+    hasCanvasSelection &&
+    selectionKind === "layer" &&
+    selectedLayerRefs.some(
+      (reference) => reference.ownerId === frameId && String(reference.layerId) === String(layerId),
+    );
+
   const jumpTo = (milliseconds: number) => {
     const store = useEditorStore.getState();
     if (store.isPlaying) store.togglePlayback();
@@ -59,7 +107,12 @@ export function TimelineLayersPane({
       data-timeline-layer-names
       style={{ width }}
     >
-      {rows.map((row) => {
+      {rows.map((row, index) => {
+        const height = compact
+          ? ROW_COMPACT_HEIGHT
+          : row.kind === "property"
+            ? ROW_PROPERTY_HEIGHT
+            : ROW_LAYER_HEIGHT;
         if (row.kind === "frame") {
           const isActive =
             hasCanvasSelection && selectionKind === "frame" && row.frameId === selectedFrameId;
@@ -72,7 +125,7 @@ export function TimelineLayersPane({
                 "group flex w-full items-center gap-1 pr-2 text-left",
                 isActive ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted",
               )}
-              style={{ height: compact ? 44 : ROW_LAYER_HEIGHT, paddingLeft: compact ? 12 : 8 }}
+              style={{ height, paddingLeft: TIMELINE_ROW_PADDING }}
               onClick={() => useEditorStore.getState().selectFrame(row.frameId)}
               onKeyDown={(event) => {
                 if (
@@ -105,14 +158,8 @@ export function TimelineLayersPane({
         }
 
         if (row.kind === "object") {
-          const isSelected =
-            hasCanvasSelection &&
-            selectionKind === "layer" &&
-            selectedLayerRefs.some(
-              (reference) =>
-                reference.ownerId === row.frameId &&
-                String(reference.layerId) === String(row.layer.id),
-            );
+          const isSelected = isLayerSelected(row.frameId, row.layer.id);
+          const columns = timelineTreeColumns(row.depth);
           const selectRow = () => {
             const store = useEditorStore.getState();
             if (row.frameId !== store.selectedFrameId) store.selectFrame(row.frameId);
@@ -128,10 +175,10 @@ export function TimelineLayersPane({
               role="button"
               tabIndex={0}
               className={cn(
-                "group flex w-full items-center gap-1 pr-1.5 text-left",
+                "group relative flex w-full items-center gap-1 pr-1.5 text-left",
                 isSelected ? `${ROW_SELECTED} text-foreground` : "text-foreground hover:bg-muted",
               )}
-              style={{ height: compact ? 44 : ROW_LAYER_HEIGHT, paddingLeft: 6 + row.depth * 12 }}
+              style={{ height, paddingLeft: columns.start }}
               onClick={(event) => {
                 const store = useEditorStore.getState();
                 if (event.shiftKey) {
@@ -164,6 +211,14 @@ export function TimelineLayersPane({
                 }
               }}
             >
+              {sameLayer(rows[index + 1], row.frameId, row.layer.id) && (
+                <TreeGuide
+                  left={columns.guide}
+                  label={columns.label}
+                  part="stem"
+                  active={isSelected}
+                />
+              )}
               <span className="grid size-4 shrink-0 place-items-center">
                 {row.expandable && (
                   <button
@@ -184,19 +239,20 @@ export function TimelineLayersPane({
                   </button>
                 )}
               </span>
-              <span
-                className="grid size-3.5 shrink-0 place-items-center"
-                style={{ color: isSelected ? SELECTION_COLOR : "var(--muted-foreground)" }}
-                aria-hidden
-              >
-                {row.layer.type === "group" ? (
-                  <Folder className="size-3" />
-                ) : row.layer.type === "clipPath" ? (
-                  <Crop className="size-3" />
-                ) : (
-                  <Spline className="size-3" />
-                )}
-              </span>
+              {/* Paths are the norm, so only groups and masks earn a glyph. */}
+              {(row.layer.type === "group" || row.layer.type === "clipPath") && (
+                <span
+                  className="grid size-3.5 shrink-0 place-items-center"
+                  style={{ color: isSelected ? SELECTION_COLOR : "var(--muted-foreground)" }}
+                  aria-hidden
+                >
+                  {row.layer.type === "group" ? (
+                    <Folder className="size-3" />
+                  ) : (
+                    <Crop className="size-3" />
+                  )}
+                </span>
+              )}
               {renamingLayerKey === row.key ? (
                 <input
                   autoFocus
@@ -252,6 +308,8 @@ export function TimelineLayersPane({
           Number.POSITIVE_INFINITY,
         );
         const latest = blocks.reduce((maximum, block) => Math.max(maximum, block.endTime), 0);
+        const columns = timelineTreeColumns(row.depth - 1);
+        const isLast = !sameLayer(rows[index + 1], row.frameId, row.layer.id);
         const selectProperty = () => {
           const store = useEditorStore.getState();
           if (row.frameId !== store.selectedFrameId) store.selectFrame(row.frameId);
@@ -263,13 +321,10 @@ export function TimelineLayersPane({
           <div
             key={row.key}
             className={cn(
-              "group flex w-full items-center gap-0.5 pr-1.5 text-left",
+              "group relative flex w-full items-center gap-0.5 pr-1.5 text-left",
               isSelected ? ROW_SELECTED : "hover:bg-muted/60",
             )}
-            style={{
-              height: compact ? 44 : ROW_PROPERTY_HEIGHT,
-              paddingLeft: (compact ? 12 : 24) + row.depth * 6,
-            }}
+            style={{ height, paddingLeft: columns.label }}
             role="button"
             tabIndex={0}
             aria-pressed={isSelected}
@@ -285,6 +340,12 @@ export function TimelineLayersPane({
               }
             }}
           >
+            <TreeGuide
+              left={columns.guide}
+              label={columns.label}
+              part={isLast ? "last" : "through"}
+              active={isLayerSelected(row.frameId, row.layer.id)}
+            />
             <span
               className={cn(
                 "min-w-0 flex-1 truncate text-[11px]",

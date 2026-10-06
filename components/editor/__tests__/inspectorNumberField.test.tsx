@@ -115,4 +115,38 @@ describe.each([false, true])("NumberRow numeric editing (compact=%s)", (compact)
     React.act(() => input.blur());
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  it("lets a vertical swipe over the scrub label scroll without editing or adding history", () => {
+    const { onChange } = mount();
+    const label = rendered!.container.querySelector<HTMLElement>('[role="slider"]')!;
+    const history = useEditorStore.getState().history.length;
+    const pointer = (type: string, x: number, y: number) =>
+      React.act(() => {
+        label.dispatchEvent(
+          new PointerEvent(type, {
+            pointerType: "touch",
+            pointerId: 7,
+            isPrimary: true,
+            button: 0,
+            clientX: x,
+            clientY: y,
+            bubbles: true,
+          }),
+        );
+      });
+    pointer("pointerdown", 10, 10);
+    pointer("pointermove", 13, 40);
+    pointer("pointermove", 16, 90);
+    pointer("pointerup", 16, 90);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(useEditorStore.getState().history).toHaveLength(history);
+
+    pointer("pointerdown", 10, 10);
+    pointer("pointermove", 30, 12);
+    pointer("pointermove", 50, 12);
+    pointer("pointerup", 50, 12);
+    // Measured from where the sideways drag became intentional (20px × 0.5),
+    // not from touch-down, which would include the slop and jump to 32.
+    expect(onChange).toHaveBeenLastCalledWith(22);
+  });
 });

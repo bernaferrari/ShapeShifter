@@ -9,6 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { horizontalIntent } from "@/lib/touchIntent";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/lib/store/editorStore";
 
@@ -191,7 +192,13 @@ export function NumberRow({
   /** Keep the ◇ column so non-animatable fields align with animatable neighbours. */
   reserveKeyframeSlot?: boolean;
 }) {
-  const scrub = React.useRef<{ startX: number; startVal: number } | null>(null);
+  const scrub = React.useRef<{
+    startX: number;
+    startY: number;
+    startVal: number;
+    /** Touch scrubs wait for a sideways drag so the panel can still scroll. */
+    active: boolean;
+  } | null>(null);
   // While the field is focused we keep the raw keystrokes so typing "2." or a
   // trailing zero isn't reformatted mid-edit. Display always uses a "." decimal
   // separator (an <input type=number> would otherwise render the OS locale's
@@ -245,9 +252,10 @@ export function NumberRow({
     },
   };
 
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (!e.isPrimary || e.button !== 0) return;
-    e.preventDefault();
+  const activate = (e: React.PointerEvent) => {
+    const session = scrub.current;
+    if (!session || session.active) return;
+    session.active = true;
     // Scrubbing takes over from the text draft so the visible number follows
     // each adjustment instead of remaining frozen at the last focused value.
     draftRef.current = null;
@@ -255,17 +263,36 @@ export function NumberRow({
     try {
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     } catch {}
-    scrub.current = { startX: e.clientX, startVal: value };
     useEditorStore.getState().beginHistoryGesture();
   };
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (!e.isPrimary || e.button !== 0) return;
+    scrub.current = { startX: e.clientX, startY: e.clientY, startVal: value, active: false };
+    if (e.pointerType === "touch") return;
+    e.preventDefault();
+    activate(e);
+  };
   const onPointerMove = (e: React.PointerEvent) => {
-    if (!scrub.current) return;
-    const dx = e.clientX - scrub.current.startX;
-    onChange(clamp(scrub.current.startVal + dx * (step || 1) * 0.5));
+    const session = scrub.current;
+    if (!session) return;
+    if (!session.active) {
+      const intent = horizontalIntent(
+        { x: session.startX, y: session.startY },
+        { x: e.clientX, y: e.clientY },
+      );
+      if (intent === "scroll") scrub.current = null;
+      if (intent !== "drag") return;
+      // Measure from here so the slop does not register as a jump.
+      session.startX = e.clientX;
+      activate(e);
+    }
+    const dx = e.clientX - session.startX;
+    onChange(clamp(session.startVal + dx * (step || 1) * 0.5));
   };
   const onPointerUp = (e: React.PointerEvent) => {
-    if (!scrub.current) return;
+    const session = scrub.current;
     scrub.current = null;
+    if (!session?.active) return;
     try {
       (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     } catch {}
@@ -273,7 +300,7 @@ export function NumberRow({
   };
   React.useEffect(
     () => () => {
-      if (scrub.current) useEditorStore.getState().endHistoryGesture();
+      if (scrub.current?.active) useEditorStore.getState().endHistoryGesture();
     },
     [],
   );
@@ -302,7 +329,7 @@ export function NumberRow({
             aria-valuenow={value}
             aria-valuetext={mixed ? "Mixed values" : undefined}
             tabIndex={0}
-            className="absolute inset-y-0 left-0 z-10 flex w-6 cursor-ew-resize select-none items-center justify-center text-[10px] text-muted-foreground hover:text-foreground"
+            className="absolute inset-y-0 left-0 z-10 flex w-6 cursor-ew-resize touch-pan-y select-none items-center justify-center text-[10px] text-muted-foreground hover:text-foreground"
             title={`${label} · drag to adjust`}
             {...scrubHandlers}
           >
@@ -340,7 +367,7 @@ export function NumberRow({
         aria-valuenow={value}
         aria-valuetext={mixed ? "Mixed values" : undefined}
         tabIndex={0}
-        className="w-fit cursor-ew-resize select-none truncate text-[11px] text-muted-foreground hover:text-foreground"
+        className="w-fit cursor-ew-resize touch-pan-y select-none truncate text-[11px] text-muted-foreground hover:text-foreground"
         title="Drag to adjust"
         {...scrubHandlers}
       >
