@@ -1793,10 +1793,10 @@ describe("editorStore", () => {
           { x: 15, y: 12 },
         );
         const updated = getStore().layers.find((l) => l.id === layer.id)!;
-        // Shape op edits ONLY the active side so morph endpoints can differ.
+        // Corresponding poses gain straight cubic handles; only the active pose bends.
         expect(updated.from.subPaths[0].commands[1].type).toBe("C");
         expect(updated.from.subPaths[0].commands[1].points).toHaveLength(3);
-        expect(updated.to!.subPaths[0].commands[1].type).toBe("L");
+        expect(updated.to!.subPaths[0].commands[1].type).toBe("C");
         expect(getStore().canUndo).toBe(true);
       });
 
@@ -1875,6 +1875,10 @@ describe("editorStore", () => {
       it("auto-fixes the selected layer and returns true", () => {
         const layer = getStore().layers[0];
         getStore().selectLayer(layer.id);
+        getStore().updateSelectedLayer({
+          from: parsePath("M0 0 L10 0 L10 10 Z"),
+          to: parsePath("M0 0 L10 0 L10 10 L0 10 Z"),
+        });
         const result = getStore().autoFixSelectedLayer();
         expect(result).toBe(true);
         expect(getStore().canUndo).toBe(true);

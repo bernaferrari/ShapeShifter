@@ -1,16 +1,33 @@
 import {
+  reversePath,
+  shiftPath,
   deleteCommand,
   deleteSubPath,
   extractSubPath,
   setCommandAsFirst,
-  splitCommandInHalf,
-  splitPointNear,
+  insertPointNear,
+  splitCommandAt,
+  changeCommandType,
+  updateCommandPoint,
+  getPathDataBounds,
+  parsePath,
+  pathToString,
+  androidPathMorphSignature,
+  generateId,
 } from "../../shapeshifter/pathUtils";
+import { toast } from "sonner";
+import { structuralLockIssue } from "../commands/structuralLayers";
+import { commitPathTopology, isEditablePath } from "../commands/pathTopology";
 import { flexCurvature } from "../../shapeshifter/gestures/HitTests";
-import type { Layer, PathData, Point } from "../../shapeshifter/types";
+import type { Layer, Point } from "../../shapeshifter/types";
 import type { EditorState } from "../editorStore";
 
 type VectorPathAction =
+  | "reverseSelectedLayer"
+  | "shiftSelectedLayer"
+  | "editSelectedPathPoint"
+  | "changeSelectedPathCommand"
+  | "addSelectedPathPoint"
   | "addPointOnPath"
   | "splitSelectedLayerSegment"
   | "bendSelectedLayerSegment"
@@ -24,8 +41,6 @@ type VectorPathAction =
 type VectorPathActions = Pick<EditorState, VectorPathAction>;
 type SetEditorState = (update: Partial<EditorState>) => void;
 
-const mapEndPath = (layer: Layer, transform: (path: PathData) => PathData) =>
-  layer.to ? transform(layer.to) : undefined;
 const endPath = (layer: Layer) => layer.to ?? layer.from;
 
 function cubicPointAt(
@@ -54,88 +69,122 @@ export function createVectorPathActions(
   set: SetEditorState,
   get: () => EditorState,
 ): VectorPathActions {
-  const mapToEnd = mapEndPath;
   const endOf = endPath;
   return {
-    addPointOnPath: (clickX, clickY) => {
-      const { layers, selectedLayerId, editingSide } = get();
-      const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
-      if (layerIndex === -1) return;
-
-      const layer = layers[layerIndex];
-      if (layer.locked) return;
-      // Structural op: keep from/to command counts equal by splitting BOTH sides at the
-      // same (subIdx, cmdIdx). The click determines the position on the active side; we
-      // mirror the insertion onto the other side so the morph stays interpolatable.
-      const activePath = editingSide === "from" ? layer.from : endOf(layer);
-      const otherPath = editingSide === "from" ? layer.to : layer.from;
-      const splitActive = splitPointNear(activePath, { x: clickX, y: clickY });
-      if (!splitActive) return;
-
-      // Detect where splitPointNear inserted the new command (an id absent before the split).
-      let splitSub = -1;
-      let splitCmd = -1;
-      for (let s = 0; s < activePath.subPaths.length; s++) {
-        const beforeIds = new Set(activePath.subPaths[s].commands.map((c) => c.id));
-        const afterCmds = splitActive.subPaths[s]?.commands ?? [];
-        const insertPos = afterCmds.findIndex((c) => !beforeIds.has(c.id));
-        if (insertPos !== -1) {
-          splitSub = s;
-          splitCmd = insertPos - 1; // splitCommandInHalf inserts the new command at cmdIdx + 1
-          break;
-        }
+    reverseSelectedLayer: () => {
+      commitPathTopology(set, get, get().selectedLayerId, reversePath);
+    },
+    shiftSelectedLayer: (steps = 1) =>
+      commitPathTopology(set, get, get().selectedLayerId, (path) => shiftPath(path, steps)),
+    editSelectedPathPoint: (subPathIndex, commandIndex, pointIndex, point) => {
+      const state = get();
+      const layer = state.layers.find((item) => String(item.id) === String(state.selectedLayerId));
+      if (
+        !layer ||
+        !Number.isFinite(point.x) ||
+        !Number.isFinite(point.y) ||
+        Math.abs(point.x) > 1e7 ||
+        Math.abs(point.y) > 1e7
+      )
+        return false;
+      if (structuralLockIssue(state.layers, [layer.id], false)) return false;
+      const source = state.editingSide === "from" ? layer.from : (layer.to ?? layer.from);
+      if (!source.subPaths[subPathIndex]?.commands[commandIndex]?.points[pointIndex]) return false;
+      state.beginHistoryGesture();
+      try {
+        state.ensurePathKeyframeAtPlayhead();
+        const current = get();
+        const live = current.layers.find((item) => String(item.id) === String(layer.id));
+        const path = current.editingSide === "from" ? live?.from : (live?.to ?? live?.from);
+        if (!path) return false;
+        const next = updateCommandPoint(path, subPathIndex, commandIndex, pointIndex, point);
+        if (next === path) return false;
+        current.updateSelectedLayer(
+          current.editingSide === "from" ? { from: next, pathData: next } : { to: next },
+        );
+        return true;
+      } finally {
+        get().endHistoryGesture();
       }
-      // Only mirror the split onto the other side if this is a morph layer (has `to`).
-      // Static layers just gain a point on their single (from) geometry.
-      const splitOther =
-        otherPath && splitSub !== -1 && splitCmd >= 0
-          ? splitCommandInHalf(otherPath, splitSub, splitCmd)
-          : otherPath;
+    },
+    changeSelectedPathCommand: (subPathIndex, commandIndex, type) =>
+      commitPathTopology(set, get, get().selectedLayerId, (path) =>
+        changeCommandType(path, subPathIndex, commandIndex, type),
+      ),
 
-      const from = editingSide === "from" ? splitActive : (splitOther ?? splitActive);
-      const to = editingSide === "from" ? splitOther : splitActive;
-      const newLayers = [...layers];
-      newLayers[layerIndex] = { ...layer, from, to, pathData: from };
+    addSelectedPathPoint: (subPathIndex, commandIndex, t = 0.5) => {
+      const state = get();
+      const layer = state.layers.find((item) => String(item.id) === String(state.selectedLayerId));
+      const path = state.editingSide === "from" ? layer?.from : (layer?.to ?? layer?.from);
+      const command = path?.subPaths[subPathIndex]?.commands[commandIndex];
+      if (!command) return false;
+      // A start row adds an anchor on the outgoing edge; other rows split their incoming edge.
+      const target = command.type === "M" ? commandIndex + 1 : commandIndex;
+      const changed = commitPathTopology(set, get, state.selectedLayerId, (path) =>
+        splitCommandAt(path, subPathIndex, target, t),
+      );
+      if (changed) {
+        const current = get();
+        const layer = current.layers.find(
+          (item) => String(item.id) === String(state.selectedLayerId),
+        );
+        const path = current.editingSide === "from" ? layer?.from : (layer?.to ?? layer?.from);
+        const inserted = path?.subPaths[subPathIndex]?.commands[target];
+        if (inserted?.points.length)
+          current.selectPoint({
+            layerId: state.selectedLayerId,
+            side: current.editingSide,
+            subPathIndex,
+            commandIndex: target,
+            pointIndex: inserted.points.length - 1,
+          });
+      }
+      return changed;
+    },
 
-      get().pushHistory();
-      set({ layers: newLayers });
+    addPointOnPath: (clickX, clickY) => {
+      const state = get();
+      const layer = state.layers.find((item) => String(item.id) === String(state.selectedLayerId));
+      const path = state.editingSide === "from" ? layer?.from : (layer?.to ?? layer?.from);
+      if (!path) return;
+      const hit = insertPointNear(path, { x: clickX, y: clickY });
+      if (!hit || hit.t <= 1e-6 || hit.t >= 1 - 1e-6) return;
+      commitPathTopology(set, get, state.selectedLayerId, (path) =>
+        splitCommandAt(path, hit.subIdx, hit.cmdIdx, hit.t),
+      );
     },
 
     splitSelectedLayerSegment: (segment) => {
-      const { layers } = get();
-      const layerIndex = layers.findIndex((l) => l.id === segment.layerId);
-      if (layerIndex === -1) return;
-
-      const layer = layers[layerIndex];
-      const splitPath = (pathData: typeof layer.from) =>
-        splitCommandInHalf(pathData, segment.subPathIndex, segment.commandIndex);
-      const from = splitPath(layer.from);
-      const to = mapToEnd(layer, splitPath);
-      const newLayers = [...layers];
-      newLayers[layerIndex] = { ...layer, from, to, pathData: from };
-
-      get().pushHistory();
-      set({
-        layers: newLayers,
-        selectedLayerId: segment.layerId,
-        editingSide: segment.side,
-        selection: {
-          layerId: segment.layerId,
-          side: segment.side,
-          subPathIndex: segment.subPathIndex,
-          commandIndex: segment.commandIndex,
-          pointIndex: Math.max(
-            0,
-            (from.subPaths[segment.subPathIndex]?.commands[segment.commandIndex]?.points.length ??
-              1) - 1,
-          ),
-        },
-        selectedPoints: [],
-        selectedSubPaths: [],
-      });
+      if (String(get().selectedLayerId) !== String(segment.layerId))
+        get().selectLayer(segment.layerId);
+      get().setEditingSide(segment.side);
+      get().addSelectedPathPoint(segment.subPathIndex, segment.commandIndex);
     },
 
     bendSelectedLayerSegment: (segment, point, options) => {
+      if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+      const initial = get();
+      if (structuralLockIssue(initial.layers, [segment.layerId], false)) return;
+      const initialLayer = initial.layers.find(
+        (item) => String(item.id) === String(segment.layerId),
+      );
+      const initialPath =
+        segment.side === "from" ? initialLayer?.from : (initialLayer?.to ?? initialLayer?.from);
+      const type =
+        initialPath?.subPaths[segment.subPathIndex]?.commands[segment.commandIndex]?.type;
+      if (!type || !["L", "C", "Q", "S", "T"].includes(type)) return;
+      const promoted = type !== "C";
+      if (
+        promoted &&
+        !commitPathTopology(
+          set,
+          get,
+          segment.layerId,
+          (path) => changeCommandType(path, segment.subPathIndex, segment.commandIndex, "C"),
+          { recordHistory: options?.recordHistory },
+        )
+      )
+        return;
       const { layers } = get();
       const layerIndex = layers.findIndex((l) => l.id === segment.layerId);
       if (layerIndex === -1) return;
@@ -152,30 +201,11 @@ export function createVectorPathActions(
         if (!subPath || !command || !start || !end || command.type === "M" || command.type === "Z")
           return next;
 
-        if (command.type === "L" || command.points.length === 1) {
-          const control = {
-            x: 2 * point.x - 0.5 * start.x - 0.5 * end.x,
-            y: 2 * point.y - 0.5 * start.y - 0.5 * end.y,
-          };
-          command.type = "C";
-          command.points = [
-            {
-              x: start.x + (2 / 3) * (control.x - start.x),
-              y: start.y + (2 / 3) * (control.y - start.y),
-            },
-            {
-              x: end.x + (2 / 3) * (control.x - end.x),
-              y: end.y + (2 / 3) * (control.y - end.y),
-            },
-            end,
-          ];
-          return next;
-        }
-
         if (command.type === "C" && command.points.length >= 3) {
           const mid = cubicPointAt(start, command.points[0], command.points[1], end, 0.5);
-          const dx = point.x - mid.x;
-          const dy = point.y - mid.y;
+          // At the midpoint, the two controls contribute 3/4 of their shared displacement.
+          const dx = (4 / 3) * (point.x - mid.x);
+          const dy = (4 / 3) * (point.y - mid.y);
           command.points = [
             { x: command.points[0].x + dx, y: command.points[0].y + dy },
             { x: command.points[1].x + dx, y: command.points[1].y + dy },
@@ -189,12 +219,13 @@ export function createVectorPathActions(
       // Shape op: edit ONLY the active side so the user can author independent morph endpoints.
       const isFrom = segment.side === "from";
       const edited = bendPath(isFrom ? layer.from : endOf(layer));
+      if (!isEditablePath(edited)) return;
       const from = isFrom ? edited : layer.from;
       const to = isFrom ? layer.to : edited;
       const newLayers = [...layers];
       newLayers[layerIndex] = { ...layer, from, to, pathData: from };
 
-      if (options?.recordHistory !== false) {
+      if (!promoted && options?.recordHistory !== false) {
         get().pushHistory();
       }
       set({
@@ -205,6 +236,29 @@ export function createVectorPathActions(
     },
 
     flexSelectedLayerSegment: (segment, delta, t = 0.5, options) => {
+      if (!Number.isFinite(delta.x) || !Number.isFinite(delta.y) || !Number.isFinite(t)) return;
+      const initial = get();
+      if (structuralLockIssue(initial.layers, [segment.layerId], false)) return;
+      const initialLayer = initial.layers.find(
+        (item) => String(item.id) === String(segment.layerId),
+      );
+      const initialPath =
+        segment.side === "from" ? initialLayer?.from : (initialLayer?.to ?? initialLayer?.from);
+      const type =
+        initialPath?.subPaths[segment.subPathIndex]?.commands[segment.commandIndex]?.type;
+      if (!type || !["L", "C", "Q", "S", "T"].includes(type)) return;
+      const promoted = type !== "C" && type !== "Q";
+      if (
+        promoted &&
+        !commitPathTopology(
+          set,
+          get,
+          segment.layerId,
+          (path) => changeCommandType(path, segment.subPathIndex, segment.commandIndex, "C"),
+          { recordHistory: options?.recordHistory },
+        )
+      )
+        return;
       const { layers } = get();
       const layerIndex = layers.findIndex((l) => l.id === segment.layerId);
       if (layerIndex === -1) return;
@@ -230,26 +284,6 @@ export function createVectorPathActions(
         } else if (command.type === "Q" && command.points.length >= 2) {
           c1 = command.points[0];
           c2 = null;
-        } else if (command.type === "L" || command.points.length === 1) {
-          // Promote to cubic exactly as bendSelectedLayerSegment does, then flex the new controls
-          const control = {
-            x: 2 * ((start.x + end.x) / 2) - 0.5 * start.x - 0.5 * end.x,
-            y: 2 * ((start.y + end.y) / 2) - 0.5 * start.y - 0.5 * end.y,
-          };
-          command.type = "C";
-          command.points = [
-            {
-              x: start.x + (2 / 3) * (control.x - start.x),
-              y: start.y + (2 / 3) * (control.y - start.y),
-            },
-            {
-              x: end.x + (2 / 3) * (control.x - end.x),
-              y: end.y + (2 / 3) * (control.y - end.y),
-            },
-            end,
-          ];
-          c1 = command.points[0];
-          c2 = command.points[1];
         }
 
         if (!c1 && !c2) return next;
@@ -277,12 +311,13 @@ export function createVectorPathActions(
       // Shape op: edit ONLY the active side so the user can author independent morph endpoints.
       const isFrom = segment.side === "from";
       const edited = flexPath(isFrom ? layer.from : endOf(layer));
+      if (!isEditablePath(edited)) return;
       const from = isFrom ? edited : layer.from;
       const to = isFrom ? layer.to : edited;
       const newLayers = [...layers];
       newLayers[layerIndex] = { ...layer, from, to, pathData: from };
 
-      if (options?.recordHistory !== false) {
+      if (!promoted && options?.recordHistory !== false) {
         get().pushHistory();
       }
       set({
@@ -303,42 +338,50 @@ export function createVectorPathActions(
       const layer = layers[layerIndex];
       if (layer.locked) return;
 
-      // Structural op: delete the SAME command indices on BOTH sides so the morph stays
-      // interpolatable. Group by subpath, delete highest index first to preserve indices.
+      const source = get().editingSide === "from" ? layer.from : (layer.to ?? layer.from);
       const bySub = new Map<number, number[]>();
+      const handles: typeof toDelete = [];
       for (const sel of toDelete) {
         if (String(sel.layerId) !== String(selectedLayerId)) continue;
+        const command = source.subPaths[sel.subPathIndex]?.commands[sel.commandIndex];
+        if (!command?.points[sel.pointIndex]) continue;
+        if (sel.pointIndex !== command.points.length - 1) {
+          handles.push(sel);
+          continue;
+        }
         if (!bySub.has(sel.subPathIndex)) bySub.set(sel.subPathIndex, []);
         bySub.get(sel.subPathIndex)!.push(sel.commandIndex);
       }
-      if (bySub.size === 0) return;
-
+      if (!bySub.size && !handles.length) return;
       const deleteOn = (pathData: Layer["from"]) => {
-        let p = structuredClone(pathData);
-        for (const [subIdx, cmdIdxs] of bySub.entries()) {
-          for (const cmdIdx of [...new Set(cmdIdxs)].sort((a, b) => b - a)) {
-            p = deleteCommand(p, subIdx, cmdIdx);
-          }
+        let path = structuredClone(pathData);
+        // Deleting a handle collapses that tangent, rather than deleting its vertex.
+        for (const sel of handles) {
+          const commands = path.subPaths[sel.subPathIndex]?.commands;
+          const command = commands?.[sel.commandIndex];
+          const start = commands?.[sel.commandIndex - 1]?.points.at(-1);
+          const end = command?.points.at(-1);
+          if (!command || !start || !end || bySub.get(sel.subPathIndex)?.includes(sel.commandIndex))
+            continue;
+          const point =
+            command.type === "Q"
+              ? { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }
+              : command.type === "C" && sel.pointIndex === 0
+                ? start
+                : end;
+          command.points[sel.pointIndex] = { ...point };
         }
-        return p;
+        for (const [subIdx, indices] of [...bySub.entries()].sort(([a], [b]) => b - a))
+          for (const cmdIdx of [...new Set(indices)].sort((a, b) => b - a))
+            path = deleteCommand(path, subIdx, cmdIdx);
+        return path;
       };
-
-      const from = deleteOn(layer.from);
-      const to = mapToEnd(layer, deleteOn);
-      const newLayers = [...layers];
-      newLayers[layerIndex] = { ...layer, from, to, pathData: from };
-
-      get().pushHistory();
-      set({
-        layers: newLayers,
-        selection: null,
-        selectedPoints: [],
-        selectedSubPaths: [],
-      });
+      if (commitPathTopology(set, get, selectedLayerId, deleteOn))
+        set({ selection: null, selectedPoints: [], selectedSubPaths: [] });
     },
 
     deleteSelectedSubPath: () => {
-      const { layers, selectedLayerId, editingSide, selection, selectedSubPaths } = get();
+      const { selectedLayerId, selection, selectedSubPaths } = get();
       const toDelete =
         selectedSubPaths.length > 0
           ? selectedSubPaths
@@ -353,190 +396,160 @@ export function createVectorPathActions(
             : [];
       if (toDelete.length === 0) return;
 
-      const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
-      if (layerIndex === -1) return;
-      const layer = layers[layerIndex];
-
-      let targetFrom = structuredClone(layer.from);
-      let targetTo = layer.to ? structuredClone(layer.to) : undefined;
-
-      // Delete subpaths descending per side to keep indices valid
-      const fromIdxs = toDelete
-        .filter((s) => s.side === "from" && String(s.layerId) === String(selectedLayerId))
-        .map((s) => s.subPathIndex)
-        .sort((a, b) => b - a);
-      for (const idx of fromIdxs) {
-        targetFrom = deleteSubPath(targetFrom, idx);
-      }
-
-      const toIdxs = toDelete
-        .filter((s) => s.side === "to" && String(s.layerId) === String(selectedLayerId))
-        .map((s) => s.subPathIndex)
-        .sort((a, b) => b - a);
-      if (targetTo) {
-        for (const idx of toIdxs) {
-          targetTo = deleteSubPath(targetTo, idx);
-        }
-      }
-
-      const newLayers = [...layers];
-      const updatedLayer = {
-        ...layer,
-        from: targetFrom,
-        to: targetTo,
-      };
-      if (editingSide === "from") {
-        updatedLayer.pathData = targetFrom;
-      }
-      newLayers[layerIndex] = updatedLayer;
-
-      get().pushHistory();
-      set({ layers: newLayers, selection: null, selectedPoints: [], selectedSubPaths: [] });
+      const indices = [
+        ...new Set(
+          toDelete
+            .filter((item) => String(item.layerId) === String(selectedLayerId))
+            .map((item) => item.subPathIndex),
+        ),
+      ].sort((a, b) => b - a);
+      commitPathTopology(set, get, selectedLayerId, (path) =>
+        indices.reduce((next, index) => deleteSubPath(next, index), path),
+      );
     },
 
     extractSelectedSubPathToNewLayer: () => {
-      const { layers, selectedLayerId, editingSide, selectedSubPaths, selection } = get();
-      // Determine the subpath index from either multi-subpath selection or single selection
-      let subIdx: number | null = null;
-      const subSel = selectedSubPaths.find(
-        (s) => String(s.layerId) === String(selectedLayerId) && s.side === editingSide,
-      );
-      if (subSel) {
-        subIdx = subSel.subPathIndex;
-      } else if (
-        selection &&
-        String(selection.layerId) === String(selectedLayerId) &&
-        selection.side === editingSide
-      ) {
-        subIdx = selection.subPathIndex;
-      }
-      if (subIdx == null) return;
-
-      const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
-      if (layerIndex === -1) return;
-      const layer = layers[layerIndex];
-
-      // Extract from both sides so the morph stays consistent (subpath indices should correspond)
-      const fromExtract = extractSubPath(layer.from, subIdx);
-      const toExtract = layer.to ? extractSubPath(layer.to, subIdx) : null;
-
-      if (
-        fromExtract.extracted.subPaths.length === 0 &&
-        (toExtract?.extracted.subPaths.length ?? 0) === 0
-      )
+      const state = get();
+      const layer = state.layers.find((item) => String(item.id) === String(state.selectedLayerId));
+      const selection =
+        state.selectedSubPaths.find(
+          (item) => String(item.layerId) === String(state.selectedLayerId),
+        ) ?? state.selection;
+      if (!layer || !selection || String(selection.layerId) !== String(layer.id)) return;
+      const issue = structuralLockIssue(state.layers, [layer.id], false);
+      if (issue) {
+        toast.error(issue);
         return;
-
-      // Create a new independent layer for the extracted subpath (inherits style, can now be edited separately)
-      const newId = Date.now() + Math.random();
-      const newLayer: Layer = {
-        ...structuredClone(layer),
-        id: newId,
-        name: `${layer.name} subpath`,
-        from: fromExtract.extracted,
-        to: toExtract?.extracted,
-      };
-      newLayer.pathData = editingSide === "from" ? newLayer.from : (newLayer.to ?? newLayer.from);
-
-      // Update original with remainders (use the from-side index; to may differ in count but we used matching index)
-      const updatedOriginal = {
-        ...layer,
-        from: fromExtract.remaining,
-        to: toExtract?.remaining,
-      };
-      updatedOriginal.pathData =
-        editingSide === "from"
-          ? updatedOriginal.from
-          : (updatedOriginal.to ?? updatedOriginal.from);
-
-      const newLayers = [...layers];
-      newLayers[layerIndex] = updatedOriginal;
-
-      get().pushHistory();
-      set({
-        layers: [...newLayers, newLayer],
-        selectedLayerId: newId,
-        selection: null,
-        selectedPoints: [],
-        selectedSubPaths: [],
-      });
+      }
+      if (layer.type !== "path") {
+        toast.error("Keep mask contours together to preserve clipping.");
+        return;
+      }
+      try {
+        const partition = (path: Layer["from"]) => {
+          if (!isEditablePath(path))
+            throw new Error("Repair the invalid path data before extracting a contour.");
+          const extracted = extractSubPath(path, selection.subPathIndex);
+          if (!extracted.extracted.subPaths.length)
+            throw new Error("That contour no longer exists. Select it again.");
+          const box = getPathDataBounds(extracted.extracted);
+          for (const sub of extracted.remaining.subPaths) {
+            const other = getPathDataBounds({ subPaths: [sub] });
+            if (
+              box &&
+              other &&
+              box.x < other.x + other.w &&
+              box.x + box.w > other.x &&
+              box.y < other.y + other.h &&
+              box.y + box.h > other.y
+            )
+              throw new Error(
+                "Keep overlapping contours together to preserve their fill and opacity.",
+              );
+          }
+          return extracted;
+        };
+        const from = partition(layer.from);
+        const to = layer.to ? partition(layer.to) : undefined;
+        const id = generateId();
+        const originalBlocks: typeof state.animation.blocks = [];
+        const extractedBlocks: typeof state.animation.blocks = [];
+        const remainingSignatures = new Set([
+          androidPathMorphSignature(from.remaining),
+          ...(to ? [androidPathMorphSignature(to.remaining)] : []),
+        ]);
+        const extractedSignatures = new Set([
+          androidPathMorphSignature(from.extracted),
+          ...(to ? [androidPathMorphSignature(to.extracted)] : []),
+        ]);
+        for (const block of state.animation.blocks) {
+          if (String(block.layerId) !== String(layer.id)) {
+            originalBlocks.push(block);
+            continue;
+          }
+          if (block.propertyName !== "pathData") {
+            originalBlocks.push(block);
+            extractedBlocks.push({ ...block, id: generateId(), layerId: id });
+            continue;
+          }
+          const start = partition(parsePath(String(block.fromValue)));
+          const end = partition(parsePath(String(block.toValue)));
+          for (const pose of [start, end]) {
+            remainingSignatures.add(androidPathMorphSignature(pose.remaining));
+            extractedSignatures.add(androidPathMorphSignature(pose.extracted));
+          }
+          originalBlocks.push({
+            ...block,
+            fromValue: pathToString(start.remaining),
+            toValue: pathToString(end.remaining),
+          });
+          extractedBlocks.push({
+            ...block,
+            id: generateId(),
+            layerId: id,
+            fromValue: pathToString(start.extracted),
+            toValue: pathToString(end.extracted),
+          });
+        }
+        if (remainingSignatures.size > 1 || extractedSignatures.size > 1)
+          throw new Error("Match the animation points before extracting a contour.");
+        const next = [...state.layers];
+        const index = next.indexOf(layer);
+        next[index] = {
+          ...layer,
+          from: from.remaining,
+          to: to?.remaining,
+          pathData: from.remaining,
+          morphMapping: undefined,
+        };
+        next.splice(index + 1, 0, {
+          ...structuredClone(layer),
+          id,
+          name: `${layer.name} contour`,
+          from: from.extracted,
+          to: to?.extracted,
+          pathData: from.extracted,
+          morphMapping: undefined,
+        });
+        state.pushHistory();
+        set({
+          layers: next,
+          animation: { ...state.animation, blocks: [...originalBlocks, ...extractedBlocks] },
+          selectedLayerId: id,
+          selectedLayerIds: [id],
+          selectedLayerRefs: [{ ownerId: state.selectedFrameId, layerId: id }],
+          selection: null,
+          selectedPoints: [],
+          selectedSubPaths: [],
+          selectedBlockIds: [],
+          morphPreview: null,
+          dragState: null,
+          isActionMode: false,
+          isPlaying: false,
+        });
+      } catch (cause) {
+        toast.error(
+          cause instanceof Error
+            ? cause.message
+            : "The contour could not be extracted. Your artwork has been preserved.",
+        );
+      }
     },
 
     splitSelectedCommand: () => {
-      const { layers, selectedLayerId, editingSide, selection } = get();
+      const state = get();
+      const selection = state.selection;
       if (!selection) return;
-      const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
-      if (layerIndex === -1) return;
-      const layer = layers[layerIndex];
-      if (layer.locked) return;
-
-      if (!layer.to) {
-        // Static layer: only the single (from) geometry gains a command.
-        const updatedFrom = splitCommandInHalf(
-          layer.from,
-          selection.subPathIndex,
-          selection.commandIndex,
-        );
-        const newLayers = [...layers];
-        newLayers[layerIndex] = { ...layer, from: updatedFrom, pathData: updatedFrom };
-        get().pushHistory();
-        set({ layers: newLayers });
-        return;
-      }
-
-      // Structural op: keep from/to command counts equal by splitting BOTH sides at
-      // the same (subIdx, cmdIdx) — the same discipline as addPointOnPath — so the
-      // morph stays interpolatable instead of silently desyncing until Auto Fix.
-      const activePath = editingSide === "from" ? layer.from : layer.to;
-      const otherPath = editingSide === "from" ? layer.to : layer.from;
-      const splitActive = splitCommandInHalf(
-        activePath,
-        selection.subPathIndex,
-        selection.commandIndex,
-      );
-      const splitOther =
-        otherPath && otherPath.subPaths[selection.subPathIndex]?.commands[selection.commandIndex]
-          ? splitCommandInHalf(otherPath, selection.subPathIndex, selection.commandIndex)
-          : otherPath;
-      const from = editingSide === "from" ? splitActive : (splitOther ?? splitActive);
-      const to = editingSide === "from" ? splitOther : splitActive;
-      const newLayers = [...layers];
-      newLayers[layerIndex] = { ...layer, from, to, pathData: from };
-      get().pushHistory();
-      set({ layers: newLayers });
+      get().addSelectedPathPoint(selection.subPathIndex, selection.commandIndex);
     },
 
     setSelectedCommandAsFirst: () => {
-      const { layers, selectedLayerId, editingSide, selection } = get();
+      const state = get();
+      const selection = state.selection;
       if (!selection) return;
-      const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
-      if (layerIndex === -1) return;
-      const layer = layers[layerIndex];
-      if (!layer.to) {
-        // Static layer: rotate its single (from) geometry.
-        const updatedFrom = setCommandAsFirst(
-          layer.from,
-          selection.subPathIndex,
-          selection.commandIndex,
-        );
-        const newLayers = [...layers];
-        newLayers[layerIndex] = { ...layer, from: updatedFrom, pathData: updatedFrom };
-        get().pushHistory();
-        set({ layers: newLayers });
-        return;
-      }
-
-      // Structural op: rotate BOTH sides at the same (subIdx, cmdIdx). Rotating only
-      // the active side keeps the command count but scrambles from/to point
-      // correspondence, corrupting the morph. setCommandAsFirst no-ops on a side
-      // whose subpath lacks the index instead of corrupting a desynced pair.
-      const activePath = editingSide === "from" ? layer.from : layer.to!;
-      const otherPath = editingSide === "from" ? layer.to! : layer.from;
-      const from = setCommandAsFirst(activePath, selection.subPathIndex, selection.commandIndex);
-      const to = setCommandAsFirst(otherPath, selection.subPathIndex, selection.commandIndex);
-      const newLayers = [...layers];
-      newLayers[layerIndex] = { ...layer, from, to, pathData: from };
-      get().pushHistory();
-      set({ layers: newLayers });
+      commitPathTopology(set, get, state.selectedLayerId, (path) =>
+        setCommandAsFirst(path, selection.subPathIndex, selection.commandIndex),
+      );
     },
   };
 }

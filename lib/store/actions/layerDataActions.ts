@@ -3,7 +3,14 @@ import {
   validateEditorDocument,
   documentEditingIssues,
 } from "../../shapeshifter/documentModel";
-import { prepareForMorph } from "../../shapeshifter/pathUtils";
+import { pathToString } from "../../shapeshifter/pathUtils";
+import { toast } from "sonner";
+import { structuralLockIssue } from "../commands/structuralLayers";
+import {
+  commitPathTopology,
+  pathPoseSourceSignature,
+  preparePathPoseFamily,
+} from "../commands/pathTopology";
 import { getDemoProject } from "../../shapeshifter/demoProjects";
 import { PAGE_ROOT_ID } from "../../shapeshifter/scene/owners";
 import type { AnimationState, Layer } from "../../shapeshifter/types";
@@ -41,43 +48,63 @@ export function createLayerDataActions(
 ): Pick<EditorState, LayerDataActionKey> {
   return {
     previewPrepareForMorph: () => {
-      const { layers, selectedLayerId } = get();
-      const layer = layers.find((candidate) => String(candidate.id) === String(selectedLayerId));
-      if (!layer || layer.locked || !layer.to) return false;
-      const prepared = prepareForMorph(layer.from, layer.to);
-      set({
-        morphPreview: {
-          layerId: layer.id,
-          originalFrom: structuredClone(layer.from),
-          originalTo: structuredClone(layer.to),
-          preparedFrom: prepared.from,
-          preparedTo: prepared.to,
-          mapping: prepared.mapping,
-        },
-      });
-      return true;
+      const state = get();
+      const layer = state.layers.find(
+        (candidate) => String(candidate.id) === String(state.selectedLayerId),
+      );
+      if (!layer || !layer.to) return false;
+      const issue = structuralLockIssue(state.layers, [layer.id], false);
+      if (issue) {
+        toast.error(issue);
+        return false;
+      }
+      try {
+        const prepared = preparePathPoseFamily(state, layer);
+        const preparedPathValues = Object.fromEntries(
+          prepared.values.map((value, index) => [value, prepared.paths[index]]),
+        );
+        set({
+          morphPreview: {
+            layerId: layer.id,
+            sourceSignature: pathPoseSourceSignature(state, layer),
+            preparedPathValues,
+            originalFrom: structuredClone(layer.from),
+            originalTo: structuredClone(layer.to),
+            preparedFrom: preparedPathValues[pathToString(layer.from)],
+            preparedTo: preparedPathValues[pathToString(layer.to)],
+            mapping: prepared.mapping,
+          },
+        });
+        return true;
+      } catch (cause) {
+        toast.error(
+          cause instanceof Error
+            ? cause.message
+            : "The points could not be matched. Your artwork has been preserved.",
+        );
+        return false;
+      }
     },
 
     commitMorphPreview: () => {
-      const { layers, morphPreview } = get();
-      if (!morphPreview) return false;
-      const layerIndex = layers.findIndex(
-        (layer) => String(layer.id) === String(morphPreview.layerId),
+      const state = get();
+      const preview = state.morphPreview;
+      if (!preview) return false;
+      const layer = state.layers.find(
+        (candidate) => String(candidate.id) === String(preview.layerId),
       );
-      if (layerIndex === -1) return false;
-      const layer = layers[layerIndex]!;
-      const next = [...layers];
-      next[layerIndex] = {
-        ...layer,
-        from: morphPreview.preparedFrom,
-        to: morphPreview.preparedTo,
-        pathData: morphPreview.preparedFrom,
-        morphMapping: morphPreview.mapping,
-      };
-      get().pushHistory();
-      set({ layers: next, morphPreview: null });
-      get().syncActiveOwner({ includeAnimation: true });
-      return true;
+      if (!layer || pathPoseSourceSignature(state, layer) !== preview.sourceSignature) {
+        set({ morphPreview: null });
+        toast.error("The animation changed. Match points again to preview the current artwork.");
+        return false;
+      }
+      return commitPathTopology(
+        set,
+        get,
+        layer.id,
+        (path) => preview.preparedPathValues[pathToString(path)] ?? path,
+        { mapping: preview.mapping },
+      );
     },
 
     cancelMorphPreview: () => {

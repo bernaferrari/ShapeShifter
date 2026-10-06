@@ -7,8 +7,6 @@ import { create } from "zustand";
  */
 
 import {
-  reversePath,
-  shiftPath,
   areAndroidPathsMorphCompatible,
   countPathPoints,
   simplifyPath,
@@ -142,6 +140,8 @@ export interface HistoryEntry {
 
 export interface MorphPreview {
   layerId: string | number;
+  sourceSignature: string;
+  preparedPathValues: Record<string, PathData>;
   originalFrom: PathData;
   originalTo: PathData;
   preparedFrom: PathData;
@@ -369,6 +369,19 @@ export interface EditorState {
   startActionMode: () => void;
   closeActionMode: () => void;
 
+  // Path topology commands apply to every authored pose atomically.
+  editSelectedPathPoint: (
+    subPathIndex: number,
+    commandIndex: number,
+    pointIndex: number,
+    point: Point,
+  ) => boolean;
+  changeSelectedPathCommand: (
+    subPathIndex: number,
+    commandIndex: number,
+    type: import("../shapeshifter/types").CommandType,
+  ) => boolean;
+  addSelectedPathPoint: (subPathIndex: number, commandIndex: number, t?: number) => boolean;
   // Path manipulation (the heart of ShapeShifter)
   updateSelectedPoint: (newPoint: Point, options?: { recordHistory?: boolean }) => void;
   addPointOnPath: (clickX: number, clickY: number) => void;
@@ -729,52 +742,6 @@ export const useEditorStore = create<EditorState>((rawSet, get) => {
     setPreferredExportFormat: (format) => set({ preferredExportFormat: format }),
 
     ...createDocumentActions(set, get),
-    // === MAGIC TOOL: Reverse (core 2017 feature, now real) ===
-    reverseSelectedLayer: () => {
-      const { layers, selectedLayerId, editingSide } = get();
-      const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
-      if (layerIndex === -1) return;
-
-      const layer = layers[layerIndex];
-      if (layer.locked) return;
-      const targetPath = editingSide === "from" ? layer.from : endOf(layer);
-
-      const updatedPath = reversePath(targetPath);
-
-      const newLayers = [...layers];
-      if (editingSide === "from") {
-        newLayers[layerIndex] = { ...layer, from: updatedPath, pathData: updatedPath };
-      } else {
-        newLayers[layerIndex] = { ...layer, to: updatedPath };
-      }
-
-      get().pushHistory();
-      setDocumentState(set, { layers: newLayers });
-    },
-
-    shiftSelectedLayer: (steps: number = 1) => {
-      const { layers, selectedLayerId, editingSide } = get();
-      const layerIndex = layers.findIndex((l) => l.id === selectedLayerId);
-      if (layerIndex === -1) return false;
-
-      const layer = layers[layerIndex];
-      if (layer.locked) return false;
-      const targetPath = editingSide === "from" ? layer.from : endOf(layer);
-
-      const updatedPath = shiftPath(targetPath, steps);
-
-      const newLayers = [...layers];
-      if (editingSide === "from") {
-        newLayers[layerIndex] = { ...layer, from: updatedPath, pathData: updatedPath };
-      } else {
-        newLayers[layerIndex] = { ...layer, to: updatedPath };
-      }
-
-      get().pushHistory();
-      setDocumentState(set, { layers: newLayers });
-      return true; // for toast feedback
-    },
-
     booleanCombine: async (op) => {
       const captured = get();
       const issue = booleanSelectionIssue(captured);

@@ -3,7 +3,7 @@
 import { TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEditorStore } from "@/lib/store/editorStore";
-import { areAndroidPathsMorphCompatible } from "@/lib/shapeshifter/pathUtils";
+import { androidPathMorphSignature, parsePath } from "@/lib/shapeshifter/pathUtils";
 
 /**
  * Only speaks up when a morph needs attention: the start and end shapes are not
@@ -19,9 +19,26 @@ export function MorphPrepareSection() {
     state.layers.find((candidate) => String(candidate.id) === String(state.selectedLayerId)),
   );
 
+  const blocks = useEditorStore((state) => state.animation.blocks);
   const previewing = morphPreview && String(morphPreview.layerId) === String(selectedLayerId);
-  const needsPrepare =
-    Boolean(layer?.to) && !areAndroidPathsMorphCompatible(layer!.from, layer!.to!);
+  const signatures = new Set(
+    layer
+      ? [
+          androidPathMorphSignature(layer.from),
+          androidPathMorphSignature(layer.to ?? layer.from),
+          ...blocks
+            .filter(
+              (block) =>
+                String(block.layerId) === String(layer.id) && block.propertyName === "pathData",
+            )
+            .flatMap((block) => [
+              androidPathMorphSignature(parsePath(String(block.fromValue))),
+              androidPathMorphSignature(parsePath(String(block.toValue))),
+            ]),
+        ]
+      : [],
+  );
+  const needsPrepare = signatures.size > 1;
   if (!previewing && !needsPrepare) return null;
 
   const mapping = morphPreview?.mapping;
@@ -36,9 +53,9 @@ export function MorphPrepareSection() {
           <p className="text-[11px] leading-snug">
             {previewing
               ? compatible === false
-                ? "Still not compatible. Adjust points, or apply anyway."
-                : "Preview ready. Apply to keep the matched points."
-              : "Start and end shapes don't match yet, so the morph can't play smoothly."}
+                ? "These points could not be matched. Adjust their contours and try again."
+                : "Preview ready. Apply the matched points to every pose."
+              : "Animation poses need matching points to morph smoothly."}
           </p>
           <div className="flex gap-1">
             {previewing ? (
@@ -46,6 +63,7 @@ export function MorphPrepareSection() {
                 <Button
                   size="sm"
                   className="h-6 px-2.5 text-[11px]"
+                  disabled={compatible === false}
                   onClick={() => commitMorphPreview()}
                 >
                   Apply

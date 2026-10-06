@@ -1,3 +1,4 @@
+import { materializeSmoothCommands } from "./commandNormalization";
 import { arcToBeziers } from "../geometry";
 import type { PathData, Point } from "../types";
 
@@ -75,7 +76,7 @@ export function flattenPathData(pathData: PathData, tolerance = 0.25): Flattened
     let current: Point = { x: 0, y: 0 };
     let start: Point = { x: 0, y: 0 };
     let closed = false;
-    for (const command of subPath.commands) {
+    for (const command of materializeSmoothCommands(subPath.commands)) {
       if (command.type === "M" && command.points[0]) {
         current = { ...command.points[0] };
         start = { ...current };
@@ -195,7 +196,7 @@ export function getAccuratePathBounds(pathData: PathData | null | undefined) {
   for (const subPath of pathData.subPaths ?? []) {
     let current: Point = { x: 0, y: 0 };
     let start: Point = { x: 0, y: 0 };
-    for (const command of subPath.commands) {
+    for (const command of materializeSmoothCommands(subPath.commands)) {
       if (command.type === "M" && command.points[0]) {
         current = { ...command.points[0] };
         start = { ...current };

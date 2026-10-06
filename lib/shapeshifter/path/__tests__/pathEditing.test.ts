@@ -11,7 +11,15 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { changeCommandType, translatePathPoints } from "../pathEditing";
+import {
+  changeCommandType,
+  translatePathPoints,
+  splitPointNear,
+  updateCommandPoint,
+  splitCommandAt,
+  deleteCommand,
+} from "../pathEditing";
+import { shiftPath, getAccuratePathBounds, pathLength } from "../../pathUtils";
 import { parsePath, pathToString } from "../pathDataIO";
 
 const roundTrip = (d: string) => pathToString(parsePath(d));
@@ -160,5 +168,77 @@ describe("anchor and tangent translation", () => {
       { x: 7, y: 8 },
       { x: 12, y: 3 },
     ]);
+  });
+});
+
+describe("safe point insertion", () => {
+  it("adds a fourth and fifth anchor to a triangle's closing edge without changing its outline", () => {
+    const triangle = parsePath("M0 0 L10 0 L10 10 Z");
+    const fourth = splitPointNear(triangle, { x: 7.5, y: 7.5 })!;
+    expect(fourth).not.toBeNull();
+    expect(fourth.subPaths[0].commands).toHaveLength(5);
+    expect(fourth.subPaths[0].commands[3].points[0]).toEqual({ x: 7.5, y: 7.5 });
+    const fifth = splitPointNear(fourth, { x: 2.5, y: 2.5 })!;
+    expect(fifth.subPaths[0].commands).toHaveLength(6);
+    expect(fifth.subPaths[0].commands.at(-1)?.type).toBe("Z");
+  });
+  it("inserts at the clicked position rather than the midpoint or a phantom origin-to-M edge", () => {
+    const line = parsePath("M100 100 L200 100");
+    const result = splitPointNear(line, { x: 125, y: 100 })!;
+    expect(result.subPaths[0].commands[1].points[0]).toEqual({ x: 125, y: 100 });
+  });
+  it("ignores stale point indices and non-finite coordinate drafts without throwing or mutating geometry", () => {
+    const path = parsePath("M0 0 L10 0");
+    expect(updateCommandPoint(path, 3, 8, 2, { x: 10, y: 10 })).toBe(path);
+    expect(updateCommandPoint(path, 0, 1, 0, { x: NaN, y: 10 })).toBe(path);
+  });
+});
+
+describe("appearance preserving point remapping", () => {
+  it("shifts anchors with their curves rather than rotating control points into anchors", () => {
+    const path = parsePath("M0 0 C2 12 8 12 10 0 L10 10 Z");
+    const shifted = shiftPath(path, 1);
+    expect(getAccuratePathBounds(shifted)).toEqual(getAccuratePathBounds(path));
+    expect(pathLength(shifted, 0.001)).toBeCloseTo(pathLength(path, 0.001), 6);
+  });
+});
+
+describe("curves, duplicate anchors and degenerate editing", () => {
+  it.each([0.2, 0.5, 0.8])(
+    "subdivides chained smooth curves at %s without changing adjacent geometry",
+    (t) => {
+      for (const source of [
+        "M0 0 C2 10 8 10 10 0 S18 -10 20 0 S28 10 30 0",
+        "M0 0 Q5 10 10 0 T20 0 T30 0",
+      ]) {
+        const path = parsePath(source);
+        const split = splitCommandAt(path, 0, 2, t);
+        expect(getAccuratePathBounds(split)).toEqual(getAccuratePathBounds(path));
+        expect(pathLength(split, 0.0001)).toBeCloseTo(pathLength(path, 0.0001), 4);
+      }
+    },
+  );
+  it("allows coincident line anchors to move independently for later morph poses", () => {
+    const path = parsePath("M0 0 L10 0 L0 0 Z");
+    const moved = translatePathPoints(
+      path,
+      [{ subPathIndex: 0, commandIndex: 2, pointIndex: 0 }],
+      0,
+      5,
+    );
+    expect(moved.subPaths[0].commands[0].points[0]).toEqual({ x: 0, y: 0 });
+    expect(moved.subPaths[0].commands[2].points[0]).toEqual({ x: 0, y: 5 });
+  });
+  it("deletes the start anchor by promoting the next vertex, and safely empties a single-point path", () => {
+    expect(pathToString(deleteCommand(parsePath("M0 0 L10 0 L10 10 Z"), 0, 0))).toBe(
+      "M10 0 L10 10 Z",
+    );
+    expect(deleteCommand(parsePath("M0 0 Z"), 0, 0).subPaths).toEqual([]);
+  });
+  it("elevates a quadratic to a cubic with the same outline", () => {
+    const path = parsePath("M0 0 Q5 10 10 0");
+    const cubic = changeCommandType(path, 0, 1, "C");
+    expect(getAccuratePathBounds(cubic)).toEqual(getAccuratePathBounds(path));
+    expect(pathLength(cubic, 0.0001)).toBeCloseTo(pathLength(path, 0.0001), 4);
   });
 });

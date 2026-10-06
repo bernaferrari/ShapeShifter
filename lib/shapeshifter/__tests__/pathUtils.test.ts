@@ -154,10 +154,9 @@ describe("pathUtils", () => {
       expect(result).toEqual(original);
     });
 
-    it("does not split Z command", () => {
-      const original = "M0 0 L10 10 Z";
+    it("splits the closing edge while keeping Z", () => {
       const result = pathToString(splitCommandInHalf(parsePath("M 0 0 L 10 10 Z"), 0, 2));
-      expect(result).toEqual(original);
+      expect(result).toEqual("M0 0 L10 10 L5 5 Z");
     });
 
     it("splits cubic bezier preserving curve shape", () => {
@@ -408,7 +407,7 @@ describe("pathUtils", () => {
     it("rotates closed subpath to start at command index", () => {
       const input = "M 4 4 L 4 20 L 20 20 L 20 4 Z";
       const result = pathToString(setCommandAsFirst(parsePath(input), 0, 2));
-      expect(result).toEqual("M4 20 L20 20 L20 4 L4 20 Z");
+      expect(result).toEqual("M20 20 L20 4 L4 4 L4 20 Z");
     });
 
     it("no-op on open subpath", () => {

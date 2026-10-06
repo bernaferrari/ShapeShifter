@@ -6,7 +6,8 @@
 
 import type { Command, CommandType, MorphMapping, PathData, Point, SubPath } from "./types";
 import { arePointsEqual } from "./mathUtils";
-import { getPoleOfInaccessibility, isSubPathClockwise, arcToBeziers } from "./geometry";
+import { getPoleOfInaccessibility, isSubPathClockwise } from "./geometry";
+import { normalizePathData } from "./path/commandNormalization";
 import { generateId } from "./ids";
 import { align, MATCH, MISMATCH, type NWAlignment } from "./path/alignment";
 import { clonePathDataForSplit, splitCommandInHalf } from "./path/pathEditing";
@@ -59,6 +60,7 @@ export {
   insertPointNear,
   scalePathToBounds,
   splitCommandInHalf,
+  splitCommandAt,
   splitPointNear,
   translatePath,
   translatePathPoints,
@@ -276,46 +278,23 @@ export function reversePath(path: PathData): PathData {
   };
 }
 
-/**
- * Shift the points in a path by a given number of steps (useful for morph compatibility).
- */
+/** Rotate closed contours by anchor count, keeping each edge and its handles together. */
 export function shiftPath(path: PathData, steps: number): PathData {
-  if (steps === 0) return path;
-  return {
-    subPaths: path.subPaths.map((subPath) => {
-      const cmds = subPath.commands;
-      if (cmds.length === 0) return subPath;
-      const lastCmd = cmds[cmds.length - 1];
-      const firstCmd = cmds[0];
-      const isClosed =
-        lastCmd.type === "Z" ||
-        (firstCmd.points.length > 0 &&
-          lastCmd.points.length > 0 &&
-          arePointsEqual(firstCmd.points[0], lastCmd.points.at(-1)!));
-
-      if (!isClosed) {
-        return subPath;
-      }
-
-      let allPoints: Point[] = [];
-      cmds.forEach((cmd) => {
-        allPoints = allPoints.concat(cmd.points);
-      });
-      if (allPoints.length === 0) return subPath;
-
-      const shift = ((steps % allPoints.length) + allPoints.length) % allPoints.length;
-      const shiftedPoints = allPoints.slice(shift).concat(allPoints.slice(0, shift));
-
-      let newCommands: Command[] = [];
-      let pointIdx = 0;
-      cmds.forEach((cmd) => {
-        const cmdPoints = shiftedPoints.slice(pointIdx, pointIdx + cmd.points.length);
-        newCommands.push({ ...cmd, points: cmdPoints });
-        pointIdx += cmd.points.length;
-      });
-      return { commands: newCommands };
-    }),
-  };
+  if (!Number.isInteger(steps) || steps === 0) return path;
+  let next = path;
+  for (let subIdx = 0; subIdx < path.subPaths.length; subIdx++) {
+    const commands = path.subPaths[subIdx].commands;
+    const start = commands[0]?.points[0];
+    const last = commands.at(-1);
+    const drawing = last?.type === "Z" ? commands.slice(0, -1) : commands;
+    const end = drawing.at(-1)?.points.at(-1);
+    if (!start || !end || (last?.type !== "Z" && !arePointsEqual(start, end))) continue;
+    const count = drawing.length - (drawing.length > 1 && arePointsEqual(start, end) ? 1 : 0);
+    if (count < 2) continue;
+    const index = ((steps % count) + count) % count;
+    if (index) next = setCommandAsFirst(next, subIdx, index);
+  }
+  return next;
 }
 
 /**
@@ -329,57 +308,42 @@ export function countPathPoints(path: PathData): number {
   );
 }
 
-/**
- * Rotates a closed subpath so that the command at cmdIdx becomes the first
- * drawing command after the initial M. This is a key morphing control
- * (matches original "set first point" behavior exactly for closed paths).
- * No-op for open paths or index 0.
- */
-export function setCommandAsFirst(pathData: PathData, subIdx: number, cmdIdx: number): PathData {
-  const newData = clonePathDataForSplit(pathData);
-  const sub = newData.subPaths[subIdx];
-  if (!sub || cmdIdx <= 0 || cmdIdx >= sub.commands.length) {
-    return newData;
-  }
-
-  const cmds = sub.commands;
-  const firstCmd = cmds[0];
-  if (firstCmd.type !== "M") return newData; // safety
-
-  // Check if closed (last is Z or the drawing endpoint coincides with the M point).
-  const last = cmds[cmds.length - 1];
-  const isClosed =
-    last.type === "Z" ||
-    (firstCmd.points.length > 0 &&
-      last.points.length > 0 &&
-      arePointsEqual(firstCmd.points[0], last.points.at(-1)!));
-
-  if (!isClosed) return newData;
-
-  // Rotate: the chosen command becomes the new first after M
-  // New M point = endpoint of the command before the chosen one (or start of chosen)
-  const targetCmd = cmds[cmdIdx];
-  const prevCmd = cmds[cmdIdx - 1];
-  const newMPoint = prevCmd ? prevCmd.points.at(-1)! : targetCmd.points[0];
-
-  // Rebuild command list: M at new point, then commands from cmdIdx to end-1 (dropping old M and Z handling)
-  const drawingCmds = cmds.slice(cmdIdx); // from target onward
-  const before = cmds.slice(1, cmdIdx); // the ones that were before (now after)
-
-  // Adjust the first point of what was the target command? No — the M moves.
-  const newCommands: Command[] = [
-    { id: generateId(), type: "M", points: [newMPoint] },
-    ...drawingCmds.filter((c) => c.type !== "Z"),
-    ...before,
-  ];
-
-  // Re-add Z if it was closed
-  if (last.type === "Z") {
-    newCommands.push({ id: generateId(), type: "Z", points: [] });
-  }
-
-  sub.commands = newCommands;
-  return newData;
+/** Make the selected anchor the start of a closed contour without changing its outline. */
+export function setCommandAsFirst(path: PathData, subIdx: number, cmdIdx: number): PathData {
+  const original = path.subPaths[subIdx];
+  const selected = original?.commands[cmdIdx];
+  if (!original || cmdIdx <= 0 || !selected?.points.length) return path;
+  // Resolve reflected controls before their preceding edge changes.
+  const normalized = normalizePathData({ subPaths: [original] }).subPaths[0];
+  const commands = normalized.commands;
+  const start = commands[0]?.points[0];
+  const chosen = selected.points.at(-1)!;
+  const last = commands.at(-1);
+  const hasClose = last?.type === "Z";
+  const drawing = commands.slice(1, hasClose ? -1 : undefined);
+  const end = drawing.at(-1)?.points.at(-1);
+  if (!start || !end || (!hasClose && !arePointsEqual(start, end))) return path;
+  if (arePointsEqual(start, chosen)) return path;
+  // Normalization can expand an arc into several cubics. Find its final endpoint.
+  const preceding =
+    normalizePathData({
+      subPaths: [{ commands: original.commands.slice(0, cmdIdx + 1) }],
+    }).subPaths[0].commands.length - 2;
+  if (preceding < 0 || preceding >= drawing.length) return path;
+  if (hasClose && !arePointsEqual(start, end))
+    drawing.push({ id: generateId(), type: "L", points: [{ ...start }] });
+  const rotated = [...drawing.slice(preceding + 1), ...drawing.slice(0, preceding + 1)];
+  // Z already represents a straight closing edge. Curved closing edges retain their controls.
+  if (hasClose && rotated.at(-1)?.type === "L") rotated.pop();
+  const next = structuredClone(path);
+  next.subPaths[subIdx] = {
+    commands: [
+      { id: selected.id, type: "M", points: [{ ...chosen }] },
+      ...rotated.map((cmd) => ({ ...cmd, id: cmd.id === selected.id ? generateId() : cmd.id })),
+      ...(hasClose ? [{ id: last!.id, type: "Z" as const, points: [] }] : []),
+    ],
+  };
+  return next;
 }
 
 /**
@@ -527,6 +491,14 @@ export function prepareForMorph(
   to: PathData;
   mapping: MorphMapping;
 } {
+  if (
+    [from, to].some(
+      (path) => path.subPaths.length > 64 || path.subPaths.some((sub) => sub.commands.length > 512),
+    )
+  )
+    throw new Error(
+      "This path has too many points to match automatically. Simplify its contours before matching points.",
+    );
   const [a, b] = autoFixPathPair(from, to);
   return {
     from: a,
@@ -833,151 +805,7 @@ function equalizeSubpathCommands(target: PathData, ref: PathData, subIdx: number
   return result;
 }
 
-/**
- * Normalizes all path commands into absolute ones, converting smooth 'S'
- * and smooth 'T' shorthands, as well as elliptical arcs 'A', into standard
- * absolute 'C' and 'Q' commands.
- */
-export function normalizeCommands(commands: Command[]): Command[] {
-  const normalized: Command[] = [];
-  let current: Point = { x: 0, y: 0 };
-  let subPathStart: Point = { x: 0, y: 0 };
-
-  for (let i = 0; i < commands.length; i++) {
-    const cmd = commands[i];
-    const type = cmd.type;
-
-    if (type === "M") {
-      const p = cmd.points[0];
-      current = p;
-      subPathStart = p;
-      normalized.push({ ...cmd });
-      continue;
-    }
-
-    if (type === "Z") {
-      current = { ...subPathStart };
-      normalized.push({ ...cmd });
-      continue;
-    }
-
-    if (type === "L") {
-      current = cmd.points[0];
-      normalized.push({ ...cmd });
-      continue;
-    }
-
-    if (type === "C") {
-      current = cmd.points[2];
-      normalized.push({ ...cmd });
-      continue;
-    }
-
-    if (type === "Q") {
-      current = cmd.points[1];
-      normalized.push({ ...cmd });
-      continue;
-    }
-
-    if (type === "S") {
-      const cp2 = cmd.points[0];
-      const to = cmd.points[1];
-
-      let cp1: Point = { ...current };
-      const prev = normalized.at(-1);
-      if (prev && prev.type === "C") {
-        const prevCp2 = prev.points[1];
-        const prevTo = prev.points[2];
-        cp1 = {
-          x: 2 * prevTo.x - prevCp2.x,
-          y: 2 * prevTo.y - prevCp2.y,
-        };
-      }
-
-      normalized.push({
-        id: cmd.id,
-        type: "C",
-        points: [cp1, cp2, to],
-      });
-      current = to;
-      continue;
-    }
-
-    if (type === "T") {
-      const to = cmd.points[0];
-
-      let cp1: Point = { ...current };
-      const prev = normalized.at(-1);
-      if (prev && prev.type === "Q") {
-        const prevCp1 = prev.points[0];
-        const prevTo = prev.points[1];
-        cp1 = {
-          x: 2 * prevTo.x - prevCp1.x,
-          y: 2 * prevTo.y - prevCp1.y,
-        };
-      }
-
-      normalized.push({
-        id: cmd.id,
-        type: "Q",
-        points: [cp1, to],
-      });
-      current = to;
-      continue;
-    }
-
-    if (type === "A" && cmd.arcParams) {
-      const ap = cmd.arcParams;
-      const to = cmd.points[0];
-
-      const beziers = arcToBeziers(
-        current.x,
-        current.y,
-        ap.rx,
-        ap.ry,
-        ap.xRotation,
-        ap.largeArc,
-        ap.sweep,
-        to.x,
-        to.y,
-      );
-      if (beziers.length === 0) {
-        normalized.push({
-          id: cmd.id,
-          type: "L",
-          points: [to],
-        });
-      } else {
-        beziers.forEach((bz, idx) => {
-          normalized.push({
-            id: idx === 0 ? cmd.id : generateId(),
-            type: "C",
-            points: [bz.cp1, bz.cp2, bz.to],
-          });
-        });
-      }
-      current = to;
-      continue;
-    }
-
-    normalized.push({ ...cmd });
-    if (cmd.points.length > 0) {
-      current = cmd.points.at(-1)!;
-    }
-  }
-
-  return normalized;
-}
-
-export function normalizePathData(pathData: PathData): PathData {
-  return {
-    ...pathData,
-    subPaths: pathData.subPaths.map((sp) => ({
-      ...sp,
-      commands: normalizeCommands(sp.commands),
-    })),
-  };
-}
+export { normalizeCommands, normalizePathData } from "./path/commandNormalization";
 
 export {
   booleanCombine,

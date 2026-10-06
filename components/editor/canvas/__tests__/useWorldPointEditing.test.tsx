@@ -186,3 +186,73 @@ describe("World multi-anchor editing", () => {
     expect(useEditorStore.getState().history).toHaveLength(0);
   });
 });
+
+describe("point drag invalidation and picking", () => {
+  it("picks the nearest anchor, and respects an explicitly selected coincident anchor", () => {
+    act(() =>
+      useEditorStore
+        .getState()
+        .updateSelectedLayer(
+          { from: parsePath("M0 0 L1 0 L1 0 Z"), pathData: parsePath("M0 0 L1 0 L1 0 Z") },
+          { recordHistory: false },
+        ),
+    );
+    expect(editing.hitTest({ x: 100, y: 102 })?.commandIndex).toBe(1);
+    act(() => useEditorStore.getState().selectPoint(selection(2)));
+    expect(editing.hitTest({ x: 100, y: 102 })?.commandIndex).toBe(2);
+  });
+  it("does not overwrite a non-history edit during a drag", () => {
+    act(() => editing.start(selection(1)));
+    act(() =>
+      useEditorStore
+        .getState()
+        .updateSelectedLayer(
+          { from: parsePath("M0 0 L20 0 Z"), pathData: parsePath("M0 0 L20 0 Z") },
+          { recordHistory: false },
+        ),
+    );
+    act(() => editing.update({ x: 90, y: 120 }, true));
+    expect(useEditorStore.getState().layers[0].from.subPaths[0].commands[1].points[0]).toEqual({
+      x: 20,
+      y: 0,
+    });
+    expect(editing.hasDrag()).toBe(false);
+  });
+  it("inserts a pose and drags it in a single undo transaction", () => {
+    act(() => {
+      useEditorStore.setState({
+        animation: {
+          id: "motion",
+          name: "Motion",
+          duration: 1000,
+          blocks: [
+            {
+              id: "shape",
+              layerId: "path",
+              type: "path",
+              propertyName: "pathData",
+              startTime: 0,
+              endTime: 1000,
+              fromValue: "M0 0 L10 0 L10 10 Z",
+              toValue: "M0 0 L20 0 L20 20 Z",
+              interpolator: "LINEAR",
+            },
+          ],
+        },
+        toolMode: "direct",
+        progress: 0.5,
+        isActionMode: false,
+        isPlaying: false,
+      });
+      useEditorStore.getState().syncPathEditingWithPlayhead();
+    });
+    const before = useEditorStore.getState().animation;
+    act(() => editing.start(selection(1)));
+    act(() => editing.update({ x: 96, y: 134 }, true));
+    act(() => editing.finish());
+    expect(useEditorStore.getState().animation.blocks).toHaveLength(2);
+    expect(useEditorStore.getState().history).toHaveLength(1);
+    act(() => useEditorStore.getState().undo());
+    expect(useEditorStore.getState().animation).toEqual(before);
+  });
+});

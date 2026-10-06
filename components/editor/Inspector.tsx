@@ -17,11 +17,13 @@ import {
   Trash2,
   Unlock,
 } from "lucide-react";
+import { structuralLockIssue } from "@/lib/store/commands/structuralLayers";
+import { isEditablePath } from "@/lib/store/commands/pathTopology";
 import { cn } from "@/lib/utils";
 import { PAGE_ROOT_ID, useEditorStore } from "@/lib/store/editorStore";
-import { changeCommandType, parsePath, updateCommandPoint } from "@/lib/shapeshifter/pathUtils";
+import { parsePath } from "@/lib/shapeshifter/pathUtils";
 import type { Layer } from "@/lib/shapeshifter/types";
-import { layerAtTime } from "@/lib/shapeshifter/playheadResolve";
+import { layerAtTime, pathDAtTime } from "@/lib/shapeshifter/playheadResolve";
 import { getPathDataBounds } from "@/lib/shapeshifter/path/pathDataIO";
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
@@ -197,10 +199,49 @@ export function Inspector() {
         String(block.layerId) === String(currentLayer?.id) && block.propertyName === propertyName,
     );
   }
+  const displayedPath = React.useMemo(() => {
+    if (!currentLayer) return undefined;
+    if (
+      useEditorStore.getState().isActionMode ||
+      !animation.blocks.some(
+        (block) =>
+          String(block.layerId) === String(currentLayer.id) && block.propertyName === "pathData",
+      )
+    )
+      return currentLayer[editingSide] ?? currentLayer.from;
+    return parsePath(
+      pathDAtTime(
+        currentLayer,
+        animation.blocks,
+        playheadMs,
+        animation.duration,
+        playheadMs / Math.max(1, animation.duration),
+      ),
+    );
+  }, [currentLayer, editingSide, animation, playheadMs]);
   const setPath = (parsed: ReturnType<typeof parsePath>) => {
-    useEditorStore.getState().ensurePathKeyframeAtPlayhead();
-    const side = useEditorStore.getState().editingSide;
-    updateLayer(side === "from" ? { from: parsed, pathData: parsed } : { to: parsed });
+    const store = useEditorStore.getState();
+    const issue = structuralLockIssue(store.layers, [store.selectedLayerId], false);
+    if (issue) throw new Error(issue);
+    if (!isEditablePath(parsed)) throw new Error("The path contains invalid coordinates.");
+    store.beginHistoryGesture();
+    try {
+      store.setToolMode("direct");
+      store.ensurePathKeyframeAtPlayhead();
+      const current = useEditorStore.getState();
+      current.updateSelectedLayer(
+        current.editingSide === "from" ? { from: parsed, pathData: parsed } : { to: parsed },
+      );
+      useEditorStore.setState({
+        selection: null,
+        selectedPoints: [],
+        selectedSubPaths: [],
+        dragState: null,
+        morphPreview: null,
+      });
+    } finally {
+      useEditorStore.getState().endHistoryGesture();
+    }
   };
 
   const [isCommandsFocused, setIsCommandsFocused] = React.useState(false);
@@ -258,39 +299,51 @@ export function Inspector() {
 
   const commandsList = (extraClass?: string) => (
     <PathCommandsList
-      pathData={currentLayer[editingSide] ?? currentLayer.from}
+      pathData={displayedPath}
       selectedPoints={selectedPoints}
       className={extraClass}
       onSelectCommand={(subPathIndex, commandIndex, pointIndex) => {
         if (!selectPoint) return;
+        useEditorStore.getState().setToolMode("direct");
+        useEditorStore.getState().syncPathEditingWithPlayhead();
         selectPoint({
           layerId: selectedLayerId,
-          side: editingSide,
+          side: useEditorStore.getState().editingSide,
           subPathIndex,
           commandIndex,
           pointIndex,
         });
       }}
       onUpdateCommandPoint={(subPathIndex, commandIndex, pointIndex, newPoint) => {
-        setPath(
-          updateCommandPoint(
-            currentLayer[editingSide] ?? currentLayer.from,
-            subPathIndex,
-            commandIndex,
-            pointIndex,
-            newPoint,
-          ),
-        );
+        const store = useEditorStore.getState();
+        store.setToolMode("direct");
+        store.editSelectedPathPoint(subPathIndex, commandIndex, pointIndex, newPoint);
       }}
       onChangeCommandType={(subPathIndex, commandIndex, newType) => {
-        setPath(
-          changeCommandType(
-            currentLayer[editingSide] ?? currentLayer.from,
-            subPathIndex,
-            commandIndex,
-            newType,
-          ),
-        );
+        const store = useEditorStore.getState();
+        store.setToolMode("direct");
+        if (store.changeSelectedPathCommand(subPathIndex, commandIndex, newType)) {
+          useEditorStore.getState().syncPathEditingWithPlayhead();
+          const current = useEditorStore.getState();
+          const layer = current.layers.find(
+            (item) => String(item.id) === String(current.selectedLayerId),
+          );
+          const path = current.editingSide === "from" ? layer?.from : (layer?.to ?? layer?.from);
+          const command = path?.subPaths[subPathIndex]?.commands[commandIndex];
+          if (command?.points.length)
+            current.selectPoint({
+              layerId: current.selectedLayerId,
+              side: current.editingSide,
+              subPathIndex,
+              commandIndex,
+              pointIndex: command.points.length - 1,
+            });
+        }
+      }}
+      onAddPoint={(subPathIndex, commandIndex) => {
+        const store = useEditorStore.getState();
+        store.setToolMode("direct");
+        store.addSelectedPathPoint(subPathIndex, commandIndex);
       }}
     />
   );
@@ -553,7 +606,7 @@ export function Inspector() {
             {showPathData && (
               <PathDataEditor
                 key={`${selectedFrameId}:${String(selectedLayerId)}:${editingSide}`}
-                path={currentLayer[editingSide] ?? currentLayer.from}
+                path={displayedPath ?? currentLayer.from}
                 onCommit={setPath}
               />
             )}
