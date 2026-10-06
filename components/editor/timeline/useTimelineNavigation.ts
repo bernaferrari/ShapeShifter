@@ -13,7 +13,8 @@ export function useTimelineNavigation(
   const storedZoom = useEditorStore((state) => state.timelineZoom);
   const scrollLeft = useEditorStore((state) => state.timelineScrollX);
   const zoom = Math.max(1, Math.min(10, storedZoom));
-  const [width, setWidth] = React.useState(1);
+  const [measuredWidth, setWidth] = React.useState(0);
+  const width = Math.max(1, measuredWidth);
   const pendingAnchor = React.useRef<{ progress: number; anchor: number } | null>(null);
 
   React.useLayoutEffect(() => {
@@ -31,7 +32,7 @@ export function useTimelineNavigation(
 
   React.useLayoutEffect(() => {
     const element = viewportRef.current;
-    if (!element) return;
+    if (!element || !measuredWidth) return;
     const state = useEditorStore.getState();
     const desired = pendingAnchor.current
       ? anchoredTimelineScroll(
@@ -44,7 +45,7 @@ export function useTimelineNavigation(
     pendingAnchor.current = null;
     element.scrollLeft = desired;
     if (state.timelineScrollX !== desired) state.setTimelineScroll(desired, element.scrollTop);
-  }, [zoom, width, viewportRef]);
+  }, [zoom, width, measuredWidth, viewportRef]);
 
   const zoomBy = React.useCallback(
     (factor: number, pixelAnchor?: number) => {
@@ -81,6 +82,24 @@ export function useTimelineNavigation(
     state.setTimelineScroll(0, viewportRef.current?.scrollTop ?? 0);
     if (viewportRef.current) viewportRef.current.scrollLeft = 0;
   }, [viewportRef]);
+
+  const setViewport = React.useCallback(
+    (nextZoom: number, x: number, y: number) => {
+      const resolvedZoom = Math.max(1, Math.min(10, nextZoom));
+      const resolvedX = Math.max(0, Math.min(width * (resolvedZoom - 1), x));
+      const element = viewportRef.current;
+      if (element) element.scrollTop = Math.max(0, y);
+      pendingAnchor.current = null;
+      useEditorStore.setState({
+        timelineZoom: resolvedZoom,
+        timelineScrollX: resolvedX,
+        timelineScrollY: element?.scrollTop ?? Math.max(0, y),
+      });
+      // After a zoom the layout effect applies X against the new content width.
+      if (element && resolvedZoom === zoom) element.scrollLeft = resolvedX;
+    },
+    [viewportRef, width, zoom],
+  );
 
   React.useEffect(() => {
     const section = sectionRef.current;
@@ -128,5 +147,14 @@ export function useTimelineNavigation(
     [width, zoom, viewportRef],
   );
 
-  return { zoom, width, contentWidth: width * zoom, scrollLeft, zoomBy, focusPlayhead, fit };
+  return {
+    zoom,
+    width,
+    contentWidth: width * zoom,
+    scrollLeft,
+    zoomBy,
+    focusPlayhead,
+    fit,
+    setViewport,
+  };
 }

@@ -10,6 +10,7 @@ import {
   timelineKeyframeRange,
 } from "@/lib/shapeshifter/motion/timelineKeyframes";
 import { snapTimelineOffset, timelineSnapTargets, type TimelineSnapTarget } from "./timelineTiming";
+import { useTimelineNavigationCancellation } from "./timelineNavigationCancellation";
 
 type Gesture = {
   marker: ReturnType<typeof beginLiveGesture>;
@@ -65,6 +66,8 @@ export function useTimelineGesture({
       /* Capture may already be lost. */
     }
   }, []);
+  const cancelForNavigation = React.useCallback(() => finish(true), [finish]);
+  useTimelineNavigationCancellation(cancelForNavigation);
 
   React.useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

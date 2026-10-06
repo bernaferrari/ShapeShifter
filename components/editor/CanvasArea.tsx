@@ -715,6 +715,7 @@ export function CanvasArea({
                 aria-label="Canvas"
                 style={{ userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
                 onPointerDownCapture={worldTouchHandlers.onPointerDownCapture}
+                onClickCapture={worldTouchHandlers.onClickCapture}
                 onPointerMoveCapture={worldTouchHandlers.onPointerMoveCapture}
                 onPointerUpCapture={worldTouchHandlers.onPointerUpCapture}
                 onLostPointerCapture={worldTouchHandlers.onLostPointerCapture}

@@ -28,6 +28,8 @@ import { TimelineLayersPane } from "./timeline/TimelineLayersPane";
 import { TimelineTracksPane } from "./timeline/TimelineTracksPane";
 import { buildTimelineProjection } from "./timeline/timelineProjection";
 import { useTimelineNavigation } from "./timeline/useTimelineNavigation";
+import { useTimelineTouchNavigation } from "./timeline/useTimelineTouchNavigation";
+import { TimelineNavigationCancellation } from "./timeline/timelineNavigationCancellation";
 import {
   formatTimelineMark,
   timelineMajorStep,
@@ -100,8 +102,36 @@ export function LayerTimeline({
   const rulerRef = React.useRef<HTMLDivElement>(null);
   const sectionRef = React.useRef<HTMLElement>(null);
   const scrubCleanupRef = React.useRef<(() => void) | null>(null);
-  React.useEffect(() => () => scrubCleanupRef.current?.(), [selectedFrameId]);
+  const scrubCancelRef = React.useRef<(() => void) | null>(null);
+  const durationCancelRef = React.useRef<(() => void) | null>(null);
+  React.useEffect(
+    () => () => {
+      scrubCleanupRef.current?.();
+      durationCancelRef.current?.();
+    },
+    [selectedFrameId],
+  );
   const navigation = useTimelineNavigation(sectionRef, timelineScrollRef, LAYERS_W);
+  const editCancellations = React.useRef(new Set<() => void>());
+  const registerCancellation = React.useCallback((cancel: () => void) => {
+    editCancellations.current.add(cancel);
+    return () => {
+      editCancellations.current.delete(cancel);
+    };
+  }, []);
+  const timelineTouch = useTimelineTouchNavigation({
+    sectionRef,
+    viewportRef: timelineScrollRef,
+    layersWidth: LAYERS_W,
+    headerHeight: compact ? HEADER_H : 0,
+    navigation,
+    cancelEditing: () => {
+      scrubCancelRef.current?.();
+      durationCancelRef.current?.();
+      for (const cancel of editCancellations.current) cancel();
+      useEditorStore.setState({ isPlaying: false });
+    },
+  });
 
   React.useEffect(() => {
     // Keep the accessible slider value current without rerendering the ruler's
@@ -194,6 +224,9 @@ export function LayerTimeline({
     if (e.button !== 0) return;
     e.preventDefault();
     scrubCleanupRef.current?.();
+    const scrubState = useEditorStore.getState();
+    const originalProgress = scrubState.progress;
+    const ownerId = scrubState.selectedFrameId;
     // Figma pauses playback while you scrub the ruler, so the playhead RAF
     // loop can't fight the drag. Just pause — don't auto-resume on release.
     if (useEditorStore.getState().isPlaying) {
@@ -212,6 +245,7 @@ export function LayerTimeline({
     };
     const finish = () => {
       scrubCleanupRef.current = null;
+      scrubCancelRef.current = null;
       reportSnap(null);
       try {
         element.releasePointerCapture(e.pointerId);
@@ -226,6 +260,11 @@ export function LayerTimeline({
       if (upEvent.pointerId === e.pointerId) finish();
     };
     scrubCleanupRef.current = finish;
+    scrubCancelRef.current = () => {
+      finish();
+      const state = useEditorStore.getState();
+      if (state.selectedFrameId === ownerId) state.setProgress(originalProgress);
+    };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
@@ -271,6 +310,7 @@ export function LayerTimeline({
   return (
     <section
       ref={sectionRef}
+      {...timelineTouch}
       onKeyDown={handleTimelineClipboardShortcut}
       className={cn(
         "relative z-20 flex h-full min-h-0 shrink-0 flex-col overflow-hidden border-t border-border",
@@ -653,7 +693,7 @@ export function LayerTimeline({
               })}
             </div>
             {/* Draggable duration grip (Figma): drag the ruler's right edge to change duration.
-              Left = shorter, right = longer, scaled to the drag distance. */}
+            Left = shorter, right = longer, scaled to the drag distance. */}
             {!isTimelineEmpty &&
               navigation.contentWidth - navigation.scrollLeft <= navigation.width + 1 && (
                 <div
@@ -684,30 +724,43 @@ export function LayerTimeline({
                     e.stopPropagation(); // don't start a scrub
                     const ruler = e.currentTarget.parentElement;
                     if (!ruler) return;
+                    durationCancelRef.current?.();
                     const startWidth = Math.max(1, ruler.getBoundingClientRect().width);
-                    const startDur = animation.duration;
+                    const startDur = useEditorStore.getState().animation.duration;
                     const startX = e.clientX;
+                    const pointerId = e.pointerId;
+                    const ownerId = useEditorStore.getState().selectedFrameId;
                     const grip = e.currentTarget;
-                    let historyRecorded = false;
+                    let historyEntry:
+                      | ReturnType<typeof useEditorStore.getState>["history"][number]
+                      | undefined;
                     try {
                       e.currentTarget.setPointerCapture(e.pointerId);
                     } catch {
                       /* ignore — the window listeners below still drive the resize */
                     }
                     const move = (ev: PointerEvent) => {
+                      if (ev.pointerId !== pointerId) return;
                       const dx = ev.clientX - startX;
                       const factor = Math.max(0.1, (startWidth + dx) / startWidth);
                       const nextDuration = Math.max(100, Math.round(startDur * factor));
                       if (nextDuration === startDur) return;
-                      if (!historyRecorded) {
+                      if (!historyEntry) {
                         useEditorStore.getState().pushHistory();
-                        historyRecorded = true;
+                        historyEntry = useEditorStore.getState().history.at(-1);
                       }
                       setAnimationDuration(nextDuration, { recordHistory: false });
                     };
                     const finish = (cancelled: boolean) => {
-                      if (cancelled && historyRecorded) {
-                        useEditorStore.getState().cancelLastHistoryTransaction();
+                      durationCancelRef.current = null;
+                      const state = useEditorStore.getState();
+                      if (
+                        cancelled &&
+                        historyEntry &&
+                        state.selectedFrameId === ownerId &&
+                        state.history.at(-1) === historyEntry
+                      ) {
+                        state.cancelLastHistoryTransaction();
                       }
                       try {
                         grip.releasePointerCapture(e.pointerId);
@@ -718,8 +771,13 @@ export function LayerTimeline({
                       window.removeEventListener("pointerup", up);
                       window.removeEventListener("pointercancel", cancel);
                     };
-                    const up = () => finish(false);
-                    const cancel = () => finish(true);
+                    const up = (event: PointerEvent) => {
+                      if (event.pointerId === pointerId) finish(false);
+                    };
+                    const cancel = (event: PointerEvent) => {
+                      if (event.pointerId === pointerId) finish(true);
+                    };
+                    durationCancelRef.current = () => finish(true);
                     window.addEventListener("pointermove", move);
                     window.addEventListener("pointerup", up);
                     window.addEventListener("pointercancel", cancel);
@@ -733,7 +791,7 @@ export function LayerTimeline({
       {/* ══ Body: names | tracks ══ */}
       <div
         ref={timelineScrollRef}
-        className="relative min-h-0 flex-1 overflow-auto"
+        className="relative min-h-0 flex-1 touch-none overflow-auto"
         aria-label="Animation tracks"
         tabIndex={-1}
         onScroll={(event) => {
@@ -752,22 +810,24 @@ export function LayerTimeline({
             blocksForProperty={blocksForPropertyInFrame}
           />
 
-          <TimelineTracksPane
-            rows={timelineRows}
-            compact={compact}
-            blocksForLayer={blocksForLayerInFrame}
-            blocksForProperty={blocksForPropertyInFrame}
-            contentWidth={navigation.contentWidth}
-            majorStep={rulerMajorStepMs}
-            gridStep={snapping ? (timeUnit === "frames" ? 1000 / fps : rulerMinorStepMs) : 1}
-            snapping={snapping}
-            onSnapChange={reportSnap}
-            keyboardStep={timeUnit === "frames" ? 1000 / fps : 1}
-            empty={isTimelineEmpty}
-            emptyHintDismissed={emptyHintDismissed}
-            onDismissEmptyHint={() => setEmptyHintDismissed(true)}
-            formatProfile={formatProfile}
-          />
+          <TimelineNavigationCancellation.Provider value={registerCancellation}>
+            <TimelineTracksPane
+              rows={timelineRows}
+              compact={compact}
+              blocksForLayer={blocksForLayerInFrame}
+              blocksForProperty={blocksForPropertyInFrame}
+              contentWidth={navigation.contentWidth}
+              majorStep={rulerMajorStepMs}
+              gridStep={snapping ? (timeUnit === "frames" ? 1000 / fps : rulerMinorStepMs) : 1}
+              snapping={snapping}
+              onSnapChange={reportSnap}
+              keyboardStep={timeUnit === "frames" ? 1000 / fps : 1}
+              empty={isTimelineEmpty}
+              emptyHintDismissed={emptyHintDismissed}
+              onDismissEmptyHint={() => setEmptyHintDismissed(true)}
+              formatProfile={formatProfile}
+            />
+          </TimelineNavigationCancellation.Provider>
         </div>
       </div>
     </section>

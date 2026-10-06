@@ -18,7 +18,7 @@ let baseline: ReturnType<typeof useEditorStore.getState>;
 beforeEach(() => {
   baseline = useEditorStore.getState();
   useEditorStore.getState().resetProject();
-  useEditorStore.setState({ timelineZoom: 1, timelineScrollX: 0 });
+  useEditorStore.setState({ timelineZoom: 1, timelineScrollX: 0, timelineScrollY: 0 });
   useTimelineViewSettings.setState({ unit: "milliseconds", fps: 30, snapping: true });
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1240);
 });
@@ -48,7 +48,151 @@ function KeyboardTimeline() {
   return <LayerTimeline />;
 }
 
+function touch(element: Element, type: string, id: number, x: number, y = 300) {
+  React.act(() => {
+    element.dispatchEvent(
+      new PointerEvent(type, {
+        pointerType: "touch",
+        pointerId: id,
+        isPrimary: id === 1,
+        button: 0,
+        buttons: type === "pointerup" ? 0 : 1,
+        clientX: x,
+        clientY: y,
+        bubbles: true,
+        cancelable: true,
+        altKey: true,
+      }),
+    );
+  });
+}
+function mountTouchTimeline() {
+  rendered = renderEditorComponent(<LayerTimeline />);
+  rendered.container.querySelector("section")!.getBoundingClientRect = () =>
+    new DOMRect(0, 0, 1240, 600);
+  for (const row of rendered.container.querySelectorAll<HTMLElement>("[data-timeline-row]"))
+    row.getBoundingClientRect = () => new DOMRect(240, 200, 1000, 30);
+  const ruler = rendered.container.querySelector<HTMLElement>('[aria-label="Timeline playhead"]')!;
+  ruler.getBoundingClientRect = () => new DOMRect(240, 0, 1000, 36);
+  return {
+    viewport: rendered.container.querySelector<HTMLElement>('[aria-label="Animation tracks"]')!,
+    ruler,
+  };
+}
+function addMotion() {
+  const store = useEditorStore.getState();
+  store.addTimelineBlock(store.layers[0].id, "rotation");
+  const id = useEditorStore.getState().selectedBlockIds[0];
+  store.updateTimelineBlock(id, { startTime: 100, endTime: 700 });
+  return id;
+}
+
 describe("timeline navigation", () => {
+  it("pinches around the touched time and continues scrolling with the remaining finger", () => {
+    const { viewport } = mountTouchTimeline();
+    const pointer = (type: string, id: number, x: number) => touch(viewport, type, id, x);
+    pointer("pointerdown", 1, 600);
+    pointer("pointerdown", 2, 800);
+    pointer("pointermove", 1, 500);
+    pointer("pointermove", 2, 900);
+    expect(useEditorStore.getState().timelineZoom).toBeCloseTo(2);
+    expect(useEditorStore.getState().timelineScrollX).toBeCloseTo(460);
+    pointer("pointerup", 1, 500);
+    pointer("pointermove", 2, 850);
+    expect(useEditorStore.getState().timelineZoom).toBeCloseTo(2);
+    expect(useEditorStore.getState().timelineScrollX).toBeCloseTo(510);
+    pointer("pointerdown", 3, 650);
+    pointer("pointermove", 3, 550);
+    expect(useEditorStore.getState().timelineZoom).toBeCloseTo(3);
+    expect(useEditorStore.getState().timelineScrollX).toBeCloseTo(1070);
+    pointer("pointerup", 2, 850);
+    pointer("pointerup", 3, 550);
+  });
+
+  it.each(["keyframe", "segment", "duration", "scrub"])(
+    "cancels an active %s edit before pinching without leaving an undo step",
+    (kind) => {
+      const id = addMotion();
+      useEditorStore.setState({ progress: 0.25 });
+      const original = useEditorStore.getState();
+      const { viewport, ruler } = mountTouchTimeline();
+      const target =
+        kind === "scrub"
+          ? ruler
+          : kind === "duration"
+            ? rendered!.container.querySelector('[aria-label="Animation duration"]')!
+            : kind === "keyframe"
+              ? rendered!.container.querySelector(
+                  `[data-timeline-keyframe-block-id="${id}"][data-timeline-keyframe-edge="start"]`,
+                )!
+              : rendered!.container.querySelector(`[data-timeline-block-id="${id}"]`)!;
+      touch(target, "pointerdown", 1, 500);
+      touch(target, "pointermove", 1, 560);
+      if (kind === "scrub") expect(useEditorStore.getState().progress).not.toBe(original.progress);
+      else expect(useEditorStore.getState().animation).not.toEqual(original.animation);
+      touch(viewport, "pointerdown", 2, 760);
+      expect(useEditorStore.getState().animation).toEqual(original.animation);
+      expect(useEditorStore.getState().history).toEqual(original.history);
+      expect(useEditorStore.getState().progress).toBe(original.progress);
+      touch(viewport, "pointermove", 2, 960);
+      expect(useEditorStore.getState().timelineZoom).toBeCloseTo(2);
+      touch(viewport, "pointerup", 2, 960);
+      touch(viewport, "pointermove", 1, 510);
+      touch(viewport, "pointerup", 1, 510);
+      expect(useEditorStore.getState().animation).toEqual(original.animation);
+      expect(useEditorStore.getState().history).toEqual(original.history);
+      expect(useEditorStore.getState().progress).toBe(original.progress);
+      const click = new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 });
+      React.act(() => ruler.dispatchEvent(click));
+      expect(click.defaultPrevented).toBe(true);
+      expect(useEditorStore.getState().progress).toBe(original.progress);
+      // A fresh tap is still a normal edit, rather than being swallowed after navigation.
+      touch(ruler, "pointerdown", 3, 640);
+      touch(ruler, "pointerup", 3, 640);
+      expect(useEditorStore.getState().progress).toBeCloseTo(0.4);
+    },
+  );
+
+  it("scrolls blank tracks and layer names with one finger without changing row heights", () => {
+    useEditorStore.setState({ timelineZoom: 2, timelineScrollX: 100, timelineScrollY: 0 });
+    const { viewport } = mountTouchTimeline();
+    touch(viewport, "pointerdown", 1, 600, 300);
+    touch(viewport, "pointermove", 1, 550, 260);
+    touch(viewport, "pointerup", 1, 550, 260);
+    expect(useEditorStore.getState().timelineZoom).toBe(2);
+    expect(useEditorStore.getState().timelineScrollX).toBe(150);
+    expect(useEditorStore.getState().timelineScrollY).toBe(40);
+    const names = rendered!.container.querySelector("[data-timeline-layer-names]")!;
+    touch(names, "pointerdown", 2, 100, 300);
+    touch(names, "pointermove", 2, 100, 250);
+    touch(names, "pointerup", 2, 100, 250);
+    expect(useEditorStore.getState().timelineScrollY).toBe(90);
+    expect(useEditorStore.getState().timelineScrollX).toBe(150);
+    expect(useEditorStore.getState().timelineZoom).toBe(2);
+  });
+
+  it("leaves sheet/header gestures and buttons usable after pinching", () => {
+    const { viewport } = mountTouchTimeline();
+    touch(viewport, "pointerdown", 1, 600);
+    touch(viewport, "pointerdown", 2, 800);
+    touch(viewport, "pointermove", 2, 900);
+    touch(viewport, "pointerup", 1, 600);
+    touch(viewport, "pointerup", 2, 900);
+    const play = button("Play");
+    const moved = vi.fn();
+    // Header controls must receive their native moves rather than being treated
+    // as orphaned pointers from the track viewport (including the sheet handle).
+    play.addEventListener("pointermove", moved);
+    touch(play, "pointerdown", 3, 20, 10);
+    touch(play, "pointermove", 3, 20, -40);
+    touch(play, "pointerup", 3, 20, -40);
+    expect(moved).toHaveBeenCalledTimes(1);
+    React.act(() =>
+      play.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 })),
+    );
+    expect(useEditorStore.getState().isPlaying).toBe(true);
+  });
+
   it("offers back-and-forth playback with an explicit snapping hint", async () => {
     rendered = renderEditorComponent(<LayerTimeline />);
     await timelineOption("Back-and-forth playback");
