@@ -10,8 +10,11 @@ test("line to curve conversion remains draggable in the vector editor", async ({
   await page.goto("/");
   await page.getByRole("button", { name: "Make an icon move", exact: true }).click();
   await page.getByRole("button", { name: "Close animation exercise" }).click();
-  await page.getByRole("button", { name: "Focus path commands" }).click();
-  await page.getByRole("button", { name: "Line", exact: true }).first().click();
+  await page.getByRole("button", { name: "Focus path points" }).click();
+  await page
+    .getByRole("button", { name: /^Make edge .* curved$/ })
+    .first()
+    .click();
   await page.getByRole("button", { name: "Exit focus (Esc)" }).click();
   await page.locator("#editor-canvas").focus();
   await page.keyboard.press("a");
@@ -44,8 +47,11 @@ test("converted line points in the authored triangle remain draggable at every p
     const timeInput = page.getByRole("textbox", { name: "Current time in milliseconds" });
     await timeInput.fill(String(time));
     await timeInput.press("Enter");
-    await page.getByRole("button", { name: "Focus path commands" }).click();
-    await page.getByRole("button", { name: "Line", exact: true }).first().click();
+    await page.getByRole("button", { name: "Focus path points" }).click();
+    await page
+      .getByRole("button", { name: /^Make edge .* curved$/ })
+      .first()
+      .click();
     await page.getByRole("button", { name: "Exit focus (Esc)" }).click();
     const points = page.locator('#editor-canvas svg :is(rect,circle)[style*="cursor: grab"]');
     for (let index = 0; index < Math.min(7, await points.count()); index++) {
@@ -75,9 +81,12 @@ test("touch dragging a converted triangle point keeps the focused command editor
     await page.goto("/");
     await page.getByRole("button", { name: "Dismiss onboarding", exact: true }).click();
     await page.getByRole("button", { name: "Design", exact: true }).click();
-    await page.getByRole("button", { name: "Focus path commands" }).click();
+    await page.getByRole("button", { name: "Focus path points" }).click();
     for (let index = 0; index < 3; index++)
-      await page.getByRole("button", { name: "Line", exact: true }).first().tap();
+      await page
+        .getByRole("button", { name: /^Make edge .* curved$/ })
+        .first()
+        .tap();
     await page.locator("#editor-canvas").focus();
     await page.keyboard.press("a");
     const points = page.locator('#editor-canvas svg :is(rect,circle)[style*="cursor: grab"]');
@@ -113,15 +122,18 @@ test("add anchors, convert, undo, save and reload through the path command contr
   if (info.project.name === "phone")
     await page.getByRole("button", { name: "Design", exact: true }).click();
   else await page.getByRole("button", { name: "Upper", exact: true }).first().click();
-  await page.getByRole("button", { name: "Focus path commands" }).click();
+  await page.getByRole("button", { name: "Focus path points" }).click();
   await expect(page.getByText("5 points", { exact: true })).toBeVisible();
   const add = page.getByRole("button", { name: "Add point to shape 1", exact: true });
   await add.click();
   await expect(page.getByText("6 points", { exact: true })).toBeVisible();
   await add.click();
   await expect(page.getByText("7 points", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Line", exact: true }).first().click();
-  const x = page.getByRole("textbox", { name: "Curve X", exact: true }).first();
+  await page
+    .getByRole("button", { name: /^Make edge .* curved$/ })
+    .first()
+    .click();
+  const x = page.getByRole("textbox", { name: "Point 2 X", exact: true }).first();
   await x.fill("14");
   await x.press("Enter");
   await expect(x).toHaveValue("14");
@@ -154,7 +166,9 @@ test("add anchors, convert, undo, save and reload through the path command contr
   expect(
     new Set(keys.map((value) => androidPathMorphSignature(parsePath(String(value))))).size,
   ).toBe(1);
-  await expect(page.getByRole("button", { name: "Saved locally", exact: true, includeHidden: true })).toHaveCount(1);
+  await expect(
+    page.getByRole("button", { name: "Saved locally", exact: true, includeHidden: true }),
+  ).toHaveCount(1);
   await page.reload();
   const reloaded = await project();
   expect(reloaded).toEqual(saved);

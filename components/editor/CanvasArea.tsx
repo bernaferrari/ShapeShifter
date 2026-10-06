@@ -930,14 +930,20 @@ export function CanvasArea({
                         worldPerPixel={worldPerPx}
                       />
                     )}
-                    {!isPlaying && isPointTool && editPath && editOrigin && (
+                    {!isPlaying && editPath && editOrigin && (
                       <WorldVectorNetwork
+                        ownerId={selectedFrameId}
+                        layerId={selectedLayerId}
+                        side={editingSide}
+                        interactive={isPointTool}
+                        viewport={worldView}
                         path={editPath}
                         origin={editOrigin}
                         translation={{ x: editLayerTx, y: editLayerTy }}
                         worldMatrix={editWorldMatrix}
                         selectedPoints={selectedPoints}
                         anchorRadius={anchorR}
+                        worldPerPixel={worldPerPx}
                       />
                     )}
                     {!isPlaying &&

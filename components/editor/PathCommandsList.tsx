@@ -1,12 +1,22 @@
 "use client";
 
 import React from "react";
-import { Plus } from "lucide-react";
+import { ArrowDownRight, ArrowUpLeft, Minus, Plus, Spline } from "lucide-react";
 import type { CommandType, PathData, Selection } from "@/lib/shapeshifter/types";
+import {
+  pathAnchors,
+  pointPresentation,
+  edgePresentation,
+  type PointAddress,
+} from "@/lib/shapeshifter/path/pointPresentation";
+import { usePathPointHighlight } from "./pathPointHighlight";
 import { cn } from "@/lib/utils";
 
 interface PathCommandsListProps {
   pathData?: PathData;
+  ownerId: string;
+  layerId: string | number;
+  side: "from" | "to";
   selectedPoints?: Selection[];
   onSelectCommand?: (subPathIndex: number, commandIndex: number, pointIndex: number) => void;
   /** Called when a point inside a command should be mutated (for live two-way editing) */
@@ -20,25 +30,6 @@ interface PathCommandsListProps {
   onChangeCommandType?: (subPathIndex: number, commandIndex: number, newType: CommandType) => void;
   onAddPoint?: (subPathIndex: number, commandIndex: number) => void;
   className?: string;
-}
-
-const COMMAND_NAMES: Record<string, string> = {
-  M: "Start",
-  L: "Line",
-  H: "Line",
-  V: "Line",
-  C: "Curve",
-  S: "Curve",
-  Q: "Curve",
-  T: "Curve",
-  A: "Arc",
-  Z: "Close",
-};
-
-function pointRole(cmdType: CommandType, pointIndex: number, pointCount: number) {
-  if (pointIndex === pointCount - 1) return null;
-  if (cmdType === "C") return pointIndex === 0 ? "Handle 1" : "Handle 2";
-  return "Handle";
 }
 
 function formatNumber(value: number) {
@@ -111,7 +102,57 @@ export function PathCommandsList({
   onChangeCommandType,
   onAddPoint,
   className,
+  ownerId,
+  layerId,
+  side,
 }: PathCommandsListProps) {
+  const highlight = usePathPointHighlight((state) => state.highlight);
+  const show = usePathPointHighlight((state) => state.show);
+  const clear = usePathPointHighlight((state) => state.clear);
+  const listRef = React.useRef<HTMLDivElement>(null);
+  const active =
+    highlight &&
+    highlight.ownerId === ownerId &&
+    String(highlight.layerId) === String(layerId) &&
+    highlight.side === side
+      ? highlight
+      : null;
+  React.useEffect(() => () => clear("list"), [clear, ownerId, layerId, side]);
+  React.useEffect(() => {
+    if (!pathData || active?.source === "list") return;
+    const address =
+      active?.kind === "point"
+        ? active.point
+        : active?.kind === "edge"
+          ? {
+              subPathIndex: active.subPathIndex,
+              commandIndex: active.commandIndex,
+              pointIndex:
+                pathData.subPaths[active.subPathIndex]?.commands[active.commandIndex]?.points
+                  .length - 1,
+            }
+          : selectedPoints[0];
+    if (!address) return;
+    const anchor = pointPresentation(pathData, address)?.anchor;
+    const list = listRef.current;
+    const row =
+      anchor && list?.querySelector(`[data-path-point="${anchor.subPathIndex}:${anchor.number}"]`);
+    if (
+      !list ||
+      !row ||
+      (list.contains(document.activeElement) && document.activeElement instanceof HTMLInputElement)
+    )
+      return;
+    // Scroll this list only: scrollIntoView also moves the canvas and mobile sheet.
+    const bounds = list.getBoundingClientRect();
+    const target = row.getBoundingClientRect();
+    if (target.top < bounds.top + 20) list.scrollTop += target.top - bounds.top - 20;
+    else if (target.bottom > bounds.bottom) list.scrollTop += target.bottom - bounds.bottom;
+  }, [active, pathData, selectedPoints]);
+  const preview = (point: PointAddress) =>
+    show({ ownerId, layerId, side, source: "list", kind: "point", point });
+  const select = (point: PointAddress) =>
+    onSelectCommand?.(point.subPathIndex, point.commandIndex, point.pointIndex);
   if (!pathData?.subPaths?.length) {
     return (
       <div className={cn("px-3 py-2 text-[11px] text-muted-foreground", className)}>
@@ -120,24 +161,25 @@ export function PathCommandsList({
     );
   }
 
-  const toggleCurve = (subPathIndex: number, commandIndex: number) => {
-    const cmd = pathData.subPaths[subPathIndex]?.commands[commandIndex];
-    if (!cmd || !onChangeCommandType) return;
-    if (cmd.type === "L") onChangeCommandType(subPathIndex, commandIndex, "C");
-    else if (cmd.type === "C") onChangeCommandType(subPathIndex, commandIndex, "L");
-  };
-
   return (
-    <div className={cn("min-h-0 flex-1 overflow-y-auto py-1 text-[11px]", className)}>
+    <div
+      ref={listRef}
+      aria-label="Path points"
+      className={cn("min-h-0 flex-1 overflow-y-auto py-1 text-xs", className)}
+      onPointerLeave={() => clear("list")}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) clear("list");
+      }}
+    >
       {pathData.subPaths.map((subPath, subPathIndex) => {
-        const pointCount = subPath.commands.filter((cmd) => cmd.points.length > 0).length;
+        const anchors = pathAnchors(pathData, subPathIndex);
         let longest = 1,
           longestLength = -1;
-        subPath.commands.forEach((cmd, index) => {
-          if (cmd.type === "M") return;
+        subPath.commands.forEach((command, index) => {
+          if (command.type === "M") return;
           const start = subPath.commands[index - 1]?.points.at(-1);
-          const points = cmd.type === "Z" ? [subPath.commands[0]?.points[0]] : cmd.points;
-          if (!start || !points.length || points.some((p) => !p)) return;
+          const points = command.type === "Z" ? [subPath.commands[0]?.points[0]] : command.points;
+          if (!start || !points.length || points.some((point) => !point)) return;
           let previous = start,
             length = 0;
           for (const point of points) {
@@ -145,110 +187,242 @@ export function PathCommandsList({
             previous = point;
           }
           if (length > longestLength) {
-            longest = index;
             longestLength = length;
+            longest = index;
           }
         });
-        const selected = selectedPoints.find((p) => p.subPathIndex === subPathIndex);
+        const selected = selectedPoints.find((point) => point.subPathIndex === subPathIndex);
+        const fields = (address: PointAddress, label: string) => {
+          const point = subPath.commands[address.commandIndex]?.points[address.pointIndex];
+          if (!point) return null;
+          return (["x", "y"] as const).map((axis) => (
+            <CoordinateField
+              key={axis}
+              label={`${pathData.subPaths.length > 1 ? `Shape ${subPathIndex + 1} ` : ""}${label} ${axis.toUpperCase()}`}
+              value={point[axis]}
+              onCommit={(value) =>
+                onUpdateCommandPoint?.(
+                  address.subPathIndex,
+                  address.commandIndex,
+                  address.pointIndex,
+                  { ...point, [axis]: value },
+                )
+              }
+            />
+          ));
+        };
+        const hoveredAnchors =
+          active?.kind === "edge" && active.subPathIndex === subPathIndex
+            ? edgePresentation(pathData, subPathIndex, active.commandIndex)
+            : null;
+        const hoveredPoint =
+          active?.kind === "point" && active.point.subPathIndex === subPathIndex
+            ? pointPresentation(pathData, active.point)?.anchor
+            : null;
         return (
-          <div key={`sp-${subPathIndex}`}>
-            <div className="flex items-center justify-between gap-2 px-2 pb-1 pt-1 text-[10px] text-muted-foreground">
-              <span>
+          <div key={`shape-${subPathIndex}`}>
+            <div className="sticky top-0 z-10 grid grid-cols-[minmax(0,1fr)_1.75rem_3.5rem_3.5rem] pointer-coarse:grid-cols-[minmax(0,1fr)_2.75rem_3.5rem_3.5rem] items-center gap-1 bg-sidebar px-1 py-1 text-[11px] text-muted-foreground">
+              <span className="truncate px-1">
                 {pathData.subPaths.length > 1 ? `Shape ${subPathIndex + 1} · ` : ""}
-                {pointCount} points
+                <span>{anchors.length} points</span>
+                {subPath.commands.at(-1)?.type === "Z" ? " · Closed" : ""}
               </span>
-              {onAddPoint && longestLength >= 0 && (
+              {onAddPoint && longestLength >= 0 ? (
                 <button
                   type="button"
                   aria-label={`Add point to shape ${subPathIndex + 1}`}
                   title="Add a point on the selected edge without changing its outline"
-                  className="grid size-6 pointer-coarse:size-11 shrink-0 touch-manipulation place-items-center rounded-md hover:bg-muted hover:text-foreground"
+                  className="grid size-7 pointer-coarse:size-11 shrink-0 touch-manipulation place-items-center rounded-md hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
                   onClick={() => onAddPoint(subPathIndex, selected?.commandIndex ?? longest)}
                 >
                   <Plus className="size-3.5" />
                 </button>
+              ) : (
+                <span />
               )}
+              <span className="text-right pr-1.5" aria-hidden="true">
+                X
+              </span>
+              <span className="text-right pr-1.5" aria-hidden="true">
+                Y
+              </span>
             </div>
-            {subPath.commands.map((cmd, commandIndex) => {
-              const isClose = cmd.type === "Z";
-              const name = COMMAND_NAMES[cmd.type] ?? cmd.type;
-              const canToggle = cmd.type === "L" || cmd.type === "C";
-              if (isClose)
-                return (
+            {anchors.map((anchor) => {
+              const command = subPath.commands[anchor.commandIndex];
+              const isSelected = selectedPoints.some(
+                (point) =>
+                  point.subPathIndex === subPathIndex &&
+                  ((point.commandIndex === anchor.commandIndex &&
+                    point.pointIndex === anchor.pointIndex) ||
+                    anchor.controls.some(
+                      (control) =>
+                        control.commandIndex === point.commandIndex &&
+                        control.pointIndex === point.pointIndex,
+                    )),
+              );
+              const isHovered =
+                hoveredPoint?.number === anchor.number ||
+                hoveredAnchors?.start.number === anchor.number ||
+                hoveredAnchors?.end.number === anchor.number;
+              const edge = edgePresentation(pathData, subPathIndex, anchor.commandIndex);
+              const curved = ["C", "Q", "S", "T"].includes(command.type);
+              const canConvert = command.type === "L" || curved;
+              const hover = (event: React.PointerEvent) => {
+                if (
+                  event.pointerType !== "touch" &&
+                  !event.buttons &&
+                  !(event.target as Element).closest("[data-path-edge-control]")
+                )
+                  preview(anchor);
+              };
+              return (
+                <div
+                  key={`${command.id}-${command.type}`}
+                  data-path-point={`${subPathIndex}:${anchor.number}`}
+                  data-hovered={isHovered || undefined}
+                  className="scroll-m-2"
+                >
                   <div
-                    key={cmd.id || `${subPathIndex}-${commandIndex}`}
-                    className="px-2 py-1 text-[11px] text-muted-foreground"
-                  >
-                    Close
-                  </div>
-                );
-              return cmd.points.map((point, pointIndex) => {
-                const role = pointRole(cmd.type as CommandType, pointIndex, cmd.points.length);
-                const selected = selectedPoints.some(
-                  (selection) =>
-                    selection.subPathIndex === subPathIndex &&
-                    selection.commandIndex === commandIndex &&
-                    selection.pointIndex === pointIndex,
-                );
-                const isAnchor = role == null;
-                return (
-                  <div
-                    key={`${cmd.id || `${subPathIndex}-${commandIndex}`}-${cmd.type}-${pointIndex}`}
                     className={cn(
-                      "grid grid-cols-[minmax(0,1fr)_3.5rem_3.5rem] items-center gap-1 rounded-md px-1",
-                      selected ? "bg-primary/10" : "hover:bg-muted/60",
+                      "grid grid-cols-[minmax(0,1fr)_1.75rem_3.5rem_3.5rem] pointer-coarse:grid-cols-[minmax(0,1fr)_2.75rem_3.5rem_3.5rem] items-center gap-1 rounded-md px-1",
+                      isSelected ? "bg-primary/10" : isHovered ? "bg-muted" : "hover:bg-muted/50",
                     )}
-                    onClick={() => onSelectCommand?.(subPathIndex, commandIndex, pointIndex)}
+                    onPointerMove={hover}
+                    onPointerEnter={hover}
+                    onFocus={() => preview(anchor)}
                   >
-                    <span
+                    <button
+                      type="button"
+                      aria-label={`Select point ${anchor.number}${pathData.subPaths.length > 1 ? ` in shape ${subPathIndex + 1}` : ""}`}
+                      aria-pressed={isSelected}
+                      onClick={() => select(anchor)}
                       className={cn(
-                        "flex min-w-0 items-center gap-1.5 truncate px-1",
-                        isAnchor ? "text-foreground" : "pl-4 text-muted-foreground",
-                        selected && "text-primary",
+                        "flex h-8 pointer-coarse:h-11 min-w-0 items-center gap-2 rounded px-1 text-left touch-manipulation focus-visible:outline-2 focus-visible:outline-ring",
+                        isSelected && "text-primary",
                       )}
                     >
-                      {isAnchor ? (
-                        canToggle && onChangeCommandType ? (
-                          <button
-                            type="button"
-                            className="truncate rounded px-0.5 -ml-0.5 hover:bg-muted"
-                            title={
-                              cmd.type === "L"
-                                ? "Make curve in every pose"
-                                : "Make straight in every pose"
-                            }
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              toggleCurve(subPathIndex, commandIndex);
-                            }}
-                          >
-                            {name}
-                          </button>
-                        ) : (
-                          name
-                        )
-                      ) : (
-                        role
-                      )}
-                    </span>
-                    {(["x", "y"] as const).map((coord) => (
-                      <CoordinateField
-                        key={coord}
-                        label={`${isAnchor ? name : role} ${coord.toUpperCase()}`}
-                        value={point[coord]}
-                        onCommit={(value) =>
-                          onUpdateCommandPoint?.(
-                            subPathIndex,
-                            commandIndex,
-                            pointIndex,
-                            coord === "x" ? { x: value, y: point.y } : { x: point.x, y: value },
-                          )
-                        }
+                      <span
+                        className="size-2 shrink-0 border border-current rounded-[1px]"
+                        aria-hidden="true"
                       />
-                    ))}
+                      <span className="truncate tabular-nums">Point {anchor.number}</span>
+                    </button>
+                    {canConvert && onChangeCommandType && edge ? (
+                      <button
+                        type="button"
+                        data-path-edge-control="true"
+                        onFocus={(event) => {
+                          event.stopPropagation();
+                          show({
+                            ownerId,
+                            layerId,
+                            side,
+                            source: "list",
+                            kind: "edge",
+                            subPathIndex,
+                            commandIndex: anchor.commandIndex,
+                          });
+                        }}
+                        aria-label={`Make edge ${edge.start.number}–${edge.end.number} ${curved ? "straight" : "curved"}`}
+                        title={`Edge ${edge.start.number}–${edge.end.number}: ${curved ? "curved" : "straight"}. Click to make it ${curved ? "straight" : "curved"} in every pose.`}
+                        aria-pressed={curved}
+                        className="grid size-7 pointer-coarse:size-11 place-items-center rounded text-muted-foreground touch-manipulation hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+                        onClick={() =>
+                          onChangeCommandType(subPathIndex, anchor.commandIndex, curved ? "L" : "C")
+                        }
+                        onPointerEnter={(event) => {
+                          if (event.pointerType !== "touch" && !event.buttons)
+                            show({
+                              ownerId,
+                              layerId,
+                              side,
+                              source: "list",
+                              kind: "edge",
+                              subPathIndex,
+                              commandIndex: anchor.commandIndex,
+                            });
+                        }}
+                      >
+                        <span aria-hidden="true">
+                          {curved ? (
+                            <Spline className="size-3.5" />
+                          ) : (
+                            <Minus className="size-3.5" />
+                          )}
+                        </span>
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                    {fields(anchor, `Point ${anchor.number}`)}
                   </div>
-                );
-              });
+                  {(isSelected ||
+                    (active?.source === "canvas" && hoveredPoint?.number === anchor.number)) &&
+                    anchor.controls.length > 0 && (
+                      <div className="ml-3 border-l border-border/70 pl-1 py-1">
+                        {anchor.controls.map((control) => {
+                          const controlSelected = selectedPoints.some(
+                            (point) =>
+                              point.subPathIndex === subPathIndex &&
+                              point.commandIndex === control.commandIndex &&
+                              point.pointIndex === control.pointIndex,
+                          );
+                          const controlHovered =
+                            active?.kind === "point" &&
+                            active.point.subPathIndex === subPathIndex &&
+                            active.point.commandIndex === control.commandIndex &&
+                            active.point.pointIndex === control.pointIndex;
+                          return (
+                            <div
+                              key={`${control.commandIndex}:${control.pointIndex}`}
+                              data-hovered={controlHovered || undefined}
+                              className={cn(
+                                "grid grid-cols-[minmax(0,1fr)_3.5rem_3.5rem] gap-1 items-center rounded-md px-1",
+                                controlSelected
+                                  ? "bg-primary/10"
+                                  : controlHovered
+                                    ? "bg-muted"
+                                    : "hover:bg-muted/50",
+                              )}
+                              onPointerEnter={(event) => {
+                                if (event.pointerType !== "touch" && !event.buttons)
+                                  preview(control);
+                              }}
+                              onPointerMove={(event) => {
+                                if (event.pointerType !== "touch" && !event.buttons)
+                                  preview(control);
+                              }}
+                              onFocus={() => preview(control)}
+                            >
+                              <button
+                                type="button"
+                                aria-label={`Select point ${anchor.number} ${control.label.toLowerCase()}`}
+                                aria-pressed={controlSelected}
+                                title={`Curve control ${control.label === "Incoming" ? "coming into" : control.label === "Outgoing" ? "leaving" : "shared with the neighboring point of"} Point ${anchor.number}`}
+                                className={cn(
+                                  "flex h-8 pointer-coarse:h-11 items-center gap-1 text-left text-[11px] touch-manipulation focus-visible:outline-2 focus-visible:outline-ring",
+                                  controlSelected ? "text-primary" : "text-muted-foreground",
+                                )}
+                                onClick={() => select(control)}
+                              >
+                                {control.label === "Incoming" ? (
+                                  <ArrowUpLeft className="size-3 shrink-0" />
+                                ) : (
+                                  <ArrowDownRight className="size-3 shrink-0" />
+                                )}
+                                <span className="truncate">{control.label}</span>
+                              </button>
+                              {fields(
+                                control,
+                                `Point ${anchor.number} ${control.label.toLowerCase()}`,
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                </div>
+              );
             })}
           </div>
         );

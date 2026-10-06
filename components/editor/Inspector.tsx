@@ -299,6 +299,9 @@ export function Inspector() {
 
   const commandsList = (extraClass?: string) => (
     <PathCommandsList
+      ownerId={selectedFrameId}
+      layerId={selectedLayerId}
+      side={editingSide}
       pathData={displayedPath}
       selectedPoints={selectedPoints}
       className={extraClass}
@@ -367,7 +370,7 @@ export function Inspector() {
           }
         >
           <div className="min-w-0 flex-1">
-            <div className="text-[12px] font-semibold">Path commands</div>
+            <div className="text-[12px] font-semibold">Path points</div>
             <div className="truncate text-[11px] text-muted-foreground">{currentLayer.name}</div>
           </div>
         </PanelHeader>
@@ -582,8 +585,8 @@ export function Inspector() {
                   variant="ghost"
                   className="text-muted-foreground hover:text-foreground"
                   onClick={() => setIsCommandsFocused(true)}
-                  aria-label="Focus path commands"
-                  title="Expand path commands"
+                  aria-label="Focus path points"
+                  title="Expand path points"
                 >
                   <Maximize2 className="size-3.5" />
                 </Button>

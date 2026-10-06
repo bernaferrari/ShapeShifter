@@ -1,3 +1,12 @@
+import { useEffect } from "react";
+import { usePathPointHighlight } from "../pathPointHighlight";
+import {
+  pointPresentation,
+  edgePresentation,
+  type PointAddress,
+} from "@/lib/shapeshifter/path/pointPresentation";
+import { materializeSmoothCommands } from "@/lib/shapeshifter/path/commandNormalization";
+import { getSegmentTargets } from "./pathCanvasGeometry";
 import { pathToString } from "@/lib/shapeshifter/pathUtils";
 import { numberAtTime, sampleMotionPath } from "@/lib/shapeshifter/playheadResolve";
 import {
@@ -311,6 +320,12 @@ export function WorldVectorNetwork({
   worldMatrix,
   selectedPoints,
   anchorRadius,
+  worldPerPixel,
+  ownerId,
+  layerId,
+  side,
+  interactive,
+  viewport,
 }: {
   path: PathData;
   origin: Point;
@@ -318,66 +333,290 @@ export function WorldVectorNetwork({
   worldMatrix?: AffineMatrix | null;
   selectedPoints: Selection[];
   anchorRadius: number;
+  worldPerPixel: number;
+  ownerId: string;
+  layerId: string | number;
+  side: "from" | "to";
+  interactive: boolean;
+  viewport: Rect;
 }) {
+  const highlight = usePathPointHighlight((state) => state.highlight);
+  const show = usePathPointHighlight((state) => state.show);
+  const clear = usePathPointHighlight((state) => state.clear);
+  const topology = path.subPaths
+    .map((sub) => sub.commands.map((cmd) => `${cmd.type}:${cmd.points.length}`).join(","))
+    .join("|");
+  useEffect(() => {
+    clear();
+    return () => clear();
+  }, [clear, ownerId, layerId, side, topology]);
+  const active =
+    highlight &&
+    highlight.ownerId === ownerId &&
+    String(highlight.layerId) === String(layerId) &&
+    highlight.side === side
+      ? highlight
+      : null;
+  if (!interactive && !active) return null;
   const transform = worldMatrix
     ? `translate(${origin.x} ${origin.y}) ${matrixToSvg(worldMatrix)}`
     : `translate(${origin.x + translation.x} ${origin.y + translation.y})`;
+  const toWorld = (point: Point) => {
+    const transformed = worldMatrix
+      ? transformPointWithMatrix(point, worldMatrix)
+      : { x: translation.x + point.x, y: translation.y + point.y };
+    return { x: origin.x + transformed.x, y: origin.y + transformed.y };
+  };
+  const edge =
+    active?.kind === "edge"
+      ? edgePresentation(path, active.subPathIndex, active.commandIndex)
+      : null;
+  const address =
+    active?.kind === "point"
+      ? active.point
+      : !active && interactive && selectedPoints.length === 1
+        ? selectedPoints[0]
+        : null;
+  const presentation = address ? pointPresentation(path, address) : null;
+  const labelPoint = address
+    ? path.subPaths[address.subPathIndex]?.commands[address.commandIndex]?.points[
+        address.pointIndex
+      ]
+    : null;
+  const normalized = {
+    subPaths: path.subPaths.map((sub) => ({
+      ...sub,
+      commands: materializeSmoothCommands(sub.commands),
+    })),
+  };
+  const segments = getSegmentTargets(normalized);
+  path.subPaths.forEach((sub, subPathIndex) => {
+    const commandIndex = sub.commands.length - 1;
+    const command = sub.commands[commandIndex];
+    const start = sub.commands[commandIndex - 1]?.points.at(-1);
+    const end = sub.commands[0]?.points[0];
+    if (command?.type === "Z" && start && end)
+      segments.push({
+        subPathIndex,
+        commandIndex,
+        command,
+        start,
+        end,
+        d: `M${start.x} ${start.y} L${end.x} ${end.y}`,
+        midpoint: { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 },
+      });
+  });
+  const selectedEdge =
+    active?.kind === "edge"
+      ? segments.find(
+          (segment) =>
+            segment.subPathIndex === active.subPathIndex &&
+            segment.commandIndex === active.commandIndex,
+        )
+      : null;
+  const pointLabel = presentation?.label ?? edge?.label;
+  const label =
+    pointLabel && path.subPaths.length > 1
+      ? `${pointLabel} · Shape ${address?.subPathIndex != null ? address.subPathIndex + 1 : active?.kind === "edge" ? active.subPathIndex + 1 : 1}`
+      : pointLabel;
+  const labelPosition = labelPoint
+    ? toWorld(labelPoint)
+    : selectedEdge
+      ? toWorld(selectedEdge.midpoint)
+      : null;
+  const labelWidth = label ? (label.length * 6 + 16) * worldPerPixel : 0;
+  const labelOrigin = labelPosition
+    ? {
+        x: Math.max(
+          viewport.x + 4 * worldPerPixel,
+          Math.min(
+            labelPosition.x + 9 * worldPerPixel,
+            viewport.x + viewport.w - labelWidth - 4 * worldPerPixel,
+          ),
+        ),
+        y: Math.max(
+          viewport.y + 4 * worldPerPixel,
+          Math.min(
+            labelPosition.y - 29 * worldPerPixel < viewport.y + 4 * worldPerPixel
+              ? labelPosition.y + 9 * worldPerPixel
+              : labelPosition.y - 29 * worldPerPixel,
+            viewport.y + viewport.h - 26 * worldPerPixel,
+          ),
+        ),
+      }
+    : null;
+  const samePoint = (a: PointAddress | null | undefined, b: PointAddress) =>
+    a?.subPathIndex === b.subPathIndex &&
+    a.commandIndex === b.commandIndex &&
+    a.pointIndex === b.pointIndex;
   return (
-    <g pointerEvents="none">
-      <path
-        d={pathToString(path)}
-        transform={transform}
-        fill="none"
-        stroke="var(--primary)"
-        strokeOpacity={0.35}
-        strokeWidth={1.25}
-        vectorEffect="non-scaling-stroke"
-      />
-      {path.subPaths.map((subpath, subpathIndex) =>
-        subpath.commands.map((command, commandIndex) =>
+    <g
+      pointerEvents="none"
+      data-path-network="true"
+      onPointerLeave={() => clear("canvas")}
+      onPointerDown={() => clear()}
+    >
+      {interactive && (
+        <path
+          d={pathToString(path)}
+          transform={transform}
+          fill="none"
+          stroke="var(--primary)"
+          strokeOpacity={0.35}
+          strokeWidth={1.25}
+          vectorEffect="non-scaling-stroke"
+        />
+      )}
+      {segments.map((segment) => {
+        const focused = selectedEdge === segment;
+        if (!interactive && !focused) return null;
+        return (
+          <g key={`edge-${segment.subPathIndex}-${segment.commandIndex}`}>
+            {focused && (
+              <path
+                d={segment.d}
+                transform={transform}
+                fill="none"
+                stroke="var(--primary)"
+                strokeOpacity={0.9}
+                strokeWidth={3}
+                vectorEffect="non-scaling-stroke"
+                pointerEvents="none"
+              />
+            )}
+            <path
+              data-path-edge={`${segment.subPathIndex}:${segment.commandIndex}`}
+              d={segment.d}
+              transform={transform}
+              fill="none"
+              stroke="var(--primary)"
+              strokeOpacity={0}
+              strokeWidth={12}
+              vectorEffect="non-scaling-stroke"
+              style={{ pointerEvents: interactive ? "stroke" : "none" }}
+              onPointerEnter={(event) => {
+                if (event.pointerType !== "touch" && !event.buttons)
+                  show({
+                    ownerId,
+                    layerId,
+                    side,
+                    source: "canvas",
+                    kind: "edge",
+                    subPathIndex: segment.subPathIndex,
+                    commandIndex: segment.commandIndex,
+                  });
+              }}
+              onPointerMove={(event) => {
+                if (event.pointerType !== "touch" && !event.buttons)
+                  show({
+                    ownerId,
+                    layerId,
+                    side,
+                    source: "canvas",
+                    kind: "edge",
+                    subPathIndex: segment.subPathIndex,
+                    commandIndex: segment.commandIndex,
+                  });
+              }}
+            />
+          </g>
+        );
+      })}
+      {path.subPaths.flatMap((sub, subPathIndex) =>
+        sub.commands.flatMap((command, commandIndex) =>
           command.points.map((point, pointIndex) => {
-            const transformed = worldMatrix
-              ? transformPointWithMatrix(point, worldMatrix)
-              : { x: translation.x + point.x, y: translation.y + point.y };
-            const x = origin.x + transformed.x;
-            const y = origin.y + transformed.y;
-            const selected = selectedPoints.some(
-              (selection) =>
-                selection.subPathIndex === subpathIndex &&
-                selection.commandIndex === commandIndex &&
-                selection.pointIndex === pointIndex,
-            );
+            const location = { subPathIndex, commandIndex, pointIndex };
+            const focused =
+              samePoint(address, location) ||
+              samePoint(edge?.start, location) ||
+              samePoint(edge?.end, location);
+            if (!interactive && !focused) return null;
+            const selected = selectedPoints.some((item) => samePoint(item, location));
             const anchor = pointIndex === command.points.length - 1;
-            const radius = anchor ? anchorRadius : anchorRadius * 0.75;
-            return anchor ? (
-              <rect
-                key={`anchor-${subpathIndex}-${commandIndex}-${pointIndex}`}
-                x={x - radius}
-                y={y - radius}
-                width={radius * 2}
-                height={radius * 2}
-                rx={radius * 0.15}
-                fill={selected ? "var(--primary)" : "#ffffff"}
-                stroke="var(--primary)"
-                strokeWidth={1.5}
-                vectorEffect="non-scaling-stroke"
-                style={{ cursor: "grab", pointerEvents: "auto" }}
-              />
-            ) : (
-              <circle
-                key={`handle-${subpathIndex}-${commandIndex}-${pointIndex}`}
-                cx={x}
-                cy={y}
-                r={radius}
-                fill={selected ? "var(--primary)" : "#ffffff"}
-                stroke="var(--primary)"
-                strokeWidth={1.25}
-                vectorEffect="non-scaling-stroke"
-                style={{ cursor: "grab", pointerEvents: "auto" }}
-              />
+            const position = toWorld(point);
+            const radius = anchorRadius * (anchor ? 1 : 0.75);
+            const props = {
+              fill: selected || focused ? "var(--primary)" : "#ffffff",
+              stroke: "var(--primary)",
+              strokeWidth: focused ? 2.5 : 1.5,
+              vectorEffect: "non-scaling-stroke" as const,
+              style: {
+                cursor: "grab",
+                pointerEvents: interactive ? ("auto" as const) : ("none" as const),
+              },
+              "data-path-address": `${subPathIndex}:${commandIndex}:${pointIndex}`,
+              "data-highlighted": focused || undefined,
+              onPointerEnter: (event: ReactPointerEvent<SVGElement>) => {
+                if (event.pointerType !== "touch" && !event.buttons)
+                  show({
+                    ownerId,
+                    layerId,
+                    side,
+                    source: "canvas",
+                    kind: "point",
+                    point: location,
+                  });
+              },
+              onPointerMove: (event: ReactPointerEvent<SVGElement>) => {
+                if (event.pointerType !== "touch" && !event.buttons)
+                  show({
+                    ownerId,
+                    layerId,
+                    side,
+                    source: "canvas",
+                    kind: "point",
+                    point: location,
+                  });
+              },
+            };
+            return (
+              <g key={`${subPathIndex}-${commandIndex}-${pointIndex}`}>
+                {focused && (
+                  <circle
+                    cx={position.x}
+                    cy={position.y}
+                    r={radius + 3 * worldPerPixel}
+                    fill="var(--primary)"
+                    fillOpacity={0.13}
+                  />
+                )}
+                {anchor ? (
+                  <rect
+                    {...props}
+                    x={position.x - radius}
+                    y={position.y - radius}
+                    width={radius * 2}
+                    height={radius * 2}
+                    rx={radius * 0.15}
+                  />
+                ) : (
+                  <circle {...props} cx={position.x} cy={position.y} r={radius} />
+                )}
+              </g>
             );
           }),
         ),
+      )}
+      {label && labelOrigin && (
+        <g data-path-point-label="true" transform={`translate(${labelOrigin.x} ${labelOrigin.y})`}>
+          <rect
+            width={labelWidth}
+            height={22 * worldPerPixel}
+            rx={5 * worldPerPixel}
+            fill="var(--popover)"
+            stroke="var(--border)"
+            strokeWidth={worldPerPixel}
+          />
+          <text
+            x={8 * worldPerPixel}
+            y={11 * worldPerPixel}
+            dominantBaseline="central"
+            fontSize={11 * worldPerPixel}
+            fill="var(--popover-foreground)"
+          >
+            {label}
+          </text>
+        </g>
       )}
     </g>
   );
