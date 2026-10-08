@@ -8,9 +8,9 @@ import { Toaster } from "sonner";
 import type { Metadata, Viewport } from "next";
 import { THEME_BOOTSTRAP_SCRIPT } from "@/lib/theme";
 
-const title = "Pathshift — Vector & Motion Editor";
+const title = "Pathshift — Android Vector Animation";
 const description =
-  "Draw vectors. Make them move. Create icons, refine path morphs, and animate Android assets in your browser with SVG and AnimatedVectorDrawable exports.";
+  "Create and animate Android vector icons in your browser. Draw paths, refine morphs and keyframes, and export native VectorDrawable and AnimatedVectorDrawable XML.";
 const siteUrl =
   process.env.NEXT_PUBLIC_SITE_URL ||
   (process.env.VERCEL_PROJECT_PRODUCTION_URL &&
