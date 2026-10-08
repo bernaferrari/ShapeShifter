@@ -3,7 +3,7 @@ import React, { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BooleanOperationsPanel } from "../BooleanOperations";
 import { useEditorStore } from "@/lib/store/editorStore";
-import { parsePath } from "@/lib/shapeshifter/pathUtils";
+import { parsePath } from "@/lib/pathshift/pathUtils";
 import { renderEditorComponent, type RenderedEditorComponent } from "./renderEditorComponent";
 const notification = vi.hoisted(() => ({ error: vi.fn(), message: vi.fn() }));
 vi.mock("sonner", () => ({ toast: notification }));

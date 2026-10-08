@@ -10,16 +10,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { getPathDataBounds } from "@/lib/shapeshifter/path/pathDataIO";
+import { getPathDataBounds } from "@/lib/pathshift/path/pathDataIO";
 import { useEditorStore } from "@/lib/store/editorStore";
 import type { CanvasFrame } from "@/lib/store/editorStore";
-import type { Layer } from "@/lib/shapeshifter/types";
-import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
-import { timelinePropertiesForLayer } from "@/lib/shapeshifter/motion/timelineProperties";
+import type { Layer } from "@/lib/pathshift/types";
+import { propertyLabel } from "@/lib/pathshift/propertyLabels";
+import { timelinePropertiesForLayer } from "@/lib/pathshift/motion/timelineProperties";
 import {
   sharedValue,
   type InspectorSelectionBounds,
-} from "@/lib/shapeshifter/scene/inspectorSelection";
+} from "@/lib/pathshift/scene/inspectorSelection";
 import {
   KeyframeToggle,
   KeyframeMenu,
@@ -31,12 +31,12 @@ import {
   TextInput,
   type KeyframeToggleProps,
 } from "./InspectorControls";
-import { parsePath, pathToString } from "@/lib/shapeshifter/pathUtils";
-import { pathDAtTime } from "@/lib/shapeshifter/playheadResolve";
-import { sameKeyframeTime } from "@/lib/shapeshifter/motion/timelineKeyframes";
+import { parsePath, pathToString } from "@/lib/pathshift/pathUtils";
+import { pathDAtTime } from "@/lib/pathshift/playheadResolve";
+import { sameKeyframeTime } from "@/lib/pathshift/motion/timelineKeyframes";
 import { useTimelineViewSettings } from "../timeline/timelineViewSettings";
 import { formatTimelineTime } from "../timeline/timelineScale";
-import { scalePathToBounds } from "@/lib/shapeshifter/path/pathEditing";
+import { scalePathToBounds } from "@/lib/pathshift/path/pathEditing";
 
 /**
  * Resolves the inline ◇ toggle for a property. Only properties the layer type can

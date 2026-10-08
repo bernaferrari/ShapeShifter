@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { recordExerciseExport } from "./animationExercise";
 import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editorStore";
-import { type ExportOptions } from "@/lib/shapeshifter/exporter";
+import { type ExportOptions } from "@/lib/pathshift/exporter";
 import {
   exportLiveDocument,
   resolveExportOptions,
@@ -27,7 +27,7 @@ import {
   summarizeAndroidWarnings,
   type LiveExportKind,
 } from "@/lib/store/exportDocument";
-import { CAPABILITY_MATRIX, type ExportFormatId } from "@/lib/shapeshifter/formatCapabilities";
+import { CAPABILITY_MATRIX, type ExportFormatId } from "@/lib/pathshift/formatCapabilities";
 
 interface ExportDialogProps {
   children: React.ReactNode;
@@ -208,7 +208,7 @@ export function ExportDialog({ children }: ExportDialogProps) {
             {
               description:
                 format === "avd"
-                  ? `${androidWarningSummary.description} Full details are in SHAPESHIFTER_EXPORT.txt.`
+                  ? `${androidWarningSummary.description} Full details are in PATHSHIFT_EXPORT.txt.`
                   : androidWarningSummary.description,
             },
           );

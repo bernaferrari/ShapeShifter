@@ -7,9 +7,9 @@ import {
   restoreHistoryEntry,
 } from "@/lib/store/documentRuntime";
 import { stageAgentCommands } from "@/lib/agent/commands";
-import { PAGE_ROOT_ID } from "@/lib/shapeshifter/scene/owners";
-import { snapValueToStep } from "@/lib/shapeshifter/camera";
-import type { Point } from "@/lib/shapeshifter/types";
+import { PAGE_ROOT_ID } from "@/lib/pathshift/scene/owners";
+import { snapValueToStep } from "@/lib/pathshift/camera";
+import type { Point } from "@/lib/pathshift/types";
 
 export function useWorldPenCreation({
   activeSubpathRef,

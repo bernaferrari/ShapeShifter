@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/lib/store/editorStore";
-import type { ToolMode } from "@/lib/shapeshifter/toolModes";
+import type { ToolMode } from "@/lib/pathshift/toolModes";
 import { selectedPathLayer } from "@/lib/store/playheadPathEditing";
 
 interface ToolDef {

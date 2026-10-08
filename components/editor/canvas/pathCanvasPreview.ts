@@ -1,6 +1,6 @@
-import { evaluateAndroidScene } from "@/lib/shapeshifter/scene/evaluate";
-import { matrixToSvg } from "@/lib/shapeshifter/scene/layerTransform";
-import type { Layer, TimelineBlock } from "@/lib/shapeshifter/types";
+import { evaluateAndroidScene } from "@/lib/pathshift/scene/evaluate";
+import { matrixToSvg } from "@/lib/pathshift/scene/layerTransform";
+import type { Layer, TimelineBlock } from "@/lib/pathshift/types";
 
 export interface PreviewLayer {
   layer: Layer;

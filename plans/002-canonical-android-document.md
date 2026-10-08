@@ -4,7 +4,7 @@
 > staged migration, not permission to rewrite the whole store. Stop when a STOP
 > condition occurs. Update Plan 002 in `plans/README.md` when done.
 >
-> **Drift check**: `git diff --stat 3268b817..HEAD -- lib/shapeshifter/types.ts lib/shapeshifter/documentModel.ts lib/shapeshifter/export/projectJson.ts components/editor/project/useProjectImport.ts lib/store`
+> **Drift check**: `git diff --stat 3268b817..HEAD -- lib/pathshift/types.ts lib/pathshift/documentModel.ts lib/pathshift/export/projectJson.ts components/editor/project/useProjectImport.ts lib/store`
 
 ## Status
 
@@ -24,12 +24,12 @@ values, and easing before any broader rendering work is trustworthy.
 
 ## Current state
 
-- `lib/shapeshifter/types.ts:162-307` declares a normalized DocumentV2 parallel to V1.
-- `lib/shapeshifter/documentModel.ts:148-159` stores only `pathData ?? from`.
-- `lib/shapeshifter/documentModel.ts:318-337` restores `from` and `pathData`, but not `to`.
-- `lib/shapeshifter/documentModel.ts:121-132` discards custom cubic Bézier strings.
+- `lib/pathshift/types.ts:162-307` declares a normalized DocumentV2 parallel to V1.
+- `lib/pathshift/documentModel.ts:148-159` stores only `pathData ?? from`.
+- `lib/pathshift/documentModel.ts:318-337` restores `from` and `pathData`, but not `to`.
+- `lib/pathshift/documentModel.ts:121-132` discards custom cubic Bézier strings.
 - `components/editor/project/useProjectImport.ts:132-141` prioritizes DocumentV2.
-- `lib/shapeshifter/export/projectJson.ts:104-137` removes `from` and `to` from frame snapshots.
+- `lib/pathshift/export/projectJson.ts:104-137` removes `from` and `to` from frame snapshots.
 - `lib/store/editorStore.ts:113-129` duplicates owner documents into active `layers`,
   `vector`, and `animation` projections.
 
@@ -37,7 +37,7 @@ values, and easing before any broader rendering work is trustworthy.
 
 | Purpose     | Command                                                                                                                                                  | Expected |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| Model tests | `pnpm test -- lib/shapeshifter/__tests__/documentModel.test.ts lib/shapeshifter/__tests__/androidParity.test.ts lib/store/__tests__/editorStore.test.ts` | all pass |
+| Model tests | `pnpm test -- lib/pathshift/__tests__/documentModel.test.ts lib/pathshift/__tests__/androidParity.test.ts lib/store/__tests__/editorStore.test.ts` | all pass |
 | Full suite  | `pnpm test`                                                                                                                                              | all pass |
 | Typecheck   | `pnpm typecheck`                                                                                                                                         | exit 0   |
 | Lint        | `pnpm lint`                                                                                                                                              | exit 0   |
@@ -46,9 +46,9 @@ values, and easing before any broader rendering work is trustworthy.
 
 **In scope**:
 
-- `lib/shapeshifter/types.ts`
-- `lib/shapeshifter/documentModel.ts`
-- `lib/shapeshifter/export/projectJson.ts`
+- `lib/pathshift/types.ts`
+- `lib/pathshift/documentModel.ts`
+- `lib/pathshift/export/projectJson.ts`
 - `components/editor/project/useProjectImport.ts`
 - `lib/store/workspaceState.ts`
 - Store selectors/actions directly required for canonical owner access

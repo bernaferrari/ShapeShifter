@@ -4,8 +4,8 @@ import React from "react";
 import { Spline, X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { EasingPanel } from "../inspector/EasingPanel";
-import type { TimelineBlock } from "@/lib/shapeshifter/types";
-import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
+import type { TimelineBlock } from "@/lib/pathshift/types";
+import { propertyLabel } from "@/lib/pathshift/propertyLabels";
 import { useEditorStore } from "@/lib/store/editorStore";
 
 export function TimelineSegmentEasing({

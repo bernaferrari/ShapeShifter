@@ -8,8 +8,8 @@ import type { TimelineRow } from "../timelineProjection";
 import { useEditorKeyboardShortcuts } from "../../hooks/useEditorKeyboardShortcuts";
 import { useEditorStore, type CanvasFrame } from "@/lib/store/editorStore";
 import { createPathLayer } from "@/lib/store/defaultWorkspace";
-import { parsePath } from "@/lib/shapeshifter/pathUtils";
-import type { TimelineBlock } from "@/lib/shapeshifter/types";
+import { parsePath } from "@/lib/pathshift/pathUtils";
+import type { TimelineBlock } from "@/lib/pathshift/types";
 import {
   renderEditorComponent,
   click,

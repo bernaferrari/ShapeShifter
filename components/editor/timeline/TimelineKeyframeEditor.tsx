@@ -3,21 +3,21 @@
 import React from "react";
 import { Trash2, X, ChevronLeft, ChevronRight, PenTool } from "lucide-react";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
-import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
-import { parseEditorColor } from "@/lib/shapeshifter/playheadResolve";
-import { validatePathData } from "@/lib/shapeshifter/path/pathValidation";
+import { propertyLabel } from "@/lib/pathshift/propertyLabels";
+import { parseEditorColor } from "@/lib/pathshift/playheadResolve";
+import { validatePathData } from "@/lib/pathshift/path/pathValidation";
 import {
   linkedTimelineKeyframe,
   trackKeyframes,
   type TrackKeyframe,
   timelineKeyframeRange,
-} from "@/lib/shapeshifter/motion/timelineKeyframes";
-import { createLayerTreeModel } from "@/lib/shapeshifter/scene/layerHierarchy";
+} from "@/lib/pathshift/motion/timelineKeyframes";
+import { createLayerTreeModel } from "@/lib/pathshift/scene/layerHierarchy";
 import {
   isTimelineNumberValid,
   timelineNumberRange,
-} from "@/lib/shapeshifter/motion/timelineProperties";
-import type { TimelineBlock } from "@/lib/shapeshifter/types";
+} from "@/lib/pathshift/motion/timelineProperties";
+import type { TimelineBlock } from "@/lib/pathshift/types";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { EasingPanel } from "../inspector/EasingPanel";
 import { useTimelineViewSettings } from "./timelineViewSettings";

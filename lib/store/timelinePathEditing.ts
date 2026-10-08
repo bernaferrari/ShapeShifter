@@ -1,8 +1,8 @@
-import { pathToString } from "../shapeshifter/pathUtils";
-import { linkedTimelineKeyframe } from "../shapeshifter/motion/timelineKeyframes";
-import type { Layer, TimelineBlock } from "../shapeshifter/types";
+import { pathToString } from "../pathshift/pathUtils";
+import { linkedTimelineKeyframe } from "../pathshift/motion/timelineKeyframes";
+import type { Layer, TimelineBlock } from "../pathshift/types";
 import type { EditorState } from "./editorStore";
-import { blocksFor } from "../shapeshifter/playheadResolve";
+import { blocksFor } from "../pathshift/playheadResolve";
 
 export function timelinePathSelection(
   state: EditorState,

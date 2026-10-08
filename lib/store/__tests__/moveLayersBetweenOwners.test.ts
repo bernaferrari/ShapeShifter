@@ -3,14 +3,14 @@ import {
   canMoveLayerRootsBetweenOwners,
   moveLayersBetweenOwners,
 } from "../commands/moveLayersBetweenOwners";
-import { parsePath } from "../../shapeshifter/pathUtils";
-import { evaluateAndroidScene } from "../../shapeshifter/scene/evaluate";
+import { parsePath } from "../../pathshift/pathUtils";
+import { evaluateAndroidScene } from "../../pathshift/scene/evaluate";
 import {
   multiplyAffine,
   translateAffine,
   transformPointWithMatrix,
-} from "../../shapeshifter/scene/layerTransform";
-import type { AnimationState, Layer } from "../../shapeshifter/types";
+} from "../../pathshift/scene/layerTransform";
+import type { AnimationState, Layer } from "../../pathshift/types";
 import type { CanvasFrame } from "../defaultWorkspace";
 import { layerReparentIssue, reparentLayerPreservingAppearance } from "../commands/reparentLayer";
 import { useEditorStore } from "../editorStore";

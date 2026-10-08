@@ -2,25 +2,25 @@ import {
   compileAndroidArtboard,
   type AndroidDiagnostic,
   type AndroidExportBundle,
-} from "../shapeshifter/androidCompiler";
-import { compileAndroidArtboardAsync } from "../shapeshifter/offthread";
+} from "../pathshift/androidCompiler";
+import { compileAndroidArtboardAsync } from "../pathshift/offthread";
 import {
   exportAnimatedSVG,
   exportCSSKeyframes,
   exportLottieDocument,
   exportStaticSVGWithDiagnostics,
   exportSvgSpritesheet,
-} from "../shapeshifter/exporter";
-import { exportPDFWithDiagnostics, type PdfExportDiagnostic } from "../shapeshifter/export/pdf";
+} from "../pathshift/exporter";
+import { exportPDFWithDiagnostics, type PdfExportDiagnostic } from "../pathshift/export/pdf";
 import {
   exportLottieDocumentWithDiagnostics,
   type LottieExportDiagnostic,
-} from "../shapeshifter/export/lottie";
+} from "../pathshift/export/lottie";
 import { saveActiveFrame, saveActiveRoot } from "./workspaceState";
-import type { ExportOptions, StaticSvgDiagnostic } from "../shapeshifter/export/types";
-import { createZip } from "../shapeshifter/zip";
-import type { EditorDocument, Layer } from "../shapeshifter/types";
-import { vectorFromPageMetadata } from "../shapeshifter/vectorSpace";
+import type { ExportOptions, StaticSvgDiagnostic } from "../pathshift/export/types";
+import { createZip } from "../pathshift/zip";
+import type { EditorDocument, Layer } from "../pathshift/types";
+import { vectorFromPageMetadata } from "../pathshift/vectorSpace";
 import { PAGE_ROOT_ID, useEditorStore } from "./editorStore";
 
 export type LiveExportKind =
@@ -108,7 +108,7 @@ export function serializeLiveProject() {
 /** Serialize an already-flushed document without choosing a second export scope. */
 export function serializeFlushedLiveProject(live: ReturnType<typeof flushLiveExportDocument>) {
   return {
-    format: "shapeshifter" as const,
+    format: "pathshift" as const,
     document: structuredClone(live.state.document),
     activeOwnerId: live.state.selectedFrameId,
   };
@@ -241,7 +241,7 @@ export async function exportLiveDocument(
   if (kind === "json") {
     return {
       ...empty,
-      filename: `${live.vector.name || "shapeshifter"}.shapeshifter`,
+      filename: `${live.vector.name || "pathshift"}.pathshift`,
       mimeType: "application/json",
       content: JSON.stringify(serializeFlushedLiveProject(live), null, 2),
     };
@@ -371,7 +371,7 @@ export function createAndroidExportZip(bundle: AndroidExportBundle): Uint8Array 
   return createZip([
     ...bundle.files,
     {
-      path: "SHAPESHIFTER_EXPORT.txt",
+      path: "PATHSHIFT_EXPORT.txt",
       content: report || "Android export completed without diagnostics.",
     },
   ]);

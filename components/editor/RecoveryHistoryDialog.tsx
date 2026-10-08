@@ -21,7 +21,7 @@ function checkpointDescription(payload: unknown) {
     document?: { name?: string; frameIds?: string[]; rootNodeIds?: string[] };
   } | null;
   return {
-    name: project?.document?.name || "ShapeShifter project",
+    name: project?.document?.name || "Pathshift project",
     detail: `${project?.document?.frameIds?.length ?? 0} artboards · ${project?.document?.rootNodeIds?.length ?? 0} page layers`,
   };
 }
@@ -90,8 +90,8 @@ export function RecoveryHistoryDialog({
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = checkpoint.current
-      ? "latest-local-copy.shapeshifter"
-      : `recovery-${checkpoint.savedAt}.shapeshifter`;
+      ? "latest-local-copy.pathshift"
+      : `recovery-${checkpoint.savedAt}.pathshift`;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();

@@ -3,7 +3,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import React, { act } from "react";
 import { useEditorStore, type EditorState } from "@/lib/store/editorStore";
-import { parsePath } from "@/lib/shapeshifter/pathUtils";
+import { parsePath } from "@/lib/pathshift/pathUtils";
 import { createPathLayer } from "@/lib/store/defaultWorkspace";
 
 import { PathCanvas } from "../../PathCanvas";

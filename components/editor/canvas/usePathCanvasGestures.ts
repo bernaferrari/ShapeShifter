@@ -3,23 +3,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
 import { toast } from "sonner";
-import { GestureDispatcher } from "@/lib/shapeshifter/gestures/GestureDispatcher";
+import { GestureDispatcher } from "@/lib/pathshift/gestures/GestureDispatcher";
 import {
   collectPointsInLasso,
   collectPointsInRect,
   getMarqueeRect,
-} from "@/lib/shapeshifter/gestures/HitTests";
-import { isPointInFillRegion, parsePath } from "@/lib/shapeshifter/pathUtils";
-import type { PathData, Point } from "@/lib/shapeshifter/types";
+} from "@/lib/pathshift/gestures/HitTests";
+import { isPointInFillRegion, parsePath } from "@/lib/pathshift/pathUtils";
+import type { PathData, Point } from "@/lib/pathshift/types";
 import { useEditorStore, type EditorState } from "@/lib/store/editorStore";
 import { getPathBounds, rectsIntersect, type Bounds } from "./pathCanvasGeometry";
-import { evaluateAndroidScene } from "@/lib/shapeshifter/scene/evaluate";
+import { evaluateAndroidScene } from "@/lib/pathshift/scene/evaluate";
 import {
   IDENTITY_AFFINE,
   inverseAffine,
   transformPointWithMatrix,
   type AffineMatrix,
-} from "@/lib/shapeshifter/scene/layerTransform";
+} from "@/lib/pathshift/scene/layerTransform";
 import { getPreviewLayers } from "./pathCanvasPreview";
 
 type PathCanvasSide = "from" | "to" | "preview";

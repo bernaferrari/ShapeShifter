@@ -1,7 +1,7 @@
-import { trackKeyframes, sameKeyframeTime } from "../../shapeshifter/motion/timelineKeyframes";
+import { trackKeyframes, sameKeyframeTime } from "../../pathshift/motion/timelineKeyframes";
 import { toast } from "sonner";
 import { planLayerDeletion } from "../commands/deleteLayers";
-import { zoomAtWorldPoint } from "../../shapeshifter/camera";
+import { zoomAtWorldPoint } from "../../pathshift/camera";
 import { collectClipboardFromOwners, remapClonedSubtree } from "../cloneSubtree";
 import type { EditorState } from "../editorStore";
 

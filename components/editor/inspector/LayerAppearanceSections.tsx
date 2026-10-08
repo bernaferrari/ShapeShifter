@@ -4,9 +4,9 @@ import React from "react";
 import { SlidersHorizontal, X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { gradientFromSolid } from "@/lib/shapeshifter/gradients";
-import { sharedValue } from "@/lib/shapeshifter/scene/inspectorSelection";
-import type { FillType, GradientType, Layer } from "@/lib/shapeshifter/types";
+import { gradientFromSolid } from "@/lib/pathshift/gradients";
+import { sharedValue } from "@/lib/pathshift/scene/inspectorSelection";
+import type { FillType, GradientType, Layer } from "@/lib/pathshift/types";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { ColorRow, GradientEditor } from "./InspectorColorControls";
 import {

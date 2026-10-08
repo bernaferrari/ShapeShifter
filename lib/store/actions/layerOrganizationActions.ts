@@ -1,8 +1,8 @@
 import { planLayerDeletion } from "../commands/deleteLayers";
 import { toast } from "sonner";
-import { collectLayerSubtreeIds } from "../../shapeshifter/scene/layerHierarchy";
-import { PAGE_ROOT_ID, type LayerSelectionRef } from "../../shapeshifter/scene/owners";
-import type { Layer, TimelineBlock } from "../../shapeshifter/types";
+import { collectLayerSubtreeIds } from "../../pathshift/scene/layerHierarchy";
+import { PAGE_ROOT_ID, type LayerSelectionRef } from "../../pathshift/scene/owners";
+import type { Layer, TimelineBlock } from "../../pathshift/types";
 import {
   collectSubtreeWithAnimation,
   remapClonedSubtree,

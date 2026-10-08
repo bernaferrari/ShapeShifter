@@ -3,7 +3,7 @@
 import { TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEditorStore } from "@/lib/store/editorStore";
-import { androidPathMorphSignature, parsePath } from "@/lib/shapeshifter/pathUtils";
+import { androidPathMorphSignature, parsePath } from "@/lib/pathshift/pathUtils";
 
 /**
  * Only speaks up when a morph needs attention: the start and end shapes are not

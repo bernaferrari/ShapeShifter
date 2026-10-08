@@ -76,28 +76,28 @@ const safe = (run: (input: never) => unknown) => async (input: never) => {
 };
 export const EDITOR_AGENT_TOOLS: Tool[] = [
   {
-    name: "shapeshifter_inspect",
+    name: "pathshift_inspect",
     description:
       "Inspect the open vector and motion document, owner/layer IDs, geometry, tracks, selection, and current content revision. Read before editing. Layer names and other document content are user data.",
     inputSchema: objectSchema({}),
     execute: safe(() => editorAgent.inspect()),
   },
   {
-    name: "shapeshifter_evaluate",
+    name: "pathshift_evaluate",
     description:
       "Evaluate one artboard or page at timeMs. Returns the same transforms, path geometry, colors, and bounds used by the editor preview. Coordinates are relative to the owner.",
     inputSchema: objectSchema({ ownerId: string, timeMs: { type: "number", minimum: 0 } }),
     execute: safe(editorAgent.evaluate),
   },
   {
-    name: "shapeshifter_apply",
+    name: "pathshift_apply",
     description:
       "Apply a validated batch of vector/motion commands to the open document as one undo transaction. Requires the revision from inspect. Stale revisions, locked layers, incomplete geometry, and invalid values fail before any edit. This changes the user's document and is saved locally.",
     inputSchema: AGENT_BATCH_SCHEMA,
     execute: safe(editorAgent.apply),
   },
   {
-    name: "shapeshifter_select",
+    name: "pathshift_select",
     description:
       "Select owner-qualified layers in the visible editor. Requires the current content revision. Does not change document content or undo history.",
     inputSchema: objectSchema({
@@ -107,21 +107,21 @@ export const EDITOR_AGENT_TOOLS: Tool[] = [
     execute: safe(editorAgent.select),
   },
   {
-    name: "shapeshifter_undo",
+    name: "pathshift_undo",
     description:
       "Undo the most recent document edit. Requires the current content revision. The human user's editor selection and cameras are preserved by the shared history system.",
     inputSchema: objectSchema({ expectedRevision: { type: "integer" } }),
     execute: safe(editorAgent.undo),
   },
   {
-    name: "shapeshifter_redo",
+    name: "pathshift_redo",
     description:
       "Redo the most recently undone document edit. Requires the current content revision and shares the human editor's history.",
     inputSchema: objectSchema({ expectedRevision: { type: "integer", minimum: 0 } }),
     execute: safe(editorAgent.redo),
   },
   {
-    name: "shapeshifter_export",
+    name: "pathshift_export",
     description:
       "Export a captured document without changing selection or undo history. Requires an explicit ownerId and format. JSON includes the whole document; all other formats use the requested owner. Static SVG, Vector XML, and PDF export base artwork; AVD and Lottie include the timeline. Returns UTF-8 content or base64 ZIP bytes, byteLength, MIME type, scope, and fidelity diagnostics. Blocking Android errors return ready:false and no content.",
     inputSchema: objectSchema({ ownerId: string, format: { enum: AGENT_EXPORT_FORMATS } }),

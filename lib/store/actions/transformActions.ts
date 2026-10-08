@@ -2,10 +2,10 @@ import {
   getPathDataBounds,
   scalePathToBounds,
   translatePathPoints,
-} from "../../shapeshifter/pathUtils";
-import { recordTranslationAtProgress } from "../../shapeshifter/motion/recordTranslation";
-import { PAGE_ROOT_ID } from "../../shapeshifter/scene/owners";
-import type { Layer, PathData } from "../../shapeshifter/types";
+} from "../../pathshift/pathUtils";
+import { recordTranslationAtProgress } from "../../pathshift/motion/recordTranslation";
+import { PAGE_ROOT_ID } from "../../pathshift/scene/owners";
+import type { Layer, PathData } from "../../pathshift/types";
 import type { EditorState } from "../editorStore";
 import { saveActiveFrame, saveActiveRoot } from "../workspaceState";
 

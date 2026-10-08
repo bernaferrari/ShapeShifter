@@ -1,5 +1,5 @@
-import { collectLayerSubtreeIds } from "../../shapeshifter/scene/layerHierarchy";
-import { PAGE_ROOT_ID, type LayerSelectionRef } from "../../shapeshifter/scene/owners";
+import { collectLayerSubtreeIds } from "../../pathshift/scene/layerHierarchy";
+import { PAGE_ROOT_ID, type LayerSelectionRef } from "../../pathshift/scene/owners";
 import type { EditorState } from "../editorStore";
 import { saveActiveFrame, saveActiveRoot } from "../workspaceState";
 import { flatHierarchy, structuralLockIssue } from "./structuralLayers";

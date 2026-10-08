@@ -384,7 +384,7 @@ export function useDocumentAutosave(): DocumentAutosave {
             if (cancelled) return;
             if (sameAutosaveState(hydrationStart, autosaveStateToken(useEditorStore.getState()))) {
               const result = restoreStoredAutosave(payload, (text) =>
-                importEditorText("autosave.shapeshifter", text),
+                importEditorText("autosave.pathshift", text),
               );
               if (result === "restored") discardHydrationHistory();
               else forceCheckpoint.current = true;
@@ -490,7 +490,7 @@ export function useDocumentAutosave(): DocumentAutosave {
         const text = autosaveText(payload);
         if (!text) throw new Error("This checkpoint does not contain a project.");
         const { importEditorText } = await import("@/components/editor/project/useProjectImport");
-        importEditorText("recovery.shapeshifter", text);
+        importEditorText("recovery.pathshift", text);
         restored = true;
         storedSignature.current = current == null ? null : (autosaveSignature(current) ?? null);
         forceCheckpoint.current = true;

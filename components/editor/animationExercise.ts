@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { useEditorStore } from "@/lib/store/editorStore";
-import { parsePath } from "@/lib/shapeshifter/pathUtils";
-import { generateId } from "@/lib/shapeshifter/ids";
+import { parsePath } from "@/lib/pathshift/pathUtils";
+import { generateId } from "@/lib/pathshift/ids";
 import { createPathLayer } from "@/lib/store/defaultWorkspace";
 
 interface ExerciseState {

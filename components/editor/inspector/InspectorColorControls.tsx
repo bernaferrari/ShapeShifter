@@ -6,12 +6,12 @@ import { ArrowLeftRight, Trash2 } from "lucide-react";
 import { hexToHsv } from "@/components/ui/color-picker-utils";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/lib/store/editorStore";
-import type { Gradient, GradientStop } from "@/lib/shapeshifter/types";
+import type { Gradient, GradientStop } from "@/lib/pathshift/types";
 import {
   gradientToCssBar,
   reverseGradientStops,
   sampleGradientStop,
-} from "@/lib/shapeshifter/gradients";
+} from "@/lib/pathshift/gradients";
 import { GRADIENT_PRESETS, hueShiftedStops, matchesPreset } from "./gradientPresets";
 import { KeyframeToggle, NumberRow, type KeyframeToggleProps } from "./InspectorControls";
 

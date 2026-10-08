@@ -1,12 +1,12 @@
-import { buildEditorDocument, type WorkspaceSnapshot } from "../shapeshifter/documentModel";
+import { buildEditorDocument, type WorkspaceSnapshot } from "../pathshift/documentModel";
 import { createPathLayer } from "../store/defaultWorkspace";
-import { generateId } from "../shapeshifter/ids";
-import { parsePath, pathToString } from "../shapeshifter/pathUtils";
-import { PAGE_ROOT_ID } from "../shapeshifter/scene/owners";
-import { INTERPOLATOR_CURVES } from "../shapeshifter/interpolators";
-import { validatePathData } from "../shapeshifter/path/pathValidation";
+import { generateId } from "../pathshift/ids";
+import { parsePath, pathToString } from "../pathshift/pathUtils";
+import { PAGE_ROOT_ID } from "../pathshift/scene/owners";
+import { INTERPOLATOR_CURVES } from "../pathshift/interpolators";
+import { validatePathData } from "../pathshift/path/pathValidation";
 import { syncLayerPathEndpoints } from "../store/timelinePathEditing";
-import type { Layer, TimelineBlock } from "../shapeshifter/types";
+import type { Layer, TimelineBlock } from "../pathshift/types";
 
 export class AgentCommandError extends Error {
   constructor(

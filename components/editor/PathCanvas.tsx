@@ -7,9 +7,9 @@ import {
   parsePath,
   pathToString,
   interpolatedPathIfCompatible,
-} from "@/lib/shapeshifter/pathUtils";
-import type { PathData } from "@/lib/shapeshifter/types";
-import { gradientToSvg } from "@/lib/shapeshifter/gradients";
+} from "@/lib/pathshift/pathUtils";
+import type { PathData } from "@/lib/pathshift/types";
+import { gradientToSvg } from "@/lib/pathshift/gradients";
 import { getPreviewLayers } from "./canvas/pathCanvasPreview";
 import { useDetailCamera } from "./canvas/useDetailCamera";
 import { usePathCanvasGestures } from "./canvas/usePathCanvasGestures";
@@ -25,7 +25,7 @@ import {
   getSubPathBounds,
 } from "./canvas/pathCanvasGeometry";
 import { usePathCanvasEditing } from "./canvas/usePathCanvasEditing";
-import { vectorCoordinateSize } from "@/lib/shapeshifter/vectorSpace";
+import { vectorCoordinateSize } from "@/lib/pathshift/vectorSpace";
 // Shared immutable fallback so every memo/hook below stays unconditional (rules of
 // hooks): PathCanvas must never early-return between hook calls, even when the
 // selected layer disappears mid-mount (e.g. Delete in action mode).

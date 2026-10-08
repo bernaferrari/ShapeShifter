@@ -1,6 +1,6 @@
 # Supported features and limitations
 
-ShapeShifter’s canonical targets are Android VectorDrawable and AnimatedVectorDrawable. Preview, editing, persistence, and native export share that document model. Other export targets report their own fidelity constraints.
+Pathshift’s canonical targets are Android VectorDrawable and AnimatedVectorDrawable. Preview, editing, persistence, and native export share that document model. Other export targets report their own fidelity constraints.
 
 ## Android VectorDrawable
 
@@ -27,7 +27,7 @@ Static Vector XML exports base artwork, not the playhead pose. Intrinsic dimensi
 | Incompatible path morphs                                              | Held at the start geometry              | Blocked with `INCOMPATIBLE_PATH_MORPH` |
 | Property unsupported by the target layer or format                    | Authoring depends on layer capabilities | Diagnostic rather than silent loss     |
 
-AVD exports bundle drawable, animator, and interpolator resources in a ZIP. Import accepts uncompressed ShapeShifter AVD ZIPs or related drawable/animated-vector/animator XML files selected together. Compressed third-party ZIPs are outside the importer’s supported archive format.
+AVD exports bundle drawable, animator, and interpolator resources in a ZIP. Import accepts uncompressed Pathshift AVD ZIPs or related drawable/animated-vector/animator XML files selected together. Compressed third-party ZIPs are outside the importer’s supported archive format.
 
 Morph endpoints need matching command types and counts. Use **Prepare for morph** to align their structure. A successful compatibility check does not replace visual review of the transition.
 

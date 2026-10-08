@@ -3,14 +3,14 @@ import {
   computeFitViewport,
   fitViewportToAspect,
   type Viewport,
-} from "../../shapeshifter/camera";
-import { createLayerTreeModel } from "../../shapeshifter/scene/layerHierarchy";
-import { PAGE_ROOT_ID } from "../../shapeshifter/scene/owners";
-import { getOwnedLayerBounds } from "../../shapeshifter/scene/selection";
-import type { VectorMetadata } from "../../shapeshifter/types";
+} from "../../pathshift/camera";
+import { createLayerTreeModel } from "../../pathshift/scene/layerHierarchy";
+import { PAGE_ROOT_ID } from "../../pathshift/scene/owners";
+import { getOwnedLayerBounds } from "../../pathshift/scene/selection";
+import type { VectorMetadata } from "../../pathshift/types";
 import type { CanvasFrame } from "../defaultWorkspace";
 import type { EditorState } from "../editorStore";
-import { vectorCoordinateRect } from "../../shapeshifter/vectorSpace";
+import { vectorCoordinateRect } from "../../pathshift/vectorSpace";
 
 type CameraActionKey =
   | "setWorldViewport"

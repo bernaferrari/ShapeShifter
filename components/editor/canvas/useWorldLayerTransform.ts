@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, type RefObject } from "react";
-import type { Point } from "@/lib/shapeshifter/types";
+import type { Point } from "@/lib/pathshift/types";
 import { useEditorStore, type EditorState } from "@/lib/store/editorStore";
 import { beginLiveGesture, endLiveGesture, ownsLiveGesture } from "@/lib/store/liveGesture";
 import type { LayerResizeSession, LayerRotateSession } from "./WorldSelectionOverlay";

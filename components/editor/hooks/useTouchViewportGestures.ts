@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { clientToWorld, zoomAtWorldPoint, type Viewport } from "@/lib/shapeshifter/camera";
+import { clientToWorld, zoomAtWorldPoint, type Viewport } from "@/lib/pathshift/camera";
 
 type PointerHandler = (event: React.PointerEvent<Element>) => void;
 interface Handlers {

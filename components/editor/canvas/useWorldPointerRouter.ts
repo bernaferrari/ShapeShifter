@@ -1,13 +1,13 @@
 "use client";
 
 import React from "react";
-import { snapValueToStep } from "@/lib/shapeshifter/camera";
+import { snapValueToStep } from "@/lib/pathshift/camera";
 import {
   inverseAffine,
   transformPointWithMatrix,
   type AffineMatrix,
-} from "@/lib/shapeshifter/scene/layerTransform";
-import type { Layer, Point, Selection } from "@/lib/shapeshifter/types";
+} from "@/lib/pathshift/scene/layerTransform";
+import type { Layer, Point, Selection } from "@/lib/pathshift/types";
 import { useEditorStore, type EditorState, type LayerSelectionRef } from "@/lib/store/editorStore";
 
 interface PointerModifiers {

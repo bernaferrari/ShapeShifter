@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { snapValueToStep } from "@/lib/shapeshifter/camera";
-import { ObjectDragGesture } from "@/lib/shapeshifter/gestures/select/ObjectDragGesture";
+import { snapValueToStep } from "@/lib/pathshift/camera";
+import { ObjectDragGesture } from "@/lib/pathshift/gestures/select/ObjectDragGesture";
 import { useEditorStore, type EditorState } from "@/lib/store/editorStore";
 import { beginLiveGesture, endLiveGesture, ownsLiveGesture } from "@/lib/store/liveGesture";
 

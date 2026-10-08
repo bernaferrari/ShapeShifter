@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { collectOwnedLayersInRect, type SceneOwner } from "@/lib/shapeshifter/scene/selection";
+import { collectOwnedLayersInRect, type SceneOwner } from "@/lib/pathshift/scene/selection";
 import { useEditorStore, type CanvasFrame, type LayerSelectionRef } from "@/lib/store/editorStore";
 import { getCanvasFrameBounds } from "./useWorldCamera";
 

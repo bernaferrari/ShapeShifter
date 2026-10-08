@@ -5,5 +5,5 @@ pluginManagement {
         gradlePluginPortal()
     }
 }
-rootProject.name = "ShapeShifterSample"
+rootProject.name = "PathshiftSample"
 include(":app")

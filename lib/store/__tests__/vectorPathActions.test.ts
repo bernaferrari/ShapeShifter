@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useEditorStore } from "../editorStore";
-import { androidPathMorphSignature } from "../../shapeshifter/pathUtils";
-import type { Selection } from "../../shapeshifter/types";
+import { androidPathMorphSignature } from "../../pathshift/pathUtils";
+import type { Selection } from "../../pathshift/types";
 
 function freshStore() {
   useEditorStore.getState().resetProject();

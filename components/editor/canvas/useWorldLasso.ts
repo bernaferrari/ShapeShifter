@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { collectPointsInLasso, pointInPolygon } from "@/lib/shapeshifter/gestures/HitTests";
-import type { PathData, Point } from "@/lib/shapeshifter/types";
+import { collectPointsInLasso, pointInPolygon } from "@/lib/pathshift/gestures/HitTests";
+import type { PathData, Point } from "@/lib/pathshift/types";
 import { useEditorStore, type CanvasFrame } from "@/lib/store/editorStore";
 import { getCanvasFrameBounds } from "./useWorldCamera";
 

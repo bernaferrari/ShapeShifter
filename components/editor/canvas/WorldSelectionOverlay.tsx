@@ -1,14 +1,14 @@
 "use client";
 
 import React, { memo, useMemo } from "react";
-import type { AnimationState, Layer, PathData, Point } from "@/lib/shapeshifter/types";
-import type { SceneRect } from "@/lib/shapeshifter/scene/selection";
+import type { AnimationState, Layer, PathData, Point } from "@/lib/pathshift/types";
+import type { SceneRect } from "@/lib/pathshift/scene/selection";
 import {
   inverseAffine,
   transformPointWithMatrix,
   type AffineMatrix,
-} from "@/lib/shapeshifter/scene/layerTransform";
-import type { EvaluatedTransform } from "@/lib/shapeshifter/scene/evaluate";
+} from "@/lib/pathshift/scene/layerTransform";
+import type { EvaluatedTransform } from "@/lib/pathshift/scene/evaluate";
 import { buildWorldTransformSelection } from "./worldLayerTransforms";
 import { useCoarsePointer } from "../hooks/useCompactLayout";
 

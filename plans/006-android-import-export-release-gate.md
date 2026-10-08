@@ -4,7 +4,7 @@
 > diagnostics over silent approximation. Stop on a STOP condition and update Plan
 > 006 in `plans/README.md` when done.
 >
-> **Drift check**: `git diff --stat 3268b817..HEAD -- lib/shapeshifter/import/androidVectorDrawable.ts lib/shapeshifter/androidCompiler.ts lib/shapeshifter/export/android.ts components/editor/ExportDialog.tsx components/editor/project/useProjectImport.ts`
+> **Drift check**: `git diff --stat 3268b817..HEAD -- lib/pathshift/import/androidVectorDrawable.ts lib/pathshift/androidCompiler.ts lib/pathshift/export/android.ts components/editor/ExportDialog.tsx components/editor/project/useProjectImport.ts`
 
 ## Status
 
@@ -25,11 +25,11 @@ files can still be reported as successful despite errors.
 
 ## Current state
 
-- `lib/shapeshifter/import/androidVectorDrawable.ts:108-138` imports only vector child layers.
-- `lib/shapeshifter/import/androidVectorDrawable.ts:140-154` extracts viewport metadata separately, but `useProjectImport.ts:164-173` does not use it.
-- `lib/shapeshifter/import/androidVectorDrawable.ts:71-82` copies Android color strings directly into layer styles.
-- `lib/shapeshifter/androidCompiler.ts:244-447` is the more complete artboard compiler.
-- `lib/shapeshifter/export/android.ts:71-136` is a second, less complete Android exporter.
+- `lib/pathshift/import/androidVectorDrawable.ts:108-138` imports only vector child layers.
+- `lib/pathshift/import/androidVectorDrawable.ts:140-154` extracts viewport metadata separately, but `useProjectImport.ts:164-173` does not use it.
+- `lib/pathshift/import/androidVectorDrawable.ts:71-82` copies Android color strings directly into layer styles.
+- `lib/pathshift/androidCompiler.ts:244-447` is the more complete artboard compiler.
+- `lib/pathshift/export/android.ts:71-136` is a second, less complete Android exporter.
 - `components/editor/ExportDialog.tsx:179-225` builds Android files only after export is invoked.
 - `components/editor/ExportDialog.tsx:271-275` reports export success even when diagnostics contain errors.
 
@@ -37,7 +37,7 @@ files can still be reported as successful despite errors.
 
 | Purpose       | Command                                                                                                                                                                                     | Expected |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| Android tests | `pnpm test -- lib/shapeshifter/__tests__/importers.test.ts lib/shapeshifter/__tests__/androidCompiler.test.ts lib/shapeshifter/__tests__/androidParity.test.ts components/editor/__tests__` | all pass |
+| Android tests | `pnpm test -- lib/pathshift/__tests__/importers.test.ts lib/pathshift/__tests__/androidCompiler.test.ts lib/pathshift/__tests__/androidParity.test.ts components/editor/__tests__` | all pass |
 | Full suite    | `pnpm test`                                                                                                                                                                                 | all pass |
 | Typecheck     | `pnpm typecheck`                                                                                                                                                                            | exit 0   |
 | Lint          | `pnpm lint`                                                                                                                                                                                 | exit 0   |
@@ -94,7 +94,7 @@ and compiler diagnostics.
 ### Step 4: Remove the duplicate Android exporter
 
 Make `compileAndroidArtboard` the only production Android serialization path.
-Delete or reduce `lib/shapeshifter/export/android.ts` to a compatibility wrapper
+Delete or reduce `lib/pathshift/export/android.ts` to a compatibility wrapper
 only if externally imported. Static vector and animated bundle exports must share
 resource naming, color conversion, hierarchy, and style serialization.
 

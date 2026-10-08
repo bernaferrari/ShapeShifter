@@ -1,12 +1,12 @@
-import { snapValueToStep } from "@/lib/shapeshifter/camera";
-import type { AnimationState, Layer, Point } from "@/lib/shapeshifter/types";
-import { evaluateAndroidScene, type EvaluatedTransform } from "@/lib/shapeshifter/scene/evaluate";
-import { getEvaluatedNodeBounds, unionRects } from "@/lib/shapeshifter/scene/selection";
-import { createLayerTreeModel } from "@/lib/shapeshifter/scene/layerHierarchy";
+import { snapValueToStep } from "@/lib/pathshift/camera";
+import type { AnimationState, Layer, Point } from "@/lib/pathshift/types";
+import { evaluateAndroidScene, type EvaluatedTransform } from "@/lib/pathshift/scene/evaluate";
+import { getEvaluatedNodeBounds, unionRects } from "@/lib/pathshift/scene/selection";
+import { createLayerTreeModel } from "@/lib/pathshift/scene/layerHierarchy";
 import {
   recordTranslationAtProgress,
   type NumericLayerProperty,
-} from "@/lib/shapeshifter/motion/recordTranslation";
+} from "@/lib/pathshift/motion/recordTranslation";
 import {
   IDENTITY_AFFINE,
   inverseAffine,
@@ -16,7 +16,7 @@ import {
   transformPointWithMatrix,
   translateAffine,
   type AffineMatrix,
-} from "@/lib/shapeshifter/scene/layerTransform";
+} from "@/lib/pathshift/scene/layerTransform";
 import type {
   FrozenLayerTransform,
   LayerResizeSession,

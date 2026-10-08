@@ -1,9 +1,9 @@
 "use client";
 
 import React from "react";
-import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
-import { interpolatorControlPoints } from "@/lib/shapeshifter/motion/timelineKeyframes";
-import type { TimelineBlock } from "@/lib/shapeshifter/types";
+import { propertyLabel } from "@/lib/pathshift/propertyLabels";
+import { interpolatorControlPoints } from "@/lib/pathshift/motion/timelineKeyframes";
+import type { TimelineBlock } from "@/lib/pathshift/types";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { ChevronDown, ChevronLeft, FlipHorizontal2, Spline } from "lucide-react";
 import { PanelHeader } from "../PanelHeader";

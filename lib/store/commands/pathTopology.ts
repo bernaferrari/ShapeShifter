@@ -4,8 +4,8 @@ import {
   parsePath,
   pathToString,
   prepareForMorph,
-} from "../../shapeshifter/pathUtils";
-import type { Layer, MorphMapping, PathData, Selection } from "../../shapeshifter/types";
+} from "../../pathshift/pathUtils";
+import type { Layer, MorphMapping, PathData, Selection } from "../../pathshift/types";
 import type { EditorState } from "../editorStore";
 import { structuralLockIssue } from "./structuralLayers";
 

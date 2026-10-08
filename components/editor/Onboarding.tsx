@@ -9,7 +9,7 @@ import { useInspectorView } from "./inspector/inspectorView";
 import { cn } from "@/lib/utils";
 import { useCoarsePointer } from "./hooks/useCompactLayout";
 
-const STORAGE_KEY = "shapeshifter:onboarding:dismissed";
+const STORAGE_KEY = "pathshift:onboarding:dismissed";
 
 interface Tip {
   icon: React.ReactNode;
@@ -237,7 +237,7 @@ export function Onboarding({
         "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300",
       )}
     >
-      <div className="mb-2.5 text-[12px] font-semibold">Welcome to ShapeShifter</div>
+      <div className="mb-2.5 text-[12px] font-semibold">Welcome to Pathshift</div>
       <ul className="space-y-2">
         {tips.map((tip, i) => (
           <li key={i} className="flex gap-2.5">

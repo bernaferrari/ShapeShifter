@@ -3,9 +3,9 @@
 import React from "react";
 import { TimelineKeyframeMarker } from "./TimelineKeyframeMarker";
 import { TimelineSegmentEasing } from "./TimelineSegmentEasing";
-import { trackKeyframes, type TrackKeyframe } from "@/lib/shapeshifter/motion/timelineKeyframes";
-import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
-import type { TimelineBlock } from "@/lib/shapeshifter/types";
+import { trackKeyframes, type TrackKeyframe } from "@/lib/pathshift/motion/timelineKeyframes";
+import { propertyLabel } from "@/lib/pathshift/propertyLabels";
+import type { TimelineBlock } from "@/lib/pathshift/types";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { holdToDrag, usePressType } from "@/lib/touchIntent";
 import { cn } from "@/lib/utils";

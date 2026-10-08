@@ -1,6 +1,6 @@
 # Sample Android app
 
-Minimal app that displays a VectorDrawable produced by ShapeShifter (`app/src/main/res/drawable/nested_clip_vector.xml`).
+Minimal app that displays a VectorDrawable produced by Pathshift (`app/src/main/res/drawable/nested_clip_vector.xml`).
 
 ```bash
 # from this directory, with Android SDK + Gradle installed

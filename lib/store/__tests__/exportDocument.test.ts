@@ -1,7 +1,7 @@
-import { workspaceFromDocument } from "../../shapeshifter/documentModel";
+import { workspaceFromDocument } from "../../pathshift/documentModel";
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it } from "vitest";
-import { parsePath, pathToString } from "../../shapeshifter/pathUtils";
+import { parsePath, pathToString } from "../../pathshift/pathUtils";
 import { PAGE_ROOT_ID, useEditorStore } from "../editorStore";
 import {
   compileLiveAndroidArtboard,
@@ -15,7 +15,7 @@ import {
   serializeLiveProject,
   summarizeAndroidWarnings,
 } from "../exportDocument";
-import { parseZip } from "../../shapeshifter/zip";
+import { parseZip } from "../../pathshift/zip";
 
 describe("live project export", () => {
   beforeEach(() => {
@@ -215,7 +215,7 @@ describe("live project export", () => {
       }),
     );
 
-    expect(files.find((file) => file.path === "SHAPESHIFTER_EXPORT.txt")?.content).toContain(
+    expect(files.find((file) => file.path === "PATHSHIFT_EXPORT.txt")?.content).toContain(
       "[WARNING] STROKE_DASHARRAY_UNSUPPORTED",
     );
   });

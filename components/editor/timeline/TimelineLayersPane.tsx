@@ -2,7 +2,7 @@
 
 import React from "react";
 import { ChevronRight, Crop, Folder } from "lucide-react";
-import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
+import { propertyLabel } from "@/lib/pathshift/propertyLabels";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { cn } from "@/lib/utils";
 import { TextSizedInput } from "../TextSizedInput";

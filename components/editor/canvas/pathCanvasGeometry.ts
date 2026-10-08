@@ -1,6 +1,6 @@
-import type { Viewport } from "@/lib/shapeshifter/camera";
-import { pathToString } from "@/lib/shapeshifter/pathUtils";
-import type { Command, PathData, Point } from "@/lib/shapeshifter/types";
+import type { Viewport } from "@/lib/pathshift/camera";
+import { pathToString } from "@/lib/pathshift/pathUtils";
+import type { Command, PathData, Point } from "@/lib/pathshift/types";
 
 export type Bounds = { x: number; y: number; width: number; height: number };
 export type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";

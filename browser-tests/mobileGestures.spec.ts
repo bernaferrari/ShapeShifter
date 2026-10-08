@@ -172,7 +172,7 @@ test("frame top and left edges resize without moving artwork, and undo restores 
   await page.keyboard.press("ControlOrMeta+z");
   await page.keyboard.press("ControlOrMeta+z");
   expect(await frame.last().boundingBox()).toEqual(original);
-  await page.screenshot({ path: `/tmp/shapeshifter-frame-controls-${info.project.name}.png` });
+  await page.screenshot({ path: `/tmp/pathshift-frame-controls-${info.project.name}.png` });
   const restored = await project(page);
   expect(restored.frames).toEqual(before.frames);
   expect(restored.tracks).toEqual(before.tracks);
@@ -469,7 +469,7 @@ test("native phone touches pinch, release outside, edit with one finger, and dra
     await expect(page.getByRole("button", { name: "Zoom options" })).toBeInViewport();
     await page.getByRole("button", { name: "Zoom options" }).tap();
     await page.getByRole("menuitem", { name: "Fit selection", exact: false }).click();
-    await page.screenshot({ path: "/tmp/shapeshifter-mobile-motion.png" });
+    await page.screenshot({ path: "/tmp/pathshift-mobile-motion.png" });
     expect(errors).toEqual([]);
   } finally {
     await context.close();

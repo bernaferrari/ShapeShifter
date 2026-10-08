@@ -4,15 +4,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createPathLayer } from "@/lib/store/defaultWorkspace";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { snapshotHistoryEntry } from "@/lib/store/documentRuntime";
-import { parsePath } from "@/lib/shapeshifter/pathUtils";
-import { evaluateAndroidScene } from "@/lib/shapeshifter/scene/evaluate";
-import { PAGE_ROOT_ID } from "@/lib/shapeshifter/scene/owners";
+import { parsePath } from "@/lib/pathshift/pathUtils";
+import { evaluateAndroidScene } from "@/lib/pathshift/scene/evaluate";
+import { PAGE_ROOT_ID } from "@/lib/pathshift/scene/owners";
 import {
   inverseAffine,
   rotateAffine,
   transformPointWithMatrix,
-} from "@/lib/shapeshifter/scene/layerTransform";
-import type { AnimationState, Layer, Point } from "@/lib/shapeshifter/types";
+} from "@/lib/pathshift/scene/layerTransform";
+import type { AnimationState, Layer, Point } from "@/lib/pathshift/types";
 import {
   renderEditorComponent,
   type RenderedEditorComponent,

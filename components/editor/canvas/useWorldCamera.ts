@@ -9,9 +9,9 @@ import {
   zoomAtWorldPoint,
   type Rect,
   type Viewport,
-} from "@/lib/shapeshifter/camera";
+} from "@/lib/pathshift/camera";
 import { PAGE_ROOT_ID, useEditorStore, type CanvasFrame } from "@/lib/store/editorStore";
-import { vectorCoordinateRect } from "@/lib/shapeshifter/vectorSpace";
+import { vectorCoordinateRect } from "@/lib/pathshift/vectorSpace";
 
 export const getCanvasFrameBounds = (frame: CanvasFrame): Rect => ({
   x: frame.x || 0,

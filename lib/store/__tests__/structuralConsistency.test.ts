@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "../editorStore";
 import { createPathLayer } from "../defaultWorkspace";
-import { layerTransformToMatrix, multiplyAffine } from "../../shapeshifter/scene/layerTransform";
-import type { Layer, TimelineBlock } from "../../shapeshifter/types";
+import { layerTransformToMatrix, multiplyAffine } from "../../pathshift/scene/layerTransform";
+import type { Layer, TimelineBlock } from "../../pathshift/types";
 const store = () => useEditorStore.getState();
 const layer = (id: string, patch: Partial<Layer> = {}) =>
   createPathLayer({ id, name: id, from: { subPaths: [] }, visible: true, locked: false, ...patch });

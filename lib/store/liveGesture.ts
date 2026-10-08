@@ -1,5 +1,5 @@
 import { useEditorStore, type DragState } from "./editorStore";
-import type { Point } from "../shapeshifter/types";
+import type { Point } from "../pathshift/types";
 
 /** Volatile session ownership is separate from lazy undo transactions. */
 export function beginLiveGesture(type: string, point: Point = { x: 0, y: 0 }): DragState {

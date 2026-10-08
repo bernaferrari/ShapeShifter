@@ -2,12 +2,12 @@
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { Layer, TimelineBlock } from "@/lib/shapeshifter/types";
+import type { Layer, TimelineBlock } from "@/lib/pathshift/types";
 import {
   KEYFRAME_TIME_EPSILON,
   sameKeyframeTime,
   trackKeyframes,
-} from "@/lib/shapeshifter/motion/timelineKeyframes";
+} from "@/lib/pathshift/motion/timelineKeyframes";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { KeyframeDiamond } from "../KeyframeDiamond";
 

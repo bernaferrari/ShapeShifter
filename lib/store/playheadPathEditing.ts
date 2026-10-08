@@ -1,8 +1,8 @@
-import { KEYFRAME_TIME_EPSILON, sameKeyframeTime } from "../shapeshifter/motion/timelineKeyframes";
-import { androidPathMorphSignature, parsePath, pathToString } from "../shapeshifter/pathUtils";
-import { blocksFor } from "../shapeshifter/playheadResolve";
-import type { Layer, PathData, TimelineBlock } from "../shapeshifter/types";
-import type { ToolMode } from "../shapeshifter/toolModes";
+import { KEYFRAME_TIME_EPSILON, sameKeyframeTime } from "../pathshift/motion/timelineKeyframes";
+import { androidPathMorphSignature, parsePath, pathToString } from "../pathshift/pathUtils";
+import { blocksFor } from "../pathshift/playheadResolve";
+import type { Layer, PathData, TimelineBlock } from "../pathshift/types";
+import type { ToolMode } from "../pathshift/toolModes";
 import type { EditorState } from "./editorStore";
 
 /**

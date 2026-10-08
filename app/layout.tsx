@@ -11,10 +11,18 @@ import { THEME_BOOTSTRAP_SCRIPT } from "@/lib/theme";
 const title = "Pathshift — Vector & Motion Editor";
 const description =
   "Draw vectors. Make them move. Create icons, refine path morphs, and animate Android assets in your browser with SVG and AnimatedVectorDrawable exports.";
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL &&
+    `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`) ||
+  (process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`);
 
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl || "http://localhost:3000"),
+  applicationName: "Pathshift",
   title,
   description,
+  ...(siteUrl && { alternates: { canonical: "/" } }),
   openGraph: {
     title,
     description,

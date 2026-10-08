@@ -107,5 +107,5 @@ test("point selection reveals curve controls on touch and keyboard", async ({ pa
   await expect(page.getByRole("textbox", { name: "Point 1 outgoing X", exact: true })).toHaveCount(
     0,
   );
-  await page.screenshot({ path: `/tmp/shapeshifter-point-ui-${info.project.name}.png` });
+  await page.screenshot({ path: `/tmp/pathshift-point-ui-${info.project.name}.png` });
 });

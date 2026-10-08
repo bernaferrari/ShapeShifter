@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { generateId } from "@/lib/shapeshifter/ids";
-import type { Command, PathData } from "@/lib/shapeshifter/types";
+import { generateId } from "@/lib/pathshift/ids";
+import type { Command, PathData } from "@/lib/pathshift/types";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { beginLiveGesture, endLiveGesture, ownsLiveGesture } from "@/lib/store/liveGesture";
 

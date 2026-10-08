@@ -6,8 +6,8 @@ import { useEditorStore } from "@/lib/store/editorStore";
 import { beginLiveGesture, endLiveGesture, ownsLiveGesture } from "@/lib/store/liveGesture";
 import { snapshotHistoryEntry } from "@/lib/store/documentRuntime";
 import { createPathLayer, type CanvasFrame } from "@/lib/store/defaultWorkspace";
-import { parsePath } from "@/lib/shapeshifter/pathUtils";
-import { unionOwnedLayerBounds } from "@/lib/shapeshifter/scene/selection";
+import { parsePath } from "@/lib/pathshift/pathUtils";
+import { unionOwnedLayerBounds } from "@/lib/pathshift/scene/selection";
 import {
   renderEditorComponent,
   type RenderedEditorComponent,

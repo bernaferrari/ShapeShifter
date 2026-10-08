@@ -7,14 +7,14 @@ import {
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
-import type { Point } from "@/lib/shapeshifter/types";
+import type { Point } from "@/lib/pathshift/types";
 import { useEditorStore, type CanvasFrame, type EditorState } from "@/lib/store/editorStore";
 import { beginLiveGesture, endLiveGesture, ownsLiveGesture } from "@/lib/store/liveGesture";
 import {
   FrameResizeGesture,
   type FrameResizeHandle,
-} from "@/lib/shapeshifter/gestures/select/FrameResizeGesture";
-import { vectorCoordinateResizePolicy } from "@/lib/shapeshifter/vectorSpace";
+} from "@/lib/pathshift/gestures/select/FrameResizeGesture";
+import { vectorCoordinateResizePolicy } from "@/lib/pathshift/vectorSpace";
 import { getCanvasFrameBounds } from "./useWorldCamera";
 
 interface WorldFrameResizeOptions {

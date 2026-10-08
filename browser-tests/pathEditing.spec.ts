@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
-import { androidPathMorphSignature, parsePath } from "../lib/shapeshifter/pathUtils";
-import type { EditorDocument } from "../lib/shapeshifter/types";
+import { androidPathMorphSignature, parsePath } from "../lib/pathshift/pathUtils";
+import type { EditorDocument } from "../lib/pathshift/types";
 import { test, expect } from "@playwright/test";
 
 test("line to curve conversion remains draggable in the vector editor", async ({ page }, info) => {

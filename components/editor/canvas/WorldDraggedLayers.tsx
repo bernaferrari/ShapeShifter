@@ -1,9 +1,9 @@
 import React from "react";
-import { getAccuratePathBounds, parsePath } from "@/lib/shapeshifter/pathUtils";
-import { transformPointWithMatrix } from "@/lib/shapeshifter/scene/layerTransform";
-import { unionRects } from "@/lib/shapeshifter/scene/selection";
-import type { WorldLayerDraw } from "@/lib/shapeshifter/scene/render";
-import type { VectorMetadata } from "@/lib/shapeshifter/types";
+import { getAccuratePathBounds, parsePath } from "@/lib/pathshift/pathUtils";
+import { transformPointWithMatrix } from "@/lib/pathshift/scene/layerTransform";
+import { unionRects } from "@/lib/pathshift/scene/selection";
+import type { WorldLayerDraw } from "@/lib/pathshift/scene/render";
+import type { VectorMetadata } from "@/lib/pathshift/types";
 import { ClipDefinitions, LayerDraw, VectorDrawableRootPaint } from "./WorldArtboards";
 
 export interface DraggedWorldLayerDraw extends WorldLayerDraw {

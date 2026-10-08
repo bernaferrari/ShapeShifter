@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { PAGE_ROOT_ID, useEditorStore } from "../editorStore";
-import { computeDetailViewport } from "../../shapeshifter/camera";
-import { parsePath, pathToString } from "../../shapeshifter/pathUtils";
+import { computeDetailViewport } from "../../pathshift/camera";
+import { parsePath, pathToString } from "../../pathshift/pathUtils";
 import { buildDocumentFromEditor } from "../documentRuntime";
-import { DEMO_INFOS } from "../../shapeshifter/demoProjects";
-import type { Selection, Layer, EditorDocument } from "../../shapeshifter/types";
+import { DEMO_INFOS } from "../../pathshift/demoProjects";
+import type { Selection, Layer, EditorDocument } from "../../pathshift/types";
 import type { EditorState } from "../editorStore";
-import { buildEditorDocument, type WorkspaceSnapshot } from "../../shapeshifter/documentModel";
+import { buildEditorDocument, type WorkspaceSnapshot } from "../../pathshift/documentModel";
 
 // Helper: get a fresh store state by resetting
 function freshStore() {

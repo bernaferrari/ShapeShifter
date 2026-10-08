@@ -4,11 +4,11 @@ import {
   buildEditorDocument,
   workspaceFromDocument,
   documentEditingIssues,
-} from "../../shapeshifter/documentModel";
+} from "../../pathshift/documentModel";
 import { workspaceFromEditor } from "../documentRuntime";
-import { numberAtTime } from "../../shapeshifter/playheadResolve";
-import { parsePath, pathToString } from "../../shapeshifter/pathUtils";
-import type { TimelineBlock } from "../../shapeshifter/types";
+import { numberAtTime } from "../../pathshift/playheadResolve";
+import { parsePath, pathToString } from "../../pathshift/pathUtils";
+import type { TimelineBlock } from "../../pathshift/types";
 
 let baseline: ReturnType<typeof useEditorStore.getState>;
 beforeEach(() => {

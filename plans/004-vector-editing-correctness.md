@@ -4,7 +4,7 @@
 > scene. Do not add Figma-only vector-network concepts. Stop on a STOP condition
 > and update Plan 004 in `plans/README.md` when done.
 >
-> **Drift check**: `git diff --stat 3268b817..HEAD -- components/editor/canvas lib/shapeshifter/scene lib/shapeshifter/gestures lib/shapeshifter/path`
+> **Drift check**: `git diff --stat 3268b817..HEAD -- components/editor/canvas lib/pathshift/scene lib/pathshift/gestures lib/pathshift/path`
 
 ## Status
 
@@ -26,16 +26,16 @@ than rendered curves. These errors make even valid VectorDrawable geometry unsaf
 
 - `components/editor/canvas/useWorldPointEditing.ts:44-80` handles only owner origin and translation.
 - `components/editor/canvas/worldLayerTransforms.ts:30-42` increments local rotation without orbiting around the displayed selection center.
-- `lib/shapeshifter/path/pathDataIO.ts:222-250` bounds raw command points, not curve extrema.
-- `lib/shapeshifter/scene/hitTest.ts:54-98` tests control-polygon segments.
-- `lib/shapeshifter/path/booleanOperations.ts:111-154` has explicitly conservative, destructive fallbacks.
+- `lib/pathshift/path/pathDataIO.ts:222-250` bounds raw command points, not curve extrema.
+- `lib/pathshift/scene/hitTest.ts:54-98` tests control-polygon segments.
+- `lib/pathshift/path/booleanOperations.ts:111-154` has explicitly conservative, destructive fallbacks.
 - `components/editor/canvas/useWorldPointerRouter.ts:110-148` accepts non-primary edit pointers.
 
 ## Commands
 
 | Purpose        | Command                                                                                                                                             | Expected |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| Geometry tests | `pnpm test -- lib/shapeshifter/__tests__/sceneHitTest.test.ts lib/shapeshifter/__tests__/sceneSelection.test.ts components/editor/canvas/__tests__` | all pass |
+| Geometry tests | `pnpm test -- lib/pathshift/__tests__/sceneHitTest.test.ts lib/pathshift/__tests__/sceneSelection.test.ts components/editor/canvas/__tests__` | all pass |
 | Full suite     | `pnpm test`                                                                                                                                         | all pass |
 | Typecheck      | `pnpm typecheck`                                                                                                                                    | exit 0   |
 | Lint           | `pnpm lint`                                                                                                                                         | exit 0   |
@@ -45,7 +45,7 @@ than rendered curves. These errors make even valid VectorDrawable geometry unsaf
 **In scope**:
 
 - World direct-edit, lasso, pen, knife, paint, resize, rotate, and selection gesture modules
-- `lib/shapeshifter/scene/layerTransform.ts`
+- `lib/pathshift/scene/layerTransform.ts`
 - Bounds and curve-distance geometry helpers
 - Relevant unit and browser interaction tests
 - Boolean UI gating/diagnostics

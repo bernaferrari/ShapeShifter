@@ -4,7 +4,7 @@
 > product contract. Implement shared evaluation first, UI second. Stop on a STOP
 > condition and update Plan 005 in `plans/README.md` when done.
 >
-> **Drift check**: `git diff --stat 3268b817..HEAD -- lib/shapeshifter/playheadResolve.ts lib/shapeshifter/interpolators.ts lib/shapeshifter/types.ts components/editor/timeline components/editor/hooks/useEditorPlayback.ts`
+> **Drift check**: `git diff --stat 3268b817..HEAD -- lib/pathshift/playheadResolve.ts lib/pathshift/interpolators.ts lib/pathshift/types.ts components/editor/timeline components/editor/hooks/useEditorPlayback.ts`
 
 ## Status
 
@@ -24,19 +24,19 @@ the Android resources they ship.
 
 ## Current state
 
-- `lib/shapeshifter/playheadResolve.ts:35-39` replaces valid zero endpoints with base values.
-- `lib/shapeshifter/playheadResolve.ts:58-79` switches colors at the midpoint and ignores easing.
-- `lib/shapeshifter/playheadResolve.ts:82-119` ignores path block endpoint values.
-- `lib/shapeshifter/scene/render.ts:43-93` does not evaluate vector alpha, stroke color/width, or trim.
+- `lib/pathshift/playheadResolve.ts:35-39` replaces valid zero endpoints with base values.
+- `lib/pathshift/playheadResolve.ts:58-79` switches colors at the midpoint and ignores easing.
+- `lib/pathshift/playheadResolve.ts:82-119` ignores path block endpoint values.
+- `lib/pathshift/scene/render.ts:43-93` does not evaluate vector alpha, stroke color/width, or trim.
 - `components/editor/canvas/useWorldLayerTransform.ts:64-85` records translation differently from rotate/resize.
 - `components/editor/timeline/TimelinePropertyBlock.tsx:18` hard-codes 50ms snapping.
-- `lib/shapeshifter/androidCompiler.ts:222-241` maps blocks to ObjectAnimator XML.
+- `lib/pathshift/androidCompiler.ts:222-241` maps blocks to ObjectAnimator XML.
 
 ## Commands
 
 | Purpose      | Command                                                                                                                                                                                                              | Expected |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| Motion tests | `pnpm test -- lib/shapeshifter/__tests__/playheadResolve.test.ts lib/shapeshifter/__tests__/sceneRender.test.ts lib/shapeshifter/__tests__/androidCompiler.test.ts lib/shapeshifter/__tests__/androidParity.test.ts` | all pass |
+| Motion tests | `pnpm test -- lib/pathshift/__tests__/playheadResolve.test.ts lib/pathshift/__tests__/sceneRender.test.ts lib/pathshift/__tests__/androidCompiler.test.ts lib/pathshift/__tests__/androidParity.test.ts` | all pass |
 | Full suite   | `pnpm test`                                                                                                                                                                                                          | all pass |
 | Typecheck    | `pnpm typecheck`                                                                                                                                                                                                     | exit 0   |
 | Build        | `pnpm build`                                                                                                                                                                                                         | exit 0   |

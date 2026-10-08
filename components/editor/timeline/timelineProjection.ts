@@ -1,12 +1,12 @@
 import type { CanvasFrame } from "@/lib/store/editorStore";
-import { createLayerTreeModel, type LayerTreeModel } from "@/lib/shapeshifter/scene/layerHierarchy";
-import { PAGE_ROOT_ID } from "@/lib/shapeshifter/scene/owners";
-import type { AnimationState, Layer, TimelineBlock } from "@/lib/shapeshifter/types";
+import { createLayerTreeModel, type LayerTreeModel } from "@/lib/pathshift/scene/layerHierarchy";
+import { PAGE_ROOT_ID } from "@/lib/pathshift/scene/owners";
+import type { AnimationState, Layer, TimelineBlock } from "@/lib/pathshift/types";
 import {
   capabilityFor,
   type FormatProfile,
   type TrackCapability,
-} from "@/lib/shapeshifter/formatCapabilities";
+} from "@/lib/pathshift/formatCapabilities";
 
 export type TimelineRow =
   | {

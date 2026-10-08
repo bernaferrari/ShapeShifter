@@ -14,12 +14,12 @@ import {
   pathToString,
   androidPathMorphSignature,
   generateId,
-} from "../../shapeshifter/pathUtils";
+} from "../../pathshift/pathUtils";
 import { toast } from "sonner";
 import { structuralLockIssue } from "../commands/structuralLayers";
 import { commitPathTopology, isEditablePath } from "../commands/pathTopology";
-import { flexCurvature } from "../../shapeshifter/gestures/HitTests";
-import type { Layer, Point } from "../../shapeshifter/types";
+import { flexCurvature } from "../../pathshift/gestures/HitTests";
+import type { Layer, Point } from "../../pathshift/types";
 import type { EditorState } from "../editorStore";
 
 type VectorPathAction =

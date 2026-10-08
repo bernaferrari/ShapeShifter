@@ -5,9 +5,9 @@ import { formatTimeNumber, timelineTimeFactor } from "./timelineScale";
 import React from "react";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { EasingCurve } from "../EasingCurve";
-import type { TimelineBlock } from "@/lib/shapeshifter/types";
-import { colorAtTime, numberAtTime } from "@/lib/shapeshifter/playheadResolve";
-import type { Layer } from "@/lib/shapeshifter/types";
+import type { TimelineBlock } from "@/lib/pathshift/types";
+import { colorAtTime, numberAtTime } from "@/lib/pathshift/playheadResolve";
+import type { Layer } from "@/lib/pathshift/types";
 import { cn } from "@/lib/utils";
 import type { TimelineTimeUnit } from "./timelineScale";
 

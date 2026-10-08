@@ -5,7 +5,7 @@ import { LayersPanel } from "../LayersPanel";
 import { useEditorKeyboardShortcuts } from "../hooks/useEditorKeyboardShortcuts";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { createPathLayer } from "@/lib/store/defaultWorkspace";
-import { parsePath } from "@/lib/shapeshifter/pathUtils";
+import { parsePath } from "@/lib/pathshift/pathUtils";
 import { renderEditorComponent, type RenderedEditorComponent } from "./renderEditorComponent";
 
 let rendered: RenderedEditorComponent;

@@ -5,10 +5,10 @@ import {
   workspaceFromEditor,
   restoreHistoryEntry,
 } from "../store/documentRuntime";
-import { workspaceFromDocument } from "../shapeshifter/documentModel";
-import { evaluateAndroidScene } from "../shapeshifter/scene/evaluate";
-import { getEvaluatedNodeBounds } from "../shapeshifter/scene/selection";
-import { PAGE_ROOT_ID } from "../shapeshifter/scene/owners";
+import { workspaceFromDocument } from "../pathshift/documentModel";
+import { evaluateAndroidScene } from "../pathshift/scene/evaluate";
+import { getEvaluatedNodeBounds } from "../pathshift/scene/selection";
+import { PAGE_ROOT_ID } from "../pathshift/scene/owners";
 import {
   AGENT_EDITABLE_PROPERTIES,
   AgentCommandError,

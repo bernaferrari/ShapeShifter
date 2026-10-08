@@ -25,7 +25,7 @@ export const useTimelineViewSettings = create<TimelineViewSettings>()(
       setSnapping: (snapping) => set({ snapping }),
     }),
     {
-      name: "shapeshifter:timeline-view",
+      name: "pathshift:timeline-view",
       partialize: ({ unit, fps, snapping }) => ({ unit, fps, snapping }),
     },
   ),

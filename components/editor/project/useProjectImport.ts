@@ -2,19 +2,19 @@
 
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
 import { toast } from "sonner";
-import { documentEditingIssues, validateEditorDocument } from "@/lib/shapeshifter/documentModel";
-import { importLayersFromSvg } from "@/lib/shapeshifter/importers";
+import { documentEditingIssues, validateEditorDocument } from "@/lib/pathshift/documentModel";
+import { importLayersFromSvg } from "@/lib/pathshift/importers";
 import {
   importAnimatedVectorBundle,
   isAnimatedVectorMarkup,
-} from "@/lib/shapeshifter/import/androidAnimatedVector";
-import { importVectorDrawable } from "@/lib/shapeshifter/import/androidVectorDrawable";
-import { parseZip } from "@/lib/shapeshifter/zip";
-import type { EditorDocument } from "@/lib/shapeshifter/types";
+} from "@/lib/pathshift/import/androidAnimatedVector";
+import { importVectorDrawable } from "@/lib/pathshift/import/androidVectorDrawable";
+import { parseZip } from "@/lib/pathshift/zip";
+import type { EditorDocument } from "@/lib/pathshift/types";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { isEditableTarget } from "../hooks/useEditorKeyboardShortcuts";
 
-const SUPPORTED_FILE = /\.(svg|xml|json|shapeshifter|zip)$/i;
+const SUPPORTED_FILE = /\.(svg|xml|json|pathshift|zip)$/i;
 
 interface ImportSummary {
   title: string;
@@ -42,10 +42,10 @@ export function importEditorText(fileName: string, text: string): ImportSummary 
   const lowerName = fileName.toLocaleLowerCase();
   const store = useEditorStore.getState();
 
-  if (lowerName.endsWith(".json") || lowerName.endsWith(".shapeshifter")) {
+  if (lowerName.endsWith(".json") || lowerName.endsWith(".pathshift")) {
     const parsed: unknown = JSON.parse(text);
-    if (!isRecord(parsed) || parsed.format !== "shapeshifter")
-      throw new Error("Open a native ShapeShifter project, SVG, or Android vector file.");
+    if (!isRecord(parsed) || parsed.format !== "pathshift")
+      throw new Error("Open a native Pathshift project, SVG, or Android vector file.");
     const issues = validateEditorDocument(parsed.document);
     if (issues.length) throw new Error(`Invalid project: ${issues[0]}`);
     const document = parsed.document as EditorDocument;
@@ -148,7 +148,7 @@ export function useProjectImport() {
   const importFiles = useCallback(async (files: File[]) => {
     const supported = files.filter((file) => SUPPORTED_FILE.test(file.name));
     if (!supported.length) {
-      toast.error("Choose an SVG, Vector Drawable, AVD ZIP, or ShapeShifter project");
+      toast.error("Choose an SVG, Vector Drawable, AVD ZIP, or Pathshift project");
       return;
     }
     const xmlFiles = supported.filter((file) => /\.xml$/i.test(file.name));

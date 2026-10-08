@@ -115,7 +115,7 @@ test("Motion labels playback and keyframe actions and inserts only into the sele
   await expect(
     page.getByRole("button", { name: "X end keyframe at 500 milliseconds", exact: true }),
   ).toHaveCount(0);
-  await page.screenshot({ path: "/tmp/shapeshifter-mobile-clear-motion.png" });
+  await page.screenshot({ path: "/tmp/pathshift-mobile-clear-motion.png" });
 });
 
 test("native touch navigation pans empty space and artwork in Move view without editing the document", async ({
@@ -163,7 +163,7 @@ test("native touch navigation pans empty space and artwork in Move view without 
     await expect(
       page.getByRole("button", { name: "Actions for Moving icon", exact: true }),
     ).toBeVisible();
-    await page.screenshot({ path: "/tmp/shapeshifter-mobile-clear-canvas.png" });
+    await page.screenshot({ path: "/tmp/pathshift-mobile-clear-canvas.png" });
     expect(errors).toEqual([]);
   } finally {
     await context.close();
@@ -181,7 +181,7 @@ test("an unreadable startup save goes to history and autosave resumes across rel
   const preserved = "unreadable saved project";
   await page.evaluate(async (payload) => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("shapeshifter", 1);
+      const request = indexedDB.open("pathshift", 1);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
@@ -201,7 +201,7 @@ test("an unreadable startup save goes to history and autosave resumes across rel
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
   const stored = await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve) => {
-      const request = indexedDB.open("shapeshifter", 1);
+      const request = indexedDB.open("pathshift", 1);
       request.onsuccess = () => resolve(request.result);
     });
     const payload = await new Promise<unknown>((resolve) => {
@@ -228,7 +228,7 @@ test("an unreadable startup save goes to history and autosave resumes across rel
     page.getByRole("button", { name: "Select frame Make this icon move", exact: true }),
   ).toBeVisible();
   await expect(page.getByText("Autosave paused", { exact: true })).toHaveCount(0);
-  await page.screenshot({ path: `/tmp/shapeshifter-recovery-${info.project.name}.png` });
+  await page.screenshot({ path: `/tmp/pathshift-recovery-${info.project.name}.png` });
 });
 
 test("every mobile panel uses one header row for its actions, grab handle, and close button", async ({
@@ -305,7 +305,7 @@ test("every mobile panel uses one header row for its actions, grab handle, and c
       await page.keyboard.press("Escape");
       await expect(page.locator('[data-slot="dropdown-menu-content"]')).toHaveCount(0);
     }
-    await page.screenshot({ path: `/tmp/shapeshifter-single-header-${name.toLowerCase()}.png` });
+    await page.screenshot({ path: `/tmp/pathshift-single-header-${name.toLowerCase()}.png` });
     await close.tap();
     await expect(panel).toHaveCount(0);
   }

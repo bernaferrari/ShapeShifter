@@ -4,11 +4,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { createPathLayer, type CanvasFrame } from "@/lib/store/defaultWorkspace";
 import { snapshotHistoryEntry } from "@/lib/store/documentRuntime";
-import { parsePath, pathToString } from "@/lib/shapeshifter/pathUtils";
-import { evaluateAndroidScene } from "@/lib/shapeshifter/scene/evaluate";
-import { unionOwnedLayerBounds } from "@/lib/shapeshifter/scene/selection";
-import { PAGE_ROOT_ID } from "@/lib/shapeshifter/scene/owners";
-import type { AnimationState, Layer } from "@/lib/shapeshifter/types";
+import { parsePath, pathToString } from "@/lib/pathshift/pathUtils";
+import { evaluateAndroidScene } from "@/lib/pathshift/scene/evaluate";
+import { unionOwnedLayerBounds } from "@/lib/pathshift/scene/selection";
+import { PAGE_ROOT_ID } from "@/lib/pathshift/scene/owners";
+import type { AnimationState, Layer } from "@/lib/pathshift/types";
 import {
   renderEditorComponent,
   type RenderedEditorComponent,

@@ -1,4 +1,4 @@
-import { PAGE_ROOT_ID } from "../../shapeshifter/scene/owners";
+import { PAGE_ROOT_ID } from "../../pathshift/scene/owners";
 import type { EditorState } from "../editorStore";
 import {
   buildDocumentFromEditor,

@@ -3,7 +3,7 @@ import React, { act } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useWorldShapeDrawing } from "../useWorldShapeDrawing";
 import { useEditorStore, PAGE_ROOT_ID } from "@/lib/store/editorStore";
-import { getAccuratePathBounds } from "@/lib/shapeshifter/pathUtils";
+import { getAccuratePathBounds } from "@/lib/pathshift/pathUtils";
 import {
   renderEditorComponent,
   type RenderedEditorComponent,

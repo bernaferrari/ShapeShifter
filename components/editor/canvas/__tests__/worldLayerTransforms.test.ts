@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { getPathDataBounds, parsePath } from "@/lib/shapeshifter/pathUtils";
-import type { AnimationState, Layer } from "@/lib/shapeshifter/types";
-import { evaluateAndroidScene } from "@/lib/shapeshifter/scene/evaluate";
+import { getPathDataBounds, parsePath } from "@/lib/pathshift/pathUtils";
+import type { AnimationState, Layer } from "@/lib/pathshift/types";
+import { evaluateAndroidScene } from "@/lib/pathshift/scene/evaluate";
 import {
   IDENTITY_AFFINE,
   inverseAffine,
@@ -10,7 +10,7 @@ import {
   transformPointWithMatrix,
   translateAffine,
   type AffineMatrix,
-} from "@/lib/shapeshifter/scene/layerTransform";
+} from "@/lib/pathshift/scene/layerTransform";
 import type { LayerResizeSession, LayerRotateSession } from "../WorldSelectionOverlay";
 import {
   applyLayerResize,

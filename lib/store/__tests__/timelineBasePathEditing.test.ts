@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "../editorStore";
 import { compileLiveAndroidArtboard, serializeLiveProject } from "../exportDocument";
-import { parsePath, pathToString } from "../../shapeshifter/pathUtils";
-import { evaluateAndroidScene } from "../../shapeshifter/scene/evaluate";
-import { blocksFor } from "../../shapeshifter/playheadResolve";
+import { parsePath, pathToString } from "../../pathshift/pathUtils";
+import { evaluateAndroidScene } from "../../pathshift/scene/evaluate";
+import { blocksFor } from "../../pathshift/playheadResolve";
 import { syncLayerPathEndpoints } from "../timelinePathEditing";
-import type { TimelineBlock } from "../../shapeshifter/types";
+import type { TimelineBlock } from "../../pathshift/types";
 
 let baseline: ReturnType<typeof useEditorStore.getState>;
 beforeEach(() => {

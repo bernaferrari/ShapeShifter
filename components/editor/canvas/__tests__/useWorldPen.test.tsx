@@ -5,7 +5,7 @@ import { useWorldPen } from "../useWorldPen";
 import { useWorldPenCreation } from "../useWorldPenCreation";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { createPathLayer } from "@/lib/store/defaultWorkspace";
-import { parsePath, pathToString } from "@/lib/shapeshifter/pathUtils";
+import { parsePath, pathToString } from "@/lib/pathshift/pathUtils";
 import { createEditorAgent } from "@/lib/agent/editorAgent";
 import {
   renderEditorComponent,

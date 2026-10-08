@@ -3,13 +3,13 @@
 import React from "react";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { holdToDrag } from "@/lib/touchIntent";
-import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
+import { propertyLabel } from "@/lib/pathshift/propertyLabels";
 import {
   sameKeyframeTime,
   timelineKeyframeRange,
   type TrackKeyframe,
-} from "@/lib/shapeshifter/motion/timelineKeyframes";
-import type { TimelineBlock } from "@/lib/shapeshifter/types";
+} from "@/lib/pathshift/motion/timelineKeyframes";
+import type { TimelineBlock } from "@/lib/pathshift/types";
 import { KeyframeDiamond } from "../KeyframeDiamond";
 import { TimelineKeyframeEditor } from "./TimelineKeyframeEditor";
 import { useTimelineGesture } from "./useTimelineGesture";

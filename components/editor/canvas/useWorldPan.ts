@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState, type RefObject } from "react";
-import type { Viewport } from "@/lib/shapeshifter/camera";
+import type { Viewport } from "@/lib/pathshift/camera";
 
 interface WorldPanOptions {
   svgRef: RefObject<SVGSVGElement | null>;

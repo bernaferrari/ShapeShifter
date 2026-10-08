@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { ChevronDown, Pause, Play, Redo2, Sparkles, Undo2 } from "lucide-react";
+import { ChevronDown, Pause, Play, Redo2, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useTheme } from "@/components/theme-provider";
 import { useEditorStore } from "@/lib/store/editorStore";
-import { DEMO_INFOS } from "@/lib/shapeshifter/demoProjects";
+import { DEMO_INFOS } from "@/lib/pathshift/demoProjects";
 import { ExportDialog } from "./ExportDialog";
 import { DocumentSaveStatus, type DocumentAutosave } from "./DocumentSaveStatus";
 import { BooleanMenuItems } from "./BooleanOperations";
@@ -373,7 +373,7 @@ function MainMenu({
         }
       >
         <span className="grid size-6 place-items-center rounded-md bg-primary text-primary-foreground">
-          <Sparkles className="size-3.5" />
+          <img src="/icon.svg" width={24} height={24} alt="" />
         </span>
         <ChevronDown className="size-3" />
       </DropdownMenuTrigger>

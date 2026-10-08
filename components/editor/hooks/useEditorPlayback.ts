@@ -6,7 +6,7 @@ import {
   advanceBackAndForthPlaybackTime,
   advancePlaybackTime,
   resolveTimelinePreviewRange,
-} from "@/lib/shapeshifter/motion/previewRange";
+} from "@/lib/pathshift/motion/previewRange";
 
 /** Runs the playhead only while playback is active, avoiding an idle RAF loop. */
 export function useEditorPlayback() {

@@ -3,7 +3,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Viewport } from "@/lib/shapeshifter/camera";
+import type { Viewport } from "@/lib/pathshift/camera";
 import { useCanvasTouchGestures } from "../useCanvasTouchGestures";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

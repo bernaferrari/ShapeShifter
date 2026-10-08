@@ -3,7 +3,7 @@ import React, { act, useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { createPathLayer } from "@/lib/store/defaultWorkspace";
-import { parsePath } from "@/lib/shapeshifter/pathUtils";
+import { parsePath } from "@/lib/pathshift/pathUtils";
 import { usePathCanvasEditing } from "../usePathCanvasEditing";
 import {
   renderEditorComponent,

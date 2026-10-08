@@ -1,11 +1,11 @@
-import type { AnimationState, Layer } from "../../shapeshifter/types";
+import type { AnimationState, Layer } from "../../pathshift/types";
 import {
   collectLayerSubtreeIds,
   createLayerTreeModel,
   placeLayerSubtree,
   type LayerPlacement,
-} from "../../shapeshifter/scene/layerHierarchy";
-import { layerTransformToMatrix } from "../../shapeshifter/scene/layerTransform";
+} from "../../pathshift/scene/layerHierarchy";
+import { layerTransformToMatrix } from "../../pathshift/scene/layerTransform";
 import {
   canMoveLayerRootsBetweenOwners,
   preserveLayerRootContainers,

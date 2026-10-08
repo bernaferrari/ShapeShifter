@@ -2,9 +2,9 @@ import {
   buildEditorDocument,
   workspaceFromDocument,
   type WorkspaceSnapshot,
-} from "../shapeshifter/documentModel";
-import type { EditorDocument } from "../shapeshifter/types";
-import { PAGE_ROOT_ID } from "../shapeshifter/scene/owners";
+} from "../pathshift/documentModel";
+import type { EditorDocument } from "../pathshift/types";
+import { PAGE_ROOT_ID } from "../pathshift/scene/owners";
 import type { EditorState, HistoryEntry, HistorySession } from "./editorStore";
 import { saveActiveFrame, saveActiveRoot, buildLoadedDocumentState } from "./workspaceState";
 
@@ -13,7 +13,7 @@ export function workspaceFromEditor(state: EditorState): WorkspaceSnapshot {
   const root = saveActiveRoot(state);
   return {
     id: state.document?.id ?? String(state.vector.id ?? "document"),
-    name: state.document?.name ?? state.vector.name ?? "ShapeShifter",
+    name: state.document?.name ?? state.vector.name ?? "Pathshift",
     frames: frames.map((frame) => ({
       id: frame.id,
       name: frame.name,

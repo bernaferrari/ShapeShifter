@@ -2,17 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCanvasFrameBounds } from "./useWorldCamera";
-import { snapValueToStep, type Rect } from "@/lib/shapeshifter/camera";
+import { snapValueToStep, type Rect } from "@/lib/pathshift/camera";
 import {
   ObjectDragGesture,
   type ObjectDragModifiers,
-} from "@/lib/shapeshifter/gestures/select/ObjectDragGesture";
-import { hitTestOwnedLayers } from "@/lib/shapeshifter/scene/hitTest";
-import { resolveWorldLayerDraws } from "@/lib/shapeshifter/scene/render";
-import { getOwnedLayerBounds, type SceneOwner } from "@/lib/shapeshifter/scene/selection";
-import { snapRectToGuides, type GuideLine } from "@/lib/shapeshifter/smartGuides";
-import type { AnimationState, Layer, Point } from "@/lib/shapeshifter/types";
-import { vectorFromPageMetadata } from "@/lib/shapeshifter/vectorSpace";
+} from "@/lib/pathshift/gestures/select/ObjectDragGesture";
+import { hitTestOwnedLayers } from "@/lib/pathshift/scene/hitTest";
+import { resolveWorldLayerDraws } from "@/lib/pathshift/scene/render";
+import { getOwnedLayerBounds, type SceneOwner } from "@/lib/pathshift/scene/selection";
+import { snapRectToGuides, type GuideLine } from "@/lib/pathshift/smartGuides";
+import type { AnimationState, Layer, Point } from "@/lib/pathshift/types";
+import { vectorFromPageMetadata } from "@/lib/pathshift/vectorSpace";
 import { canMoveLayerRootsBetweenOwners } from "@/lib/store/commands/moveLayersBetweenOwners";
 import { beginLiveGesture, endLiveGesture, ownsLiveGesture } from "@/lib/store/liveGesture";
 import type { FrozenLayerTransform } from "./WorldSelectionOverlay";

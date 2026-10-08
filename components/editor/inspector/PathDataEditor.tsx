@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import type { PathData } from "@/lib/shapeshifter/types";
-import { parsePath, pathToString } from "@/lib/shapeshifter/pathUtils";
-import { validatePathData } from "@/lib/shapeshifter/path/pathValidation";
+import type { PathData } from "@/lib/pathshift/types";
+import { parsePath, pathToString } from "@/lib/pathshift/pathUtils";
+import { validatePathData } from "@/lib/pathshift/path/pathValidation";
 
 export function PathDataEditor({
   path,

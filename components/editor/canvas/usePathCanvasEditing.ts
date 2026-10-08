@@ -6,11 +6,11 @@ import type {
   PointerEvent as ReactPointerEvent,
   RefObject,
 } from "react";
-import type { Viewport } from "@/lib/shapeshifter/camera";
-import { scalePathToBounds, translatePathPoints } from "@/lib/shapeshifter/pathUtils";
-import { evaluateAndroidScene } from "@/lib/shapeshifter/scene/evaluate";
+import type { Viewport } from "@/lib/pathshift/camera";
+import { scalePathToBounds, translatePathPoints } from "@/lib/pathshift/pathUtils";
+import { evaluateAndroidScene } from "@/lib/pathshift/scene/evaluate";
 import { beginLiveGesture, endLiveGesture, ownsLiveGesture } from "@/lib/store/liveGesture";
-import type { Layer, Point, Selection } from "@/lib/shapeshifter/types";
+import type { Layer, Point, Selection } from "@/lib/pathshift/types";
 import {
   useEditorStore,
   type SegmentSelection,

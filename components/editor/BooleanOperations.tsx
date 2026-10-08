@@ -4,7 +4,7 @@ import { useShallow } from "zustand/react/shallow";
 import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { booleanSelectionIssue } from "@/lib/store/commands/booleanSelection";
-import type { BooleanOp } from "@/lib/shapeshifter/path/booleanOperations";
+import type { BooleanOp } from "@/lib/pathshift/path/booleanOperations";
 import { Section } from "./inspector/InspectorControls";
 import { DropdownMenuItem, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 const operations = [

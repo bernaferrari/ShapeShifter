@@ -1,7 +1,7 @@
 import { withBasePathGeometry } from "../playheadPathEditing";
-import { PAGE_ROOT_ID, type LayerSelectionRef } from "../../shapeshifter/scene/owners";
-import { computeDetailViewport } from "../../shapeshifter/camera";
-import { vectorFromPageMetadata } from "../../shapeshifter/vectorSpace";
+import { PAGE_ROOT_ID, type LayerSelectionRef } from "../../pathshift/scene/owners";
+import { computeDetailViewport } from "../../pathshift/camera";
+import { vectorFromPageMetadata } from "../../pathshift/vectorSpace";
 import type { EditorState } from "../editorStore";
 import { cloneLayers, saveActiveFrame, saveActiveRoot } from "../workspaceState";
 

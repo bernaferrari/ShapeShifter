@@ -1,15 +1,15 @@
 import type { CanvasFrame } from "../defaultWorkspace";
-import type { AnimationState, Layer, VectorMetadata } from "../../shapeshifter/types";
+import type { AnimationState, Layer, VectorMetadata } from "../../pathshift/types";
 import {
   collectLayerSubtreeIds,
   createLayerTreeModel,
   placeLayerSubtree,
   type LayerTreeModel,
   type LayerPlacement,
-} from "../../shapeshifter/scene/layerHierarchy";
-import { PAGE_ROOT_ID } from "../../shapeshifter/scene/owners";
-import { generateId } from "../../shapeshifter/ids";
-import { layerTransformToMatrix } from "../../shapeshifter/scene/layerTransform";
+} from "../../pathshift/scene/layerHierarchy";
+import { PAGE_ROOT_ID } from "../../pathshift/scene/owners";
+import { generateId } from "../../pathshift/ids";
+import { layerTransformToMatrix } from "../../pathshift/scene/layerTransform";
 
 export interface RootOwnerDocument {
   layers: Layer[];

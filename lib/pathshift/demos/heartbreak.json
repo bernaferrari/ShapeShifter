@@ -1,0 +1,3426 @@
+{
+  "format": "pathshift",
+  "document": {
+    "id": "heartbreak",
+    "name": "Heart break",
+    "schema": "pathshift",
+    "frameIds": ["demo-frame"],
+    "frames": {
+      "demo-frame": {
+        "id": "demo-frame",
+        "name": "Heart break",
+        "x": 0,
+        "y": 0,
+        "width": 56,
+        "height": 56,
+        "alpha": 1,
+        "childrenNodeIds": [
+          "node:demo-frame:94",
+          "node:demo-frame:96",
+          "node:demo-frame:98",
+          "node:demo-frame:99",
+          "node:demo-frame:100"
+        ],
+        "clipIds": ["clip:demo-frame:103"]
+      }
+    },
+    "page": {
+      "name": "Page",
+      "width": 24,
+      "height": 24,
+      "alpha": 1
+    },
+    "rootNodeIds": [],
+    "rootClipIds": ["clip:page:page-motion"],
+    "nodes": {
+      "node:demo-frame:94": {
+        "id": "node:demo-frame:94",
+        "name": "broken_heart_left_group",
+        "type": "group",
+        "childrenIds": ["node:demo-frame:95"],
+        "visible": true,
+        "locked": false,
+        "transform": {
+          "translateX": 0,
+          "translateY": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "rotation": 0,
+          "pivotX": 28,
+          "pivotY": 37.3
+        },
+        "style": {},
+        "alpha": 1,
+        "androidName": "broken_heart_left_group"
+      },
+      "node:demo-frame:95": {
+        "id": "node:demo-frame:95",
+        "name": "broken_heart_left",
+        "type": "path",
+        "parentId": "node:demo-frame:94",
+        "visible": true,
+        "locked": false,
+        "transform": {
+          "translateX": 0,
+          "translateY": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "rotation": 0,
+          "pivotX": 0,
+          "pivotY": 0
+        },
+        "style": {
+          "fillColor": "#000",
+          "fillAlpha": 1,
+          "strokeColor": "",
+          "strokeAlpha": 1,
+          "strokeWidth": 0,
+          "strokeLinecap": "butt",
+          "strokeLinejoin": "miter",
+          "strokeMiterLimit": 4,
+          "trimPathStart": 0,
+          "trimPathEnd": 1,
+          "trimPathOffset": 0,
+          "fillType": "nonZero"
+        },
+        "alpha": 1,
+        "geometryVersionId": "geometry:demo-frame:95%3Abase",
+        "fromGeometryVersionId": "geometry:demo-frame:95%3Afrom",
+        "toGeometryVersionId": "geometry:demo-frame:95%3Ato",
+        "androidName": "broken_heart_left"
+      },
+      "node:demo-frame:96": {
+        "id": "node:demo-frame:96",
+        "name": "broken_heart_right_group",
+        "type": "group",
+        "childrenIds": ["node:demo-frame:97"],
+        "visible": true,
+        "locked": false,
+        "transform": {
+          "translateX": 0,
+          "translateY": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "rotation": 0,
+          "pivotX": 28,
+          "pivotY": 37.3
+        },
+        "style": {},
+        "alpha": 1,
+        "androidName": "broken_heart_right_group"
+      },
+      "node:demo-frame:97": {
+        "id": "node:demo-frame:97",
+        "name": "broken_heart_right",
+        "type": "path",
+        "parentId": "node:demo-frame:96",
+        "visible": true,
+        "locked": false,
+        "transform": {
+          "translateX": 0,
+          "translateY": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "rotation": 0,
+          "pivotX": 0,
+          "pivotY": 0
+        },
+        "style": {
+          "fillColor": "#000",
+          "fillAlpha": 1,
+          "strokeColor": "",
+          "strokeAlpha": 1,
+          "strokeWidth": 0,
+          "strokeLinecap": "butt",
+          "strokeLinejoin": "miter",
+          "strokeMiterLimit": 4,
+          "trimPathStart": 0,
+          "trimPathEnd": 1,
+          "trimPathOffset": 0,
+          "fillType": "nonZero"
+        },
+        "alpha": 1,
+        "geometryVersionId": "geometry:demo-frame:97%3Abase",
+        "fromGeometryVersionId": "geometry:demo-frame:97%3Afrom",
+        "toGeometryVersionId": "geometry:demo-frame:97%3Ato",
+        "androidName": "broken_heart_right"
+      },
+      "node:demo-frame:98": {
+        "id": "node:demo-frame:98",
+        "name": "heart_stroke_left",
+        "type": "path",
+        "visible": true,
+        "locked": false,
+        "transform": {
+          "translateX": 0,
+          "translateY": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "rotation": 0,
+          "pivotX": 0,
+          "pivotY": 0
+        },
+        "style": {
+          "fillColor": "",
+          "fillAlpha": 1,
+          "strokeColor": "#000",
+          "strokeAlpha": 1,
+          "strokeWidth": 2,
+          "strokeLinecap": "butt",
+          "strokeLinejoin": "miter",
+          "strokeMiterLimit": 4,
+          "trimPathStart": 0,
+          "trimPathEnd": 0,
+          "trimPathOffset": 0,
+          "fillType": "nonZero"
+        },
+        "alpha": 1,
+        "geometryVersionId": "geometry:demo-frame:98%3Abase",
+        "fromGeometryVersionId": "geometry:demo-frame:98%3Afrom",
+        "toGeometryVersionId": "geometry:demo-frame:98%3Ato",
+        "androidName": "heart_stroke_left"
+      },
+      "node:demo-frame:99": {
+        "id": "node:demo-frame:99",
+        "name": "heart_stroke_right",
+        "type": "path",
+        "visible": true,
+        "locked": false,
+        "transform": {
+          "translateX": 0,
+          "translateY": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "rotation": 0,
+          "pivotX": 0,
+          "pivotY": 0
+        },
+        "style": {
+          "fillColor": "",
+          "fillAlpha": 1,
+          "strokeColor": "#000",
+          "strokeAlpha": 1,
+          "strokeWidth": 2,
+          "strokeLinecap": "butt",
+          "strokeLinejoin": "miter",
+          "strokeMiterLimit": 4,
+          "trimPathStart": 0,
+          "trimPathEnd": 0,
+          "trimPathOffset": 0,
+          "fillType": "nonZero"
+        },
+        "alpha": 1,
+        "geometryVersionId": "geometry:demo-frame:99%3Abase",
+        "fromGeometryVersionId": "geometry:demo-frame:99%3Afrom",
+        "toGeometryVersionId": "geometry:demo-frame:99%3Ato",
+        "androidName": "heart_stroke_right"
+      },
+      "node:demo-frame:100": {
+        "id": "node:demo-frame:100",
+        "name": "filled",
+        "type": "group",
+        "childrenIds": ["node:demo-frame:102"],
+        "visible": true,
+        "locked": false,
+        "transform": {
+          "translateX": 0,
+          "translateY": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "rotation": 0,
+          "pivotX": 0,
+          "pivotY": 0
+        },
+        "style": {},
+        "alpha": 1,
+        "androidName": "filled"
+      },
+      "node:demo-frame:102": {
+        "id": "node:demo-frame:102",
+        "name": "fill",
+        "type": "path",
+        "parentId": "node:demo-frame:100",
+        "visible": true,
+        "locked": false,
+        "transform": {
+          "translateX": 0,
+          "translateY": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "rotation": 0,
+          "pivotX": 0,
+          "pivotY": 0
+        },
+        "style": {
+          "fillColor": "#000000",
+          "fillAlpha": 1,
+          "strokeColor": "",
+          "strokeAlpha": 1,
+          "strokeWidth": 0,
+          "strokeLinecap": "butt",
+          "strokeLinejoin": "miter",
+          "strokeMiterLimit": 4,
+          "trimPathStart": 0,
+          "trimPathEnd": 1,
+          "trimPathOffset": 0,
+          "fillType": "nonZero"
+        },
+        "alpha": 1,
+        "geometryVersionId": "geometry:demo-frame:102%3Abase",
+        "fromGeometryVersionId": "geometry:demo-frame:102%3Afrom",
+        "toGeometryVersionId": "geometry:demo-frame:102%3Ato",
+        "androidName": "fill"
+      }
+    },
+    "geometryVersions": {
+      "geometry:demo-frame:95%3Abase": {
+        "id": "geometry:demo-frame:95%3Abase",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T83",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 28.031,
+                      "y": 21.054
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T84",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 28.02,
+                      "y": 21.066
+                    },
+                    {
+                      "x": 28.01,
+                      "y": 21.078
+                    },
+                    {
+                      "x": 28,
+                      "y": 21.09
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T85",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 26.91,
+                      "y": 19.81
+                    },
+                    {
+                      "x": 25.24,
+                      "y": 19
+                    },
+                    {
+                      "x": 23.5,
+                      "y": 19
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T86",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 20.42,
+                      "y": 19
+                    },
+                    {
+                      "x": 18,
+                      "y": 21.42
+                    },
+                    {
+                      "x": 18,
+                      "y": 24.5
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T87",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 18,
+                      "y": 28.28
+                    },
+                    {
+                      "x": 21.4,
+                      "y": 31.36
+                    },
+                    {
+                      "x": 26.55,
+                      "y": 36.03
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T88",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28,
+                      "y": 37.35
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T89",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.002,
+                      "y": 37.348
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8A",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 27.781,
+                      "y": 36.988
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8B",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.489,
+                      "y": 36.073
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8C",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 27.506,
+                      "y": 34.764
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8D",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.782,
+                      "y": 33.027
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8E",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 26.944,
+                      "y": 31.008
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8F",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 29.149,
+                      "y": 28.725
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8G",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 27.117,
+                      "y": 27.143
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8H",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 29.149,
+                      "y": 25.018
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8J",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 26.488,
+                      "y": 22.977
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8K",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.031,
+                      "y": 21.054
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8M",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.031,
+                      "y": 21.054
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8N",
+                  "type": "Z",
+                  "points": []
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M28.031 21.054 C28.02 21.066 28.01 21.078 28 21.09 C26.91 19.81 25.24 19 23.5 19 C20.42 19 18 21.42 18 24.5 C18 28.28 21.4 31.36 26.55 36.03 L28 37.35 L28.002 37.348 L27.781 36.988 L28.489 36.073 L27.506 34.764 L28.782 33.027 L26.944 31.008 L29.149 28.725 L27.117 27.143 L29.149 25.018 L26.488 22.977 L28.031 21.054 L28.031 21.054 Z",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:95%3Afrom": {
+        "id": "geometry:demo-frame:95%3Afrom",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T6X",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 28.031,
+                      "y": 21.054
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T6Y",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 28.02,
+                      "y": 21.066
+                    },
+                    {
+                      "x": 28.01,
+                      "y": 21.078
+                    },
+                    {
+                      "x": 28,
+                      "y": 21.09
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T6Z",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 26.91,
+                      "y": 19.81
+                    },
+                    {
+                      "x": 25.24,
+                      "y": 19
+                    },
+                    {
+                      "x": 23.5,
+                      "y": 19
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T70",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 20.42,
+                      "y": 19
+                    },
+                    {
+                      "x": 18,
+                      "y": 21.42
+                    },
+                    {
+                      "x": 18,
+                      "y": 24.5
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T71",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 18,
+                      "y": 28.28
+                    },
+                    {
+                      "x": 21.4,
+                      "y": 31.36
+                    },
+                    {
+                      "x": 26.55,
+                      "y": 36.03
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T72",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28,
+                      "y": 37.35
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T73",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.002,
+                      "y": 37.348
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T74",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 27.781,
+                      "y": 36.988
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T75",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.489,
+                      "y": 36.073
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T76",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 27.506,
+                      "y": 34.764
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T77",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.782,
+                      "y": 33.027
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T78",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 26.944,
+                      "y": 31.008
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T79",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 29.149,
+                      "y": 28.725
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7A",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 27.117,
+                      "y": 27.143
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7B",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 29.149,
+                      "y": 25.018
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7C",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 26.488,
+                      "y": 22.977
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7D",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.031,
+                      "y": 21.054
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7E",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.031,
+                      "y": 21.054
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7F",
+                  "type": "Z",
+                  "points": []
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M28.031 21.054 C28.02 21.066 28.01 21.078 28 21.09 C26.91 19.81 25.24 19 23.5 19 C20.42 19 18 21.42 18 24.5 C18 28.28 21.4 31.36 26.55 36.03 L28 37.35 L28.002 37.348 L27.781 36.988 L28.489 36.073 L27.506 34.764 L28.782 33.027 L26.944 31.008 L29.149 28.725 L27.117 27.143 L29.149 25.018 L26.488 22.977 L28.031 21.054 L28.031 21.054 Z",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:95%3Ato": {
+        "id": "geometry:demo-frame:95%3Ato",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7G",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 28.031,
+                      "y": 21.054
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7H",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 28.02,
+                      "y": 21.066
+                    },
+                    {
+                      "x": 28.01,
+                      "y": 21.078
+                    },
+                    {
+                      "x": 28,
+                      "y": 21.09
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7J",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 26.91,
+                      "y": 19.81
+                    },
+                    {
+                      "x": 25.24,
+                      "y": 19
+                    },
+                    {
+                      "x": 23.5,
+                      "y": 19
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7K",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 20.42,
+                      "y": 19
+                    },
+                    {
+                      "x": 18,
+                      "y": 21.42
+                    },
+                    {
+                      "x": 18,
+                      "y": 24.5
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7M",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 18,
+                      "y": 28.28
+                    },
+                    {
+                      "x": 21.4,
+                      "y": 31.36
+                    },
+                    {
+                      "x": 26.55,
+                      "y": 36.03
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7N",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28,
+                      "y": 37.35
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7P",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.002,
+                      "y": 37.348
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7Q",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 27.781,
+                      "y": 36.988
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7R",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.489,
+                      "y": 36.073
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7S",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 27.506,
+                      "y": 34.764
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7T",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.782,
+                      "y": 33.027
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7V",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 26.944,
+                      "y": 31.008
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7W",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 29.149,
+                      "y": 28.725
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7X",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 27.117,
+                      "y": 27.143
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7Y",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 29.149,
+                      "y": 25.018
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T7Z",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 26.488,
+                      "y": 22.977
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T80",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.031,
+                      "y": 21.054
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T81",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.031,
+                      "y": 21.054
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T82",
+                  "type": "Z",
+                  "points": []
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M28.031 21.054 C28.02 21.066 28.01 21.078 28 21.09 C26.91 19.81 25.24 19 23.5 19 C20.42 19 18 21.42 18 24.5 C18 28.28 21.4 31.36 26.55 36.03 L28 37.35 L28.002 37.348 L27.781 36.988 L28.489 36.073 L27.506 34.764 L28.782 33.027 L26.944 31.008 L29.149 28.725 L27.117 27.143 L29.149 25.018 L26.488 22.977 L28.031 21.054 L28.031 21.054 Z",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:97%3Abase": {
+        "id": "geometry:demo-frame:97%3Abase",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9W",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 28.031,
+                      "y": 21.054
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9X",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 28.169,
+                      "y": 20.895
+                    },
+                    {
+                      "x": 28.316,
+                      "y": 20.743
+                    },
+                    {
+                      "x": 28.471,
+                      "y": 20.599
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9Y",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.915,
+                      "y": 20.226
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9Z",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 29.926,
+                      "y": 19.457
+                    },
+                    {
+                      "x": 31.193,
+                      "y": 19
+                    },
+                    {
+                      "x": 32.5,
+                      "y": 19
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32TA0",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 35.58,
+                      "y": 19
+                    },
+                    {
+                      "x": 38,
+                      "y": 21.42
+                    },
+                    {
+                      "x": 38,
+                      "y": 24.5
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32TA1",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 38,
+                      "y": 28.28
+                    },
+                    {
+                      "x": 34.6,
+                      "y": 31.36
+                    },
+                    {
+                      "x": 29.45,
+                      "y": 36.04
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32TA2",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.002,
+                      "y": 37.348
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32TA3",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 27.781,
+                      "y": 36.988
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32TA4",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.489,
+                      "y": 36.073
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32TA5",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 27.506,
+                      "y": 34.764
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32TA6",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.782,
+                      "y": 33.027
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32TA7",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 26.944,
+                      "y": 31.008
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR2S",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 29.149,
+                      "y": 28.725
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR2T",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 27.117,
+                      "y": 27.143
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR2V",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 29.149,
+                      "y": 25.018
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR2W",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 26.488,
+                      "y": 22.977
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR2X",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.031,
+                      "y": 21.054
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR2Y",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.031,
+                      "y": 21.054
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR2Z",
+                  "type": "Z",
+                  "points": []
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M28.031 21.054 C28.169 20.895 28.316 20.743 28.471 20.599 L28.915 20.226 C29.926 19.457 31.193 19 32.5 19 C35.58 19 38 21.42 38 24.5 C38 28.28 34.6 31.36 29.45 36.04 L28.002 37.348 L27.781 36.988 L28.489 36.073 L27.506 34.764 L28.782 33.027 L26.944 31.008 L29.149 28.725 L27.117 27.143 L29.149 25.018 L26.488 22.977 L28.031 21.054 L28.031 21.054 Z",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:97%3Afrom": {
+        "id": "geometry:demo-frame:97%3Afrom",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8P",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 28.031,
+                      "y": 21.054
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8Q",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 28.169,
+                      "y": 20.895
+                    },
+                    {
+                      "x": 28.316,
+                      "y": 20.743
+                    },
+                    {
+                      "x": 28.471,
+                      "y": 20.599
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8R",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.915,
+                      "y": 20.226
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8S",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 29.926,
+                      "y": 19.457
+                    },
+                    {
+                      "x": 31.193,
+                      "y": 19
+                    },
+                    {
+                      "x": 32.5,
+                      "y": 19
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8T",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 35.58,
+                      "y": 19
+                    },
+                    {
+                      "x": 38,
+                      "y": 21.42
+                    },
+                    {
+                      "x": 38,
+                      "y": 24.5
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8V",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 38,
+                      "y": 28.28
+                    },
+                    {
+                      "x": 34.6,
+                      "y": 31.36
+                    },
+                    {
+                      "x": 29.45,
+                      "y": 36.04
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8W",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.002,
+                      "y": 37.348
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8X",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 27.781,
+                      "y": 36.988
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8Y",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.489,
+                      "y": 36.073
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T8Z",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 27.506,
+                      "y": 34.764
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T90",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.782,
+                      "y": 33.027
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T91",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 26.944,
+                      "y": 31.008
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T92",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 29.149,
+                      "y": 28.725
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T93",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 27.117,
+                      "y": 27.143
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T94",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 29.149,
+                      "y": 25.018
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T95",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 26.488,
+                      "y": 22.977
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T96",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.031,
+                      "y": 21.054
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T97",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.031,
+                      "y": 21.054
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T98",
+                  "type": "Z",
+                  "points": []
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M28.031 21.054 C28.169 20.895 28.316 20.743 28.471 20.599 L28.915 20.226 C29.926 19.457 31.193 19 32.5 19 C35.58 19 38 21.42 38 24.5 C38 28.28 34.6 31.36 29.45 36.04 L28.002 37.348 L27.781 36.988 L28.489 36.073 L27.506 34.764 L28.782 33.027 L26.944 31.008 L29.149 28.725 L27.117 27.143 L29.149 25.018 L26.488 22.977 L28.031 21.054 L28.031 21.054 Z",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:97%3Ato": {
+        "id": "geometry:demo-frame:97%3Ato",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T99",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 28.031,
+                      "y": 21.054
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9A",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 28.169,
+                      "y": 20.895
+                    },
+                    {
+                      "x": 28.316,
+                      "y": 20.743
+                    },
+                    {
+                      "x": 28.471,
+                      "y": 20.599
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9B",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.915,
+                      "y": 20.226
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9C",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 29.926,
+                      "y": 19.457
+                    },
+                    {
+                      "x": 31.193,
+                      "y": 19
+                    },
+                    {
+                      "x": 32.5,
+                      "y": 19
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9D",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 35.58,
+                      "y": 19
+                    },
+                    {
+                      "x": 38,
+                      "y": 21.42
+                    },
+                    {
+                      "x": 38,
+                      "y": 24.5
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9E",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 38,
+                      "y": 28.28
+                    },
+                    {
+                      "x": 34.6,
+                      "y": 31.36
+                    },
+                    {
+                      "x": 29.45,
+                      "y": 36.04
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9F",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.002,
+                      "y": 37.348
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9G",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 27.781,
+                      "y": 36.988
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9H",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.489,
+                      "y": 36.073
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9J",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 27.506,
+                      "y": 34.764
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9K",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.782,
+                      "y": 33.027
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9M",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 26.944,
+                      "y": 31.008
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9N",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 29.149,
+                      "y": 28.725
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9P",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 27.117,
+                      "y": 27.143
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9Q",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 29.149,
+                      "y": 25.018
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9R",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 26.488,
+                      "y": 22.977
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9S",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.031,
+                      "y": 21.054
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9T",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28.031,
+                      "y": 21.054
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD24G0WBJA8GER32T9V",
+                  "type": "Z",
+                  "points": []
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M28.031 21.054 C28.169 20.895 28.316 20.743 28.471 20.599 L28.915 20.226 C29.926 19.457 31.193 19 32.5 19 C35.58 19 38 21.42 38 24.5 C38 28.28 34.6 31.36 29.45 36.04 L28.002 37.348 L27.781 36.988 L28.489 36.073 L27.506 34.764 L28.782 33.027 L26.944 31.008 L29.149 28.725 L27.117 27.143 L29.149 25.018 L26.488 22.977 L28.031 21.054 L28.031 21.054 Z",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:98%3Abase": {
+        "id": "geometry:demo-frame:98%3Abase",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3A",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 28.719,
+                      "y": 38.296
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3B",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 25.669,
+                      "y": 35.552
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3C",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 21.621,
+                      "y": 31.793
+                    },
+                    {
+                      "x": 18.016,
+                      "y": 28.891
+                    },
+                    {
+                      "x": 18.016,
+                      "y": 24.845
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3D",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 18.016,
+                      "y": 21.588
+                    },
+                    {
+                      "x": 20.631,
+                      "y": 19.965
+                    },
+                    {
+                      "x": 23.634,
+                      "y": 19.965
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3E",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 24.999,
+                      "y": 19.965
+                    },
+                    {
+                      "x": 26.799,
+                      "y": 21.181
+                    },
+                    {
+                      "x": 28.644,
+                      "y": 23.13
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M28.719 38.296 L25.669 35.552 C21.621 31.793 18.016 28.891 18.016 24.845 C18.016 21.588 20.631 19.965 23.634 19.965 C24.999 19.965 26.799 21.181 28.644 23.13",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:98%3Afrom": {
+        "id": "geometry:demo-frame:98%3Afrom",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR30",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 28.719,
+                      "y": 38.296
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR31",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 25.669,
+                      "y": 35.552
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR32",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 21.621,
+                      "y": 31.793
+                    },
+                    {
+                      "x": 18.016,
+                      "y": 28.891
+                    },
+                    {
+                      "x": 18.016,
+                      "y": 24.845
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR33",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 18.016,
+                      "y": 21.588
+                    },
+                    {
+                      "x": 20.631,
+                      "y": 19.965
+                    },
+                    {
+                      "x": 23.634,
+                      "y": 19.965
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR34",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 24.999,
+                      "y": 19.965
+                    },
+                    {
+                      "x": 26.799,
+                      "y": 21.181
+                    },
+                    {
+                      "x": 28.644,
+                      "y": 23.13
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M28.719 38.296 L25.669 35.552 C21.621 31.793 18.016 28.891 18.016 24.845 C18.016 21.588 20.631 19.965 23.634 19.965 C24.999 19.965 26.799 21.181 28.644 23.13",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:98%3Ato": {
+        "id": "geometry:demo-frame:98%3Ato",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR35",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 28.719,
+                      "y": 38.296
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR36",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 25.669,
+                      "y": 35.552
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR37",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 21.621,
+                      "y": 31.793
+                    },
+                    {
+                      "x": 18.016,
+                      "y": 28.891
+                    },
+                    {
+                      "x": 18.016,
+                      "y": 24.845
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR38",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 18.016,
+                      "y": 21.588
+                    },
+                    {
+                      "x": 20.631,
+                      "y": 19.965
+                    },
+                    {
+                      "x": 23.634,
+                      "y": 19.965
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR39",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 24.999,
+                      "y": 19.965
+                    },
+                    {
+                      "x": 26.799,
+                      "y": 21.181
+                    },
+                    {
+                      "x": 28.644,
+                      "y": 23.13
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M28.719 38.296 L25.669 35.552 C21.621 31.793 18.016 28.891 18.016 24.845 C18.016 21.588 20.631 19.965 23.634 19.965 C24.999 19.965 26.799 21.181 28.644 23.13",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:99%3Abase": {
+        "id": "geometry:demo-frame:99%3Abase",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3S",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 27.231,
+                      "y": 38.294
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3T",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 30.765,
+                      "y": 35.2
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3V",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 34.834,
+                      "y": 31.235
+                    },
+                    {
+                      "x": 37.752,
+                      "y": 29.118
+                    },
+                    {
+                      "x": 38.004,
+                      "y": 25.084
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3W",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 38.168,
+                      "y": 22.459
+                    },
+                    {
+                      "x": 35.773,
+                      "y": 20.035
+                    },
+                    {
+                      "x": 33.379,
+                      "y": 20.035
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3X",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 30.432,
+                      "y": 20.035
+                    },
+                    {
+                      "x": 29.672,
+                      "y": 21.047
+                    },
+                    {
+                      "x": 27.231,
+                      "y": 23.133
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M27.231 38.294 L30.765 35.2 C34.834 31.235 37.752 29.118 38.004 25.084 C38.168 22.459 35.773 20.035 33.379 20.035 C30.432 20.035 29.672 21.047 27.231 23.133",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:99%3Afrom": {
+        "id": "geometry:demo-frame:99%3Afrom",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3F",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 27.231,
+                      "y": 38.294
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3G",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 30.765,
+                      "y": 35.2
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3H",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 34.834,
+                      "y": 31.235
+                    },
+                    {
+                      "x": 37.752,
+                      "y": 29.118
+                    },
+                    {
+                      "x": 38.004,
+                      "y": 25.084
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3J",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 38.168,
+                      "y": 22.459
+                    },
+                    {
+                      "x": 35.773,
+                      "y": 20.035
+                    },
+                    {
+                      "x": 33.379,
+                      "y": 20.035
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3K",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 30.432,
+                      "y": 20.035
+                    },
+                    {
+                      "x": 29.672,
+                      "y": 21.047
+                    },
+                    {
+                      "x": 27.231,
+                      "y": 23.133
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M27.231 38.294 L30.765 35.2 C34.834 31.235 37.752 29.118 38.004 25.084 C38.168 22.459 35.773 20.035 33.379 20.035 C30.432 20.035 29.672 21.047 27.231 23.133",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:99%3Ato": {
+        "id": "geometry:demo-frame:99%3Ato",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3M",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 27.231,
+                      "y": 38.294
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3N",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 30.765,
+                      "y": 35.2
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3P",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 34.834,
+                      "y": 31.235
+                    },
+                    {
+                      "x": 37.752,
+                      "y": 29.118
+                    },
+                    {
+                      "x": 38.004,
+                      "y": 25.084
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3Q",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 38.168,
+                      "y": 22.459
+                    },
+                    {
+                      "x": 35.773,
+                      "y": 20.035
+                    },
+                    {
+                      "x": 33.379,
+                      "y": 20.035
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3R",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 30.432,
+                      "y": 20.035
+                    },
+                    {
+                      "x": 29.672,
+                      "y": 21.047
+                    },
+                    {
+                      "x": 27.231,
+                      "y": 23.133
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M27.231 38.294 L30.765 35.2 C34.834 31.235 37.752 29.118 38.004 25.084 C38.168 22.459 35.773 20.035 33.379 20.035 C30.432 20.035 29.672 21.047 27.231 23.133",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:102%3Abase": {
+        "id": "geometry:demo-frame:102%3Abase",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4M",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 28,
+                      "y": 39
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4N",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 26.405,
+                      "y": 37.567
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4P",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 20.74,
+                      "y": 32.471
+                    },
+                    {
+                      "x": 17,
+                      "y": 29.109
+                    },
+                    {
+                      "x": 17,
+                      "y": 24.995
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4Q",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 17,
+                      "y": 21.632
+                    },
+                    {
+                      "x": 19.657,
+                      "y": 19
+                    },
+                    {
+                      "x": 23.05,
+                      "y": 19
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4R",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 24.964,
+                      "y": 19
+                    },
+                    {
+                      "x": 26.801,
+                      "y": 19.883
+                    },
+                    {
+                      "x": 28,
+                      "y": 21.272
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4S",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 29.199,
+                      "y": 19.883
+                    },
+                    {
+                      "x": 31.036,
+                      "y": 19
+                    },
+                    {
+                      "x": 32.95,
+                      "y": 19
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4T",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 36.343,
+                      "y": 19
+                    },
+                    {
+                      "x": 39,
+                      "y": 21.632
+                    },
+                    {
+                      "x": 39,
+                      "y": 24.995
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4V",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 39,
+                      "y": 29.109
+                    },
+                    {
+                      "x": 35.26,
+                      "y": 32.471
+                    },
+                    {
+                      "x": 29.595,
+                      "y": 37.567
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4W",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28,
+                      "y": 39
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4X",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28,
+                      "y": 39
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4Y",
+                  "type": "Z",
+                  "points": []
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M28 39 L26.405 37.567 C20.74 32.471 17 29.109 17 24.995 C17 21.632 19.657 19 23.05 19 C24.964 19 26.801 19.883 28 21.272 C29.199 19.883 31.036 19 32.95 19 C36.343 19 39 21.632 39 24.995 C39 29.109 35.26 32.471 29.595 37.567 L28 39 L28 39 Z",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:102%3Afrom": {
+        "id": "geometry:demo-frame:102%3Afrom",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3Y",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 28,
+                      "y": 39
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR3Z",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 26.405,
+                      "y": 37.567
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR40",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 20.74,
+                      "y": 32.471
+                    },
+                    {
+                      "x": 17,
+                      "y": 29.109
+                    },
+                    {
+                      "x": 17,
+                      "y": 24.995
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR41",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 17,
+                      "y": 21.632
+                    },
+                    {
+                      "x": 19.657,
+                      "y": 19
+                    },
+                    {
+                      "x": 23.05,
+                      "y": 19
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR42",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 24.964,
+                      "y": 19
+                    },
+                    {
+                      "x": 26.801,
+                      "y": 19.883
+                    },
+                    {
+                      "x": 28,
+                      "y": 21.272
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR43",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 29.199,
+                      "y": 19.883
+                    },
+                    {
+                      "x": 31.036,
+                      "y": 19
+                    },
+                    {
+                      "x": 32.95,
+                      "y": 19
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR44",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 36.343,
+                      "y": 19
+                    },
+                    {
+                      "x": 39,
+                      "y": 21.632
+                    },
+                    {
+                      "x": 39,
+                      "y": 24.995
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR45",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 39,
+                      "y": 29.109
+                    },
+                    {
+                      "x": 35.26,
+                      "y": 32.471
+                    },
+                    {
+                      "x": 29.595,
+                      "y": 37.567
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR46",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28,
+                      "y": 39
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR47",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28,
+                      "y": 39
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR48",
+                  "type": "Z",
+                  "points": []
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M28 39 L26.405 37.567 C20.74 32.471 17 29.109 17 24.995 C17 21.632 19.657 19 23.05 19 C24.964 19 26.801 19.883 28 21.272 C29.199 19.883 31.036 19 32.95 19 C36.343 19 39 21.632 39 24.995 C39 29.109 35.26 32.471 29.595 37.567 L28 39 L28 39 Z",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:102%3Ato": {
+        "id": "geometry:demo-frame:102%3Ato",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR49",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 28,
+                      "y": 39
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4A",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 26.405,
+                      "y": 37.567
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4B",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 20.74,
+                      "y": 32.471
+                    },
+                    {
+                      "x": 17,
+                      "y": 29.109
+                    },
+                    {
+                      "x": 17,
+                      "y": 24.995
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4C",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 17,
+                      "y": 21.632
+                    },
+                    {
+                      "x": 19.657,
+                      "y": 19
+                    },
+                    {
+                      "x": 23.05,
+                      "y": 19
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4D",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 24.964,
+                      "y": 19
+                    },
+                    {
+                      "x": 26.801,
+                      "y": 19.883
+                    },
+                    {
+                      "x": 28,
+                      "y": 21.272
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4E",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 29.199,
+                      "y": 19.883
+                    },
+                    {
+                      "x": 31.036,
+                      "y": 19
+                    },
+                    {
+                      "x": 32.95,
+                      "y": 19
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4F",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 36.343,
+                      "y": 19
+                    },
+                    {
+                      "x": 39,
+                      "y": 21.632
+                    },
+                    {
+                      "x": 39,
+                      "y": 24.995
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4G",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 39,
+                      "y": 29.109
+                    },
+                    {
+                      "x": 35.26,
+                      "y": 32.471
+                    },
+                    {
+                      "x": 29.595,
+                      "y": 37.567
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4H",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28,
+                      "y": 39
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4J",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 28,
+                      "y": 39
+                    }
+                  ]
+                },
+                {
+                  "id": "01M46JZWD3974PJN9RBW04JR4K",
+                  "type": "Z",
+                  "points": []
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M28 39 L26.405 37.567 C20.74 32.471 17 29.109 17 24.995 C17 21.632 19.657 19 23.05 19 C24.964 19 26.801 19.883 28 21.272 C29.199 19.883 31.036 19 32.95 19 C36.343 19 39 21.632 39 24.995 C39 29.109 35.26 32.471 29.595 37.567 L28 39 L28 39 Z",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:145%3Afrom": {
+        "id": "geometry:demo-frame:145%3Afrom",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "command:geometry%3Ademo-frame%3A145%253Afrom:0%3A0",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 18,
+                      "y": 38
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A145%253Afrom:0%3A1",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 18,
+                      "y": 38
+                    },
+                    {
+                      "x": 24,
+                      "y": 38
+                    },
+                    {
+                      "x": 24,
+                      "y": 38
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A145%253Afrom:0%3A2",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 24,
+                      "y": 38
+                    },
+                    {
+                      "x": 32,
+                      "y": 38
+                    },
+                    {
+                      "x": 32,
+                      "y": 38
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A145%253Afrom:0%3A3",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 32,
+                      "y": 38
+                    },
+                    {
+                      "x": 38,
+                      "y": 38
+                    },
+                    {
+                      "x": 38,
+                      "y": 38
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A145%253Afrom:0%3A4",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 38,
+                      "y": 38
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A145%253Afrom:0%3A5",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 18,
+                      "y": 38
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A145%253Afrom:0%3A6",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 18,
+                      "y": 38
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A145%253Afrom:0%3A7",
+                  "type": "Z",
+                  "points": []
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M18 38 C18 38 24 38 24 38 C24 38 32 38 32 38 C32 38 38 38 38 38 L38 38 L18 38 L18 38 Z",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:145%3Ato": {
+        "id": "geometry:demo-frame:145%3Ato",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "command:geometry%3Ademo-frame%3A145%253Ato:0%3A0",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 18,
+                      "y": 26
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A145%253Ato:0%3A1",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 18,
+                      "y": 26
+                    },
+                    {
+                      "x": 21,
+                      "y": 28
+                    },
+                    {
+                      "x": 24,
+                      "y": 28
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A145%253Ato:0%3A2",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 27,
+                      "y": 28
+                    },
+                    {
+                      "x": 29,
+                      "y": 25
+                    },
+                    {
+                      "x": 32,
+                      "y": 25
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A145%253Ato:0%3A3",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 35,
+                      "y": 25
+                    },
+                    {
+                      "x": 38,
+                      "y": 26
+                    },
+                    {
+                      "x": 38,
+                      "y": 26
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A145%253Ato:0%3A4",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 38,
+                      "y": 38
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A145%253Ato:0%3A5",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 18,
+                      "y": 38
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A145%253Ato:0%3A6",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 18,
+                      "y": 26
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A145%253Ato:0%3A7",
+                  "type": "Z",
+                  "points": []
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M18 26 C18 26 21 28 24 28 C27 28 29 25 32 25 C35 25 38 26 38 26 L38 38 L18 38 L18 26 Z",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:110%3Afrom": {
+        "id": "geometry:demo-frame:110%3Afrom",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "command:geometry%3Ademo-frame%3A110%253Afrom:0%3A0",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 18,
+                      "y": 26
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A110%253Afrom:0%3A1",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 18,
+                      "y": 26
+                    },
+                    {
+                      "x": 21,
+                      "y": 28
+                    },
+                    {
+                      "x": 24,
+                      "y": 28
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A110%253Afrom:0%3A2",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 27,
+                      "y": 28
+                    },
+                    {
+                      "x": 29,
+                      "y": 25
+                    },
+                    {
+                      "x": 32,
+                      "y": 25
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A110%253Afrom:0%3A3",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 35,
+                      "y": 25
+                    },
+                    {
+                      "x": 38,
+                      "y": 26
+                    },
+                    {
+                      "x": 38,
+                      "y": 26
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A110%253Afrom:0%3A4",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 38,
+                      "y": 38
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A110%253Afrom:0%3A5",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 18,
+                      "y": 38
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A110%253Afrom:0%3A6",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 18,
+                      "y": 26
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A110%253Afrom:0%3A7",
+                  "type": "Z",
+                  "points": []
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M18 26 C18 26 21 28 24 28 C27 28 29 25 32 25 C35 25 38 26 38 26 L38 38 L18 38 L18 26 Z",
+        "createdAt": 0
+      },
+      "geometry:demo-frame:110%3Ato": {
+        "id": "geometry:demo-frame:110%3Ato",
+        "pathData": {
+          "subPaths": [
+            {
+              "commands": [
+                {
+                  "id": "command:geometry%3Ademo-frame%3A110%253Ato:0%3A0",
+                  "type": "M",
+                  "points": [
+                    {
+                      "x": 18,
+                      "y": 18
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A110%253Ato:0%3A1",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 18,
+                      "y": 18
+                    },
+                    {
+                      "x": 24,
+                      "y": 18
+                    },
+                    {
+                      "x": 24,
+                      "y": 18
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A110%253Ato:0%3A2",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 24,
+                      "y": 18
+                    },
+                    {
+                      "x": 32,
+                      "y": 18
+                    },
+                    {
+                      "x": 32,
+                      "y": 18
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A110%253Ato:0%3A3",
+                  "type": "C",
+                  "points": [
+                    {
+                      "x": 32,
+                      "y": 18
+                    },
+                    {
+                      "x": 38,
+                      "y": 18
+                    },
+                    {
+                      "x": 38,
+                      "y": 18
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A110%253Ato:0%3A4",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 38,
+                      "y": 38
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A110%253Ato:0%3A5",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 18,
+                      "y": 38
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A110%253Ato:0%3A6",
+                  "type": "L",
+                  "points": [
+                    {
+                      "x": 18,
+                      "y": 18
+                    }
+                  ]
+                },
+                {
+                  "id": "command:geometry%3Ademo-frame%3A110%253Ato:0%3A7",
+                  "type": "Z",
+                  "points": []
+                }
+              ]
+            }
+          ]
+        },
+        "sourceHash": "M18 18 C18 18 24 18 24 18 C24 18 32 18 32 18 C32 18 38 18 38 18 L38 38 L18 38 L18 18 Z",
+        "createdAt": 0
+      }
+    },
+    "morphMappings": {
+      "mapping:demo-frame:95%3Aendpoints": {
+        "id": "mapping:demo-frame:95%3Aendpoints",
+        "fromGeometryId": "geometry:demo-frame:95%3Afrom",
+        "toGeometryId": "geometry:demo-frame:95%3Ato",
+        "alignments": {
+          "kind": "aligned-endpoints"
+        },
+        "polePositions": [],
+        "createdAt": 0
+      },
+      "mapping:demo-frame:97%3Aendpoints": {
+        "id": "mapping:demo-frame:97%3Aendpoints",
+        "fromGeometryId": "geometry:demo-frame:97%3Afrom",
+        "toGeometryId": "geometry:demo-frame:97%3Ato",
+        "alignments": {
+          "kind": "aligned-endpoints"
+        },
+        "polePositions": [],
+        "createdAt": 0
+      },
+      "mapping:demo-frame:98%3Aendpoints": {
+        "id": "mapping:demo-frame:98%3Aendpoints",
+        "fromGeometryId": "geometry:demo-frame:98%3Afrom",
+        "toGeometryId": "geometry:demo-frame:98%3Ato",
+        "alignments": {
+          "kind": "aligned-endpoints"
+        },
+        "polePositions": [],
+        "createdAt": 0
+      },
+      "mapping:demo-frame:99%3Aendpoints": {
+        "id": "mapping:demo-frame:99%3Aendpoints",
+        "fromGeometryId": "geometry:demo-frame:99%3Afrom",
+        "toGeometryId": "geometry:demo-frame:99%3Ato",
+        "alignments": {
+          "kind": "aligned-endpoints"
+        },
+        "polePositions": [],
+        "createdAt": 0
+      },
+      "mapping:demo-frame:102%3Aendpoints": {
+        "id": "mapping:demo-frame:102%3Aendpoints",
+        "fromGeometryId": "geometry:demo-frame:102%3Afrom",
+        "toGeometryId": "geometry:demo-frame:102%3Ato",
+        "alignments": {
+          "kind": "aligned-endpoints"
+        },
+        "polePositions": [],
+        "createdAt": 0
+      },
+      "mapping:demo-frame:track%3A145": {
+        "id": "mapping:demo-frame:track%3A145",
+        "fromGeometryId": "geometry:demo-frame:145%3Afrom",
+        "toGeometryId": "geometry:demo-frame:145%3Ato",
+        "alignments": {
+          "kind": "aligned-endpoints"
+        },
+        "polePositions": [],
+        "createdAt": 0
+      },
+      "mapping:demo-frame:track%3A110": {
+        "id": "mapping:demo-frame:track%3A110",
+        "fromGeometryId": "geometry:demo-frame:110%3Afrom",
+        "toGeometryId": "geometry:demo-frame:110%3Ato",
+        "alignments": {
+          "kind": "aligned-endpoints"
+        },
+        "polePositions": [],
+        "createdAt": 0
+      }
+    },
+    "clips": {
+      "clip:page:page-motion": {
+        "id": "clip:page:page-motion",
+        "name": "Motion",
+        "duration": 1280,
+        "frameId": null,
+        "trackIds": []
+      },
+      "clip:demo-frame:103": {
+        "id": "clip:demo-frame:103",
+        "duration": 1280,
+        "frameId": "demo-frame",
+        "trackIds": [
+          "track:demo-frame:94%3Arotation",
+          "track:demo-frame:96%3Arotation",
+          "track:demo-frame:95%3AfillAlpha",
+          "track:demo-frame:97%3AfillAlpha",
+          "track:demo-frame:98%3AtrimPathEnd",
+          "track:demo-frame:99%3AtrimPathEnd",
+          "track:demo-frame:101%3ApathData",
+          "track:demo-frame:93%3Aalpha"
+        ]
+      }
+    },
+    "tracks": {
+      "track:demo-frame:94%3Arotation": {
+        "id": "track:demo-frame:94%3Arotation",
+        "target": {
+          "nodeId": "node:demo-frame:94",
+          "property": "rotation"
+        },
+        "valueType": "number",
+        "keyframeIds": ["keyframe:demo-frame:104%3Afrom", "keyframe:demo-frame:104%3Ato"]
+      },
+      "track:demo-frame:96%3Arotation": {
+        "id": "track:demo-frame:96%3Arotation",
+        "target": {
+          "nodeId": "node:demo-frame:96",
+          "property": "rotation"
+        },
+        "valueType": "number",
+        "keyframeIds": ["keyframe:demo-frame:105%3Afrom", "keyframe:demo-frame:105%3Ato"]
+      },
+      "track:demo-frame:95%3AfillAlpha": {
+        "id": "track:demo-frame:95%3AfillAlpha",
+        "target": {
+          "nodeId": "node:demo-frame:95",
+          "property": "fillAlpha"
+        },
+        "valueType": "number",
+        "keyframeIds": ["keyframe:demo-frame:106%3Afrom", "keyframe:demo-frame:106%3Ato"]
+      },
+      "track:demo-frame:97%3AfillAlpha": {
+        "id": "track:demo-frame:97%3AfillAlpha",
+        "target": {
+          "nodeId": "node:demo-frame:97",
+          "property": "fillAlpha"
+        },
+        "valueType": "number",
+        "keyframeIds": ["keyframe:demo-frame:107%3Afrom", "keyframe:demo-frame:107%3Ato"]
+      },
+      "track:demo-frame:98%3AtrimPathEnd": {
+        "id": "track:demo-frame:98%3AtrimPathEnd",
+        "target": {
+          "nodeId": "node:demo-frame:98",
+          "property": "trimPathEnd"
+        },
+        "valueType": "number",
+        "keyframeIds": ["keyframe:demo-frame:108%3Afrom", "keyframe:demo-frame:108%3Ato"]
+      },
+      "track:demo-frame:99%3AtrimPathEnd": {
+        "id": "track:demo-frame:99%3AtrimPathEnd",
+        "target": {
+          "nodeId": "node:demo-frame:99",
+          "property": "trimPathEnd"
+        },
+        "valueType": "number",
+        "keyframeIds": ["keyframe:demo-frame:109%3Afrom", "keyframe:demo-frame:109%3Ato"]
+      },
+      "track:demo-frame:101%3ApathData": {
+        "id": "track:demo-frame:101%3ApathData",
+        "target": {
+          "nodeId": "node:demo-frame:101",
+          "property": "pathData"
+        },
+        "valueType": "path",
+        "keyframeIds": [
+          "keyframe:demo-frame:145%3Afrom",
+          "keyframe:demo-frame:145%3Ato",
+          "keyframe:demo-frame:110%3Afrom",
+          "keyframe:demo-frame:110%3Ato"
+        ]
+      },
+      "track:demo-frame:93%3Aalpha": {
+        "id": "track:demo-frame:93%3Aalpha",
+        "target": {
+          "nodeId": "node:demo-frame:93",
+          "property": "alpha"
+        },
+        "valueType": "number",
+        "keyframeIds": ["keyframe:demo-frame:111%3Afrom", "keyframe:demo-frame:111%3Ato"]
+      }
+    },
+    "keyframes": {
+      "keyframe:demo-frame:104%3Afrom": {
+        "id": "keyframe:demo-frame:104%3Afrom",
+        "time": 0,
+        "value": 0,
+        "interpolator": "LINEAR_OUT_SLOW_IN",
+        "segmentId": "104"
+      },
+      "keyframe:demo-frame:104%3Ato": {
+        "id": "keyframe:demo-frame:104%3Ato",
+        "time": 400,
+        "value": -20,
+        "segmentId": "104"
+      },
+      "keyframe:demo-frame:105%3Afrom": {
+        "id": "keyframe:demo-frame:105%3Afrom",
+        "time": 0,
+        "value": 0,
+        "interpolator": "LINEAR_OUT_SLOW_IN",
+        "segmentId": "105"
+      },
+      "keyframe:demo-frame:105%3Ato": {
+        "id": "keyframe:demo-frame:105%3Ato",
+        "time": 400,
+        "value": 20,
+        "segmentId": "105"
+      },
+      "keyframe:demo-frame:106%3Afrom": {
+        "id": "keyframe:demo-frame:106%3Afrom",
+        "time": 100,
+        "value": 1,
+        "interpolator": "LINEAR_OUT_SLOW_IN",
+        "segmentId": "106"
+      },
+      "keyframe:demo-frame:106%3Ato": {
+        "id": "keyframe:demo-frame:106%3Ato",
+        "time": 400,
+        "value": 0,
+        "segmentId": "106"
+      },
+      "keyframe:demo-frame:107%3Afrom": {
+        "id": "keyframe:demo-frame:107%3Afrom",
+        "time": 100,
+        "value": 1,
+        "interpolator": "LINEAR_OUT_SLOW_IN",
+        "segmentId": "107"
+      },
+      "keyframe:demo-frame:107%3Ato": {
+        "id": "keyframe:demo-frame:107%3Ato",
+        "time": 400,
+        "value": 0,
+        "segmentId": "107"
+      },
+      "keyframe:demo-frame:108%3Afrom": {
+        "id": "keyframe:demo-frame:108%3Afrom",
+        "time": 500,
+        "value": 0,
+        "interpolator": "FAST_OUT_SLOW_IN",
+        "segmentId": "108"
+      },
+      "keyframe:demo-frame:108%3Ato": {
+        "id": "keyframe:demo-frame:108%3Ato",
+        "time": 900,
+        "value": 1,
+        "segmentId": "108"
+      },
+      "keyframe:demo-frame:109%3Afrom": {
+        "id": "keyframe:demo-frame:109%3Afrom",
+        "time": 500,
+        "value": 0,
+        "interpolator": "FAST_OUT_SLOW_IN",
+        "segmentId": "109"
+      },
+      "keyframe:demo-frame:109%3Ato": {
+        "id": "keyframe:demo-frame:109%3Ato",
+        "time": 900,
+        "value": 1,
+        "segmentId": "109"
+      },
+      "keyframe:demo-frame:145%3Afrom": {
+        "id": "keyframe:demo-frame:145%3Afrom",
+        "time": 1000,
+        "value": "M18 38 C18 38 24 38 24 38 C24 38 32 38 32 38 C32 38 38 38 38 38 L38 38 L18 38 L18 38 Z",
+        "interpolator": "FAST_OUT_LINEAR_IN",
+        "geometryVersionId": "geometry:demo-frame:145%3Afrom",
+        "morphMappingId": "mapping:demo-frame:track%3A145",
+        "segmentId": "145"
+      },
+      "keyframe:demo-frame:145%3Ato": {
+        "id": "keyframe:demo-frame:145%3Ato",
+        "time": 1160,
+        "value": "M18 26 C18 26 21 28 24 28 C27 28 29 25 32 25 C35 25 38 26 38 26 L38 38 L18 38 L18 26 Z",
+        "geometryVersionId": "geometry:demo-frame:145%3Ato",
+        "segmentId": "145"
+      },
+      "keyframe:demo-frame:110%3Afrom": {
+        "id": "keyframe:demo-frame:110%3Afrom",
+        "time": 1160,
+        "value": "M18 26 C18 26 21 28 24 28 C27 28 29 25 32 25 C35 25 38 26 38 26 L38 38 L18 38 L18 26 Z",
+        "interpolator": "FAST_OUT_LINEAR_IN",
+        "geometryVersionId": "geometry:demo-frame:110%3Afrom",
+        "morphMappingId": "mapping:demo-frame:track%3A110",
+        "segmentId": "110"
+      },
+      "keyframe:demo-frame:110%3Ato": {
+        "id": "keyframe:demo-frame:110%3Ato",
+        "time": 1280,
+        "value": "M18 18 C18 18 24 18 24 18 C24 18 32 18 32 18 C32 18 38 18 38 18 L38 38 L18 38 L18 18 Z",
+        "geometryVersionId": "geometry:demo-frame:110%3Ato",
+        "segmentId": "110"
+      },
+      "keyframe:demo-frame:111%3Afrom": {
+        "id": "keyframe:demo-frame:111%3Afrom",
+        "time": 500,
+        "value": 0.4,
+        "interpolator": "FAST_OUT_SLOW_IN",
+        "segmentId": "111"
+      },
+      "keyframe:demo-frame:111%3Ato": {
+        "id": "keyframe:demo-frame:111%3Ato",
+        "time": 900,
+        "value": 1,
+        "segmentId": "111"
+      }
+    }
+  }
+}

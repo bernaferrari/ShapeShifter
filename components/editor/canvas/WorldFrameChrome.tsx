@@ -1,10 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
-import type { Viewport } from "@/lib/shapeshifter/camera";
+import type { Viewport } from "@/lib/pathshift/camera";
 import type { CanvasFrame } from "@/lib/store/editorStore";
 import { useEditorStore } from "@/lib/store/editorStore";
-import { vectorCoordinateRect } from "@/lib/shapeshifter/vectorSpace";
+import { vectorCoordinateRect } from "@/lib/pathshift/vectorSpace";
 import { cn } from "@/lib/utils";
 import { TextSizedInput } from "../TextSizedInput";
 

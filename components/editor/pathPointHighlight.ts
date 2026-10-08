@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { PointAddress } from "@/lib/shapeshifter/path/pointPresentation";
+import type { PointAddress } from "@/lib/pathshift/path/pointPresentation";
 
 export type PathHighlight = {
   ownerId: string;

@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback, useRef } from "react";
-import { snapValueToStep } from "@/lib/shapeshifter/camera";
-import { translatePathPoints } from "@/lib/shapeshifter/pathUtils";
-import type { PathData, Point, Selection } from "@/lib/shapeshifter/types";
+import { snapValueToStep } from "@/lib/pathshift/camera";
+import { translatePathPoints } from "@/lib/pathshift/pathUtils";
+import type { PathData, Point, Selection } from "@/lib/pathshift/types";
 import {
   inverseAffine,
   transformPointWithMatrix,
   type AffineMatrix,
-} from "@/lib/shapeshifter/scene/layerTransform";
+} from "@/lib/pathshift/scene/layerTransform";
 import { useEditorStore, type EditorState } from "@/lib/store/editorStore";
 import { beginLiveGesture, endLiveGesture, ownsLiveGesture } from "@/lib/store/liveGesture";
 

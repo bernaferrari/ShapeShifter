@@ -4,7 +4,7 @@ import React from "react";
 import { PanelRightOpen, PanelLeftOpen, PanelBottomOpen, CloudUpload } from "lucide-react";
 import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editorStore";
-import { DEMO_INFOS } from "@/lib/shapeshifter/demoProjects";
+import { DEMO_INFOS } from "@/lib/pathshift/demoProjects";
 import { Toolbar, type EditorPanelVisibility } from "@/components/editor/Toolbar";
 import { CanvasArea } from "@/components/editor/CanvasArea";
 import { Inspector } from "@/components/editor/Inspector";
@@ -43,7 +43,7 @@ import { registerEditorAgentTools } from "@/lib/agent/browserTools";
 // the inspector auto-collapses into a toggle (Figma-style responsive degrade).
 const NARROW_BREAKPOINT = 1100;
 
-export default function ShapeShifter2026() {
+export default function PathshiftEditor() {
   useEditorKeyboardShortcuts();
   usePlayheadPathEditing();
   const autosave = useDocumentAutosave();
@@ -92,10 +92,10 @@ export default function ShapeShifter2026() {
 
   React.useEffect(() => {
     try {
-      setInspectorCollapsed(localStorage.getItem("shapeshifter:panel:inspector") === "1");
-      setLayersCollapsed(localStorage.getItem("shapeshifter:panel:layers") === "1");
-      setRulersVisible(localStorage.getItem("shapeshifter:view:rulers") === "1");
-      const storedTimeline = localStorage.getItem("shapeshifter:panel:timeline");
+      setInspectorCollapsed(localStorage.getItem("pathshift:panel:inspector") === "1");
+      setLayersCollapsed(localStorage.getItem("pathshift:panel:layers") === "1");
+      setRulersVisible(localStorage.getItem("pathshift:view:rulers") === "1");
+      const storedTimeline = localStorage.getItem("pathshift:panel:timeline");
       setTimelineCollapsed(storedTimeline === "1");
     } catch {
       // ignore — localStorage may be unavailable
@@ -106,7 +106,7 @@ export default function ShapeShifter2026() {
     setInspectorCollapsed((prev) => {
       const next = !prev;
       try {
-        localStorage.setItem("shapeshifter:panel:inspector", next ? "1" : "0");
+        localStorage.setItem("pathshift:panel:inspector", next ? "1" : "0");
       } catch {
         // ignore
       }
@@ -118,7 +118,7 @@ export default function ShapeShifter2026() {
     setLayersCollapsed((previous) => {
       const next = !previous;
       try {
-        localStorage.setItem("shapeshifter:panel:layers", next ? "1" : "0");
+        localStorage.setItem("pathshift:panel:layers", next ? "1" : "0");
       } catch {
         // ignore
       }
@@ -130,7 +130,7 @@ export default function ShapeShifter2026() {
     setRulersVisible((previous) => {
       const next = !previous;
       try {
-        localStorage.setItem("shapeshifter:view:rulers", next ? "1" : "0");
+        localStorage.setItem("pathshift:view:rulers", next ? "1" : "0");
       } catch {
         // ignore
       }
@@ -142,7 +142,7 @@ export default function ShapeShifter2026() {
     const next = !useEditorStore.getState().timelineCollapsed;
     setTimelineCollapsed(next);
     try {
-      localStorage.setItem("shapeshifter:panel:timeline", next ? "1" : "0");
+      localStorage.setItem("pathshift:panel:timeline", next ? "1" : "0");
     } catch {
       // ignore
     }
@@ -286,7 +286,7 @@ export default function ShapeShifter2026() {
               <div>
                 <div className="text-[13px] font-semibold">Drop to import</div>
                 <div className="text-[12px] text-muted-foreground">
-                  SVG, Vector Drawable XML, or ShapeShifter project
+                  SVG, Vector Drawable XML, or Pathshift project
                 </div>
               </div>
             </div>
@@ -411,7 +411,7 @@ export default function ShapeShifter2026() {
       <input
         type="file"
         ref={fileInputRef}
-        accept=".svg,.xml,.json,.shapeshifter,.zip"
+        accept=".svg,.xml,.json,.pathshift,.zip"
         multiple
         className="hidden"
         onChange={(e) => {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "../editorStore";
-import { parsePath, androidPathMorphSignature } from "../../shapeshifter/pathUtils";
+import { parsePath, androidPathMorphSignature } from "../../pathshift/pathUtils";
 let baseline: ReturnType<typeof useEditorStore.getState>;
 beforeEach(() => {
   baseline = useEditorStore.getState();

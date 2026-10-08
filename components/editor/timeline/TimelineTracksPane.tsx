@@ -2,9 +2,9 @@
 
 import React from "react";
 import { TriangleAlert, X } from "lucide-react";
-import type { FormatProfile } from "@/lib/shapeshifter/formatCapabilities";
-import { trackKeyframes } from "@/lib/shapeshifter/motion/timelineKeyframes";
-import type { TimelineBlock } from "@/lib/shapeshifter/types";
+import type { FormatProfile } from "@/lib/pathshift/formatCapabilities";
+import { trackKeyframes } from "@/lib/pathshift/motion/timelineKeyframes";
+import type { TimelineBlock } from "@/lib/pathshift/types";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { cn } from "@/lib/utils";
 import { TimelinePropertyBlock } from "./TimelinePropertyBlock";

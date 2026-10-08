@@ -1,10 +1,10 @@
 import type { EditorState } from "../editorStore";
-import type { BooleanOp } from "../../shapeshifter/path/booleanOperations";
-import { booleanCombine } from "../../shapeshifter/path/booleanOperations";
-import { createLayerTreeModel } from "../../shapeshifter/scene/layerHierarchy";
-import { evaluateAndroidScene } from "../../shapeshifter/scene/evaluate";
-import { inverseAffine, multiplyAffine } from "../../shapeshifter/scene/layerTransform";
-import type { Layer } from "../../shapeshifter/types";
+import type { BooleanOp } from "../../pathshift/path/booleanOperations";
+import { booleanCombine } from "../../pathshift/path/booleanOperations";
+import { createLayerTreeModel } from "../../pathshift/scene/layerHierarchy";
+import { evaluateAndroidScene } from "../../pathshift/scene/evaluate";
+import { inverseAffine, multiplyAffine } from "../../pathshift/scene/layerTransform";
+import type { Layer } from "../../pathshift/types";
 
 type BooleanSelectionState = Pick<
   EditorState,

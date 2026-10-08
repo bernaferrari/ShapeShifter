@@ -1,4 +1,4 @@
-import type { GradientStop } from "@/lib/shapeshifter/types";
+import type { GradientStop } from "@/lib/pathshift/types";
 import { hexToHsv, hsvToHex } from "@/components/ui/color-picker-utils";
 
 export interface GradientPreset {

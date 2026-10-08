@@ -2,8 +2,8 @@ import {
   workspaceFromDocument,
   validateEditorDocument,
   documentEditingIssues,
-} from "../../shapeshifter/documentModel";
-import { pathToString } from "../../shapeshifter/pathUtils";
+} from "../../pathshift/documentModel";
+import { pathToString } from "../../pathshift/pathUtils";
 import { toast } from "sonner";
 import { structuralLockIssue } from "../commands/structuralLayers";
 import {
@@ -11,9 +11,9 @@ import {
   pathPoseSourceSignature,
   preparePathPoseFamily,
 } from "../commands/pathTopology";
-import { getDemoProject } from "../../shapeshifter/demoProjects";
-import { PAGE_ROOT_ID } from "../../shapeshifter/scene/owners";
-import type { AnimationState, Layer } from "../../shapeshifter/types";
+import { getDemoProject } from "../../pathshift/demoProjects";
+import { PAGE_ROOT_ID } from "../../pathshift/scene/owners";
+import type { AnimationState, Layer } from "../../pathshift/types";
 import type { EditorState } from "../editorStore";
 import {
   buildLoadedDocumentState,

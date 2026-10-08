@@ -5,7 +5,7 @@
 > STOP condition occurs, stop and report instead of improvising. When complete,
 > update Plan 001 in `plans/README.md`.
 >
-> **Drift check**: `git diff --stat 3268b817..HEAD -- lib/shapeshifter/__tests__ components/editor/__tests__ package.json`
+> **Drift check**: `git diff --stat 3268b817..HEAD -- lib/pathshift/__tests__ components/editor/__tests__ package.json`
 
 ## Status
 
@@ -25,20 +25,20 @@ the supported Android contract and expose semantic drift rather than preserving 
 
 ## Current state
 
-- `lib/shapeshifter/__tests__/androidCompiler.test.ts:60-109` covers one hierarchy,
+- `lib/pathshift/__tests__/androidCompiler.test.ts:60-109` covers one hierarchy,
   one incompatible morph, and a hidden target using substring assertions.
-- `lib/shapeshifter/__tests__/importers.test.ts:497-626` tests basic VectorDrawable
+- `lib/pathshift/__tests__/importers.test.ts:497-626` tests basic VectorDrawable
   import but does not exercise an Android bundle round trip.
-- `lib/shapeshifter/__tests__/playheadResolve.test.ts:230-249` explicitly expects
+- `lib/pathshift/__tests__/playheadResolve.test.ts:230-249` explicitly expects
   colors to switch at the midpoint.
-- `lib/shapeshifter/__tests__/pathUtils.test.ts:485-493` accepts a Boolean concat fallback.
+- `lib/pathshift/__tests__/pathUtils.test.ts:485-493` accepts a Boolean concat fallback.
 - `vitest.config.ts:10-13` runs Node-based Vitest tests only.
 
 ## Commands
 
 | Purpose       | Command                                                         | Expected                                                                           |
 | ------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Focused tests | `pnpm test -- lib/shapeshifter/__tests__/androidParity.test.ts` | all new tests pass after later plans; expected failures must be `.fails` initially |
+| Focused tests | `pnpm test -- lib/pathshift/__tests__/androidParity.test.ts` | all new tests pass after later plans; expected failures must be `.fails` initially |
 | Full tests    | `pnpm test`                                                     | all tests pass                                                                     |
 | Typecheck     | `pnpm typecheck`                                                | exit 0                                                                             |
 | Lint          | `pnpm lint`                                                     | exit 0                                                                             |
@@ -47,8 +47,8 @@ the supported Android contract and expose semantic drift rather than preserving 
 
 **In scope**:
 
-- `lib/shapeshifter/__tests__/fixtures/android/` (create)
-- `lib/shapeshifter/__tests__/androidParity.test.ts` (create)
+- `lib/pathshift/__tests__/fixtures/android/` (create)
+- `lib/pathshift/__tests__/androidParity.test.ts` (create)
 - Existing Android importer/compiler test files only when consolidating duplicated fixture text
 
 **Out of scope**:
@@ -77,7 +77,7 @@ Create small checked-in fixtures representing:
 
 Keep each fixture minimal and include a short comment naming the behavior under test.
 
-**Verify**: `find lib/shapeshifter/__tests__/fixtures/android -type f | sort` lists every fixture.
+**Verify**: `find lib/pathshift/__tests__/fixtures/android -type f | sort` lists every fixture.
 
 ### Step 2: Add semantic comparison helpers
 

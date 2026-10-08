@@ -103,7 +103,7 @@ for (const mobile of [true, false]) {
       }
       expect(await project(page)).toEqual(before);
       expect(await page.evaluate(() => window.visualViewport!.scale)).toBe(1);
-      await page.screenshot({ path: `/tmp/shapeshifter-timeline-pinch-${layout}.png` });
+      await page.screenshot({ path: `/tmp/pathshift-timeline-pinch-${layout}.png` });
       if (mobile) {
         const savedScroll = await scroll();
         await page.getByRole("button", { name: "Close panel" }).tap();

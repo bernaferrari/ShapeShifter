@@ -1,7 +1,7 @@
 "use client";
 
 import React, { memo, useMemo } from "react";
-import type { Viewport } from "@/lib/shapeshifter/camera";
+import type { Viewport } from "@/lib/pathshift/camera";
 
 interface CoordinateRulersProps {
   viewport: Viewport;

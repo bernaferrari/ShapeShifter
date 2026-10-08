@@ -4,13 +4,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useWorldPointEditing } from "../useWorldPointEditing";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { createPathLayer } from "@/lib/store/defaultWorkspace";
-import { parsePath } from "@/lib/shapeshifter/pathUtils";
+import { parsePath } from "@/lib/pathshift/pathUtils";
 import {
   renderEditorComponent,
   type RenderedEditorComponent,
 } from "../../__tests__/renderEditorComponent";
-import type { Selection } from "@/lib/shapeshifter/types";
-import { evaluateAndroidScene } from "@/lib/shapeshifter/scene/evaluate";
+import type { Selection } from "@/lib/pathshift/types";
+import { evaluateAndroidScene } from "@/lib/pathshift/scene/evaluate";
 
 let baseline: ReturnType<typeof useEditorStore.getState>;
 let rendered: RenderedEditorComponent;

@@ -2,10 +2,10 @@
 
 import { useMemo } from "react";
 import { PAGE_ROOT_ID, type CanvasFrame, type LayerSelectionRef } from "@/lib/store/editorStore";
-import { unionOwnedLayerBounds, type SceneOwner } from "@/lib/shapeshifter/scene/selection";
-import type { Layer, PathData } from "@/lib/shapeshifter/types";
-import { parsePath } from "@/lib/shapeshifter/pathUtils";
-import { pathDAtTime } from "@/lib/shapeshifter/playheadResolve";
+import { unionOwnedLayerBounds, type SceneOwner } from "@/lib/pathshift/scene/selection";
+import type { Layer, PathData } from "@/lib/pathshift/types";
+import { parsePath } from "@/lib/pathshift/pathUtils";
+import { pathDAtTime } from "@/lib/pathshift/playheadResolve";
 import { pathTracksFor } from "@/lib/store/playheadPathEditing";
 
 interface WorldSceneModelOptions {
@@ -20,8 +20,8 @@ interface WorldSceneModelOptions {
   selectionKind: "none" | "frame" | "layer";
   editingSide: "from" | "to";
   progress: number;
-  animation: import("@/lib/shapeshifter/types").AnimationState;
-  rootAnimation: import("@/lib/shapeshifter/types").AnimationState;
+  animation: import("@/lib/pathshift/types").AnimationState;
+  rootAnimation: import("@/lib/pathshift/types").AnimationState;
   /** Point editing off a keyframe shows the shape at the playhead. */
   showPlayheadPath?: boolean;
 }

@@ -5,7 +5,7 @@ import { useEditorStore } from "@/lib/store/editorStore";
 import {
   advancePlaybackTime,
   advanceBackAndForthPlaybackTime,
-} from "@/lib/shapeshifter/motion/previewRange";
+} from "@/lib/pathshift/motion/previewRange";
 import { useEditorPlayback } from "../useEditorPlayback";
 import {
   renderEditorComponent,

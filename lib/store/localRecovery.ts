@@ -1,4 +1,4 @@
-const DB_NAME = "shapeshifter";
+const DB_NAME = "pathshift";
 const STORE_NAME = "autosave";
 const KEY = "document";
 const HISTORY_KEY = "recovery-history";

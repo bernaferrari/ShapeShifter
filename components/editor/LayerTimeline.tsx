@@ -17,7 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useEditorStore } from "@/lib/store/editorStore";
-import { CAPABILITY_MATRIX, type ExportFormatId } from "@/lib/shapeshifter/formatCapabilities";
+import { CAPABILITY_MATRIX, type ExportFormatId } from "@/lib/pathshift/formatCapabilities";
 import { cn } from "@/lib/utils";
 import {
   TimelineCurrentTimeInput,
@@ -45,7 +45,7 @@ import { timelineTrackGutter } from "./timeline/timelineLayout";
 import { stepToKeyframe, useKeyframeStops } from "./timeline/timelineTransport";
 import { handleTimelineClipboardShortcut } from "./timeline/TimelineClipboardControls";
 import { TIMELINE_FRAME_RATES, useTimelineViewSettings } from "./timeline/timelineViewSettings";
-import { resolveTimelinePreviewRange } from "@/lib/shapeshifter/motion/previewRange";
+import { resolveTimelinePreviewRange } from "@/lib/pathshift/motion/previewRange";
 import {
   snapTimelineOffset,
   timelineSnapTargets,

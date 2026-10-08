@@ -19,7 +19,7 @@ import { useWorldSceneModel } from "./canvas/useWorldSceneModel";
 import { useWorldMarquee } from "./canvas/useWorldMarquee";
 import { useWorldLasso } from "./canvas/useWorldLasso";
 import { useWorldPointEditing } from "./canvas/useWorldPointEditing";
-import { evaluateAndroidScene } from "@/lib/shapeshifter/scene/evaluate";
+import { evaluateAndroidScene } from "@/lib/pathshift/scene/evaluate";
 import { useWorldLayerTransform } from "./canvas/useWorldLayerTransform";
 import { useWorldFrameResize } from "./canvas/useWorldFrameResize";
 import { useWorldPan } from "./canvas/useWorldPan";
@@ -40,10 +40,10 @@ import {
 } from "./canvas/WorldEditingOverlays";
 import { useShallow } from "zustand/react/shallow";
 import { PAGE_ROOT_ID, useEditorStore } from "@/lib/store/editorStore";
-import { computeGridSpec, computeGridVisibility } from "@/lib/shapeshifter/camera";
-import { isPointInFillRegion } from "@/lib/shapeshifter/pathUtils";
-import { vectorFromPageMetadata } from "@/lib/shapeshifter/vectorSpace";
-import type { PathData } from "@/lib/shapeshifter/types";
+import { computeGridSpec, computeGridVisibility } from "@/lib/pathshift/camera";
+import { isPointInFillRegion } from "@/lib/pathshift/pathUtils";
+import { vectorFromPageMetadata } from "@/lib/pathshift/vectorSpace";
+import type { PathData } from "@/lib/pathshift/types";
 
 interface CanvasAreaProps {
   resetAllViews: () => void;

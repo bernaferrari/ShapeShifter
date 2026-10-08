@@ -3,12 +3,12 @@
 import React from "react";
 import { useEditorStore, type EditorState } from "@/lib/store/editorStore";
 import { beginLiveGesture, endLiveGesture, ownsLiveGesture } from "@/lib/store/liveGesture";
-import { planTimelineMove } from "@/lib/shapeshifter/motion/timelineRetiming";
-import { createLayerTreeModel } from "@/lib/shapeshifter/scene/layerHierarchy";
+import { planTimelineMove } from "@/lib/pathshift/motion/timelineRetiming";
+import { createLayerTreeModel } from "@/lib/pathshift/scene/layerHierarchy";
 import {
   linkedTimelineKeyframe,
   timelineKeyframeRange,
-} from "@/lib/shapeshifter/motion/timelineKeyframes";
+} from "@/lib/pathshift/motion/timelineKeyframes";
 import { snapTimelineOffset, timelineSnapTargets, type TimelineSnapTarget } from "./timelineTiming";
 import { useTimelineNavigationCancellation } from "./timelineNavigationCancellation";
 

@@ -1,11 +1,11 @@
-import { ensureStableCommandIds } from "../shapeshifter/pathUtils";
-import { computeDetailViewport, computeFitViewport } from "../shapeshifter/camera";
-import { PAGE_ROOT_ID } from "../shapeshifter/scene/owners";
-import type { AnimationState, Layer, PathData, VectorMetadata } from "../shapeshifter/types";
+import { ensureStableCommandIds } from "../pathshift/pathUtils";
+import { computeDetailViewport, computeFitViewport } from "../pathshift/camera";
+import { PAGE_ROOT_ID } from "../pathshift/scene/owners";
+import type { AnimationState, Layer, PathData, VectorMetadata } from "../pathshift/types";
 import type { EditorState } from "./editorStore";
 import type { CanvasFrame } from "./defaultWorkspace";
-import type { WorkspaceSnapshot } from "../shapeshifter/documentModel";
-import { vectorCoordinateRect } from "../shapeshifter/vectorSpace";
+import type { WorkspaceSnapshot } from "../pathshift/documentModel";
+import { vectorCoordinateRect } from "../pathshift/vectorSpace";
 
 export const cloneLayers = (layers: Layer[]) => structuredClone(layers);
 

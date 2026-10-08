@@ -1,7 +1,7 @@
 "use client";
 
 import { useEditorStore } from "@/lib/store/editorStore";
-import { adjacentKeyframeTime } from "@/lib/shapeshifter/motion/timelineKeyframes";
+import { adjacentKeyframeTime } from "@/lib/pathshift/motion/timelineKeyframes";
 
 const adjacent = (direction: -1 | 1) => {
   const { animation, progress } = useEditorStore.getState();

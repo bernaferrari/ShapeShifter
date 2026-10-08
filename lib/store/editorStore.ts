@@ -1,8 +1,8 @@
-import type { TimelineKeyframeRef } from "../shapeshifter/motion/timelineKeyframes";
+import type { TimelineKeyframeRef } from "../pathshift/motion/timelineKeyframes";
 import { create } from "zustand";
 
 /**
- * ShapeShifter 2026 - Editor Store
+ * Pathshift 2026 - Editor Store
  * Central state management using Zustand.
  * Single source of truth for layers, selection, playback, and path mutations.
  */
@@ -12,9 +12,9 @@ import {
   countPathPoints,
   simplifyPath,
   getTaperedStrokeWidth,
-} from "../shapeshifter/pathUtils";
-import type { Rect, Viewport } from "../shapeshifter/camera";
-import type { VectorCoordinateResizePolicy } from "../shapeshifter/vectorSpace";
+} from "../pathshift/pathUtils";
+import type { Rect, Viewport } from "../pathshift/camera";
+import type { VectorCoordinateResizePolicy } from "../pathshift/vectorSpace";
 import type {
   AnimationState,
   EditorDocument,
@@ -26,12 +26,12 @@ import type {
   Point,
   Selection,
   VectorMetadata,
-} from "../shapeshifter/types";
-import type { ToolMode, CursorType } from "../shapeshifter/toolModes";
-import type { MotionPresetId } from "../shapeshifter/motion/motionPresets";
-import type { LayerPlacement } from "../shapeshifter/scene/layerHierarchy";
-import type { LayerSelectionRef } from "../shapeshifter/scene/owners";
-import { buildEditorDocument } from "../shapeshifter/documentModel";
+} from "../pathshift/types";
+import type { ToolMode, CursorType } from "../pathshift/toolModes";
+import type { MotionPresetId } from "../pathshift/motion/motionPresets";
+import type { LayerPlacement } from "../pathshift/scene/layerHierarchy";
+import type { LayerSelectionRef } from "../pathshift/scene/owners";
+import { buildEditorDocument } from "../pathshift/documentModel";
 import { createDefaultWorkspace, type CanvasFrame } from "./defaultWorkspace";
 import { createFrameActions } from "./actions/frameActions";
 import { createSessionActions } from "./actions/sessionActions";
@@ -60,21 +60,21 @@ import { createLayerOrganizationActions } from "./actions/layerOrganizationActio
 import { createLayerDataActions } from "./actions/layerDataActions";
 import { createTransformActions } from "./actions/transformActions";
 import { booleanSelectionIssue, combineBooleanSelection } from "./commands/booleanSelection";
-import type { BooleanOp } from "../shapeshifter/path/booleanOperations";
+import type { BooleanOp } from "../pathshift/path/booleanOperations";
 import { workspaceFromEditor } from "./documentRuntime";
 import { syncEditedTimelinePath, timelinePathSelection } from "./timelinePathEditing";
 import type {
   TimelineClipboard,
   TimelinePasteResult,
-} from "../shapeshifter/motion/timelineClipboard";
+} from "../pathshift/motion/timelineClipboard";
 import type {
   TimelinePreviewRange,
   PlaybackMode,
   PlaybackDirection,
-} from "../shapeshifter/motion/previewRange";
+} from "../pathshift/motion/previewRange";
 
 export type { CanvasFrame } from "./defaultWorkspace";
-export { PAGE_ROOT_ID, type LayerSelectionRef } from "../shapeshifter/scene/owners";
+export { PAGE_ROOT_ID, type LayerSelectionRef } from "../pathshift/scene/owners";
 
 export interface HoveredItem {
   type: "point" | "command" | "layer" | "block";
@@ -383,10 +383,10 @@ export interface EditorState {
   changeSelectedPathCommand: (
     subPathIndex: number,
     commandIndex: number,
-    type: import("../shapeshifter/types").CommandType,
+    type: import("../pathshift/types").CommandType,
   ) => boolean;
   addSelectedPathPoint: (subPathIndex: number, commandIndex: number, t?: number) => boolean;
-  // Path manipulation (the heart of ShapeShifter)
+  // Path manipulation (the heart of Pathshift)
   updateSelectedPoint: (newPoint: Point, options?: { recordHistory?: boolean }) => void;
   addPointOnPath: (clickX: number, clickY: number) => void;
   splitSelectedLayerSegment: (segment: SegmentSelection) => void;
@@ -580,7 +580,7 @@ const {
 
 const initialEditorDocument = buildEditorDocument({
   id: "document",
-  name: "ShapeShifter",
+  name: "Pathshift",
   frames: initialFrames.map((frame) => ({
     id: frame.id,
     name: frame.name,

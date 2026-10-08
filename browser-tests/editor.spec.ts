@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import type { EditorDocument } from "../lib/shapeshifter/types";
+import type { EditorDocument } from "../lib/pathshift/types";
 
 async function download(page: Page, format: string) {
   await page.getByRole("button", { name: "Export", exact: true }).click();
@@ -18,8 +18,8 @@ async function nativeProject(page: Page): Promise<EditorDocument> {
   const output = await download(page, "Project");
   const project = JSON.parse(output.content.toString());
   expect(Object.keys(project).sort()).toEqual(["activeOwnerId", "document", "format"]);
-  expect(project.format).toBe("shapeshifter");
-  expect(project.document.schema).toBe("shapeshifter");
+  expect(project.format).toBe("pathshift");
+  expect(project.document.schema).toBe("pathshift");
   return project.document;
 }
 async function focusCanvas(page: Page) {

@@ -2,8 +2,8 @@
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "@/lib/store/editorStore";
-import { parsePath } from "@/lib/shapeshifter/pathUtils";
-import type { LayerType } from "@/lib/shapeshifter/types";
+import { parsePath } from "@/lib/pathshift/pathUtils";
+import type { LayerType } from "@/lib/pathshift/types";
 import { Inspector } from "../../Inspector";
 import {
   click,

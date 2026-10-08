@@ -2,9 +2,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { ComponentProps } from "react";
 import { describe, expect, it } from "vitest";
 import type { CanvasFrame } from "@/lib/store/defaultWorkspace";
-import { parsePath } from "@/lib/shapeshifter/pathUtils";
-import { PAGE_ROOT_ID } from "@/lib/shapeshifter/scene/owners";
-import type { AnimationState, Layer, VectorMetadata } from "@/lib/shapeshifter/types";
+import { parsePath } from "@/lib/pathshift/pathUtils";
+import { PAGE_ROOT_ID } from "@/lib/pathshift/scene/owners";
+import type { AnimationState, Layer, VectorMetadata } from "@/lib/pathshift/types";
 import { WorldArtboards } from "../WorldArtboards";
 import { WorldSelectionOverlay } from "../WorldSelectionOverlay";
 

@@ -25,8 +25,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PAGE_ROOT_ID, useEditorStore } from "@/lib/store/editorStore";
-import { createLayerTreeModel, type LayerPlacement } from "@/lib/shapeshifter/scene/layerHierarchy";
-import type { Layer, TimelineBlock } from "@/lib/shapeshifter/types";
+import { createLayerTreeModel, type LayerPlacement } from "@/lib/pathshift/scene/layerHierarchy";
+import type { Layer, TimelineBlock } from "@/lib/pathshift/types";
 import { cn } from "@/lib/utils";
 import { LayerOwnerRow } from "./layers/LayerOwnerRow";
 import { EditorContextMenu } from "./EditorContextMenu";

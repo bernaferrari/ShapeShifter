@@ -3,7 +3,7 @@ import React, { act } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PathDataEditor } from "../PathDataEditor";
 import { useEditorStore } from "@/lib/store/editorStore";
-import { pathToString } from "@/lib/shapeshifter/pathUtils";
+import { pathToString } from "@/lib/pathshift/pathUtils";
 import {
   renderEditorComponent,
   type RenderedEditorComponent,

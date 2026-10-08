@@ -1,11 +1,11 @@
-import { workspaceFromDocument } from "../shapeshifter/documentModel";
-import { exportStaticSVGWithDiagnostics } from "../shapeshifter/exporter";
-import { exportPDFWithDiagnostics } from "../shapeshifter/export/pdf";
-import { exportLottieDocumentWithDiagnostics } from "../shapeshifter/export/lottie";
-import { compileAndroidArtboard } from "../shapeshifter/androidCompiler";
+import { workspaceFromDocument } from "../pathshift/documentModel";
+import { exportStaticSVGWithDiagnostics } from "../pathshift/exporter";
+import { exportPDFWithDiagnostics } from "../pathshift/export/pdf";
+import { exportLottieDocumentWithDiagnostics } from "../pathshift/export/lottie";
+import { compileAndroidArtboard } from "../pathshift/androidCompiler";
 import { createAndroidExportZip } from "../store/exportDocument";
-import { PAGE_ROOT_ID } from "../shapeshifter/scene/owners";
-import type { EditorDocument } from "../shapeshifter/types";
+import { PAGE_ROOT_ID } from "../pathshift/scene/owners";
+import type { EditorDocument } from "../pathshift/types";
 import { AgentCommandError } from "./commands";
 
 export const AGENT_EXPORT_FORMATS = ["json", "static", "vector", "avd", "lottie", "pdf"] as const;
@@ -69,7 +69,7 @@ export function exportAgentSnapshot(
     case "json":
       content = JSON.stringify(
         {
-          format: "shapeshifter",
+          format: "pathshift",
           activeOwnerId: request.ownerId,
           document: structuredClone(document),
         },
@@ -77,7 +77,7 @@ export function exportAgentSnapshot(
         2,
       );
       mimeType = "application/json";
-      extension = ".shapeshifter";
+      extension = ".pathshift";
       break;
     case "static": {
       const result = exportStaticSVGWithDiagnostics(owner.layers, {

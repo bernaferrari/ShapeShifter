@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { documentEditingIssues, validateEditorDocument } from "@/lib/shapeshifter/documentModel";
-import { exportProjectJSON } from "@/lib/shapeshifter/exporter";
-import { createZip } from "@/lib/shapeshifter/zip";
+import { documentEditingIssues, validateEditorDocument } from "@/lib/pathshift/documentModel";
+import { exportProjectJSON } from "@/lib/pathshift/exporter";
+import { createZip } from "@/lib/pathshift/zip";
 import { serializeLiveProject } from "@/lib/store/exportDocument";
 import { PAGE_ROOT_ID, useEditorStore } from "@/lib/store/editorStore";
 import { importEditorText, importEditorZip } from "../useProjectImport";
@@ -20,7 +20,7 @@ describe("project import pipeline", () => {
     const project = serializeLiveProject();
     expect(project.activeOwnerId).toBe(PAGE_ROOT_ID);
     useEditorStore.getState().resetProject();
-    importEditorText("page.shapeshifter", JSON.stringify(project));
+    importEditorText("page.pathshift", JSON.stringify(project));
     expect(useEditorStore.getState().selectedFrameId).toBe(PAGE_ROOT_ID);
     expect(useEditorStore.getState().document).toEqual(project.document);
     const document = useEditorStore.getState().document;
@@ -90,7 +90,7 @@ describe("project import pipeline", () => {
     const frameLayerNames = exported.frames.map((frame) => frame.layers.map((layer) => layer.name));
 
     useEditorStore.getState().resetProject();
-    const summary = importEditorText("roundtrip.shapeshifter", JSON.stringify(payload));
+    const summary = importEditorText("roundtrip.pathshift", JSON.stringify(payload));
 
     const restored = useEditorStore.getState();
     expect(summary.title).toContain(exported.vector.name);
@@ -116,13 +116,13 @@ describe("project import pipeline", () => {
     damaged.frameIds.push("missing-frame");
     expect(() =>
       importEditorText(
-        "damaged.shapeshifter",
-        JSON.stringify({ format: "shapeshifter", document: damaged }),
+        "damaged.pathshift",
+        JSON.stringify({ format: "pathshift", document: damaged }),
       ),
     ).toThrow("Invalid project");
     expect(() =>
-      importEditorText("old.shapeshifter", JSON.stringify({ version: 1, layers: [] })),
-    ).toThrow("native ShapeShifter project");
+      importEditorText("old.pathshift", JSON.stringify({ version: 1, layers: [] })),
+    ).toThrow("native Pathshift project");
     expect(useEditorStore.getState().document).toEqual(before);
   });
 
@@ -174,8 +174,8 @@ describe("project import pipeline", () => {
     expect(documentEditingIssues(native)).toContain("reusable components");
     expect(() =>
       importEditorText(
-        "native-v2.shapeshifter",
-        JSON.stringify({ format: "shapeshifter", document: native }),
+        "native-v2.pathshift",
+        JSON.stringify({ format: "pathshift", document: native }),
       ),
     ).toThrow("Unsupported project content");
     expect(useEditorStore.getState().document).toEqual(before);

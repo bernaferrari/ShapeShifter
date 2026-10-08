@@ -1,14 +1,14 @@
-import { layerAtTime, pathDAtTime } from "../../shapeshifter/playheadResolve";
+import { layerAtTime, pathDAtTime } from "../../pathshift/playheadResolve";
 import { toast } from "sonner";
 import { structuralLockIssue } from "../commands/structuralLayers";
 import { planLayerDeletion } from "../commands/deleteLayers";
-import { computeDetailViewport } from "../../shapeshifter/camera";
-import { generateId } from "../../shapeshifter/ids";
-import { parsePath, pathToString } from "../../shapeshifter/pathUtils";
-import type { Layer, LayerType, TimelineBlock } from "../../shapeshifter/types";
+import { computeDetailViewport } from "../../pathshift/camera";
+import { generateId } from "../../pathshift/ids";
+import { parsePath, pathToString } from "../../pathshift/pathUtils";
+import type { Layer, LayerType, TimelineBlock } from "../../pathshift/types";
 import { createPathLayer } from "../defaultWorkspace";
 import type { EditorState } from "../editorStore";
-import { PAGE_ROOT_ID } from "../../shapeshifter/scene/owners";
+import { PAGE_ROOT_ID } from "../../pathshift/scene/owners";
 import { saveActiveFrame, updateOwnedLayers } from "../workspaceState";
 import { buildDocumentFromEditor } from "../documentRuntime";
 import {
@@ -18,20 +18,20 @@ import {
   linkedTimelineKeyframe,
   setTrackValueAt,
   timelineKeyframeRange,
-} from "../../shapeshifter/motion/timelineKeyframes";
+} from "../../pathshift/motion/timelineKeyframes";
 import {
   MOTION_PRESETS,
   motionPresetSegments,
   motionPresetsForLayer,
-} from "../../shapeshifter/motion/motionPresets";
-import { retimeTimelineBlocks } from "../../shapeshifter/motion/timelineRetiming";
-import { createLayerTreeModel } from "../../shapeshifter/scene/layerHierarchy";
-import { planTimelinePaste } from "../../shapeshifter/motion/timelineClipboard";
-import { resolveTimelinePreviewRange } from "../../shapeshifter/motion/previewRange";
+} from "../../pathshift/motion/motionPresets";
+import { retimeTimelineBlocks } from "../../pathshift/motion/timelineRetiming";
+import { createLayerTreeModel } from "../../pathshift/scene/layerHierarchy";
+import { planTimelinePaste } from "../../pathshift/motion/timelineClipboard";
+import { resolveTimelinePreviewRange } from "../../pathshift/motion/previewRange";
 import {
   timelinePropertiesForLayer,
   isTimelineNumberValid,
-} from "../../shapeshifter/motion/timelineProperties";
+} from "../../pathshift/motion/timelineProperties";
 import {
   pathKeyframeAtTime,
   pathTracksFor,

@@ -1,6 +1,6 @@
-import { computeDetailViewport } from "../../shapeshifter/camera";
-import { PAGE_ROOT_ID, type LayerSelectionRef } from "../../shapeshifter/scene/owners";
-import type { AnimationState, Layer, VectorMetadata } from "../../shapeshifter/types";
+import { computeDetailViewport } from "../../pathshift/camera";
+import { PAGE_ROOT_ID, type LayerSelectionRef } from "../../pathshift/scene/owners";
+import type { AnimationState, Layer, VectorMetadata } from "../../pathshift/types";
 import type { CanvasFrame } from "../defaultWorkspace";
 import { moveLayersBetweenOwners } from "../commands/moveLayersBetweenOwners";
 import { resizeFramePreservingArtwork } from "../commands/resizeFrame";
@@ -12,7 +12,7 @@ import {
   saveActiveRoot,
 } from "../workspaceState";
 import type { EditorState, MoveLayerOptions } from "../editorStore";
-import { vectorCoordinateSize, vectorFromPageMetadata } from "../../shapeshifter/vectorSpace";
+import { vectorCoordinateSize, vectorFromPageMetadata } from "../../pathshift/vectorSpace";
 
 type SetEditorState = (
   next: Partial<EditorState> | ((state: EditorState) => Partial<EditorState> | EditorState),

@@ -2,13 +2,13 @@
 
 import React from "react";
 import { ArrowDownRight, ArrowUpLeft, Minus, Plus, Spline } from "lucide-react";
-import type { CommandType, PathData, Selection } from "@/lib/shapeshifter/types";
+import type { CommandType, PathData, Selection } from "@/lib/pathshift/types";
 import {
   pathAnchors,
   pointPresentation,
   edgePresentation,
   type PointAddress,
-} from "@/lib/shapeshifter/path/pointPresentation";
+} from "@/lib/pathshift/path/pointPresentation";
 import { usePathPointHighlight } from "./pathPointHighlight";
 import { cn } from "@/lib/utils";
 

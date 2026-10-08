@@ -3,7 +3,7 @@
 import { Circle, Ellipsis, Frame, Hand, MousePointer2, PenTool, Plus, Square } from "lucide-react";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { selectedPathLayer } from "@/lib/store/playheadPathEditing";
-import type { ToolMode } from "@/lib/shapeshifter/toolModes";
+import type { ToolMode } from "@/lib/pathshift/toolModes";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,

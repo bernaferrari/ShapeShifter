@@ -3,8 +3,8 @@
 import React from "react";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/lib/store/editorStore";
-import type { Layer } from "@/lib/shapeshifter/types";
-import { getPathDataBounds, pathToString } from "@/lib/shapeshifter/path/pathDataIO";
+import type { Layer } from "@/lib/pathshift/types";
+import { getPathDataBounds, pathToString } from "@/lib/pathshift/path/pathDataIO";
 import { Check, Minus, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,7 +18,7 @@ import {
   motionPresetsForLayer,
   type MotionPreset,
   type MotionPresetId,
-} from "@/lib/shapeshifter/motion/motionPresets";
+} from "@/lib/pathshift/motion/motionPresets";
 import { Section } from "./InspectorControls";
 
 // Previews rest on the finished pose and play while their row or menu item is pointed at.

@@ -1,6 +1,6 @@
 "use client";
 
-import { sameKeyframeTime } from "@/lib/shapeshifter/motion/timelineKeyframes";
+import { sameKeyframeTime } from "@/lib/pathshift/motion/timelineKeyframes";
 import { useTimelineViewSettings } from "./timeline/timelineViewSettings";
 import { formatTimelineTime } from "./timeline/timelineScale";
 
@@ -26,10 +26,10 @@ import { structuralLockIssue } from "@/lib/store/commands/structuralLayers";
 import { isEditablePath } from "@/lib/store/commands/pathTopology";
 import { cn } from "@/lib/utils";
 import { PAGE_ROOT_ID, useEditorStore } from "@/lib/store/editorStore";
-import { parsePath } from "@/lib/shapeshifter/pathUtils";
-import type { Layer } from "@/lib/shapeshifter/types";
-import { layerAtTime, pathDAtTime } from "@/lib/shapeshifter/playheadResolve";
-import { getPathDataBounds } from "@/lib/shapeshifter/path/pathDataIO";
+import { parsePath } from "@/lib/pathshift/pathUtils";
+import type { Layer } from "@/lib/pathshift/types";
+import { layerAtTime, pathDAtTime } from "@/lib/pathshift/playheadResolve";
+import { getPathDataBounds } from "@/lib/pathshift/path/pathDataIO";
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
 import { EasingPanel } from "./inspector/EasingPanel";
@@ -38,7 +38,7 @@ import { PathCommandsList } from "./PathCommandsList";
 import {
   getInspectorSelectionBounds,
   resolveOwnedLayers,
-} from "@/lib/shapeshifter/scene/inspectorSelection";
+} from "@/lib/pathshift/scene/inspectorSelection";
 import { InlineSelect, NumberRow, Section } from "./inspector/InspectorControls";
 import { LayerAppearanceSections } from "./inspector/LayerAppearanceSections";
 import { FrameDesignPanel, LayerTransformSection } from "./inspector/InspectorPanels";

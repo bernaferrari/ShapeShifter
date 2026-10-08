@@ -4,7 +4,7 @@
 > consumers incrementally. Do not patch each canvas independently. Stop on a STOP
 > condition and update Plan 003 in `plans/README.md` when complete.
 >
-> **Drift check**: `git diff --stat 3268b817..HEAD -- lib/shapeshifter/scene components/editor/canvas components/editor/PathCanvas.tsx lib/shapeshifter/androidCompiler.ts`
+> **Drift check**: `git diff --stat 3268b817..HEAD -- lib/pathshift/scene components/editor/canvas components/editor/PathCanvas.tsx lib/pathshift/androidCompiler.ts`
 
 ## Status
 
@@ -25,12 +25,12 @@ playhead state for every consumer.
 
 ## Current state
 
-- `lib/shapeshifter/scene/render.ts:25-95` maps a flat layer array.
+- `lib/pathshift/scene/render.ts:25-95` maps a flat layer array.
 - `components/editor/canvas/WorldArtboards.tsx:276-292` renders every draw as a sibling.
-- `lib/shapeshifter/scene/hitTest.ts:24-104` ignores ancestor transforms and clipping.
-- `lib/shapeshifter/scene/selection.ts:27-50` uses static source geometry.
+- `lib/pathshift/scene/hitTest.ts:24-104` ignores ancestor transforms and clipping.
+- `lib/pathshift/scene/selection.ts:27-50` uses static source geometry.
 - `components/editor/canvas/pathCanvasPreview.ts:76` has a separate parent-chain implementation.
-- `lib/shapeshifter/androidCompiler.ts:244-309` independently reconstructs the Android hierarchy.
+- `lib/pathshift/androidCompiler.ts:244-309` independently reconstructs the Android hierarchy.
 - Android applies group transforms in scale → rotate → translate order; preserve the
   semantics defined by the Android VectorDrawable contract.
 
@@ -38,7 +38,7 @@ playhead state for every consumer.
 
 | Purpose     | Command                                                                                                                                                                                                          | Expected |
 | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| Scene tests | `pnpm test -- lib/shapeshifter/__tests__/sceneRender.test.ts lib/shapeshifter/__tests__/sceneHitTest.test.ts lib/shapeshifter/__tests__/sceneSelection.test.ts lib/shapeshifter/__tests__/androidParity.test.ts` | all pass |
+| Scene tests | `pnpm test -- lib/pathshift/__tests__/sceneRender.test.ts lib/pathshift/__tests__/sceneHitTest.test.ts lib/pathshift/__tests__/sceneSelection.test.ts lib/pathshift/__tests__/androidParity.test.ts` | all pass |
 | Full suite  | `pnpm test`                                                                                                                                                                                                      | all pass |
 | Typecheck   | `pnpm typecheck`                                                                                                                                                                                                 | exit 0   |
 | Build       | `pnpm build`                                                                                                                                                                                                     | exit 0   |
@@ -47,11 +47,11 @@ playhead state for every consumer.
 
 **In scope**:
 
-- `lib/shapeshifter/scene/`
+- `lib/pathshift/scene/`
 - `components/editor/canvas/WorldArtboards.tsx`
 - `components/editor/canvas/pathCanvasPreview.ts`
 - `components/editor/PathCanvas.tsx`
-- `lib/shapeshifter/androidCompiler.ts` only to consume shared hierarchy/evaluation data
+- `lib/pathshift/androidCompiler.ts` only to consume shared hierarchy/evaluation data
 - Scene and Android parity tests
 
 **Out of scope**:

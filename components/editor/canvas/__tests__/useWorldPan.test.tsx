@@ -3,7 +3,7 @@ import React from "react";
 import { afterEach, expect, it } from "vitest";
 import { useWorldPan } from "../useWorldPan";
 import { renderEditorComponent, type RenderedEditorComponent } from "./renderHelpers";
-import type { Viewport } from "@/lib/shapeshifter/camera";
+import type { Viewport } from "@/lib/pathshift/camera";
 let rendered: RenderedEditorComponent;
 afterEach(() => rendered?.unmount());
 it("follows consecutive finger movements once each, including movements within one render", () => {

@@ -1,14 +1,14 @@
 import React, { useCallback, useMemo } from "react";
 import type { CanvasFrame } from "@/lib/store/defaultWorkspace";
-import { gradientToSvg, sanitizeCssColor, svgIdFragment } from "@/lib/shapeshifter/gradients";
-import { getPathDataBounds, parsePath, pathToString } from "@/lib/shapeshifter/pathUtils";
-import { trimPathData } from "@/lib/shapeshifter/path/pathTrim";
-import { matrixToSvg } from "@/lib/shapeshifter/scene/layerTransform";
-import { resolveWorldLayerDraws, type WorldLayerDraw } from "@/lib/shapeshifter/scene/render";
-import { PAGE_ROOT_ID, type LayerSelectionRef } from "@/lib/shapeshifter/scene/owners";
-import { vectorCoordinateSize } from "@/lib/shapeshifter/vectorSpace";
-import type { AnimationState, Layer, PathData, VectorMetadata } from "@/lib/shapeshifter/types";
-import type { SceneRect } from "@/lib/shapeshifter/scene/selection";
+import { gradientToSvg, sanitizeCssColor, svgIdFragment } from "@/lib/pathshift/gradients";
+import { getPathDataBounds, parsePath, pathToString } from "@/lib/pathshift/pathUtils";
+import { trimPathData } from "@/lib/pathshift/path/pathTrim";
+import { matrixToSvg } from "@/lib/pathshift/scene/layerTransform";
+import { resolveWorldLayerDraws, type WorldLayerDraw } from "@/lib/pathshift/scene/render";
+import { PAGE_ROOT_ID, type LayerSelectionRef } from "@/lib/pathshift/scene/owners";
+import { vectorCoordinateSize } from "@/lib/pathshift/vectorSpace";
+import type { AnimationState, Layer, PathData, VectorMetadata } from "@/lib/pathshift/types";
+import type { SceneRect } from "@/lib/pathshift/scene/selection";
 import { selectedWorldSubtreeIds } from "./worldLayerTransforms";
 
 interface FrameBounds {

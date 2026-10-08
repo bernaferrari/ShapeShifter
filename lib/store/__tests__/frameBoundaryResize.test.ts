@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "../editorStore";
 import { createPathLayer } from "../defaultWorkspace";
-import { parsePath } from "../../shapeshifter/pathUtils";
-import { evaluateAndroidScene } from "../../shapeshifter/scene/evaluate";
-import { vectorCoordinateResizePolicy } from "../../shapeshifter/vectorSpace";
+import { parsePath } from "../../pathshift/pathUtils";
+import { evaluateAndroidScene } from "../../pathshift/scene/evaluate";
+import { vectorCoordinateResizePolicy } from "../../pathshift/vectorSpace";
 
 function worldMatrices(progress: number) {
   const state = useEditorStore.getState();

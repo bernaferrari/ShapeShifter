@@ -92,7 +92,7 @@ export function useProjectExport() {
           {
             description:
               exportType === "avd"
-                ? `${warnings.description} Full details are in SHAPESHIFTER_EXPORT.txt.`
+                ? `${warnings.description} Full details are in PATHSHIFT_EXPORT.txt.`
                 : warnings.description,
           },
         );

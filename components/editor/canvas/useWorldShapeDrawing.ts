@@ -6,14 +6,14 @@ import {
   workspaceFromEditor,
   restoreHistoryEntry,
 } from "@/lib/store/documentRuntime";
-import { PAGE_ROOT_ID } from "@/lib/shapeshifter/scene/owners";
+import { PAGE_ROOT_ID } from "@/lib/pathshift/scene/owners";
 import {
   primitiveBounds,
   primitivePath,
   type PrimitiveShape,
-} from "@/lib/shapeshifter/primitiveShapes";
-import { snapValueToStep } from "@/lib/shapeshifter/camera";
-import type { Point } from "@/lib/shapeshifter/types";
+} from "@/lib/pathshift/primitiveShapes";
+import { snapValueToStep } from "@/lib/pathshift/camera";
+import type { Point } from "@/lib/pathshift/types";
 import { stageAgentCommands } from "@/lib/agent/commands";
 import { isEditorShortcutBlocked } from "../hooks/useEditorKeyboardShortcuts";
 import { beginLiveGesture, endLiveGesture, ownsLiveGesture } from "@/lib/store/liveGesture";

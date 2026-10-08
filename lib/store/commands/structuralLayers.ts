@@ -1,12 +1,12 @@
-import type { AnimationState, Layer } from "../../shapeshifter/types";
-import { createLayerTreeModel } from "../../shapeshifter/scene/layerHierarchy";
+import type { AnimationState, Layer } from "../../pathshift/types";
+import { createLayerTreeModel } from "../../pathshift/scene/layerHierarchy";
 import {
   IDENTITY_AFFINE,
   layerTransformToMatrix,
   multiplyAffine,
   type AffineMatrix,
-} from "../../shapeshifter/scene/layerTransform";
-import { generateId } from "../../shapeshifter/ids";
+} from "../../pathshift/scene/layerTransform";
+import { generateId } from "../../pathshift/ids";
 
 export type StructuralResult =
   | { ok: true; layers: Layer[]; selectedIds: Array<string | number> }

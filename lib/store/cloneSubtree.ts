@@ -1,6 +1,6 @@
-import { collectLayerSubtreeIds } from "../shapeshifter/scene/layerHierarchy";
-import { PAGE_ROOT_ID } from "../shapeshifter/scene/owners";
-import type { AnimationState, Layer, TimelineBlock } from "../shapeshifter/types";
+import { collectLayerSubtreeIds } from "../pathshift/scene/layerHierarchy";
+import { PAGE_ROOT_ID } from "../pathshift/scene/owners";
+import type { AnimationState, Layer, TimelineBlock } from "../pathshift/types";
 import type { EditorState } from "./editorStore";
 
 export interface CollectedSubtree {

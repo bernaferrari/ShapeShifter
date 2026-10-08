@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useEditorStore } from "../editorStore";
-import { parsePath } from "../../shapeshifter/pathUtils";
-import { primitivePath } from "../../shapeshifter/primitiveShapes";
-import { evaluateAndroidScene } from "../../shapeshifter/scene/evaluate";
-import { inverseAffine, transformPointWithMatrix } from "../../shapeshifter/scene/layerTransform";
-import { isPointInPath, distanceToPath } from "../../shapeshifter/path/pathGeometry";
-import * as curveClient from "../../shapeshifter/path/curveBooleanClient";
-import type { Layer } from "../../shapeshifter/types";
+import { parsePath } from "../../pathshift/pathUtils";
+import { primitivePath } from "../../pathshift/primitiveShapes";
+import { evaluateAndroidScene } from "../../pathshift/scene/evaluate";
+import { inverseAffine, transformPointWithMatrix } from "../../pathshift/scene/layerTransform";
+import { isPointInPath, distanceToPath } from "../../pathshift/path/pathGeometry";
+import * as curveClient from "../../pathshift/path/curveBooleanClient";
+import type { Layer } from "../../pathshift/types";
 const path = (id: string, d: string, patch: Partial<Layer> = {}): Layer => ({
   id,
   name: id,

@@ -4,10 +4,10 @@ plugins {
 }
 
 android {
-    namespace = "dev.shapeshifter.sample"
+    namespace = "dev.pathshift.sample"
     compileSdk = 35
     defaultConfig {
-        applicationId = "dev.shapeshifter.sample"
+        applicationId = "dev.pathshift.sample"
         minSdk = 24
         targetSdk = 35
         versionCode = 1

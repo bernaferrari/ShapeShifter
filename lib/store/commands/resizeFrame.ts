@@ -1,10 +1,10 @@
-import type { Rect } from "../../shapeshifter/camera";
-import { createLayerTreeModel } from "../../shapeshifter/scene/layerHierarchy";
+import type { Rect } from "../../pathshift/camera";
+import { createLayerTreeModel } from "../../pathshift/scene/layerHierarchy";
 import {
   vectorCoordinateResizePatch,
   vectorCoordinateResizePolicy,
   type VectorCoordinateResizePolicy,
-} from "../../shapeshifter/vectorSpace";
+} from "../../pathshift/vectorSpace";
 import type { CanvasFrame } from "../defaultWorkspace";
 
 /** Change a frame's boundary while keeping its artwork in world space at every time. */

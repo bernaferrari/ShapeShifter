@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useEditorStore } from "../editorStore";
-import { numberAtTime } from "../../shapeshifter/playheadResolve";
+import { numberAtTime } from "../../pathshift/playheadResolve";
 import {
   appliedMotionPresets,
   motionPresetSegments,
   motionPresetsForLayer,
-} from "../../shapeshifter/motion/motionPresets";
+} from "../../pathshift/motion/motionPresets";
 
 let baseline: ReturnType<typeof useEditorStore.getState>;
 beforeEach(() => {

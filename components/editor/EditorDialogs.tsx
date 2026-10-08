@@ -49,7 +49,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useAnimationExercise } from "./animationExercise";
 import { Button } from "@/components/ui/button";
 import { KeyCombo } from "@/components/ui/kbd";
-import { DEMO_INFOS } from "@/lib/shapeshifter/demoProjects";
+import { DEMO_INFOS } from "@/lib/pathshift/demoProjects";
 import { useEditorStore } from "@/lib/store/editorStore";
 import type { EditorExportType } from "./project/useProjectExport";
 

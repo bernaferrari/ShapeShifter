@@ -4,20 +4,20 @@ import {
   pointPresentation,
   edgePresentation,
   type PointAddress,
-} from "@/lib/shapeshifter/path/pointPresentation";
-import { materializeSmoothCommands } from "@/lib/shapeshifter/path/commandNormalization";
+} from "@/lib/pathshift/path/pointPresentation";
+import { materializeSmoothCommands } from "@/lib/pathshift/path/commandNormalization";
 import { getSegmentTargets } from "./pathCanvasGeometry";
-import { pathToString } from "@/lib/shapeshifter/pathUtils";
-import { numberAtTime, sampleMotionPath } from "@/lib/shapeshifter/playheadResolve";
+import { pathToString } from "@/lib/pathshift/pathUtils";
+import { numberAtTime, sampleMotionPath } from "@/lib/pathshift/playheadResolve";
 import {
   matrixToSvg,
   transformPointWithMatrix,
   type AffineMatrix,
-} from "@/lib/shapeshifter/scene/layerTransform";
-import type { GuideLine } from "@/lib/shapeshifter/smartGuides";
-import type { AnimationState, Layer, PathData, Selection } from "@/lib/shapeshifter/types";
+} from "@/lib/pathshift/scene/layerTransform";
+import type { GuideLine } from "@/lib/pathshift/smartGuides";
+import type { AnimationState, Layer, PathData, Selection } from "@/lib/pathshift/types";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import type { FrameResizeHandle } from "@/lib/shapeshifter/gestures/select/FrameResizeGesture";
+import type { FrameResizeHandle } from "@/lib/pathshift/gestures/select/FrameResizeGesture";
 
 interface Point {
   x: number;

@@ -3,9 +3,9 @@
 import React from "react";
 import { DiamondPlus } from "lucide-react";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { timelinePropertiesForLayer } from "@/lib/shapeshifter/motion/timelineProperties";
-import { createLayerTreeModel } from "@/lib/shapeshifter/scene/layerHierarchy";
-import { sameKeyframeTime } from "@/lib/shapeshifter/motion/timelineKeyframes";
+import { timelinePropertiesForLayer } from "@/lib/pathshift/motion/timelineProperties";
+import { createLayerTreeModel } from "@/lib/pathshift/scene/layerHierarchy";
+import { sameKeyframeTime } from "@/lib/pathshift/motion/timelineKeyframes";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { useTimelineViewSettings } from "./timelineViewSettings";
 import { formatTimelineTime } from "./timelineScale";

@@ -1,5 +1,5 @@
-import { parsePath, pathToString } from "../shapeshifter/pathUtils";
-import type { AnimationState, Layer, VectorMetadata } from "../shapeshifter/types";
+import { parsePath, pathToString } from "../pathshift/pathUtils";
+import type { AnimationState, Layer, VectorMetadata } from "../pathshift/types";
 
 export interface CanvasFrame {
   id: string;

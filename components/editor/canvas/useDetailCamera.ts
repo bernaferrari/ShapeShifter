@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, RefObject, WheelEvent } from "react";
-import { fitViewportToAspect, zoomAtWorldPoint } from "@/lib/shapeshifter/camera";
+import { fitViewportToAspect, zoomAtWorldPoint } from "@/lib/pathshift/camera";
 import type { EditorState } from "@/lib/store/editorStore";
 
 interface DetailCameraOptions {

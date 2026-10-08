@@ -1,16 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState, type RefObject } from "react";
-import { snapValueToStep } from "@/lib/shapeshifter/camera";
-import { isPointInFillRegion } from "@/lib/shapeshifter/pathUtils";
-import { evaluateAndroidScene } from "@/lib/shapeshifter/scene/evaluate";
+import { snapValueToStep } from "@/lib/pathshift/camera";
+import { isPointInFillRegion } from "@/lib/pathshift/pathUtils";
+import { evaluateAndroidScene } from "@/lib/pathshift/scene/evaluate";
 import {
   inverseAffine,
   transformPointWithMatrix,
   type AffineMatrix,
-} from "@/lib/shapeshifter/scene/layerTransform";
-import type { PathData, Point } from "@/lib/shapeshifter/types";
-import type { ToolMode } from "@/lib/shapeshifter/toolModes";
+} from "@/lib/pathshift/scene/layerTransform";
+import type { PathData, Point } from "@/lib/pathshift/types";
+import type { ToolMode } from "@/lib/pathshift/toolModes";
 import { useEditorStore } from "@/lib/store/editorStore";
 
 interface LayerHit {

@@ -3,9 +3,9 @@ import { createEditorAgent } from "../editorAgent";
 import { AgentCommandError, parseAgentPath, validateAgentProperties } from "../commands";
 import { AGENT_EXPORT_FORMATS } from "../export";
 import { EDITOR_AGENT_TOOLS } from "../browserTools";
-import { pathToString } from "../../shapeshifter/pathUtils";
-import { compileAndroidArtboard } from "../../shapeshifter/androidCompiler";
-import { workspaceFromDocument } from "../../shapeshifter/documentModel";
+import { pathToString } from "../../pathshift/pathUtils";
+import { compileAndroidArtboard } from "../../pathshift/androidCompiler";
+import { workspaceFromDocument } from "../../pathshift/documentModel";
 import { useEditorStore } from "../../store/editorStore";
 
 let baseline: ReturnType<typeof useEditorStore.getState>;
@@ -454,8 +454,8 @@ describe("agent captured exports", () => {
         expect(result.encoding).toBe("base64");
       }
     }
-    expect(EDITOR_AGENT_TOOLS.map((tool) => tool.name)).toContain("shapeshifter_export");
-    expect(EDITOR_AGENT_TOOLS.map((tool) => tool.name)).toContain("shapeshifter_redo");
+    expect(EDITOR_AGENT_TOOLS.map((tool) => tool.name)).toContain("pathshift_export");
+    expect(EDITOR_AGENT_TOOLS.map((tool) => tool.name)).toContain("pathshift_redo");
   });
   it("surfaces blocking Android diagnostics instead of returning a broken downloadable asset", () => {
     const agent = createEditorAgent();
