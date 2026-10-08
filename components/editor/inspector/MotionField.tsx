@@ -123,7 +123,7 @@ export function MotionField({
             }
           }}
           className={cn(
-            "h-7 w-full rounded-md border border-transparent bg-secondary px-2 text-[11px] tabular-nums text-foreground outline-none hover:border-border focus:border-primary focus:bg-background disabled:opacity-50",
+            "h-7 pointer-coarse:h-11 w-full rounded-md border border-transparent bg-secondary px-2 text-[11px] tabular-nums text-foreground outline-none hover:border-border focus:border-primary focus:bg-background disabled:opacity-50",
             color && "pl-7",
             multiline && "h-16 resize-y py-1.5 font-mono text-[10px] leading-relaxed",
             suffix && "pr-7",

@@ -3,7 +3,12 @@
 import React from "react";
 import { DiamondPlus } from "lucide-react";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { timelinePropertiesForLayer } from "@/lib/shapeshifter/motion/timelineProperties";
+import { createLayerTreeModel } from "@/lib/shapeshifter/scene/layerHierarchy";
+import { sameKeyframeTime } from "@/lib/shapeshifter/motion/timelineKeyframes";
 import { useEditorStore } from "@/lib/store/editorStore";
+import { useTimelineViewSettings } from "./timelineViewSettings";
+import { formatTimelineTime } from "./timelineScale";
 
 export function TimelineInsertKeyframeButton({
   blockId,
@@ -15,48 +20,70 @@ export function TimelineInsertKeyframeButton({
   presentation?: "button" | "icon" | "menu";
 }) {
   const progress = useEditorStore((state) => state.progress);
+  const unit = useTimelineViewSettings((state) => state.unit);
+  const fps = useTimelineViewSettings((state) => state.fps);
   const animation = useEditorStore((state) => state.animation);
   const selectedIds = useEditorStore((state) => state.selectedBlockIds);
+  const selectedLayerId = useEditorStore((state) => state.selectedLayerId);
+  const hasSelection = useEditorStore(
+    (state) => state.hasCanvasSelection && state.selectionKind === "layer",
+  );
+  const layers = useEditorStore((state) => state.layers);
+  const tree = React.useMemo(() => createLayerTreeModel(layers), [layers]);
+  const selectedLayer = tree.allLayers.find(
+    (layer) => String(layer.id) === String(selectedLayerId),
+  );
+  const defaultProperty = selectedLayer?.type === "group" ? "rotation" : "pathData";
   const time = progress * animation.duration;
   const trackKey = (block: (typeof animation.blocks)[number]) =>
     `${block.layerId}\0${block.propertyName}`;
   const tracks = new Set(
     animation.blocks.filter((block) => selectedIds.includes(block.id)).map(trackKey),
   );
-  const candidates = [...animation.blocks]
-    .sort((a, b) => b.startTime - a.startTime)
+  const candidates = animation.blocks
+    .filter((block) => (blockId ? block.id === blockId : tracks.has(trackKey(block))))
     .filter(
-      (block) =>
-        (blockId ? block.id === blockId : tracks.has(trackKey(block))) &&
-        time >= block.startTime + 1 &&
-        time <= block.endTime - 1,
-    )
-    .filter(
-      (block, index, matches) =>
-        matches.findIndex((item) => trackKey(item) === trackKey(block)) === index,
+      (block, index, all) => all.findIndex((item) => trackKey(item) === trackKey(block)) === index,
     );
-  const retimesCurve = candidates.some(
-    (block) => !block.interpolator || block.interpolator === "ACCELERATE_DECELERATE",
-  );
+  const targets = candidates.length
+    ? candidates
+    : hasSelection && !blockId
+      ? [{ layerId: selectedLayerId, propertyName: defaultProperty }]
+      : [];
+  const canInsert = targets.some((target) => {
+    const layer = tree.allLayers.find((item) => String(item.id) === String(target.layerId));
+    return (
+      layer &&
+      !layer.locked &&
+      !tree.ancestorsOf(layer.id).some((item) => item.locked) &&
+      timelinePropertiesForLayer(layer.type).includes(target.propertyName as never) &&
+      !animation.blocks.some(
+        (block) =>
+          String(block.layerId) === String(target.layerId) &&
+          block.propertyName === target.propertyName &&
+          (sameKeyframeTime(block.startTime, time) || sameKeyframeTime(block.endTime, time)),
+      )
+    );
+  });
   const insert = () => {
     const store = useEditorStore.getState();
-    const currentTime = store.progress * store.animation.duration;
-    if (store.isPlaying) store.togglePlayback();
     store.beginHistoryGesture();
     try {
-      const insertedIds: string[] = [];
-      for (const candidate of candidates) {
-        if (store.insertTimelineKeyframe(candidate.id, currentTime))
-          insertedIds.push(...useEditorStore.getState().selectedBlockIds);
+      const ids: string[] = [];
+      for (const target of targets) {
+        store.addKeyframeAtPlayhead(target.layerId, target.propertyName);
+        ids.push(...useEditorStore.getState().selectedBlockIds);
       }
-      if (insertedIds.length) store.selectBlocks(insertedIds);
+      const key = useEditorStore.getState().selectedKeyframe;
+      store.selectBlocks([...new Set(ids)]);
+      useEditorStore.setState({ selectedKeyframe: key, keyframeEditorOpen: Boolean(key) });
     } finally {
       store.endHistoryGesture();
     }
   };
   if (presentation === "menu")
     return (
-      <DropdownMenuItem aria-label={label} disabled={!candidates.length} onClick={insert}>
+      <DropdownMenuItem aria-label={label} disabled={!canInsert} onClick={insert}>
         <DiamondPlus className="size-4" />
         Add keyframe
       </DropdownMenuItem>
@@ -66,15 +93,15 @@ export function TimelineInsertKeyframeButton({
       type="button"
       aria-label={label}
       title={
-        candidates.length
-          ? `${label} · ${Number(time.toFixed(3))} ms${candidates.length > 1 ? ` · ${candidates.length} tracks` : ""}${retimesCurve ? " · Applies Accelerate–decelerate to each new segment, changing transition timing" : ""}`
-          : "Select an animation and move the playhead between its keyframes"
+        canInsert
+          ? `${label} · ${formatTimelineTime(time, unit, fps)}`
+          : "Select a layer or track and move to a new pose"
       }
-      disabled={!candidates.length}
+      disabled={!canInsert}
       onClick={insert}
       className={
         presentation === "icon"
-          ? "grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-35"
+          ? "grid size-6 pointer-coarse:size-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-35"
           : "flex h-6 pointer-coarse:h-11 touch-manipulation shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-35"
       }
     >

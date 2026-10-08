@@ -1,7 +1,9 @@
 "use client";
 
 import React from "react";
-import { useInspectorView } from "../inspector/inspectorView";
+import { TimelineKeyframeMarker } from "./TimelineKeyframeMarker";
+import { TimelineSegmentEasing } from "./TimelineSegmentEasing";
+import { trackKeyframes, type TrackKeyframe } from "@/lib/shapeshifter/motion/timelineKeyframes";
 import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
 import type { TimelineBlock } from "@/lib/shapeshifter/types";
 import { useEditorStore } from "@/lib/store/editorStore";
@@ -9,41 +11,6 @@ import { holdToDrag, usePressType } from "@/lib/touchIntent";
 import { cn } from "@/lib/utils";
 import type { TimelineSnapTarget } from "./timelineTiming";
 import { useTimelineGesture } from "./useTimelineGesture";
-import { TimelineKeyframeEditor } from "./TimelineKeyframeEditor";
-import {
-  interpolatorControlPoints,
-  timelineKeyframeRange,
-} from "@/lib/shapeshifter/motion/timelineKeyframes";
-
-export function TimelineKeyframeDiamond({
-  active,
-  size = 7,
-  className,
-}: {
-  active?: boolean;
-  size?: number;
-  className?: string;
-}) {
-  return (
-    <span
-      className={cn(
-        "block shrink-0 rotate-45 rounded-[0.5px] border border-solid transition-colors",
-        active ? "bg-primary" : "bg-card hover:bg-primary/20",
-        className,
-      )}
-      style={{
-        width: size,
-        height: size,
-        boxSizing: "border-box",
-        borderColor: "var(--primary)",
-        borderWidth: 1.25,
-        backgroundColor: active ? "var(--primary)" : undefined,
-        transformOrigin: "center center",
-      }}
-      aria-hidden
-    />
-  );
-}
 
 export function TimelinePropertyBlock({
   block,
@@ -53,6 +20,7 @@ export function TimelinePropertyBlock({
   keyboardStep = 1,
   snapping = true,
   onSnapChange,
+  trackKeys,
 }: {
   block: TimelineBlock;
   duration: number;
@@ -61,12 +29,24 @@ export function TimelinePropertyBlock({
   keyboardStep?: number;
   snapping?: boolean;
   onSnapChange?: (target: TimelineSnapTarget | null) => void;
+  trackKeys?: TrackKeyframe[];
 }) {
   const gesture = useTimelineGesture({ gridStep, snapping, onSnapChange });
-  const [editingEdge, setEditingEdge] = React.useState<"start" | "end" | null>(null);
+  const blocks = useEditorStore((state) => (trackKeys ? undefined : state.animation.blocks));
+  const keys = React.useMemo(
+    () =>
+      trackKeys ??
+      trackKeyframes(
+        (blocks ?? []).filter(
+          (item) =>
+            String(item.layerId) === String(block.layerId) &&
+            item.propertyName === block.propertyName,
+        ),
+      ),
+    [blocks, block.layerId, block.propertyName, trackKeys],
+  );
   const suppressClickRef = React.useRef(false);
   const label = propertyLabel(block.propertyName);
-  const interpolator = block.interpolator || "ACCELERATE_DECELERATE";
   const startPct = (block.startTime / duration) * 100;
   const endPct = (block.endTime / duration) * 100;
 
@@ -99,24 +79,9 @@ export function TimelinePropertyBlock({
     if (ids.includes(block.id)) gesture.begin(event, ids);
   });
 
-  const handleResizeStart = (edge: "start" | "end") =>
-    pickUp((event) => {
-      const store = useEditorStore.getState();
-      store.selectLayer(block.layerId);
-      store.selectBlocks([block.id]);
-      suppressClickRef.current = false;
-      gesture.begin(event, [block.id], edge);
-    });
-
   const endGesture = (event: React.PointerEvent<HTMLElement>, cancelled = false) => {
     suppressClickRef.current = gesture.moved.current;
     gesture.end(event, cancelled);
-  };
-
-  const jumpTo = (milliseconds: number) => {
-    const store = useEditorStore.getState();
-    if (store.isPlaying) store.togglePlayback();
-    store.setProgress(Math.max(0, Math.min(1, milliseconds / duration)));
   };
 
   return (
@@ -170,142 +135,24 @@ export function TimelinePropertyBlock({
           )}
         />
       </button>
-      {(block.startTime === block.endTime
-        ? ["start" as const]
-        : ["start" as const, "end" as const]
-      ).map((edge) => {
-        const milliseconds = edge === "start" ? block.startTime : block.endTime;
-        return (
-          <TimelineKeyframeEditor
-            key={edge}
+      {keys
+        .filter((key) => key.blockId === block.id)
+        .map((key) => (
+          <TimelineKeyframeMarker
+            key={key.edge}
             block={block}
-            edge={edge}
+            edge={key.edge}
+            keys={keys}
             duration={duration}
-            open={editingEdge === edge}
-            onOpenChange={(open) => setEditingEdge(open ? edge : null)}
-            trigger={
-              <button
-                type="button"
-                data-timeline-keyframe-block-id={block.id}
-                data-timeline-keyframe-edge={edge}
-                className="pointer-events-auto absolute top-1/2 z-10 flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize touch-none items-center justify-center rounded-sm p-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
-                style={{ left: `${edge === "start" ? startPct : endPct}%` }}
-                title={`Keyframe @ ${milliseconds} ms · Double-click or Enter to edit · Alt-drag for precise timing`}
-                aria-label={`${label} ${edge} keyframe at ${milliseconds} milliseconds`}
-                onPointerDown={handleResizeStart(edge)}
-                onPointerMove={gesture.move}
-                onPointerUp={(event) => endGesture(event)}
-                onPointerCancel={(event) => endGesture(event, true)}
-                onLostPointerCapture={(event) => endGesture(event, true)}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  if (suppressClickRef.current) {
-                    suppressClickRef.current = false;
-                    return;
-                  }
-                  const store = useEditorStore.getState();
-                  store.selectLayer(block.layerId);
-                  store.selectBlocks([block.id]);
-                  jumpTo(milliseconds);
-                  if (event.detail === 0) setEditingEdge(edge);
-                }}
-                onKeyDown={(event) => {
-                  if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key))
-                    return;
-                  event.preventDefault();
-                  if (event.key === "ArrowUp" || event.key === "ArrowDown") return;
-                  const direction = event.key === "ArrowLeft" ? -1 : 1;
-                  const [min, max] = timelineKeyframeRange(
-                    useEditorStore.getState().animation.blocks,
-                    block,
-                    edge,
-                    duration,
-                  );
-                  const time = Math.max(
-                    min,
-                    Math.min(
-                      max,
-                      milliseconds + direction * keyboardStep * (event.shiftKey ? 10 : 1),
-                    ),
-                  );
-                  if (time !== milliseconds)
-                    useEditorStore.getState().updateTimelineKeyframe(block.id, edge, { time });
-                  jumpTo(time);
-                }}
-                onDoubleClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setEditingEdge(edge);
-                }}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  const store = useEditorStore.getState();
-                  store.selectLayer(block.layerId);
-                  store.selectBlocks([block.id]);
-                  jumpTo(milliseconds);
-                  setEditingEdge(edge);
-                }}
-              >
-                <TimelineKeyframeDiamond active={selected} size={9} />
-              </button>
-            }
+            gridStep={gridStep}
+            keyboardStep={keyboardStep}
+            snapping={snapping}
+            onSnapChange={onSnapChange}
           />
-        );
-      })}
-      {/* Easing lives in the middle of the segment and only appears on hover (Figma). */}
-      <div
-        className="pointer-events-auto absolute top-1/2 z-[3] -translate-x-1/2 -translate-y-1/2"
-        style={{ left: `${(startPct + endPct) / 2}%` }}
-      >
-        <button
-          type="button"
-          className="grid size-5 place-items-center rounded-md border border-border bg-card text-primary opacity-0 shadow-sm outline-none transition-opacity hover:bg-muted focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover/segment:opacity-100 pointer-coarse:size-6 pointer-coarse:opacity-100"
-          title="Easing"
-          aria-label={`Edit ${label} easing`}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation();
-            const store = useEditorStore.getState();
-            store.selectLayer(block.layerId);
-            store.selectBlocks([block.id]);
-            useInspectorView.getState().openEasing(block.id);
-          }}
-        >
-          <EasingGlyph points={interpolatorControlPoints(interpolator)} size={11} />
-        </button>
-      </div>
+        ))}
+      {block.startTime !== block.endTime && (
+        <TimelineSegmentEasing block={block} startPct={startPct} endPct={endPct} />
+      )}
     </div>
-  );
-}
-
-/** A tiny drawing of an easing curve, used for presets and the segment chip. */
-function EasingGlyph({
-  points,
-  size,
-  className,
-}: {
-  points: [number, number, number, number];
-  size: number;
-  className?: string;
-}) {
-  const [x1, y1, x2, y2] = points;
-  const p = (x: number, y: number) => `${1 + x * 10} ${11 - y * 10}`;
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 12 12"
-      fill="none"
-      aria-hidden
-      className={className}
-    >
-      <path
-        d={`M${p(0, 0)} C${p(x1, y1)} ${p(x2, y2)} ${p(1, 1)}`}
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-    </svg>
   );
 }

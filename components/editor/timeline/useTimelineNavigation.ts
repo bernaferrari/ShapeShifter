@@ -17,6 +17,7 @@ export function useTimelineNavigation(
   const zoom = Math.max(1, Math.min(10, storedZoom));
   const [measuredWidth, setWidth] = React.useState(0);
   const width = Math.max(1, measuredWidth);
+  const manualNavigationAt = React.useRef(-Infinity);
   const pendingAnchor = React.useRef<{ progress: number; anchor: number } | null>(null);
 
   React.useLayoutEffect(() => {
@@ -92,6 +93,7 @@ export function useTimelineNavigation(
 
   const setViewport = React.useCallback(
     (nextZoom: number, x: number, y: number) => {
+      manualNavigationAt.current = performance.now();
       const resolvedZoom = Math.max(1, Math.min(10, nextZoom));
       const resolvedX = Math.max(0, Math.min(width * (resolvedZoom - 1), x));
       const element = viewportRef.current;
@@ -112,6 +114,7 @@ export function useTimelineNavigation(
     const section = sectionRef.current;
     if (!section) return;
     const onWheel = (event: WheelEvent) => {
+      manualNavigationAt.current = performance.now();
       const x = event.clientX - section.getBoundingClientRect().left - layersWidth;
       if (x < 0) return;
       if (event.ctrlKey || event.metaKey) {
@@ -141,12 +144,19 @@ export function useTimelineNavigation(
           !state.isPlaying ||
           state.progress === previous.progress ||
           zoom <= 1 ||
-          !viewportRef.current
+          !viewportRef.current ||
+          performance.now() - manualNavigationAt.current < 1500
         )
           return;
         const position = state.progress * width * zoom - viewportRef.current.scrollLeft;
-        if (position < 0 || position > width) {
-          const desired = anchoredTimelineScroll(state.progress, width, zoom, 0.1);
+        const margin = Math.min(160, width * 0.28);
+        if (position < margin || position > width - margin) {
+          const desired = anchoredTimelineScroll(
+            state.progress,
+            width,
+            zoom,
+            state.playbackDirection === -1 ? 0.7 : 0.3,
+          );
           viewportRef.current.scrollLeft = desired;
           state.setTimelineScroll(desired, viewportRef.current.scrollTop);
         }

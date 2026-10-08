@@ -1,3 +1,4 @@
+import { KEYFRAME_TIME_EPSILON, sameKeyframeTime } from "../shapeshifter/motion/timelineKeyframes";
 import { androidPathMorphSignature, parsePath, pathToString } from "../shapeshifter/pathUtils";
 import { blocksFor } from "../shapeshifter/playheadResolve";
 import type { Layer, PathData, TimelineBlock } from "../shapeshifter/types";
@@ -15,7 +16,7 @@ import type { EditorState } from "./editorStore";
  */
 
 /** Keyframe times within this distance of the playhead count as "on" the keyframe. */
-export const PLAYHEAD_KEYFRAME_EPSILON = 1;
+export const PLAYHEAD_KEYFRAME_EPSILON = KEYFRAME_TIME_EPSILON;
 
 const POINT_TOOLS = new Set<ToolMode>(["direct", "pen", "knife", "pencil"]);
 
@@ -37,11 +38,9 @@ export function pathKeyframeAtTime(
   tracks: TimelineBlock[],
   time: number,
 ): PlayheadPathTarget | null {
-  const starting = tracks.find(
-    (block) => Math.abs(block.startTime - time) < PLAYHEAD_KEYFRAME_EPSILON,
-  );
+  const starting = tracks.find((block) => sameKeyframeTime(block.startTime, time));
   if (starting) return { block: starting, side: "from" };
-  const ending = tracks.find((block) => Math.abs(block.endTime - time) < PLAYHEAD_KEYFRAME_EPSILON);
+  const ending = tracks.find((block) => sameKeyframeTime(block.endTime, time));
   return ending ? { block: ending, side: "to" } : null;
 }
 

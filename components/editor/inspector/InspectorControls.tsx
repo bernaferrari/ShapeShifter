@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { KeyframeDiamond } from "../KeyframeDiamond";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronRight, Ellipsis } from "lucide-react";
 import {
@@ -86,7 +87,7 @@ export function Section({
   const [open, setOpen] = React.useState(defaultOpen);
   return (
     <section className="border-b border-border last:border-b-0">
-      <div className="group/section flex h-9 items-center justify-between pl-3 pr-2">
+      <div className="group/section flex h-9 pointer-coarse:h-11 items-center justify-between pl-3 pr-2">
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
@@ -121,7 +122,7 @@ export interface KeyframeToggleProps {
 }
 
 /** Reserve only the diamond column, so fields align without space for a row menu. */
-const KEYFRAME_SLOT = "flex w-6 shrink-0 items-center";
+const KEYFRAME_SLOT = "flex w-6 pointer-coarse:w-11 shrink-0 items-center";
 
 /** Holds a row's place when it has no keyframe control, keeping columns aligned. */
 export function KeyframeSlot() {
@@ -167,7 +168,7 @@ export function KeyframeMenu({
             size="icon-xs"
             aria-label={`${label} animation options`}
             title={`${label} animation options`}
-            className="text-muted-foreground"
+            className="text-muted-foreground pointer-coarse:size-11"
           />
         }
       >
@@ -193,21 +194,14 @@ export function KeyframeToggle({
       type="button"
       onClick={keyframe.onClick}
       className={cn(
-        "grid size-6 shrink-0 place-items-center rounded-md transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring",
+        "grid size-6 pointer-coarse:size-11 shrink-0 place-items-center rounded-md transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring",
         className,
       )}
       aria-label={keyframe.label}
       aria-pressed={keyframe.active}
       title={keyframe.label}
     >
-      <span
-        className={cn(
-          "size-[7px] rotate-45 rounded-[1px] border transition-colors",
-          keyframe.active
-            ? "border-primary bg-primary"
-            : "border-muted-foreground/50 group-hover:border-muted-foreground",
-        )}
-      />
+      <KeyframeDiamond active={keyframe.active} animated={keyframe.animated} />
     </button>
   );
   if (!keyframe.removeAnimation) return <span className={KEYFRAME_SLOT}>{diamond}</span>;

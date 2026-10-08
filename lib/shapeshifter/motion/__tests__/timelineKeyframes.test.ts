@@ -73,10 +73,18 @@ describe("inserting authored timeline keyframes", () => {
     });
   });
 
-  it("rejects a boundary or a segment too short for two keys", () => {
+  it("rejects boundaries and invalid times, preserving fractional keys", () => {
     expect(insertTimelineKeyframe(block, 100, "right")).toBeNull();
     expect(insertTimelineKeyframe(block, 900, "right")).toBeNull();
-    expect(insertTimelineKeyframe({ ...block, endTime: 101 }, 100.5, "right")).toBeNull();
+    expect(
+      insertTimelineKeyframe({ ...block, endTime: 101 }, 100.5, "right")?.map((item) => [
+        item.startTime,
+        item.endTime,
+      ]),
+    ).toEqual([
+      [100, 100.5],
+      [100.5, 101],
+    ]);
     expect(insertTimelineKeyframe(block, NaN, "right")).toBeNull();
   });
 

@@ -32,6 +32,10 @@ import { useTimelineTouchNavigation } from "./timeline/useTimelineTouchNavigatio
 import { TimelineNavigationCancellation } from "./timeline/timelineNavigationCancellation";
 import {
   formatTimelineMark,
+  formatTimelineTime,
+  formatTimeNumber,
+  timelineTimeFactor,
+  timelineUnitSuffix,
   timelineMajorStep,
   type TimelineTimeUnit,
 } from "./timeline/timelineScale";
@@ -74,6 +78,7 @@ export function LayerTimeline({
   const animation = useEditorStore((state) => state.animation);
   const setAnimationDuration = useEditorStore((state) => state.setAnimationDuration);
   const togglePlayback = useEditorStore((state) => state.togglePlayback);
+  const keyframeEditorOpen = useEditorStore((state) => state.keyframeEditorOpen);
   const isPlaying = useEditorStore((state) => state.isPlaying);
   const isRepeating = useEditorStore((state) => state.isRepeating);
   const playbackMode = useEditorStore((state) => state.playbackMode);
@@ -90,6 +95,7 @@ export function LayerTimeline({
   const setFps = useTimelineViewSettings((state) => state.setFps);
   const snapping = useTimelineViewSettings((state) => state.snapping);
   const setSnapping = useTimelineViewSettings((state) => state.setSnapping);
+  const [optionsOpen, setOptionsOpen] = React.useState(false);
   const [snapGuide, setSnapGuide] = React.useState<TimelineSnapTarget | null>(null);
   const reportSnap = React.useCallback((target: TimelineSnapTarget | null) => {
     setSnapGuide((previous) =>
@@ -146,13 +152,11 @@ export function LayerTimeline({
       const state = useEditorStore.getState();
       rulerRef.current?.setAttribute(
         "aria-valuenow",
-        String(Math.round(state.progress * state.animation.duration)),
+        formatTimeNumber(state.progress * state.animation.duration),
       );
       rulerRef.current?.setAttribute(
         "aria-valuetext",
-        timeUnit === "frames"
-          ? `Frame ${Math.round((state.progress * state.animation.duration * fps) / 1000)}`
-          : `${Math.round(state.progress * state.animation.duration)} milliseconds`,
+        formatTimelineTime(state.progress * state.animation.duration, timeUnit, fps),
       );
     };
     updateValue();
@@ -326,8 +330,8 @@ export function LayerTimeline({
     >
       {/* ── Unified playhead (head in ruler, needle through tracks) ── */}
       <div
-        className="pointer-events-none absolute inset-x-0 bottom-0"
-        style={{ top: compact ? HEADER_H : 0 }}
+        className="pointer-events-none absolute inset-x-0"
+        style={{ top: compact ? HEADER_H : 0, height: HEADER_H }}
       >
         <TimelinePlayhead
           visible={!isTimelineEmpty}
@@ -364,10 +368,7 @@ export function LayerTimeline({
                   : snapGuide.kind === "keyframe"
                     ? "Keyframe"
                     : "Boundary"}{" "}
-                ·{" "}
-                {timeUnit === "frames"
-                  ? `${Number(((snapGuide.time * fps) / 1000).toFixed(2))} f`
-                  : `${Number(snapGuide.time.toFixed(3))} ms`}
+                · {formatTimelineTime(snapGuide.time, timeUnit, fps)}
               </span>
             </div>
           );
@@ -394,10 +395,8 @@ export function LayerTimeline({
           }}
         >
           <span data-timeline-preview-range-label>
-            Looping{" "}
-            {timeUnit === "frames"
-              ? `${Number(((previewRange.start * fps) / 1000).toFixed(3))}–${Number(((previewRange.end * fps) / 1000).toFixed(3))} f`
-              : `${Number(previewRange.start.toFixed(3))}–${Number(previewRange.end.toFixed(3))} ms`}
+            Looping {formatTimeNumber(previewRange.start * timelineTimeFactor(timeUnit, fps))}–
+            {formatTimelineTime(previewRange.end, timeUnit, fps)}
           </span>
           <button
             type="button"
@@ -420,7 +419,7 @@ export function LayerTimeline({
           className="flex shrink-0 items-center gap-0.5 border-r border-border pl-1.5 pr-1"
           actions={
             <>
-              <DropdownMenu>
+              <DropdownMenu modal={false} open={optionsOpen} onOpenChange={setOptionsOpen}>
                 <DropdownMenuTrigger
                   render={
                     <button
@@ -432,7 +431,12 @@ export function LayerTimeline({
                 >
                   <Ellipsis className="size-3.5" />
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" side="top" className="w-64">
+                <DropdownMenuContent
+                  align="start"
+                  side="top"
+                  finalFocus={!keyframeEditorOpen}
+                  className="w-64 duration-0 data-open:animate-none data-closed:animate-none"
+                >
                   <TimelineInsertKeyframeButton
                     label="Add keyframe at playhead"
                     presentation="menu"
@@ -471,8 +475,12 @@ export function LayerTimeline({
                   <DropdownMenuSeparator />
                   <DropdownMenuRadioGroup
                     value={timeUnit}
-                    onValueChange={(value) => setTimeUnit(value as TimelineTimeUnit)}
+                    onValueChange={(value) => {
+                      setTimeUnit(value as TimelineTimeUnit);
+                      setOptionsOpen(false);
+                    }}
                   >
+                    <DropdownMenuRadioItem value="seconds">Show seconds</DropdownMenuRadioItem>
                     <DropdownMenuRadioItem value="milliseconds">
                       Show milliseconds
                     </DropdownMenuRadioItem>
@@ -576,7 +584,7 @@ export function LayerTimeline({
                 <TimelineDurationInput unit={timeUnit} fps={fps} />
               </>
             )}
-            <span className="text-muted-foreground">{timeUnit === "frames" ? "f" : "ms"}</span>
+            <span className="text-muted-foreground">{timelineUnitSuffix(timeUnit)}</span>
           </div>
           <div className="flex-1" />
         </PanelHeader>
@@ -878,7 +886,7 @@ function KeyframeStepButton({
       disabled={disabled}
       onClick={() => stepToKeyframe(direction)}
       className={cn(
-        "grid h-7 w-4 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring",
+        "grid h-7 w-4 pointer-coarse:size-11 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring",
         compact && "size-11 touch-manipulation",
         className,
       )}

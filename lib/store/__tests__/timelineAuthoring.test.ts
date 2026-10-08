@@ -202,9 +202,13 @@ describe("timeline authoring actions", () => {
   it("clamps shared timing to keep the adjacent segments editable", () => {
     setup();
     useEditorStore.getState().updateTimelineKeyframe("right", "start", { time: -10 });
-    expect([blocks()[0].endTime, blocks()[1].startTime]).toEqual([1, 1]);
+    expect(blocks()[0].endTime).toBe(blocks()[1].startTime);
+    expect(blocks()[0].endTime).toBeGreaterThan(0);
+    expect(blocks()[0].endTime).toBeLessThan(1);
     useEditorStore.getState().updateTimelineKeyframe("right", "start", { time: 2000 });
-    expect([blocks()[0].endTime, blocks()[1].startTime]).toEqual([999, 999]);
+    expect(blocks()[0].endTime).toBe(blocks()[1].startTime);
+    expect(blocks()[0].endTime).toBeLessThan(1000);
+    expect(blocks()[0].endTime).toBeGreaterThan(999);
   });
 
   it("moves a segment while preserving shared endpoints and its span", () => {

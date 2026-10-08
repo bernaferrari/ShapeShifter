@@ -3,12 +3,15 @@
 import React from "react";
 import { TriangleAlert, X } from "lucide-react";
 import type { FormatProfile } from "@/lib/shapeshifter/formatCapabilities";
+import { trackKeyframes } from "@/lib/shapeshifter/motion/timelineKeyframes";
 import type { TimelineBlock } from "@/lib/shapeshifter/types";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { cn } from "@/lib/utils";
-import { TimelineKeyframeDiamond, TimelinePropertyBlock } from "./TimelinePropertyBlock";
+import { TimelinePropertyBlock } from "./TimelinePropertyBlock";
+import { KeyframeDiamond } from "../KeyframeDiamond";
 import type { TimelineProjection, TimelineRow } from "./timelineProjection";
 import type { TimelineSnapTarget } from "./timelineTiming";
+import { TimelineTrackLane, TimelineContentPlayhead } from "./TimelineTrackLane";
 import { ROW_COMPACT_HEIGHT, ROW_LAYER_HEIGHT, ROW_PROPERTY_HEIGHT } from "./timelineLayout";
 
 const ROW_SELECTED = "bg-primary/10";
@@ -28,7 +31,7 @@ function ReadonlyPropertyRail({ block, duration }: { block: TimelineBlock; durat
           className="absolute top-1/2 flex size-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center"
           style={{ left: `${position}%` }}
         >
-          <TimelineKeyframeDiamond size={6} />
+          <KeyframeDiamond size={6} />
         </span>
       ))}
     </div>
@@ -89,12 +92,14 @@ export function TimelineTracksPane({
           width: contentWidth + gutter * 2,
           minWidth: "100%",
           ...(!empty && {
-            backgroundImage: "linear-gradient(to right, var(--border) 1px, transparent 1px)",
+            backgroundImage:
+              "linear-gradient(to right, color-mix(in oklab, var(--border) 45%, transparent) 1px, transparent 1px)",
             backgroundSize: `${(contentWidth * majorStep) / Math.max(1, animation.duration)}px 100%`,
             backgroundPosition: `${gutter}px 0`,
           }),
         }}
       >
+        {!empty && <TimelineContentPlayhead gutter={gutter} width={contentWidth} />}
         {empty && !emptyHintDismissed && (
           <div className="absolute inset-0 z-[5] flex items-center justify-center p-6">
             <div className="relative w-full max-w-[300px] rounded-xl bg-card px-5 py-4 text-center [box-shadow:var(--elevation-floating)]">
@@ -161,6 +166,7 @@ export function TimelineTracksPane({
             row.frameId === selectedFrameId &&
             String(selectedLayerId) === String(row.layer.id);
           const trackBlocks = isObject ? morphBlocks : propertyBlocks;
+          const keys = trackKeyframes(trackBlocks);
 
           return (
             <div
@@ -199,16 +205,19 @@ export function TimelineTracksPane({
                   <TriangleAlert className="size-3" />
                 </span>
               )}
-              <div
-                data-timeline-lane
-                className="absolute inset-y-0"
-                style={{ left: gutter, width: contentWidth }}
+              <TimelineTrackLane
+                frameId={row.frameId}
+                layerId={row.layer.id}
+                propertyName={row.kind === "property" ? row.propertyName : "pathData"}
+                gutter={gutter}
+                width={contentWidth}
               >
                 {trackBlocks.map((block) =>
                   row.frameId === selectedFrameId ? (
                     <TimelinePropertyBlock
                       key={block.id}
                       block={block}
+                      trackKeys={keys}
                       duration={duration}
                       selected={selectedBlockIds.includes(block.id)}
                       gridStep={gridStep}
@@ -220,7 +229,7 @@ export function TimelineTracksPane({
                     <ReadonlyPropertyRail key={block.id} block={block} duration={duration} />
                   ),
                 )}
-              </div>
+              </TimelineTrackLane>
             </div>
           );
         })}

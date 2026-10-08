@@ -24,7 +24,15 @@ const formatCurve = (points: number[]) =>
  * The easing of one motion segment, like Figma's easing panel. Values are edited
  * at the playhead and keyframe times on the timeline, so only the curve lives here.
  */
-export function EasingPanel({ block, onBack }: { block: TimelineBlock; onBack: () => void }) {
+export function EasingPanel({
+  block,
+  onBack,
+  inline = false,
+}: {
+  block: TimelineBlock;
+  onBack: () => void;
+  inline?: boolean;
+}) {
   const label = propertyLabel(block.propertyName);
   const update = (patch: Partial<TimelineBlock>) => {
     const store = useEditorStore.getState();
@@ -67,24 +75,31 @@ export function EasingPanel({ block, onBack }: { block: TimelineBlock; onBack: (
   };
 
   return (
-    <div data-motion-block-id={block.id} className="flex h-full min-h-0 flex-col">
-      <PanelHeader className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back to properties"
-          className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <ChevronLeft className="size-4" />
-        </button>
-        <div className="min-w-0 flex-1">
-          <div className="text-[12px] font-semibold leading-tight">Easing</div>
-          <div className="truncate text-[11px] leading-tight text-muted-foreground">
-            {label} · {block.startTime}–{block.endTime} ms
+    <div
+      data-motion-block-id={block.id}
+      className={inline ? "flex min-h-0 flex-col" : "flex h-full min-h-0 flex-col"}
+    >
+      {!inline && (
+        <PanelHeader className="flex h-12 shrink-0 items-center gap-1 border-b border-border px-2">
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back to properties"
+            className="grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <ChevronLeft className="size-4" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="text-[12px] font-semibold leading-tight">Easing</div>
+            <div className="truncate text-[11px] leading-tight text-muted-foreground">
+              {label} · {block.startTime}–{block.endTime} ms
+            </div>
           </div>
-        </div>
-      </PanelHeader>
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+        </PanelHeader>
+      )}
+      <div
+        className={inline ? "min-h-0 space-y-2" : "min-h-0 flex-1 space-y-2 overflow-y-auto p-3"}
+      >
         <div className="relative">
           <EasingIcon
             points={points}
@@ -96,7 +111,7 @@ export function EasingPanel({ block, onBack }: { block: TimelineBlock; onBack: (
             onChange={(event) => {
               if (event.target.value !== "custom") update({ interpolator: event.target.value });
             }}
-            className="h-8 pointer-coarse:h-9 w-full appearance-none rounded-md border border-transparent bg-secondary pl-8 pr-7 text-[12px] text-foreground outline-none hover:border-border focus:border-primary"
+            className="h-8 pointer-coarse:h-11 w-full appearance-none rounded-md border border-transparent bg-secondary pl-8 pr-7 text-[12px] text-foreground outline-none hover:border-border focus:border-primary"
           >
             {!isNamedEasing && <option value="custom">Custom bezier</option>}
             {EASING_OPTIONS.map(([value, text]) => (
@@ -140,7 +155,7 @@ export function EasingPanel({ block, onBack }: { block: TimelineBlock; onBack: (
             }
             aria-label="Flip curve"
             title="Flip curve"
-            className="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="grid size-8 pointer-coarse:size-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <FlipHorizontal2 className="size-4" />
           </button>

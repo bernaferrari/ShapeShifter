@@ -1,3 +1,4 @@
+import type { TimelineKeyframeRef } from "../shapeshifter/motion/timelineKeyframes";
 import { create } from "zustand";
 
 /**
@@ -218,6 +219,8 @@ export interface EditorState {
   setGridDivisions: (divisions: number) => void;
 
   // Timeline
+  selectedKeyframe: TimelineKeyframeRef | null;
+  keyframeEditorOpen: boolean;
   selectedBlockIds: string[];
   timelineClipboard: TimelineClipboard | null;
   timelinePreviewRange: TimelinePreviewRange | null;
@@ -445,6 +448,9 @@ export interface EditorState {
   toggleSnap: () => void;
 
   // Timeline
+  selectTimelineKeyframe: (blockId: string, edge: "start" | "end", open?: boolean) => void;
+  setKeyframeEditorOpen: (open: boolean) => void;
+  addKeyframeAtPlayhead: (layerId: string | number, propertyName: string) => boolean;
   selectBlocks: (blockIds: string[]) => void;
   toggleBlockSelection: (blockId: string) => void;
   updateTimelineBlock: (
@@ -630,6 +636,19 @@ function setDocumentState(
     let patch = typeof update === "function" ? update(state) : update;
     if (patch.selectedFrameId !== undefined && patch.selectedFrameId !== state.selectedFrameId)
       patch = { ...patch, timelinePreviewRange: null };
+    const keyframe =
+      patch.selectedKeyframe === undefined ? state.selectedKeyframe : patch.selectedKeyframe;
+    if (
+      keyframe &&
+      ((patch.selectedFrameId !== undefined && patch.selectedFrameId !== state.selectedFrameId) ||
+        (patch.selectedLayerId !== undefined && patch.selectedLayerId !== state.selectedLayerId) ||
+        (patch.selectedBlockIds !== undefined &&
+          !patch.selectedBlockIds.includes(keyframe.blockId)) ||
+        (patch.animation !== undefined &&
+          !patch.animation.blocks.some((block) => block.id === keyframe.blockId)) ||
+        (patch.selectionKind !== undefined && patch.selectionKind !== "layer"))
+    )
+      patch = { ...patch, selectedKeyframe: null, keyframeEditorOpen: false };
     if (patch.document) {
       // A native document replacement also rebuilds its editing views atomically.
       // Patches already carrying views (undo/load/commands) have done this work.
@@ -705,6 +724,8 @@ export const useEditorStore = create<EditorState>((rawSet, get) => {
     zoom: 1,
     snapToGrid: true,
     gridDivisions: 4,
+    selectedKeyframe: null,
+    keyframeEditorOpen: false,
     selectedBlockIds: [],
     timelineClipboard: null,
     timelinePreviewRange: null,

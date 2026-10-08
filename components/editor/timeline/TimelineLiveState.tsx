@@ -1,5 +1,7 @@
 "use client";
 
+import { formatTimeNumber, timelineTimeFactor } from "./timelineScale";
+
 import React from "react";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { EasingCurve } from "../EasingCurve";
@@ -102,10 +104,10 @@ export function TimelineCurrentTimeInput({
   const draftRef = React.useRef<string | null>(null);
   const cancelBlur = React.useRef(false);
   const currentMilliseconds = progress * duration;
-  const multiplier = unit === "frames" ? fps / 1000 : 1;
+  const multiplier = timelineTimeFactor(unit, fps);
   const commit = () => {
     const raw = draftRef.current;
-    const milliseconds = Number(raw);
+    const milliseconds = Number(raw?.replace(",", "."));
     if (raw !== null && raw.trim() !== "" && Number.isFinite(milliseconds)) {
       setProgress(Math.max(0, Math.min(1, milliseconds / multiplier / Math.max(1, duration))));
     }
@@ -115,8 +117,8 @@ export function TimelineCurrentTimeInput({
   return (
     <input
       type="text"
-      inputMode="numeric"
-      value={draft ?? Math.round(currentMilliseconds * multiplier)}
+      inputMode="decimal"
+      value={draft ?? formatTimeNumber(currentMilliseconds * multiplier)}
       onFocus={(event) => {
         const store = useEditorStore.getState();
         if (store.isPlaying) store.togglePlayback();
@@ -146,8 +148,14 @@ export function TimelineCurrentTimeInput({
           event.currentTarget.blur();
         }
       }}
-      aria-label={unit === "frames" ? "Current frame" : "Current time in milliseconds"}
-      className="min-w-[2ch] max-w-[56px] rounded-sm border-0 bg-transparent p-0 text-right font-medium tabular-nums outline-none [field-sizing:content] focus-visible:ring-1 focus-visible:ring-ring"
+      aria-label={
+        unit === "frames"
+          ? "Current frame"
+          : unit === "seconds"
+            ? "Current time in seconds"
+            : "Current time in milliseconds"
+      }
+      className="w-[8ch] min-w-0 rounded-sm border-0 bg-transparent p-0 text-right font-medium tabular-nums outline-none focus-visible:ring-1 focus-visible:ring-ring"
       style={{ color }}
     />
   );
@@ -165,10 +173,10 @@ export function TimelineDurationInput({
   const [draft, setDraft] = React.useState<string | null>(null);
   const draftRef = React.useRef<string | null>(null);
   const cancelBlur = React.useRef(false);
-  const multiplier = unit === "frames" ? fps / 1000 : 1;
+  const multiplier = timelineTimeFactor(unit, fps);
   const commit = () => {
     const raw = draftRef.current;
-    const milliseconds = Number(raw);
+    const milliseconds = Number(raw?.replace(",", "."));
     if (raw !== null && raw.trim() !== "" && Number.isFinite(milliseconds) && milliseconds > 0) {
       setAnimationDuration(Math.max(100, milliseconds / multiplier));
     }
@@ -178,8 +186,8 @@ export function TimelineDurationInput({
   return (
     <input
       type="text"
-      inputMode="numeric"
-      value={draft ?? String(Math.round(duration * multiplier))}
+      inputMode="decimal"
+      value={draft ?? formatTimeNumber(duration * multiplier)}
       onFocus={(event) => {
         draftRef.current = String(duration * multiplier);
         setDraft(draftRef.current);
@@ -208,9 +216,13 @@ export function TimelineDurationInput({
         }
       }}
       aria-label={
-        unit === "frames" ? "Animation duration in frames" : "Animation duration in milliseconds"
+        unit === "frames"
+          ? "Animation duration in frames"
+          : unit === "seconds"
+            ? "Animation duration in seconds"
+            : "Animation duration in milliseconds"
       }
-      className="h-4 min-w-[2ch] max-w-[56px] rounded-sm border-0 bg-transparent p-0 text-[11px] tabular-nums text-muted-foreground [field-sizing:content] outline-none hover:text-foreground focus:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+      className="h-4 w-[8ch] min-w-0 rounded-sm border-0 bg-transparent p-0 text-[11px] tabular-nums text-muted-foreground outline-none hover:text-foreground focus:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
     />
   );
 }

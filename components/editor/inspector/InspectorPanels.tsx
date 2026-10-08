@@ -32,7 +32,10 @@ import {
   type KeyframeToggleProps,
 } from "./InspectorControls";
 import { parsePath, pathToString } from "@/lib/shapeshifter/pathUtils";
-import { layerAtTime, pathDAtTime } from "@/lib/shapeshifter/playheadResolve";
+import { pathDAtTime } from "@/lib/shapeshifter/playheadResolve";
+import { sameKeyframeTime } from "@/lib/shapeshifter/motion/timelineKeyframes";
+import { useTimelineViewSettings } from "../timeline/timelineViewSettings";
+import { formatTimelineTime } from "../timeline/timelineScale";
 import { scalePathToBounds } from "@/lib/shapeshifter/path/pathEditing";
 
 /**
@@ -43,6 +46,8 @@ export function useKeyframeToggles(layer: Layer, count: number) {
   const blocks = useEditorStore((state) => state.animation.blocks);
   const progress = useEditorStore((state) => (state.isPlaying ? null : state.progress));
   const duration = useEditorStore((state) => state.animation.duration);
+  const timeUnit = useTimelineViewSettings((state) => state.unit);
+  const fps = useTimelineViewSettings((state) => state.fps);
   const time = (progress ?? useEditorStore.getState().progress) * duration;
   const animatable = React.useMemo(
     () => new Set(timelinePropertiesForLayer(layer.type)),
@@ -63,7 +68,7 @@ export function useKeyframeToggles(layer: Layer, count: number) {
         String(block.layerId) === String(layer.id) && properties.includes(block.propertyName),
     );
     const atPlayhead = (block: (typeof blocks)[number]) =>
-      Math.abs(block.startTime - time) < 1e-6 || Math.abs(block.endTime - time) < 1e-6;
+      sameKeyframeTime(block.startTime, time) || sameKeyframeTime(block.endTime, time);
     const active = properties.every((name) =>
       trackBlocks.some((block) => block.propertyName === name && atPlayhead(block)),
     );
@@ -84,36 +89,11 @@ export function useKeyframeToggles(layer: Layer, count: number) {
         ? `Animate ${label}`
         : active
           ? `Select ${label} keyframe`
-          : `Add ${label} keyframe at ${Number(time.toFixed(2))} ms`,
+          : `Add ${label} keyframe at ${formatTimelineTime(time, timeUnit, fps)}`,
       onClick: () =>
         transaction(() => {
-          for (const name of properties) {
-            const store = useEditorStore.getState();
-            if (!animated.includes(name)) store.addTimelineBlock(layer.id, name);
-            const current = useEditorStore.getState();
-            const tracks = current.animation.blocks.filter(
-              (block) => String(block.layerId) === String(layer.id) && block.propertyName === name,
-            );
-            if (!tracks.some(atPlayhead)) {
-              const pose = layerAtTime(layer, current.animation.blocks, time, duration);
-              const value =
-                name === "pathData"
-                  ? pathDAtTime(layer, current.animation.blocks, time, duration, current.progress)
-                  : (pose as unknown as Record<string, string | number>)[name];
-              if (value !== undefined) current.setPropertiesAtPlayhead(layer.id, { [name]: value });
-            }
-          }
-          useEditorStore.getState().selectBlocks(
-            useEditorStore
-              .getState()
-              .animation.blocks.filter(
-                (block) =>
-                  String(block.layerId) === String(layer.id) &&
-                  properties.includes(block.propertyName) &&
-                  atPlayhead(block),
-              )
-              .map((block) => block.id),
-          );
+          for (const name of properties)
+            useEditorStore.getState().addKeyframeAtPlayhead(layer.id, name);
         }),
       removeAnimation: animated.length
         ? () =>
@@ -146,7 +126,7 @@ export function useKeyframeToggles(layer: Layer, count: number) {
                       .getState()
                       .removeTimelineKeyframe(
                         block.id,
-                        Math.abs(block.startTime - time) < 1e-6 ? "start" : "end",
+                        sameKeyframeTime(block.startTime, time) ? "start" : "end",
                       );
                 }
               })

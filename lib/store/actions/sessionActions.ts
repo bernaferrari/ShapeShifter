@@ -1,3 +1,4 @@
+import { trackKeyframes, sameKeyframeTime } from "../../shapeshifter/motion/timelineKeyframes";
 import { toast } from "sonner";
 import { planLayerDeletion } from "../commands/deleteLayers";
 import { zoomAtWorldPoint } from "../../shapeshifter/camera";
@@ -14,6 +15,8 @@ type SessionAction =
   | "setZoom"
   | "toggleSnap"
   | "setGridDivisions"
+  | "selectTimelineKeyframe"
+  | "setKeyframeEditorOpen"
   | "selectBlocks"
   | "toggleBlockSelection"
   | "clearBlockSelection"
@@ -85,14 +88,41 @@ export function createSessionActions(set: SetEditorState, get: () => EditorState
     toggleSnap: () => set((state) => ({ snapToGrid: !state.snapToGrid })),
     setGridDivisions: (divisions) =>
       set({ gridDivisions: divisions > 1 ? Math.round(divisions) : 4 }),
-    selectBlocks: (selectedBlockIds) => set({ selectedBlockIds }),
+    selectTimelineKeyframe: (blockId, edge, open = true) => {
+      const state = get();
+      const block = state.animation.blocks.find((item) => item.id === blockId);
+      if (!block) return;
+      const time = edge === "start" ? block.startTime : block.endTime;
+      const track = state.animation.blocks.filter(
+        (item) =>
+          String(item.layerId) === String(block.layerId) &&
+          item.propertyName === block.propertyName,
+      );
+      const key = trackKeyframes(track).find((item) => sameKeyframeTime(item.time, time));
+      if (!key) return;
+      state.selectLayer(block.layerId);
+      set({
+        selectedBlockIds: [key.blockId],
+        selectedKeyframe: { blockId: key.blockId, edge: key.edge },
+        keyframeEditorOpen: open,
+        ...(open && { timelineCollapsed: false }),
+        isPlaying: false,
+        progress: time / Math.max(1, state.animation.duration),
+      });
+    },
+    setKeyframeEditorOpen: (keyframeEditorOpen) => set({ keyframeEditorOpen }),
+    selectBlocks: (selectedBlockIds) =>
+      set({ selectedBlockIds, selectedKeyframe: null, keyframeEditorOpen: false }),
     toggleBlockSelection: (blockId) =>
       set((state) => ({
+        selectedKeyframe: null,
+        keyframeEditorOpen: false,
         selectedBlockIds: state.selectedBlockIds.includes(blockId)
           ? state.selectedBlockIds.filter((id) => id !== blockId)
           : [...state.selectedBlockIds, blockId],
       })),
-    clearBlockSelection: () => set({ selectedBlockIds: [] }),
+    clearBlockSelection: () =>
+      set({ selectedBlockIds: [], selectedKeyframe: null, keyframeEditorOpen: false }),
     toggleLayerCollapsed: (layerId) =>
       set((state) => ({
         collapsedLayerIds: state.collapsedLayerIds.includes(layerId)

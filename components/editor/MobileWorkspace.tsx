@@ -181,7 +181,11 @@ export function MobileWorkspace({
   const reducedMotion = useReducedMotion();
   const min = Math.min(160, bodyHeight);
   const max = Math.max(min, bodyHeight - (constrained ? 0 : 56));
+  const keyframeEditorOpen = useEditorStore((state) => state.keyframeEditorOpen);
   const easingBlockId = useInspectorView((state) => state.easingBlockId);
+  React.useEffect(() => {
+    if (keyframeEditorOpen) onSheetChange("motion");
+  }, [keyframeEditorOpen, onSheetChange]);
   React.useEffect(() => {
     if (easingBlockId) onSheetChange("design");
   }, [easingBlockId, onSheetChange]);
@@ -210,6 +214,7 @@ export function MobileWorkspace({
   }, [sheet, progress, reducedMotion]);
   const close = () => {
     (document.activeElement as HTMLElement | null)?.blur();
+    useEditorStore.getState().setKeyframeEditorOpen(false);
     onSheetChange(null);
     document.getElementById("editor-canvas")?.focus({ preventScroll: true });
   };
@@ -265,7 +270,13 @@ export function MobileWorkspace({
           </motion.section>
         )}
       </div>
-      <MobilePanelTabs sheet={sheet} onSheetChange={onSheetChange} />
+      <MobilePanelTabs
+        sheet={sheet}
+        onSheetChange={(next) => {
+          useEditorStore.getState().setKeyframeEditorOpen(false);
+          onSheetChange(next);
+        }}
+      />
     </div>
   );
 }

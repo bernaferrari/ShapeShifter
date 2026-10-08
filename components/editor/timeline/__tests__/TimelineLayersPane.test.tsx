@@ -287,8 +287,11 @@ describe("timeline row keyframe controls", () => {
     expect(
       inserted.filter((block) => block.startTime === 200 || block.endTime === 200),
     ).toHaveLength(2);
-    expect(control(`Remove ${layer.name} keyframe`).getAttribute("aria-pressed")).toBe("true");
-    click(control(`Remove ${layer.name} keyframe`));
+    expect(control(`Select ${layer.name} keyframe`).getAttribute("aria-pressed")).toBe("true");
+    click(control(`Select ${layer.name} keyframe`));
+    expect(useEditorStore.getState().animation.blocks).toEqual(inserted);
+    const key = useEditorStore.getState().selectedKeyframe!;
+    React.act(() => useEditorStore.getState().removeTimelineKeyframe(key.blockId, key.edge));
     expect(useEditorStore.getState().animation.blocks).toHaveLength(2);
     expect(control(`Add ${layer.name} keyframe`).getAttribute("aria-pressed")).toBe("false");
     React.act(() => useEditorStore.getState().undo());
@@ -310,6 +313,6 @@ describe("timeline row keyframe controls", () => {
       layerId: layer.id,
       propertyName: "pathData",
     });
-    control(`Remove ${layer.name} keyframe`);
+    control(`Select ${layer.name} keyframe`);
   });
 });

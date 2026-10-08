@@ -100,7 +100,11 @@ describe("supported motion authoring", () => {
     const before = useEditorStore.getState().animation.blocks;
     expect(
       before.filter((block) => block.layerId === current.id && block.propertyName === "alpha"),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
+    expect(before.find((block) => block.propertyName === "alpha")).toMatchObject({
+      startTime: 0,
+      endTime: time,
+    });
     click(button("Select Opacity keyframe"));
     expect(useEditorStore.getState().animation.blocks).toEqual(before);
     expect(rendered!.container.textContent).toContain(`${Number(time.toFixed(2))} ms`);
@@ -143,10 +147,10 @@ describe("supported motion authoring", () => {
       )
       .sort((a, b) => a.startTime - b.startTime);
     const duration = useEditorStore.getState().animation.duration;
-    expect(track).toHaveLength(2);
+    expect(track).toHaveLength(1);
     expect(track[0]!.endTime).toBe(duration / 2);
     expect(track[0]!.toValue).toBe(0.4);
-    expect(track[1]!.fromValue).toBe(0.4);
+    expect(track[0]!.fromValue).toBe(1);
     // The base value is untouched: the property is animated.
     expect(
       useEditorStore.getState().layers.find((layer) => layer.id === current.id)?.alpha ?? 1,

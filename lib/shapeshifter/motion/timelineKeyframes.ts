@@ -3,6 +3,35 @@ import { colorAtTime, numberAtTime, pathDAtTime } from "../playheadResolve";
 import { parsePath } from "../pathUtils";
 import type { InterpolatorName, Layer, TimelineBlock } from "../types";
 
+export const KEYFRAME_TIME_EPSILON = 1e-6;
+const KEYFRAME_MIN_GAP = KEYFRAME_TIME_EPSILON * 2;
+export const sameKeyframeTime = (a: number, b: number) => Math.abs(a - b) <= KEYFRAME_TIME_EPSILON;
+export interface TimelineKeyframeRef {
+  blockId: string;
+  edge: "start" | "end";
+}
+export interface TrackKeyframe extends TimelineKeyframeRef {
+  time: number;
+  value: string | number;
+}
+
+/** One pose per track/time. A shared boundary belongs to its outgoing segment. */
+export function trackKeyframes(blocks: readonly TimelineBlock[]): TrackKeyframe[] {
+  const endpoints: TrackKeyframe[] = blocks
+    .flatMap((block) => [
+      { blockId: block.id, edge: "end" as const, time: block.endTime, value: block.toValue },
+      { blockId: block.id, edge: "start" as const, time: block.startTime, value: block.fromValue },
+    ])
+    .sort((a, b) => a.time - b.time);
+  const keys: TrackKeyframe[] = [];
+  for (const key of endpoints) {
+    const previous = keys.at(-1);
+    if (!previous || !sameKeyframeTime(previous.time, key.time)) keys.push(key);
+    else if (key.edge === "start") keys[keys.length - 1] = key;
+  }
+  return keys;
+}
+
 type Point = [number, number];
 const lerp = (a: Point, b: Point, t: number): Point => [
   a[0] + (b[0] - a[0]) * t,
@@ -68,7 +97,12 @@ export function insertTimelineKeyframe(
   time: number,
   rightId: string,
 ): [TimelineBlock, TimelineBlock] | null {
-  if (!Number.isFinite(time) || time < block.startTime + 1 || time > block.endTime - 1) return null;
+  if (
+    !Number.isFinite(time) ||
+    time < block.startTime + KEYFRAME_MIN_GAP ||
+    time > block.endTime - KEYFRAME_MIN_GAP
+  )
+    return null;
   const valueType =
     block.propertyName === "pathData" || block.type === "path"
       ? "path"
@@ -146,8 +180,14 @@ export function timelineKeyframeRange(
       .map((block) => block.startTime),
   );
   return edge === "start"
-    ? [Math.max(previousEnd, (adjacent?.startTime ?? -1) + 1), target.endTime - 1]
-    : [target.startTime + 1, Math.min(nextStart, (adjacent?.endTime ?? duration + 1) - 1)];
+    ? [
+        Math.max(previousEnd, (adjacent?.startTime ?? -KEYFRAME_MIN_GAP) + KEYFRAME_MIN_GAP),
+        target.endTime - KEYFRAME_MIN_GAP,
+      ]
+    : [
+        target.startTime + KEYFRAME_MIN_GAP,
+        Math.min(nextStart, (adjacent?.endTime ?? duration + KEYFRAME_MIN_GAP) - KEYFRAME_MIN_GAP),
+      ];
 }
 
 export function timelineBlockStartRange(
@@ -158,13 +198,11 @@ export function timelineBlockStartRange(
   const left = linkedTimelineKeyframe(blocks, target, "start");
   const right = linkedTimelineKeyframe(blocks, target, "end");
   return [
-    Math.max(0, (left?.startTime ?? -1) + 1),
-    Math.min(duration, (right?.endTime ?? duration + 1) - 1) - (target.endTime - target.startTime),
+    Math.max(0, (left?.startTime ?? -KEYFRAME_MIN_GAP) + KEYFRAME_MIN_GAP),
+    Math.min(duration, (right?.endTime ?? duration + KEYFRAME_MIN_GAP) - KEYFRAME_MIN_GAP) -
+      (target.endTime - target.startTime),
   ];
 }
-
-/** Keyframe times this close to the requested time are treated as the same keyframe. */
-const KEY_EPSILON = 1;
 
 /**
  * Set an animated property's value at `time` (Figma Motion "auto-key"): update the
@@ -186,17 +224,13 @@ export function setTrackValueAt(
   const writeAtTime = (list: TimelineBlock[]) =>
     list.map((block) => {
       if (!isTrack(block)) return block;
-      const start = Math.abs(block.startTime - time) < KEY_EPSILON;
-      const end = Math.abs(block.endTime - time) < KEY_EPSILON;
+      const start = sameKeyframeTime(block.startTime, time);
+      const end = sameKeyframeTime(block.endTime, time);
       return start || end
         ? { ...block, ...(start && { fromValue: value }), ...(end && { toValue: value }) }
         : block;
     });
-  if (
-    track.some(
-      (b) => Math.abs(b.startTime - time) < KEY_EPSILON || Math.abs(b.endTime - time) < KEY_EPSILON,
-    )
-  )
+  if (track.some((b) => sameKeyframeTime(b.startTime, time) || sameKeyframeTime(b.endTime, time)))
     return writeAtTime(blocks);
   const cover = track.find((block) => time > block.startTime && time < block.endTime);
   if (cover) {
@@ -233,7 +267,7 @@ export function adjacentKeyframeTime(
   time: number,
   direction: -1 | 1,
 ): number | undefined {
-  const epsilon = 0.5;
+  const epsilon = KEYFRAME_TIME_EPSILON;
   const times = [0, duration, ...blocks.flatMap((block) => [block.startTime, block.endTime])];
   const candidates = times.filter((candidate) =>
     direction < 0 ? candidate < time - epsilon : candidate > time + epsilon,

@@ -2189,7 +2189,8 @@ describe("editorStore", () => {
           toValue: 180,
         }),
       ]);
-      expect(getStore().selectedBlockIds).toEqual([left.id]);
+      expect(getStore().selectedBlockIds).toEqual([]);
+      expect(getStore().selectedKeyframe).toBeNull();
     });
 
     it("selectBlocks sets selected block ids", () => {

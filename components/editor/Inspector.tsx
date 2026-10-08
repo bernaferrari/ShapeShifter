@@ -1,5 +1,9 @@
 "use client";
 
+import { sameKeyframeTime } from "@/lib/shapeshifter/motion/timelineKeyframes";
+import { useTimelineViewSettings } from "./timeline/timelineViewSettings";
+import { formatTimelineTime } from "./timeline/timelineScale";
+
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -139,6 +143,23 @@ export function Inspector() {
       .filter((block) => String(block.layerId) === String(currentLayer?.id))
       .map((block) => block.propertyName),
   ).size;
+  const timeUnit = useTimelineViewSettings((state) => state.unit);
+  const timeFps = useTimelineViewSettings((state) => state.fps);
+  const keyedAtPlayhead =
+    animatedPropertyCount > 0 &&
+    new Set(
+      animation.blocks
+        .filter(
+          (block) =>
+            String(block.layerId) === String(currentLayer?.id) &&
+            (sameKeyframeTime(block.startTime, playheadMs) ||
+              sameKeyframeTime(block.endTime, playheadMs)),
+        )
+        .map((block) => block.propertyName),
+    ).size === animatedPropertyCount;
+  const editingContext = animatedPropertyCount
+    ? `${keyedAtPlayhead ? "Keyframe" : "Pose"} · ${formatTimelineTime(playheadMs, timeUnit, timeFps)}`
+    : "Base artwork";
   const single = multiCount <= 1 && Boolean(currentLayer);
   /** Animated properties are keyed at the playhead; the rest edit the base value. */
   const updateLayer = (input: Partial<Layer>) => {
@@ -421,19 +442,13 @@ export function Inspector() {
           )
         }
         title={multiCount > 1 ? `${multiCount} layers` : currentLayer.name}
-        mobileSubtitle={
-          multiCount > 1
-            ? "Mixed selection"
-            : animatedPropertyCount
-              ? `Keyframe · ${Number(playheadMs.toFixed(2))} ms`
-              : "Base artwork"
-        }
+        mobileSubtitle={multiCount > 1 ? "Mixed selection" : editingContext}
         onRename={multiCount > 1 ? undefined : (name) => updateLayer({ name })}
         subtitle={
           multiCount > 1 ? (
             "Mixed selection"
           ) : (
-            <span className="flex h-5 items-center gap-1.5">
+            <span className="flex min-h-5 flex-wrap items-center gap-x-1.5 gap-y-1">
               {isPathLike ? (
                 <InlineSelect
                   label="Layer type"
@@ -452,11 +467,18 @@ export function Inspector() {
                 <span className="text-muted-foreground/70">Base artwork</span>
               ) : (
                 <span
-                  className="inline-flex h-4 items-center gap-1 rounded-sm bg-primary/12 px-1.5 text-[10px] font-medium tabular-nums text-primary"
-                  title="Edits create keyframes at the playhead"
+                  className="inline-flex h-4 shrink-0 items-center gap-1 whitespace-nowrap rounded-sm bg-primary/12 px-1.5 text-[10px] font-medium tabular-nums text-primary"
+                  title={
+                    keyedAtPlayhead
+                      ? "Edits update keyed properties; unanimated properties edit base artwork"
+                      : "Edits to animated properties create a keyframe here"
+                  }
                 >
-                  <Diamond className="size-2 fill-current" aria-hidden />
-                  {Number(playheadMs.toFixed(2))} ms
+                  <Diamond
+                    className={keyedAtPlayhead ? "size-2 fill-current" : "size-2"}
+                    aria-hidden
+                  />
+                  {editingContext}
                 </span>
               )}
             </span>
@@ -723,7 +745,7 @@ function InspectorHeader({
         ) : (
           <div className="truncate text-[12px] font-semibold leading-5">{title}</div>
         )}
-        <div className="flex h-5 items-center truncate text-[11px] text-muted-foreground">
+        <div className="flex min-h-5 items-center text-[11px] text-muted-foreground">
           {mobileHeader ? (mobileSubtitle ?? subtitle) : subtitle}
         </div>
       </div>

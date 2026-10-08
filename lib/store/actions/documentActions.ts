@@ -1,3 +1,4 @@
+import { layerAtTime, pathDAtTime } from "../../shapeshifter/playheadResolve";
 import { toast } from "sonner";
 import { structuralLockIssue } from "../commands/structuralLayers";
 import { planLayerDeletion } from "../commands/deleteLayers";
@@ -12,6 +13,8 @@ import { saveActiveFrame, updateOwnedLayers } from "../workspaceState";
 import { buildDocumentFromEditor } from "../documentRuntime";
 import {
   insertTimelineKeyframe,
+  trackKeyframes,
+  sameKeyframeTime,
   linkedTimelineKeyframe,
   setTrackValueAt,
   timelineKeyframeRange,
@@ -45,6 +48,7 @@ type DocumentActionKey =
   | "toggleOwnedLayerVisibility"
   | "toggleLayerExpanded"
   | "convertLayerType"
+  | "addKeyframeAtPlayhead"
   | "addTimelineBlock"
   | "applyMotionPreset"
   | "updateTimelineBlock"
@@ -277,6 +281,88 @@ export function createDocumentActions(
         selectedBlockIds: [block.id],
         timelineCollapsed: false,
       });
+    },
+
+    addKeyframeAtPlayhead: (layerId, propertyName) => {
+      const state = get();
+      const layer = createLayerTreeModel(state.layers).allLayers.find(
+        (item) => String(item.id) === String(layerId),
+      );
+      if (
+        !layer ||
+        structuralLockIssue(state.layers, [layerId], false) ||
+        !timelinePropertiesForLayer(layer.type).includes(propertyName as never)
+      )
+        return false;
+      const time = state.progress * state.animation.duration;
+      const track = state.animation.blocks.filter(
+        (block) => String(block.layerId) === String(layerId) && block.propertyName === propertyName,
+      );
+      const existing = trackKeyframes(track).find((key) => sameKeyframeTime(key.time, time));
+      if (existing) {
+        state.selectTimelineKeyframe(existing.blockId, existing.edge);
+        return false;
+      }
+      const pose = layerAtTime(layer, state.animation.blocks, time, state.animation.duration);
+      const value =
+        propertyName === "pathData"
+          ? pathDAtTime(
+              layer,
+              state.animation.blocks,
+              time,
+              state.animation.duration,
+              state.progress,
+            )
+          : timelineBaseValue(pose, propertyName);
+      let blocks: TimelineBlock[];
+      if (!track.length) {
+        blocks = [
+          ...state.animation.blocks,
+          {
+            id: generateId(),
+            layerId,
+            propertyName,
+            startTime: time,
+            endTime: time,
+            fromValue: value,
+            toValue: value,
+            type:
+              propertyName === "pathData" ? "path" : typeof value === "number" ? "number" : "color",
+            interpolator: "FAST_OUT_SLOW_IN",
+          },
+        ];
+      } else {
+        const cover = track.find((block) => time > block.startTime && time < block.endTime);
+        if (cover) {
+          const pair = insertTimelineKeyframe(cover, time, generateId());
+          if (!pair) return false;
+          blocks = state.animation.blocks.flatMap((block) =>
+            block.id === cover.id ? pair : [block],
+          );
+        } else
+          blocks = setTrackValueAt(
+            state.animation.blocks,
+            layerId,
+            propertyName,
+            time,
+            value,
+            generateId(),
+          )!;
+      }
+      state.pushHistory();
+      set({
+        animation: { ...state.animation, blocks },
+        timelineCollapsed: false,
+        layers: updateLayerById(state.layers, layerId, (item) => ({ ...item, expanded: true })),
+      });
+      const key = trackKeyframes(
+        blocks.filter(
+          (block) =>
+            String(block.layerId) === String(layerId) && block.propertyName === propertyName,
+        ),
+      ).find((item) => sameKeyframeTime(item.time, time));
+      if (key) get().selectTimelineKeyframe(key.blockId, key.edge);
+      return Boolean(key);
     },
 
     applyMotionPreset: (layerId, presetId, center) => {
@@ -781,10 +867,9 @@ export function createDocumentActions(
               ];
             }),
           },
-          selectedBlockIds:
-            sameTrack.length > 1
-              ? state.selectedBlockIds.filter((id) => id !== target.id)
-              : [target.id],
+          selectedKeyframe: null,
+          keyframeEditorOpen: false,
+          selectedBlockIds: [],
         });
         return;
       }
@@ -804,7 +889,9 @@ export function createDocumentActions(
       state.pushHistory();
       set({
         animation: { ...state.animation, blocks: nextBlocks },
-        selectedBlockIds: [merged.id],
+        selectedBlockIds: [],
+        selectedKeyframe: null,
+        keyframeEditorOpen: false,
       });
     },
 

@@ -312,6 +312,7 @@ export function TimelineLayersPane({
               )}
               {(row.layer.type === "path" || row.layer.type === "clipPath") && (
                 <TimelineRowKeyframeControls
+                  compact={compact}
                   frameId={row.frameId}
                   layer={row.layer}
                   propertyName="pathData"
@@ -391,6 +392,7 @@ export function TimelineLayersPane({
               />
             )}
             <TimelineRowKeyframeControls
+              compact={compact}
               frameId={row.frameId}
               layer={row.layer}
               propertyName={row.propertyName}

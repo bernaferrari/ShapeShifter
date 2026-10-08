@@ -506,7 +506,8 @@ describe("timeline scale", () => {
     expect(timelineMajorStep(1000, 5000, "milliseconds", 30)).toBe(20);
     expect(timelineMajorStep(1000, 10000, "frames", 30)).toBe(1000 / 30);
     expect(formatTimelineMark(500, "frames", 30, 100)).toBe("15");
-    expect(formatTimelineMark(500, "milliseconds", 30, 100)).toBe("0.5 s");
+    expect(formatTimelineMark(500, "milliseconds", 30, 100)).toBe("500 ms");
+    expect(formatTimelineMark(500, "seconds", 30, 100)).toBe("0.5 s");
   });
   it("clamps a zoom anchor at both physical edges", () => {
     expect(anchoredTimelineScroll(0, 1000, 3)).toBe(0);
