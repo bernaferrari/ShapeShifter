@@ -9,7 +9,16 @@ import { sharedValue } from "@/lib/shapeshifter/scene/inspectorSelection";
 import type { FillType, GradientType, Layer } from "@/lib/shapeshifter/types";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { ColorRow, GradientEditor } from "./InspectorColorControls";
-import { InlineSelect, NumberRow, Row, Section, Segmented, TextInput } from "./InspectorControls";
+import {
+  InlineSelect,
+  KeyframeMenu,
+  KeyframeSlot,
+  NumberRow,
+  Row,
+  Section,
+  Segmented,
+  TextInput,
+} from "./InspectorControls";
 import { useKeyframeToggles } from "./InspectorPanels";
 
 type StrokeCap = NonNullable<Layer["strokeLinecap"]>;
@@ -211,6 +220,139 @@ function StrokeSettings({
   );
 }
 
+const wrap = (value: number) => ((value % 1) + 1) % 1;
+
+/**
+ * The visible stretch of the path, drawn on a strip that stands for its full
+ * length. Ends set Start/End; dragging the stretch itself slides Offset.
+ */
+function TrimRangeBar({
+  start,
+  end,
+  offset,
+  disabled,
+  onChange,
+}: {
+  start: number;
+  end: number;
+  offset: number;
+  disabled?: boolean;
+  onChange: (patch: Partial<Layer>) => void;
+}) {
+  const track = React.useRef<HTMLDivElement>(null);
+  const drag = React.useRef<{
+    part: "start" | "end" | "offset";
+    x: number;
+    offset: number;
+  } | null>(null);
+  const full = start <= 0 && end >= 1;
+  // Same mapping the renderer uses: (value + offset) mod 1, with a whole path
+  // ignoring offset and a reversed pair wrapping across the seam.
+  const from = full ? 0 : wrap(start + offset);
+  const toRaw = full ? 1 : wrap(end + offset);
+  const to = !full && toRaw === 0 && end > start ? 1 : toRaw;
+  const empty = !full && start === end;
+  const ranges: Array<[number, number]> = empty
+    ? []
+    : from <= to
+      ? [[from, to]]
+      : [
+          [from, 1],
+          [0, to],
+        ];
+
+  const fraction = (clientX: number) => {
+    const box = track.current!.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (clientX - box.left) / box.width));
+  };
+  const round = (value: number) => Math.round(value * 1000) / 1000;
+  const begin = (part: "start" | "end" | "offset") => (event: React.PointerEvent) => {
+    if (disabled || !event.isPrimary || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drag.current = { part, x: event.clientX, offset };
+    useEditorStore.getState().beginHistoryGesture();
+  };
+  const move = (event: React.PointerEvent) => {
+    const session = drag.current;
+    if (!session) return;
+    if (session.part === "offset") {
+      const box = track.current!.getBoundingClientRect();
+      onChange({
+        trimPathOffset: round(wrap(session.offset + (event.clientX - session.x) / box.width)),
+      });
+      return;
+    }
+    // Ends move in screen space; convert back into the un-offset value.
+    const value = fraction(event.clientX);
+    const local = value >= 1 ? 1 : wrap(value - offset);
+    onChange(
+      session.part === "start"
+        ? { trimPathStart: round(Math.min(local, 1)) }
+        : { trimPathEnd: round(local === 0 && value > 0 ? 1 : local) },
+    );
+  };
+  const finish = (event: React.PointerEvent) => {
+    if (!drag.current) return;
+    drag.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    useEditorStore.getState().endHistoryGesture();
+  };
+  const handlers = (part: "start" | "end" | "offset") => ({
+    onPointerDown: begin(part),
+    onPointerMove: move,
+    onPointerUp: finish,
+    onPointerCancel: finish,
+  });
+  const thumb =
+    "absolute top-1/2 z-10 h-4 w-3 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize touch-none before:absolute before:inset-y-0 before:left-1/2 before:w-[3px] before:-translate-x-1/2 before:rounded-full before:bg-foreground before:shadow-[0_0_0_1px_var(--color-sidebar)] pointer-coarse:w-6";
+
+  return (
+    <div className="grid grid-cols-[64px_minmax(0,1fr)] items-center gap-2">
+      <span className="truncate text-[11px] text-muted-foreground">Visible</span>
+      <div className="flex min-w-0 items-center gap-0.5">
+        <div
+          ref={track}
+          className={cn(
+            "relative h-5 min-w-0 flex-1 rounded-sm bg-secondary",
+            disabled && "pointer-events-none opacity-50",
+          )}
+          title="Drag the ends to trim, or the bar to slide it along the path"
+        >
+          {/* The trimmed-away length reads as a dashed outline of the path. */}
+          <div className="absolute inset-x-1 top-1/2 h-px -translate-y-1/2 border-t border-dashed border-muted-foreground/40" />
+          {ranges.map(([a, b], index) => (
+            <div
+              key={index}
+              aria-hidden="true"
+              className="absolute inset-y-1 cursor-grab touch-none rounded-[2px] bg-primary/80 active:cursor-grabbing"
+              style={{ left: `${a * 100}%`, width: `${(b - a) * 100}%` }}
+              {...(full ? {} : handlers("offset"))}
+            />
+          ))}
+          <div
+            aria-hidden="true"
+            className={thumb}
+            style={{ left: `${from * 100}%` }}
+            title="Start"
+            {...handlers("start")}
+          />
+          <div
+            aria-hidden="true"
+            className={thumb}
+            style={{ left: `${to * 100}%` }}
+            title="End"
+            {...handlers("end")}
+          />
+        </div>
+        <KeyframeSlot />
+      </div>
+    </div>
+  );
+}
+
 export function LayerAppearanceSections({
   layer,
   selectedLayers,
@@ -293,7 +435,10 @@ export function LayerAppearanceSections({
 
   return (
     <>
-      <Section title="Appearance">
+      <Section
+        title="Appearance"
+        action={<KeyframeMenu label="Appearance" keyframes={[keyframeFor("alpha")]} />}
+      >
         <NumberRow
           label="Opacity"
           value={Math.round(opacity.value * 100)}
@@ -309,26 +454,31 @@ export function LayerAppearanceSections({
       <Section
         title="Fill"
         action={
-          <InlineSelect
-            label="Fill type"
-            value={fillKind.mixed ? "" : (fillKind.value as "solid" | GradientType)}
-            options={[
-              { value: "solid", label: "Solid" },
-              { value: "linear", label: "Linear" },
-              { value: "radial", label: "Radial" },
-            ]}
-            onChange={setFillKind}
-          />
+          <>
+            <InlineSelect
+              label="Fill type"
+              value={fillKind.mixed ? "" : (fillKind.value as "solid" | GradientType)}
+              options={[
+                { value: "solid", label: "Solid" },
+                { value: "linear", label: "Linear" },
+                { value: "radial", label: "Radial" },
+              ]}
+              onChange={setFillKind}
+            />
+            <KeyframeMenu
+              label="Fill"
+              keyframes={[keyframeFor("fillColor"), keyframeFor("fillAlpha")]}
+            />
+          </>
         }
       >
         {fillKind.mixed ? (
           <p className="text-[11px] text-muted-foreground">Mixed fill types</p>
         ) : layer.fillGradient ? (
-          <>
-            <GradientEditor
-              gradient={layer.fillGradient}
-              onChange={(fillGradient) => onChange({ fillGradient })}
-            />
+          <GradientEditor
+            gradient={layer.fillGradient}
+            onChange={(fillGradient) => onChange({ fillGradient })}
+          >
             {layer.fillGradient.type === "linear" && (
               <NumberRow
                 label="Angle"
@@ -337,7 +487,7 @@ export function LayerAppearanceSections({
                 onChange={(angle) => onChange({ fillGradient: { ...layer.fillGradient!, angle } })}
               />
             )}
-          </>
+          </GradientEditor>
         ) : (
           <ColorRow
             label="Color"
@@ -372,7 +522,22 @@ export function LayerAppearanceSections({
         )}
       </Section>
 
-      <Section title="Stroke" action={<StrokeSettings layer={layer} onChange={onChange} />}>
+      <Section
+        title="Stroke"
+        action={
+          <>
+            <StrokeSettings layer={layer} onChange={onChange} />
+            <KeyframeMenu
+              label="Stroke"
+              keyframes={[
+                keyframeFor("strokeColor"),
+                keyframeFor("strokeAlpha"),
+                keyframeFor("strokeWidth"),
+              ]}
+            />
+          </>
+        }
+      >
         <ColorRow
           label="Color"
           color={strokeColor.value}
@@ -403,6 +568,16 @@ export function LayerAppearanceSections({
 
       <Section
         title="Trim path"
+        action={
+          <KeyframeMenu
+            label="Trim path"
+            keyframes={[
+              keyframeFor("trimPathStart"),
+              keyframeFor("trimPathEnd"),
+              keyframeFor("trimPathOffset"),
+            ]}
+          />
+        }
         defaultOpen={
           trimAnimated ||
           (layer.trimPathStart ?? 0) !== 0 ||
@@ -410,6 +585,13 @@ export function LayerAppearanceSections({
           (layer.trimPathOffset ?? 0) !== 0
         }
       >
+        <TrimRangeBar
+          start={trimStart.value}
+          end={trimEnd.value}
+          offset={trimOffset.value}
+          disabled={trimStart.mixed || trimEnd.mixed || trimOffset.mixed}
+          onChange={onChange}
+        />
         <NumberRow
           label="Start"
           value={Math.round(trimStart.value * 100)}

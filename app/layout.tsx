@@ -8,10 +8,24 @@ import { Toaster } from "sonner";
 import type { Metadata, Viewport } from "next";
 import { THEME_BOOTSTRAP_SCRIPT } from "@/lib/theme";
 
+const title = "Pathshift — Vector & Motion Editor";
+const description =
+  "Draw vectors. Make them move. Create icons, refine path morphs, and animate Android assets in your browser with SVG and AnimatedVectorDrawable exports.";
+
 export const metadata: Metadata = {
-  title: "ShapeShifter — Vector & Motion Editor",
-  description:
-    "Draw vectors, refine path morphs, and animate Android assets with precise property tracks.",
+  title,
+  description,
+  openGraph: {
+    title,
+    description,
+    siteName: "Pathshift",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+  },
 };
 
 // Canvas gestures are handled locally; the page keeps accessible browser zoom.

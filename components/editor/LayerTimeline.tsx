@@ -417,7 +417,7 @@ export function LayerTimeline({
         style={{ height: HEADER_H * (compact ? 2 : 1) }}
       >
         <PanelHeader
-          className="flex shrink-0 items-center gap-1 border-r border-border pl-1.5 pr-1"
+          className="flex shrink-0 items-center gap-0.5 border-r border-border pl-1.5 pr-1"
           actions={
             <>
               <DropdownMenu>
@@ -433,12 +433,10 @@ export function LayerTimeline({
                   <Ellipsis className="size-3.5" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" side="top" className="w-64">
-                  {compact && (
-                    <TimelineInsertKeyframeButton
-                      label="Add keyframe at playhead"
-                      presentation="menu"
-                    />
-                  )}
+                  <TimelineInsertKeyframeButton
+                    label="Add keyframe at playhead"
+                    presentation="menu"
+                  />
                   <DropdownMenuCheckboxItem
                     checked={isRepeating}
                     onCheckedChange={() => useEditorStore.getState().toggleRepeating()}
@@ -570,10 +568,7 @@ export function LayerTimeline({
           {!compact && (
             <KeyframeStepButton direction={1} compact={false} disabled={!keyframeStops.hasNext} />
           )}
-          {!compact && (
-            <TimelineInsertKeyframeButton presentation="icon" label="Add keyframe at playhead" />
-          )}
-          <div className="flex h-6 min-w-0 items-center gap-[3px] rounded-md bg-secondary px-1.5 text-[11px] tabular-nums leading-none">
+          <div className="flex h-6 shrink-0 items-center gap-[3px] rounded-md bg-secondary px-1.5 text-[11px] tabular-nums leading-none">
             <TimelineCurrentTimeInput color={PLAYHEAD} unit={timeUnit} fps={fps} />
             {!compact && LAYERS_W >= 200 && (
               <>

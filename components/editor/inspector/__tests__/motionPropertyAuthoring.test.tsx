@@ -103,7 +103,7 @@ describe("supported motion authoring", () => {
     ).toHaveLength(2);
     click(button("Select Opacity keyframe"));
     expect(useEditorStore.getState().animation.blocks).toEqual(before);
-    expect(rendered!.container.textContent).toContain(`Keyframe · ${Number(time.toFixed(2))} ms`);
+    expect(rendered!.container.textContent).toContain(`${Number(time.toFixed(2))} ms`);
   });
 
   it("offers transforms and pivots for groups, and only geometry for clip paths", () => {
@@ -151,5 +151,29 @@ describe("supported motion authoring", () => {
     expect(
       useEditorStore.getState().layers.find((layer) => layer.id === current.id)?.alpha ?? 1,
     ).toBe(1);
+  });
+
+  it.each([
+    ["Path", "pathData", "More transform options"],
+    ["Opacity", "alpha", "Appearance animation options"],
+  ])("keeps %s removal in its section header menu", async (label, property, menuLabel) => {
+    const current = mount();
+    click(button(`Animate ${label}`));
+    await React.act(async () => click(button(menuLabel)));
+    const item = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
+      (element) => element.textContent === `Remove ${label} animation`,
+    );
+    expect(item).toBeDefined();
+    click(item!);
+    expect(
+      useEditorStore
+        .getState()
+        .animation.blocks.filter(
+          (block) => block.layerId === current.id && block.propertyName === property,
+        ),
+    ).toHaveLength(0);
+    expect(
+      rendered!.container.querySelector(`[aria-label="${label} animation options"]`),
+    ).toBeNull();
   });
 });

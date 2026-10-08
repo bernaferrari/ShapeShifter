@@ -6,7 +6,7 @@ import { propertyLabel } from "@/lib/shapeshifter/propertyLabels";
 import { useEditorStore } from "@/lib/store/editorStore";
 import { cn } from "@/lib/utils";
 import { TextSizedInput } from "../TextSizedInput";
-import { TimelineKeyframeDiamond } from "./TimelinePropertyBlock";
+import { TimelineRowKeyframeControls } from "./TimelineRowKeyframeControls";
 import { TimelinePropertyValue } from "./TimelineLiveState";
 import type { TimelineProjection, TimelineRow } from "./timelineProjection";
 import {
@@ -131,14 +131,6 @@ export function TimelineLayersPane({
     selectedLayerRefs.some(
       (reference) => reference.ownerId === frameId && String(reference.layerId) === String(layerId),
     );
-
-  const jumpTo = (milliseconds: number) => {
-    const store = useEditorStore.getState();
-    if (store.isPlaying) store.togglePlayback();
-    store.setProgress(
-      Math.max(0, Math.min(1, milliseconds / Math.max(1, store.animation.duration))),
-    );
-  };
 
   return (
     <div
@@ -318,6 +310,15 @@ export function TimelineLayersPane({
                   {row.name}
                 </span>
               )}
+              {(row.layer.type === "path" || row.layer.type === "clipPath") && (
+                <TimelineRowKeyframeControls
+                  frameId={row.frameId}
+                  layer={row.layer}
+                  propertyName="pathData"
+                  label={row.name}
+                  blocks={blocksForProperty(row.frameId, row.layer.id, "pathData")}
+                />
+              )}
             </div>
           );
         }
@@ -329,11 +330,6 @@ export function TimelineLayersPane({
           blockIds.length > 0 &&
           blockIds.every((id) => selectedBlockIds.includes(id));
         const first = blocks[0];
-        const earliest = blocks.reduce(
-          (minimum, block) => Math.min(minimum, block.startTime),
-          Number.POSITIVE_INFINITY,
-        );
-        const latest = blocks.reduce((maximum, block) => Math.max(maximum, block.endTime), 0);
         const columns = timelineTreeColumns(row.depth - 1);
         const isLast = !sameLayer(rows[index + 1], row.frameId, row.layer.id);
         const selectProperty = () => {
@@ -380,58 +376,6 @@ export function TimelineLayersPane({
             >
               {propertyLabel(row.propertyName)}
             </span>
-            {!compact && (
-              <div
-                className={cn(
-                  "flex shrink-0 items-center transition-opacity",
-                  isSelected
-                    ? "opacity-100"
-                    : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
-                )}
-              >
-                <button
-                  type="button"
-                  aria-label={`Jump to first ${propertyLabel(row.propertyName)} keyframe`}
-                  className="grid size-4 place-items-center rounded text-muted-foreground hover:bg-muted disabled:opacity-20"
-                  disabled={!Number.isFinite(earliest)}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    if (Number.isFinite(earliest)) {
-                      selectProperty();
-                      jumpTo(earliest);
-                    }
-                  }}
-                >
-                  <ChevronRight className="h-2.5 w-2.5 rotate-180" strokeWidth={2} />
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Select ${propertyLabel(row.propertyName)} keyframes`}
-                  className="grid size-4 place-items-center rounded hover:bg-muted"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    selectProperty();
-                  }}
-                >
-                  <TimelineKeyframeDiamond active={isSelected} size={6} />
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Jump to last ${propertyLabel(row.propertyName)} keyframe`}
-                  className="grid size-4 place-items-center rounded text-muted-foreground hover:bg-muted disabled:opacity-20"
-                  disabled={!latest}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    if (latest) {
-                      selectProperty();
-                      jumpTo(latest);
-                    }
-                  }}
-                >
-                  <ChevronRight className="h-2.5 w-2.5" strokeWidth={2} />
-                </button>
-              </div>
-            )}
             {width >= 200 && (
               <TimelinePropertyValue
                 block={first}
@@ -446,6 +390,13 @@ export function TimelineLayersPane({
                 selected={isSelected}
               />
             )}
+            <TimelineRowKeyframeControls
+              frameId={row.frameId}
+              layer={row.layer}
+              propertyName={row.propertyName}
+              label={`${propertyLabel(row.propertyName)} for ${row.layer.name}`}
+              blocks={blocks}
+            />
           </div>
         );
       })}

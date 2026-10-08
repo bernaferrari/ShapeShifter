@@ -5,6 +5,12 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --animate-motion-spin: motion-preview-spin 1.6s linear infinite;
+  --animate-motion-tilt: motion-preview-tilt 1.6s ease-in-out infinite;
+  --animate-motion-pulse: motion-preview-pulse 1.2s ease-in-out infinite;
+  --animate-motion-pop: motion-preview-pop 1.4s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+  --animate-motion-fade: motion-preview-fade 1.4s ease-out infinite;
+  --animate-motion-draw: motion-preview-draw 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   --font-heading: var(--font-sans);
   --font-sans: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -248,4 +254,51 @@ body {
 .mobile-workspace [aria-label="Canvas navigation"] {
   top: calc(12px + max(var(--canvas-ruler-inset, 0px), var(--mobile-canvas-offset, 0px)));
   bottom: auto;
+}
+
+/* Motion preset previews (Inspector → Motion). */
+@keyframes motion-preview-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes motion-preview-tilt {
+  25% {
+    transform: rotate(15deg);
+  }
+  75% {
+    transform: rotate(-15deg);
+  }
+}
+@keyframes motion-preview-pulse {
+  50% {
+    transform: scale(1.2);
+  }
+}
+@keyframes motion-preview-pop {
+  0% {
+    transform: scale(0);
+  }
+  70%,
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes motion-preview-fade {
+  0% {
+    opacity: 0;
+  }
+  70%,
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes motion-preview-draw {
+  0% {
+    stroke-dashoffset: 1;
+  }
+  75%,
+  100% {
+    stroke-dashoffset: 0;
+  }
 }

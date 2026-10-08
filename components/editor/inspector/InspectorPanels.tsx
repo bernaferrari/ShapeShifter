@@ -6,6 +6,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,8 @@ import {
 } from "@/lib/shapeshifter/scene/inspectorSelection";
 import {
   KeyframeToggle,
+  KeyframeMenu,
+  KeyframeMenuItems,
   KeyframeSlot,
   NumberRow,
   Row,
@@ -229,11 +232,21 @@ export function LayerTransformSection({
       (layer.pivotY ?? 0) !== 0 ||
       animated("pivotX", "pivotY"));
 
+  const transformKeyframes = [
+    keyframeFor(["translateX", "translateY"], "Position"),
+    keyframeFor("pathData", "Path"),
+    keyframeFor("rotation"),
+    keyframeFor(["scaleX", "scaleY"], "Scale"),
+    keyframeFor(["pivotX", "pivotY"], "Rotation center"),
+  ];
+
   return (
     <Section
       title="Transform"
       action={
-        !clipOnly && (
+        clipOnly ? (
+          <KeyframeMenu label="Transform" keyframes={transformKeyframes} />
+        ) : (
           <>
             <button
               type="button"
@@ -280,6 +293,12 @@ export function LayerTransformSection({
                   >
                     Rotation center
                   </DropdownMenuCheckboxItem>
+                )}
+                {transformKeyframes.some((keyframe) => keyframe?.removeAnimation) && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <KeyframeMenuItems keyframes={transformKeyframes} />
+                  </>
                 )}
               </DropdownMenuContent>
             </DropdownMenu>

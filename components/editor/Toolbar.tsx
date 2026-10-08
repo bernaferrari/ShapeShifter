@@ -113,10 +113,8 @@ export function Toolbar({
           canUndo={canUndo}
           canRedo={canRedo}
         />
-        <div className="flex min-w-0 items-center gap-1.5 pl-1">
-          <span className="truncate text-[13px] font-medium tracking-tight">
-            {vector?.name || "Untitled"}
-          </span>
+        <div className="flex min-w-0 items-center gap-1">
+          <DocumentTitleField value={vector?.name || "Untitled"} />
           <span
             className={
               autosave.status === "error" || autosave.status === "conflict"
@@ -170,28 +168,13 @@ export function Toolbar({
       </div>
 
       <div className="flex items-center justify-end gap-1.5">
-        {/* Phones have no keyboard shortcuts, so undo and redo live in the bar. */}
-        <div className="flex items-center md:hidden">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="size-9 text-muted-foreground"
-            onClick={undo}
-            disabled={!canUndo}
-            aria-label="Undo"
-          >
-            <Undo2 className="size-[18px]" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="size-9 text-muted-foreground"
-            onClick={redo}
-            disabled={!canRedo}
-            aria-label="Redo"
-          >
-            <Redo2 className="size-[18px]" />
-          </Button>
+        <div className="flex items-center">
+          <HistoryButton label="Undo" shortcut="⌘Z" onClick={undo} disabled={!canUndo}>
+            <Undo2 className="size-[18px] md:size-4" />
+          </HistoryButton>
+          <HistoryButton label="Redo" shortcut="⇧⌘Z" onClick={redo} disabled={!canRedo}>
+            <Redo2 className="size-[18px] md:size-4" />
+          </HistoryButton>
         </div>
         {showPlayback && (
           <Tooltip>
@@ -228,6 +211,84 @@ export function Toolbar({
         </ExportDialog>
       </div>
     </header>
+  );
+}
+
+/** Larger touch targets on phones, which have no keyboard shortcuts. */
+function HistoryButton({
+  label,
+  shortcut,
+  onClick,
+  disabled,
+  children,
+}: {
+  label: string;
+  shortcut: string;
+  onClick: () => void;
+  disabled: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="size-9 text-muted-foreground hover:text-foreground md:size-8"
+            onClick={onClick}
+            disabled={disabled}
+            aria-label={label}
+          />
+        }
+      >
+        {children}
+      </TooltipTrigger>
+      <TooltipContent>
+        {label} <Kbd>{shortcut}</Kbd>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** The active artboard's name, renamed in place: Enter commits, Escape cancels. */
+function DocumentTitleField({ value }: { value: string }) {
+  const [draft, setDraft] = React.useState(value);
+  const cancelBlur = React.useRef(false);
+  React.useEffect(() => setDraft(value), [value]);
+
+  const commit = () => {
+    const next = draft.trim();
+    if (cancelBlur.current || !next || next === value) {
+      cancelBlur.current = false;
+      setDraft(value);
+      return;
+    }
+    const store = useEditorStore.getState();
+    if (store.frames.some((frame) => frame.id === store.selectedFrameId))
+      store.renameFrame(store.selectedFrameId, next);
+    else store.updateVector({ name: next });
+  };
+
+  return (
+    <input
+      value={draft}
+      maxLength={80}
+      spellCheck={false}
+      aria-label="Artboard name"
+      title="Rename"
+      onChange={(event) => setDraft(event.currentTarget.value)}
+      onFocus={(event) => event.currentTarget.select()}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Escape") {
+          cancelBlur.current = true;
+          event.currentTarget.blur();
+        }
+      }}
+      className="h-7 w-full min-w-0 truncate rounded-md border border-transparent bg-transparent px-1.5 text-[13px] font-medium tracking-tight text-foreground outline-none transition-[background-color,border-color,box-shadow] field-sizing-content max-w-48 hover:bg-muted/60 focus:border-input focus:bg-background focus:ring-2 focus:ring-ring/20"
+    />
   );
 }
 

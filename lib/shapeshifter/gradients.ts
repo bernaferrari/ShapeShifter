@@ -178,3 +178,42 @@ function withAlpha(color: string, alpha: number): string {
   const b = parseInt(h.slice(4, 6), 16);
   return `rgba(${r}, ${g}, ${b}, ${Number(alpha.toFixed(3))})`;
 }
+
+const HEX6 = /^#?([0-9a-f]{6})$/i;
+
+function mixHexColors(from: string, to: string, t: number): string | null {
+  const a = HEX6.exec(from)?.[1];
+  const b = HEX6.exec(to)?.[1];
+  if (!a || !b) return null;
+  const channel = (index: number) => {
+    const start = parseInt(a.slice(index, index + 2), 16);
+    const end = parseInt(b.slice(index, index + 2), 16);
+    return Math.round(start + (end - start) * t)
+      .toString(16)
+      .padStart(2, "0");
+  };
+  return `#${channel(0)}${channel(2)}${channel(4)}`.toUpperCase();
+}
+
+/**
+ * The stop a gradient already shows at `offset`: color and opacity are sampled
+ * from the neighbours, so adding a stop never changes how the gradient looks.
+ */
+export function sampleGradientStop(stops: GradientStop[], offset: number): GradientStop {
+  const sorted = normalizeStops(stops);
+  const at = clamp01(offset);
+  const before = sorted.findLast((stop) => stop.offset <= at) ?? sorted[0];
+  const after = sorted.find((stop) => stop.offset >= at) ?? sorted[sorted.length - 1];
+  if (!before || !after) return { offset: at, color: "#000000", opacity: 1 };
+  const span = after.offset - before.offset;
+  const t = span > 0 ? (at - before.offset) / span : 0;
+  const color =
+    mixHexColors(before.color, after.color, t) ?? (t < 0.5 ? before.color : after.color);
+  const opacity = (before.opacity ?? 1) + ((after.opacity ?? 1) - (before.opacity ?? 1)) * t;
+  return { offset: at, color, opacity: Number(opacity.toFixed(3)) };
+}
+
+/** Mirror the stops so the gradient runs the other way. */
+export function reverseGradientStops(stops: GradientStop[]): GradientStop[] {
+  return stops.map((stop) => ({ ...stop, offset: Number((1 - stop.offset).toFixed(4)) }));
+}

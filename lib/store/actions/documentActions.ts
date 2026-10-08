@@ -16,6 +16,11 @@ import {
   setTrackValueAt,
   timelineKeyframeRange,
 } from "../../shapeshifter/motion/timelineKeyframes";
+import {
+  MOTION_PRESETS,
+  motionPresetSegments,
+  motionPresetsForLayer,
+} from "../../shapeshifter/motion/motionPresets";
 import { retimeTimelineBlocks } from "../../shapeshifter/motion/timelineRetiming";
 import { createLayerTreeModel } from "../../shapeshifter/scene/layerHierarchy";
 import { planTimelinePaste } from "../../shapeshifter/motion/timelineClipboard";
@@ -41,6 +46,7 @@ type DocumentActionKey =
   | "toggleLayerExpanded"
   | "convertLayerType"
   | "addTimelineBlock"
+  | "applyMotionPreset"
   | "updateTimelineBlock"
   | "insertTimelineKeyframe"
   | "updateTimelineKeyframe"
@@ -270,6 +276,62 @@ export function createDocumentActions(
         })),
         selectedBlockIds: [block.id],
         timelineCollapsed: false,
+      });
+    },
+
+    applyMotionPreset: (layerId, presetId, center) => {
+      const state = get();
+      const layer = createLayerTreeModel(state.layers).allLayers.find(
+        (candidate) => String(candidate.id) === String(layerId),
+      );
+      const preset = MOTION_PRESETS.find((candidate) => candidate.id === presetId);
+      if (
+        !layer ||
+        !preset ||
+        structuralLockIssue(state.layers, [layerId], false) ||
+        !motionPresetsForLayer(layer).includes(preset)
+      )
+        return;
+      const replaced = new Set(preset.properties);
+      const ownBlocks = state.animation.blocks.filter(
+        (block) => String(block.layerId) === String(layerId),
+      );
+      const blocks = motionPresetSegments(presetId, layer, state.animation.duration).map(
+        (segment) => ({ ...segment, id: generateId(), layerId }),
+      );
+      // Rotate and scale around the shape's own center, like the Inspector does,
+      // but only while that cannot move the artwork (identity transform, no pivot yet).
+      const centerPivot =
+        preset.centered &&
+        center &&
+        (layer.pivotX ?? 0) === 0 &&
+        (layer.pivotY ?? 0) === 0 &&
+        (layer.rotation ?? 0) === 0 &&
+        (layer.scaleX ?? 1) === 1 &&
+        (layer.scaleY ?? 1) === 1 &&
+        !ownBlocks.some((block) => ["pivotX", "pivotY"].includes(block.propertyName));
+      state.pushHistory();
+      set({
+        animation: {
+          ...state.animation,
+          blocks: [
+            ...state.animation.blocks.filter(
+              (block) =>
+                String(block.layerId) !== String(layerId) || !replaced.has(block.propertyName),
+            ),
+            ...blocks,
+          ],
+        },
+        layers: updateLayerById(state.layers, layerId, (candidateLayer) => ({
+          ...candidateLayer,
+          ...(centerPivot && { pivotX: center.x, pivotY: center.y }),
+          expanded: true,
+        })),
+        selectedBlockIds: blocks.map((block) => block.id),
+        timelineCollapsed: false,
+        progress: 0,
+        isPlaying: true,
+        playbackDirection: 1,
       });
     },
 

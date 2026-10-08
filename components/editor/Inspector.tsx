@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Ellipsis,
   Crop,
+  Diamond,
   Folder,
   Lock,
   Maximize2,
@@ -38,6 +39,7 @@ import { InlineSelect, NumberRow, Section } from "./inspector/InspectorControls"
 import { LayerAppearanceSections } from "./inspector/LayerAppearanceSections";
 import { FrameDesignPanel, LayerTransformSection } from "./inspector/InspectorPanels";
 import { MorphPrepareSection } from "./inspector/MorphPrepareSection";
+import { MotionPresetsSection } from "./inspector/MotionPresetsSection";
 import { BooleanOperationsPanel } from "./BooleanOperations";
 import { PathDataEditor } from "./inspector/PathDataEditor";
 import { PanelHeader, useMobilePanelHeader } from "./PanelHeader";
@@ -431,7 +433,7 @@ export function Inspector() {
           multiCount > 1 ? (
             "Mixed selection"
           ) : (
-            <span className="flex items-center gap-1">
+            <span className="flex h-5 items-center gap-1.5">
               {isPathLike ? (
                 <InlineSelect
                   label="Layer type"
@@ -441,19 +443,21 @@ export function Inspector() {
                     { value: "clipPath", label: "Mask" },
                   ]}
                   onChange={(type) => updateLayer({ type })}
-                  className="-ml-1"
+                  className="-ml-1 h-5"
                 />
               ) : (
                 <span>Group</span>
               )}
-              {animatedPropertyCount === 0 && <span>· Base artwork</span>}
-              {animatedPropertyCount > 0 && (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <span className="text-primary">
-                    Keyframe · {Number(playheadMs.toFixed(2))} ms
-                  </span>
-                </>
+              {animatedPropertyCount === 0 ? (
+                <span className="text-muted-foreground/70">Base artwork</span>
+              ) : (
+                <span
+                  className="inline-flex h-4 items-center gap-1 rounded-sm bg-primary/12 px-1.5 text-[10px] font-medium tabular-nums text-primary"
+                  title="Edits create keyframes at the playhead"
+                >
+                  <Diamond className="size-2 fill-current" aria-hidden />
+                  {Number(playheadMs.toFixed(2))} ms
+                </span>
               )}
             </span>
           )
@@ -538,11 +542,6 @@ export function Inspector() {
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {animatedPropertyCount > 0 && multiCount <= 1 && (
-          <p className="border-b border-border px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-            Animated fields edit this pose. Other fields edit the base artwork.
-          </p>
-        )}
         <MorphPrepareSection />
         {multiCount > 1 && allPaths && <BooleanOperationsPanel />}
         <LayerTransformSection
@@ -571,6 +570,10 @@ export function Inspector() {
             count={multiCount}
             onChange={updateLayer}
           />
+        )}
+
+        {single && currentLayer && (
+          <MotionPresetsSection layer={currentLayer} center={layerCenter(currentLayer)} />
         )}
 
         {/* The raw command list is the most technical part of the panel; collapsed until asked for. */}
@@ -697,10 +700,10 @@ function InspectorHeader({
       className="inspector-header flex min-h-12 shrink-0 items-center gap-2 border-b border-border py-1.5 pl-3 pr-2"
       actions={actions && <div className="flex shrink-0 items-center">{actions}</div>}
     >
-      <div className="grid size-6 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground in-[.mobile-workspace]:hidden">
+      <div className="grid size-8 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground in-[.mobile-workspace]:hidden">
         {icon}
       </div>
-      <div className="min-w-0 flex-1">
+      <div className="flex min-w-0 flex-1 flex-col">
         {onRename ? (
           <input
             aria-label="Name"
@@ -718,9 +721,9 @@ function InspectorHeader({
             className="-ml-1 h-5 w-full truncate rounded px-1 text-[12px] font-semibold leading-tight outline-none hover:bg-muted focus:bg-background focus:ring-1 focus:ring-primary"
           />
         ) : (
-          <div className="truncate text-[12px] font-semibold leading-tight">{title}</div>
+          <div className="truncate text-[12px] font-semibold leading-5">{title}</div>
         )}
-        <div className="mt-0.5 truncate text-[11px] leading-none text-muted-foreground">
+        <div className="flex h-5 items-center truncate text-[11px] text-muted-foreground">
           {mobileHeader ? (mobileSubtitle ?? subtitle) : subtitle}
         </div>
       </div>

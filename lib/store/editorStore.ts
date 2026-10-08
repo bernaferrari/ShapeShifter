@@ -27,6 +27,7 @@ import type {
   VectorMetadata,
 } from "../shapeshifter/types";
 import type { ToolMode, CursorType } from "../shapeshifter/toolModes";
+import type { MotionPresetId } from "../shapeshifter/motion/motionPresets";
 import type { LayerPlacement } from "../shapeshifter/scene/layerHierarchy";
 import type { LayerSelectionRef } from "../shapeshifter/scene/owners";
 import { buildEditorDocument } from "../shapeshifter/documentModel";
@@ -529,6 +530,12 @@ export interface EditorState {
   toggleLayerExpanded: (id: string | number) => void;
   convertLayerType: (id: string | number, type: Extract<LayerType, "path" | "clipPath">) => void;
   addTimelineBlock: (layerId: string | number, propertyName: string) => void;
+  /** Replace the preset's properties on a layer with ready-made, editable segments. */
+  applyMotionPreset: (
+    layerId: string | number,
+    presetId: MotionPresetId,
+    center?: { x: number; y: number } | null,
+  ) => void;
 
   // Selection (single primary + multi batch for direct manipulation parity)
   selectPoint: (selection: Selection | null, addToMulti?: boolean) => void;

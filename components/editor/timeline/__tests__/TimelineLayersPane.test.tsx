@@ -3,6 +3,7 @@
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TimelineLayersPane } from "../TimelineLayersPane";
+import { LayerTimeline } from "../../LayerTimeline";
 import type { TimelineRow } from "../timelineProjection";
 import { useEditorKeyboardShortcuts } from "../../hooks/useEditorKeyboardShortcuts";
 import { useEditorStore, type CanvasFrame } from "@/lib/store/editorStore";
@@ -11,6 +12,7 @@ import { parsePath } from "@/lib/shapeshifter/pathUtils";
 import type { TimelineBlock } from "@/lib/shapeshifter/types";
 import {
   renderEditorComponent,
+  click,
   type RenderedEditorComponent,
 } from "../../__tests__/renderEditorComponent";
 
@@ -161,7 +163,7 @@ describe("timeline navigator keyboard ownership", () => {
     ]);
     React.act(() => useEditorStore.setState({ isPlaying: true, progress: 0.9 }));
     const button = rendered!.container.querySelector(
-      '[aria-label="Jump to first Rotation keyframe"]',
+      '[aria-label="Next Rotation for Other owner artwork keyframe"]',
     )!;
     React.act(() => button.dispatchEvent(new MouseEvent("click", { bubbles: true })));
     expect(useEditorStore.getState().selectedFrameId).toBe(otherFrame.id);
@@ -208,5 +210,106 @@ describe("timeline navigator keyboard ownership", () => {
       "Other owner artwork",
     );
     expect(state.history.length).toBe(historyLength);
+  });
+});
+
+describe("timeline row keyframe controls", () => {
+  function mountMorph() {
+    const state = useEditorStore.getState();
+    const layer = state.layers[0]!;
+    const from = "M0 0 L10 0 L10 10 Z";
+    const to = "M0 0 L20 0 L20 20 Z";
+    useEditorStore.setState({
+      progress: 0,
+      animation: {
+        ...state.animation,
+        duration: 1000,
+        blocks: [
+          {
+            id: "morph-left",
+            layerId: layer.id,
+            propertyName: "pathData",
+            type: "path",
+            fromValue: from,
+            toValue: to,
+            startTime: 0,
+            endTime: 400,
+            interpolator: "LINEAR",
+          },
+          {
+            id: "morph-right",
+            layerId: layer.id,
+            propertyName: "pathData",
+            type: "path",
+            fromValue: to,
+            toValue: from,
+            startTime: 400,
+            endTime: 1000,
+            interpolator: "LINEAR",
+          },
+        ],
+      },
+    });
+    rendered = renderEditorComponent(<LayerTimeline />);
+    return layer;
+  }
+  function control(label: string) {
+    const button = rendered!.container.querySelector<HTMLButtonElement>(
+      `button[aria-label="${label}"]`,
+    );
+    expect(button).not.toBeNull();
+    return button!;
+  }
+
+  it("puts controls on a morph's layer row and seeks adjacent keys without editing", () => {
+    const layer = mountMorph();
+    const before = useEditorStore.getState().animation.blocks;
+    expect(control(`Previous ${layer.name} keyframe`).disabled).toBe(true);
+    React.act(() => useEditorStore.setState({ isPlaying: true }));
+    click(control(`Next ${layer.name} keyframe`));
+    expect(useEditorStore.getState().progress).toBe(0.4);
+    expect(useEditorStore.getState().isPlaying).toBe(false);
+    click(control(`Next ${layer.name} keyframe`));
+    expect(useEditorStore.getState().progress).toBe(1);
+    expect(control(`Next ${layer.name} keyframe`).disabled).toBe(true);
+    click(control(`Previous ${layer.name} keyframe`));
+    expect(useEditorStore.getState().progress).toBe(0.4);
+    expect(useEditorStore.getState().animation.blocks).toEqual(before);
+  });
+
+  it("adds a pose between keys, removes it, and undoes each operation in one step", () => {
+    const layer = mountMorph();
+    React.act(() => useEditorStore.getState().setProgress(0.2));
+    const before = useEditorStore.getState().animation.blocks;
+    click(control(`Add ${layer.name} keyframe`));
+    const inserted = useEditorStore.getState().animation.blocks;
+    expect(inserted).toHaveLength(3);
+    expect(
+      inserted.filter((block) => block.startTime === 200 || block.endTime === 200),
+    ).toHaveLength(2);
+    expect(control(`Remove ${layer.name} keyframe`).getAttribute("aria-pressed")).toBe("true");
+    click(control(`Remove ${layer.name} keyframe`));
+    expect(useEditorStore.getState().animation.blocks).toHaveLength(2);
+    expect(control(`Add ${layer.name} keyframe`).getAttribute("aria-pressed")).toBe("false");
+    React.act(() => useEditorStore.getState().undo());
+    expect(useEditorStore.getState().animation.blocks).toEqual(inserted);
+    React.act(() => useEditorStore.getState().undo());
+    expect(useEditorStore.getState().animation.blocks).toEqual(before);
+  });
+
+  it("starts a path animation from an empty diamond", () => {
+    const layer = mountMorph();
+    React.act(() =>
+      useEditorStore.setState({
+        animation: { ...useEditorStore.getState().animation, blocks: [] },
+      }),
+    );
+    click(control(`Animate ${layer.name}`));
+    expect(useEditorStore.getState().animation.blocks).toHaveLength(1);
+    expect(useEditorStore.getState().animation.blocks[0]).toMatchObject({
+      layerId: layer.id,
+      propertyName: "pathData",
+    });
+    control(`Remove ${layer.name} keyframe`);
   });
 });

@@ -104,7 +104,7 @@ export function Section({
         </button>
         {action && <div className="flex shrink-0 items-center gap-0.5">{action}</div>}
       </div>
-      {open && <div className="space-y-2 px-3 pb-3">{children}</div>}
+      {open && children ? <div className="space-y-2 px-3 pb-3">{children}</div> : null}
     </section>
   );
 }
@@ -120,22 +120,67 @@ export interface KeyframeToggleProps {
   label: string;
 }
 
-/**
- * Every row ends in the same column, so fields never shift. The phone layout
- * (narrow viewport) shows only the diamond, with options on long-press; the
- * desktop layout also shows a ⋯ beside it.
- */
-const KEYFRAME_SLOT = "flex w-12 shrink-0 items-center in-[.mobile-workspace]:w-6";
+/** Reserve only the diamond column, so fields align without space for a row menu. */
+const KEYFRAME_SLOT = "flex w-6 shrink-0 items-center";
 
 /** Holds a row's place when it has no keyframe control, keeping columns aligned. */
 export function KeyframeSlot() {
   return <span className={KEYFRAME_SLOT} aria-hidden />;
 }
 
-/**
- * Tap the diamond to toggle a key at the playhead. On an animated property,
- * removal lives in a menu: ⋯ on desktop, long-press or right-click anywhere.
- */
+/** Shared animation actions for section menus and a diamond's context menu. */
+export function KeyframeMenuItems({
+  keyframes,
+}: {
+  keyframes: (KeyframeToggleProps | undefined)[];
+}) {
+  return keyframes.map((keyframe) =>
+    !keyframe?.removeAnimation ? null : (
+      <React.Fragment key={keyframe.removeAnimationLabel}>
+        {keyframe.removeKeyframe && (
+          <DropdownMenuItem onClick={keyframe.removeKeyframe}>
+            {keyframe.removeKeyframeLabel}
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem variant="destructive" onClick={keyframe.removeAnimation}>
+          {keyframe.removeAnimationLabel}
+        </DropdownMenuItem>
+      </React.Fragment>
+    ),
+  );
+}
+
+export function KeyframeMenu({
+  label,
+  keyframes,
+}: {
+  label: string;
+  keyframes: (KeyframeToggleProps | undefined)[];
+}) {
+  if (!keyframes.some((keyframe) => keyframe?.removeAnimation)) return null;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label={`${label} animation options`}
+            title={`${label} animation options`}
+            className="text-muted-foreground"
+          />
+        }
+      >
+        <Ellipsis className="size-3.5" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-48">
+        <KeyframeMenuItems keyframes={keyframes} />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** Tap to key at the playhead; removal is in the section menu or right-click/long-press. */
 export function KeyframeToggle({
   keyframe,
   className,
@@ -166,40 +211,14 @@ export function KeyframeToggle({
     </button>
   );
   if (!keyframe.removeAnimation) return <span className={KEYFRAME_SLOT}>{diamond}</span>;
-  const items = (
-    <>
-      {keyframe.removeKeyframe && (
-        <DropdownMenuItem onClick={keyframe.removeKeyframe}>
-          {keyframe.removeKeyframeLabel}
-        </DropdownMenuItem>
-      )}
-      <DropdownMenuItem variant="destructive" onClick={keyframe.removeAnimation}>
-        {keyframe.removeAnimationLabel}
-      </DropdownMenuItem>
-    </>
-  );
   return (
     <span className={KEYFRAME_SLOT}>
       <ContextMenu>
         <ContextMenuTrigger render={<span className="flex" />}>{diamond}</ContextMenuTrigger>
-        <ContextMenuContent className="min-w-44">{items}</ContextMenuContent>
+        <ContextMenuContent className="min-w-44">
+          <KeyframeMenuItems keyframes={[keyframe]} />
+        </ContextMenuContent>
       </ContextMenu>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <button
-              type="button"
-              aria-label={`${keyframe.removeAnimationLabel?.replace("Remove ", "")} options`}
-              className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring data-popup-open:bg-muted in-[.mobile-workspace]:hidden"
-            />
-          }
-        >
-          <Ellipsis className="size-3" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="min-w-44">
-          {items}
-        </DropdownMenuContent>
-      </DropdownMenu>
     </span>
   );
 }
@@ -287,7 +306,9 @@ export function NumberRow({
   // comma, e.g. "2,4" on pt-BR), and we accept both "." and "," on commit.
   const [draft, setDraft] = React.useState<string | null>(null);
   const draftRef = React.useRef<string | null>(null);
-  const display = draft ?? (mixed ? "" : Number.isFinite(value) ? String(value) : "0");
+  // At rest, hide float noise (3.649999 → 3.65); focusing reveals the exact value.
+  const display =
+    draft ?? (mixed ? "" : Number.isFinite(value) ? String(Number(value.toFixed(3))) : "0");
 
   const clamp = (n: number, quantize = true) => {
     let next = n;

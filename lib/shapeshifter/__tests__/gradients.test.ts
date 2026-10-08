@@ -15,6 +15,8 @@ import {
   gradientToSvg,
   linearVector,
   normalizeStops,
+  reverseGradientStops,
+  sampleGradientStop,
 } from "../gradients";
 import { exportStaticSVG, exportVectorDrawable } from "../exporter";
 import { importLayersFromSvg } from "../importers";
@@ -201,5 +203,32 @@ describe("gradient import", () => {
     const layers: Layer[] = importLayersFromSvg(svg);
     expect(layers[0].fillGradient).toBeUndefined();
     expect(layers[0].fillColor).toBe("#abcdef");
+  });
+});
+
+describe("gradient stop editing", () => {
+  const stops = [
+    { offset: 0, color: "#000000", opacity: 1 },
+    { offset: 1, color: "#FFFFFF", opacity: 0 },
+  ];
+
+  it("samples the color and opacity a new stop already shows", () => {
+    expect(sampleGradientStop(stops, 0.5)).toEqual({ offset: 0.5, color: "#808080", opacity: 0.5 });
+    expect(sampleGradientStop(stops, 0)).toMatchObject({ color: "#000000", opacity: 1 });
+  });
+
+  it("falls back to the nearest stop for colors it cannot blend", () => {
+    const named = [
+      { offset: 0, color: "red" },
+      { offset: 1, color: "blue" },
+    ];
+    expect(sampleGradientStop(named, 0.2).color).toBe("red");
+    expect(sampleGradientStop(named, 0.8).color).toBe("blue");
+  });
+
+  it("reverses stop order by mirroring offsets", () => {
+    expect(reverseGradientStops([{ offset: 0.25, color: "#111111" }])).toEqual([
+      { offset: 0.75, color: "#111111" },
+    ]);
   });
 });
