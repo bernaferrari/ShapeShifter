@@ -22,6 +22,8 @@ pnpm start
 
 Set `NEXT_PUBLIC_SITE_URL` to the public origin (for example, `https://your-domain.example`) when deploying. Vercel's production URL is detected automatically. This resolves the canonical link and Open Graph/Twitter share-image URLs. The generated share card lives in `app/opengraph-image.tsx`; `app/icon.svg`, `app/favicon.ico`, and `app/apple-icon.tsx` supply the browser and iPhone icons.
 
+The share card shows the real editor. To refresh its 2800 × 1160 screenshot, run `node scripts/capture-social-preview.mjs` against a running app on port 3077 (or set `PATHSHIFT_PREVIEW_URL`), then rebuild.
+
 ## Working on the project
 
 The app uses **Next.js 16, React 19, TypeScript, Tailwind CSS 4, and Zustand**. Vitest covers behavior; Oxlint and Oxfmt handle linting and formatting. Paper.js supplies the curve Boolean kernel.

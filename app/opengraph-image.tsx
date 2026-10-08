@@ -3,102 +3,72 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export const alt =
-  "Pathshift — Android icons. Made to move. VectorDrawable and AnimatedVectorDrawable editor, illustrated with an icon morph and keyframes on an Android phone.";
+  "Pathshift — Android vector animation editor. Actual workspace showing a play-to-pause icon, editable path points, inspector, and animation timeline.";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 const icon = await readFile(join(process.cwd(), "app/icon.svg"), "base64");
-const illustration = await readFile(join(process.cwd(), "app/social-preview.svg"), "base64");
+const editor = await readFile(join(process.cwd(), "docs/pathshift-social-editor.jpg"), "base64");
 
 export default function OpenGraphImage() {
   return new ImageResponse(
     <div
       style={{
         display: "flex",
-        position: "relative",
+        flexDirection: "column",
         width: "100%",
         height: "100%",
-        background: "radial-gradient(ellipse at 85% 40%, #193c30 0%, #111a19 40%, #101415 75%)",
+        background: "#101113",
         color: "#f5f5f5",
-        padding: "52px 60px",
+        padding: "32px 40px",
       }}
     >
-      <div style={{ display: "flex", flexDirection: "column", width: 640 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-          <img src={`data:image/svg+xml;base64,${icon}`} width={52} height={52} alt="" />
-          <span style={{ fontSize: 36, fontWeight: 700, letterSpacing: -1 }}>Pathshift</span>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            marginTop: 64,
-            fontSize: 18,
-            letterSpacing: 3,
-            color: "#80edab",
-          }}
-        >
-          ANDROID VECTOR ANIMATION
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          height: 92,
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 18, height: 64 }}>
+            <img src={`data:image/svg+xml;base64,${icon}`} width={52} height={52} alt="" />
+            <span style={{ fontSize: 64, lineHeight: 1, fontWeight: 700, letterSpacing: -3 }}>
+              Pathshift
+            </span>
+          </div>
+          <div style={{ display: "flex", marginTop: 6, fontSize: 22, color: "#a6a9b0" }}>
+            Android vector animation, in your browser.
+          </div>
         </div>
         <div
           style={{
             display: "flex",
             flexDirection: "column",
-            marginTop: 21,
-            fontSize: 78,
-            lineHeight: 1.08,
-            letterSpacing: -4,
-            fontWeight: 700,
-          }}
-        >
-          <span>Android icons.</span>
-          <span style={{ color: "#80edab" }}>Made to move.</span>
-        </div>
-        <div style={{ display: "flex", marginTop: 28, fontSize: 25, color: "#aebcb5" }}>
-          Draw. Morph. Export Android XML.
-        </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            marginTop: 52,
+            alignItems: "flex-end",
+            gap: 6,
             fontSize: 18,
-            color: "#c4d6cb",
           }}
         >
-          {["VectorDrawable", "AnimatedVectorDrawable"].map((format) => (
-            <div
-              key={format}
-              style={{
-                display: "flex",
-                padding: "12px 16px",
-                border: "1px solid #30443b",
-                borderRadius: 10,
-                background: "#15221c",
-              }}
-            >
-              {format}
-            </div>
-          ))}
+          <span style={{ color: "#a6a9b0" }}>VectorDrawable</span>
+          <span style={{ color: "#55b4ff" }}>AnimatedVectorDrawable</span>
         </div>
       </div>
-      <img
-        src={`data:image/svg+xml;base64,${illustration}`}
-        width={480}
-        height={520}
-        alt=""
-        style={{ position: "absolute", right: 12, top: 54 }}
-      />
       <div
         style={{
           display: "flex",
-          position: "absolute",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: 4,
-          background: "linear-gradient(90deg, #1496ff, #80edab)",
+          flexShrink: 0,
+          marginTop: 22,
+          width: 1120,
+          height: 464,
+          overflow: "hidden",
+          borderRadius: 12,
+          border: "1px solid #393b40",
         }}
-      />
+      >
+        <img src={`data:image/jpeg;base64,${editor}`} width={1120} height={464} alt="" />
+      </div>
     </div>,
     size,
   );
