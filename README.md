@@ -51,7 +51,9 @@ or API key required.
 3. **Set another pose.** Move the playhead and change the property. Edit the
    resulting timeline segment’s values and timing to refine the movement.
 4. **Make it feel right.** Press Play, scrub the timeline, and adjust easing.
-   Use a preview range to focus on one part of the animation.
+   Use a preview range to focus on one part of the animation. Enable **Show next
+   pose** in Motion’s **Timeline options (⋯)** to see a ghost of the selected
+   object at its next keyframe. The ghost hides during playback and at the final key.
 5. **Export.** Choose **Animated Vector** for an Android animation ZIP,
    **Vector Drawable** for static Android XML, or **Project** to keep an
    editable copy. The export dialog identifies unsupported features before

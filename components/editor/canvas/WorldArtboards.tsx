@@ -32,7 +32,6 @@ interface WorldArtboardsProps {
   selectedLayerRefKeys: Set<string>;
   selectionKind: "none" | "frame" | "layer";
   hasCanvasSelection: boolean;
-  editingSide: "from" | "to";
   editLayer?: Layer;
   editPath: PathData | null;
   hoveredFrameId: string | null;
@@ -70,7 +69,15 @@ function wrapDrawWithClips(draw: WorldLayerDraw, ownerId: string, content: React
   );
 }
 
-export function LayerDraw({ draw, ownerId }: { draw: WorldLayerDraw; ownerId: string }) {
+export function LayerDraw({
+  draw,
+  ownerId,
+  ghost = false,
+}: {
+  draw: WorldLayerDraw;
+  ownerId: string;
+  ghost?: boolean;
+}) {
   const gradId = draw.fillGradient
     ? `ss-world-grad-${svgIdFragment(ownerId)}-${svgIdFragment(draw.id)}`
     : null;
@@ -86,6 +93,7 @@ export function LayerDraw({ draw, ownerId }: { draw: WorldLayerDraw; ownerId: st
       {draw.d && (
         <path
           d={draw.d}
+          opacity={ghost ? 0.16 : undefined}
           fill={gradId ? `url(#${gradId})` : (draw.fill ?? "none")}
           fillOpacity={gradId ? 1 : draw.fillOpacity}
           fillRule={draw.fillType === "evenOdd" ? "evenodd" : "nonzero"}
@@ -96,6 +104,18 @@ export function LayerDraw({ draw, ownerId }: { draw: WorldLayerDraw; ownerId: st
           strokeLinejoin={draw.strokeLinejoin}
           strokeMiterlimit={draw.strokeMiterLimit}
           strokeDasharray={draw.strokeDasharray}
+          pointerEvents="none"
+        />
+      )}
+      {ghost && draw.d && (
+        <path
+          d={draw.d}
+          fill="none"
+          stroke="var(--primary)"
+          strokeWidth={1.3}
+          strokeDasharray="4 3"
+          vectorEffect="non-scaling-stroke"
+          opacity={0.45}
           pointerEvents="none"
         />
       )}
@@ -233,7 +253,6 @@ const FrameArtboard = React.memo(function FrameArtboard({
   selectedFrameIds,
   selectionKind,
   hasCanvasSelection,
-  editingSide,
   editLayer,
   editPath,
   hovered,
@@ -255,7 +274,6 @@ const FrameArtboard = React.memo(function FrameArtboard({
   selectedFrameIds: string[];
   selectionKind: "none" | "frame" | "layer";
   hasCanvasSelection: boolean;
-  editingSide: "from" | "to";
   editLayer?: Layer;
   editPath: PathData | null;
   hovered: boolean;
@@ -336,22 +354,6 @@ const FrameArtboard = React.memo(function FrameArtboard({
     selectedFrameId,
     selectedLayerRefKeys,
   ]);
-  const onionD = useMemo(
-    () =>
-      !isPlaying &&
-      isPointTool &&
-      frame.id === selectedFrameId &&
-      editLayer &&
-      editLayer.type !== "group" &&
-      editLayer.to
-        ? pathToString(
-            (editLayer[editingSide === "from" ? "to" : "from"] as PathData) ?? {
-              subPaths: [],
-            },
-          )
-        : "",
-    [editLayer, editingSide, frame.id, isPlaying, isPointTool, selectedFrameId],
-  );
   const borderColor = dropTarget
     ? "var(--primary)"
     : selected || draggingFrame
@@ -410,18 +412,6 @@ const FrameArtboard = React.memo(function FrameArtboard({
       </clipPath>
       <g clipPath={`url(#frame-clip-${frame.id})`}>
         <ClipDefinitions ownerId={frame.id} draws={draws} />
-        {onionD && (
-          <path
-            d={onionD}
-            fill="none"
-            stroke="var(--primary)"
-            strokeWidth={Math.max(0.8, Math.min(2.2, bounds.w / 24))}
-            strokeDasharray={`${worldPerPx * 4} ${worldPerPx * 3}`}
-            opacity={0.35}
-            vectorEffect="non-scaling-stroke"
-            pointerEvents="none"
-          />
-        )}
         <VectorDrawableRootPaint
           vector={frame.vector}
           ownerId={frame.id}
@@ -506,7 +496,6 @@ export function WorldArtboards({
   selectedLayerRefKeys,
   selectionKind,
   hasCanvasSelection,
-  editingSide,
   editLayer,
   editPath,
   hoveredFrameId,
@@ -552,7 +541,6 @@ export function WorldArtboards({
             selectedFrameIds={selectedFrameIds}
             selectionKind={selectionKind}
             hasCanvasSelection={hasCanvasSelection}
-            editingSide={editingSide}
             editLayer={editLayer}
             editPath={editPath}
             hovered={hoveredFrameId === frame.id}

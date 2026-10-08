@@ -95,6 +95,8 @@ export function LayerTimeline({
   const setFps = useTimelineViewSettings((state) => state.setFps);
   const snapping = useTimelineViewSettings((state) => state.snapping);
   const setSnapping = useTimelineViewSettings((state) => state.setSnapping);
+  const showNextPose = useTimelineViewSettings((state) => state.showNextPose);
+  const setShowNextPose = useTimelineViewSettings((state) => state.setShowNextPose);
   const [optionsOpen, setOptionsOpen] = React.useState(false);
   const [snapGuide, setSnapGuide] = React.useState<TimelineSnapTarget | null>(null);
   const reportSnap = React.useCallback((target: TimelineSnapTarget | null) => {
@@ -441,6 +443,16 @@ export function LayerTimeline({
                     label="Add keyframe at playhead"
                     presentation="menu"
                   />
+                  <DropdownMenuCheckboxItem
+                    checked={showNextPose}
+                    onCheckedChange={(checked) => setShowNextPose(Boolean(checked))}
+                  >
+                    Show next pose
+                  </DropdownMenuCheckboxItem>
+                  <p className="px-2 py-1 text-[11px] leading-relaxed text-muted-foreground">
+                    Ghost the selected object at its next keyframe.
+                  </p>
+                  <DropdownMenuSeparator />
                   <DropdownMenuCheckboxItem
                     checked={isRepeating}
                     onCheckedChange={() => useEditorStore.getState().toggleRepeating()}

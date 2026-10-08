@@ -92,7 +92,6 @@ function renderWorld(
         selectedLayerRefKeys={new Set()}
         selectionKind="none"
         hasCanvasSelection={false}
-        editingSide="from"
         editPath={null}
         hoveredFrameId={null}
         hoveredLayerKey={null}
@@ -157,7 +156,6 @@ describe("WorldArtboards trimmed endpoint poses", () => {
       selectedFrameId: "frame",
       editLayer: layer,
       editPath: layer.to,
-      editingSide: "to" as const,
     };
     const direct = renderWorld([layer], { ...selected, isPointTool: true });
     expect(direct).toContain('<path d="M20 0 L32 0 L32 12" fill="#e11d48"');

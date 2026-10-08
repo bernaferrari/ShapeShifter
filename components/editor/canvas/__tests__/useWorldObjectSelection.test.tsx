@@ -116,7 +116,6 @@ function Harness() {
         selectedLayerRefKeys={keys}
         selectionKind="layer"
         hasCanvasSelection
-        editingSide="from"
         editPath={null}
         hoveredFrameId={null}
         hoveredLayerKey={null}

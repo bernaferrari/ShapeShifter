@@ -6,6 +6,7 @@ import { WorldSelectionOverlay } from "./canvas/WorldSelectionOverlay";
 import { CoordinateRulers } from "./canvas/CoordinateRulers";
 import { CanvasNavigationControls } from "./canvas/CanvasNavigationControls";
 import { WorldArtboards } from "./canvas/WorldArtboards";
+import { WorldNextPose } from "./canvas/WorldNextPose";
 import { WorldDraggedLayers } from "./canvas/WorldDraggedLayers";
 import { WorldFrameChrome } from "./canvas/WorldFrameChrome";
 import { useArtboardDrag } from "./canvas/useArtboardDrag";
@@ -857,7 +858,6 @@ export function CanvasArea({
                       selectedLayerRefKeys={selectedLayerRefKeys}
                       selectionKind={selectionKind}
                       hasCanvasSelection={hasCanvasSelection}
-                      editingSide={editingSide}
                       editLayer={editLayer}
                       editPath={editPath}
                       hoveredFrameId={hoveredFrameId}
@@ -870,6 +870,11 @@ export function CanvasArea({
                       progress={progress}
                       worldPerPx={worldPerPx}
                       gridVisibility={gridVisibility}
+                    />
+                    <WorldNextPose
+                      owners={sceneOwners}
+                      selection={selectedLayerRefs}
+                      worldPerPx={worldPerPx}
                     />
                     {/* Dragged objects are composited above every frame so a destination
                         artboard can never hide the object before it is reparented. */}
