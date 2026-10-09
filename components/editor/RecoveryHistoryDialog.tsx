@@ -20,9 +20,14 @@ function checkpointDescription(payload: unknown) {
   const project = value as {
     document?: { name?: string; frameIds?: string[]; rootNodeIds?: string[] };
   } | null;
+  const artboards = project?.document?.frameIds?.length ?? 0;
+  const looseLayers = project?.document?.rootNodeIds?.length ?? 0;
+  const parts = [`${artboards} ${artboards === 1 ? "artboard" : "artboards"}`];
+  if (looseLayers > 0)
+    parts.push(`${looseLayers} ${looseLayers === 1 ? "layer" : "layers"} outside artboards`);
   return {
     name: project?.document?.name || "Pathshift project",
-    detail: `${project?.document?.frameIds?.length ?? 0} artboards · ${project?.document?.rootNodeIds?.length ?? 0} page layers`,
+    detail: parts.join(" · "),
   };
 }
 
@@ -48,12 +53,15 @@ export function RecoveryHistoryDialog({
     setSelected(null);
     Promise.all([readAutosave(), readRecoveryCheckpoints()])
       .then(([current, history]) => {
-        if (!cancelled)
-          setCheckpoints(
-            current == null
-              ? history
-              : [{ current: true, savedAt: Date.now(), payload: current }, ...history],
-          );
+        if (cancelled) return;
+        const entries: RecoveryEntry[] =
+          current == null
+            ? history
+            : [{ current: true, savedAt: Date.now(), payload: current }, ...history];
+        setCheckpoints(entries);
+        // Preselect the newest restorable checkpoint so the primary action is ready.
+        const firstPast = entries.findIndex((entry) => !entry.current);
+        setSelected(entries.length ? (firstPast >= 0 ? firstPast : 0) : null);
       })
       .catch(() => {
         if (!cancelled) setError("Version history could not be opened in this browser.");
@@ -67,7 +75,7 @@ export function RecoveryHistoryDialog({
   }, [open]);
   const restore = async () => {
     const checkpoint = selected == null ? null : checkpoints[selected];
-    if (!checkpoint) return;
+    if (!checkpoint || checkpoint.current) return;
     setRestoring(true);
     setError("");
     try {
@@ -97,6 +105,7 @@ export function RecoveryHistoryDialog({
     anchor.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+  const selectedIsCurrent = selected != null && Boolean(checkpoints[selected]?.current);
   const relativeTime = (savedAt: number) => {
     const seconds = Math.max(0, Math.round((Date.now() - savedAt) / 1000));
     if (seconds < 60) return "Just now";
@@ -153,24 +162,22 @@ export function RecoveryHistoryDialog({
                     [target]?.focus();
                 }}
                 onClick={() => setSelected(index)}
-                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring ${isSelected ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring ${isSelected ? "bg-primary/10 shadow-[inset_0_0_0_1px_var(--primary)]" : "hover:bg-muted"}`}
               >
                 <span
-                  className={`size-2 shrink-0 rounded-full ${checkpoint.current ? (isSelected ? "bg-primary-foreground" : "bg-primary") : isSelected ? "bg-primary-foreground/60" : "bg-muted-foreground/40"}`}
+                  className={`size-2 shrink-0 rounded-full ${checkpoint.current ? "bg-primary" : "bg-muted-foreground/40"}`}
                 />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px] font-medium">
                     {checkpoint.current ? "Current version" : description.name}
                   </span>
-                  <span
-                    className={`block truncate text-[12px] ${isSelected ? "text-primary-foreground/80" : "text-muted-foreground"}`}
-                  >
+                  <span className={`block truncate text-[12px] text-muted-foreground`}>
                     {checkpoint.current ? description.name : description.detail}
                   </span>
                 </span>
                 <time
                   dateTime={new Date(checkpoint.savedAt).toISOString()}
-                  className={`shrink-0 text-[12px] tabular-nums ${isSelected ? "text-primary-foreground/80" : "text-muted-foreground"}`}
+                  className={`shrink-0 text-[12px] tabular-nums text-muted-foreground`}
                 >
                   {relativeTime(checkpoint.savedAt)}
                 </time>
@@ -180,6 +187,11 @@ export function RecoveryHistoryDialog({
           {!checkpoints.length && !loading && !error && (
             <p className="py-10 text-center text-[13px] text-muted-foreground">
               Versions will appear here as you work.
+            </p>
+          )}
+          {!loading && checkpoints.length > 0 && checkpoints.every((entry) => entry.current) && (
+            <p className="px-3 pt-2 pb-1 text-[12px] text-muted-foreground">
+              Earlier versions appear here as you keep working.
             </p>
           )}
           {loading && (
@@ -200,7 +212,11 @@ export function RecoveryHistoryDialog({
           >
             Download copy
           </Button>
-          <Button size="sm" onClick={restore} disabled={selected == null || loading || restoring}>
+          <Button
+            size="sm"
+            onClick={restore}
+            disabled={selected == null || selectedIsCurrent || loading || restoring}
+          >
             {restoring ? "Restoring…" : "Restore"}
           </Button>
         </div>

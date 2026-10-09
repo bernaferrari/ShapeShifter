@@ -234,7 +234,14 @@ export function WorldFrameChrome({
 
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         {frames.map((frame) => {
-          if (frame.id !== selectedFrameId && frame.id !== hoveredFrameId) return null;
+          // The badge describes the frame itself, so it hides while a layer inside
+          // is the selection (its size would be mistaken for the layer's).
+          const frameSelected =
+            hasCanvasSelection &&
+            selectionKind === "frame" &&
+            (selectedFrameIds.includes(frame.id) ||
+              (selectedFrameIds.length === 0 && frame.id === selectedFrameId));
+          if (!frameSelected && frame.id !== hoveredFrameId) return null;
           const screen = screenRect(frame);
           const centerX = screen.x + screen.width / 2;
           const bottom = screen.y + screen.height;

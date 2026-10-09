@@ -88,7 +88,6 @@ export function Toolbar({
   canRedo,
 }: ToolbarProps) {
   const vector = useEditorStore((state) => state.vector);
-  const closeActionMode = useEditorStore((state) => state.closeActionMode);
 
   return (
     <header
@@ -131,6 +130,9 @@ export function Toolbar({
       <div className="hidden items-center justify-center gap-2 md:flex">
         {isActionMode && (
           <>
+            <span className="hidden text-[12px] text-muted-foreground lg:inline">
+              Editing morph shape
+            </span>
             <div
               role="radiogroup"
               aria-label="Editing side"
@@ -154,15 +156,6 @@ export function Toolbar({
                 </button>
               ))}
             </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              className="h-7 px-3 text-[12px]"
-              onClick={closeActionMode}
-              aria-label="Back to canvas"
-            >
-              Done
-            </Button>
           </>
         )}
       </div>
@@ -390,7 +383,9 @@ function MainMenu({
             <DropdownMenuItem
               onClick={() => {
                 resetProject();
-                toast.success("New project");
+                toast.success("Started a new project from the starter icons", {
+                  action: { label: "Undo", onClick: () => useEditorStore.getState().undo() },
+                });
               }}
             >
               New project

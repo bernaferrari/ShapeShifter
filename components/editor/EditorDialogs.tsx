@@ -61,7 +61,7 @@ const SHORTCUT_SECTIONS: ReadonlyArray<{
     title: "Tools",
     rows: [
       ["Move", "V"],
-      ["Edit points", "Enter"],
+      ["Edit points", "A / Enter"],
       ["Pen", "P"],
       ["Rectangle", "R"],
       ["Ellipse", "O"],

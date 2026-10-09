@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { Info, Loader2 } from "lucide-react";
+import { ChevronRight, Info, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { recordExerciseExport } from "./animationExercise";
 import { toast } from "sonner";
@@ -91,6 +91,8 @@ export function ExportDialog({ children }: ExportDialogProps) {
     messages: [],
   });
   const [generated, setGenerated] = useState<LiveExportResult | null>(null);
+  const [artworkPreview, setArtworkPreview] = useState<string | null>(null);
+  const [showDemos, setShowDemos] = useState(false);
   React.useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -124,6 +126,25 @@ export function ExportDialog({ children }: ExportDialogProps) {
     };
   }, [open, format, selectedFrameId, selectedLayerId, layers, animation, vector, frames, options]);
 
+  // Every artwork format gets a visual: the artboard's first pose as a static SVG.
+  React.useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    exportLiveDocument("static", options)
+      .then((result) => {
+        if (!cancelled && typeof result.content === "string")
+          setArtworkPreview(
+            `data:image/svg+xml;charset=utf-8,${encodeURIComponent(result.content)}`,
+          );
+      })
+      .catch(() => {
+        if (!cancelled) setArtworkPreview(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, selectedFrameId, layers, animation, vector, frames, options]);
+
   const formatOptions: Array<{
     key: typeof format;
     label: string;
@@ -131,20 +152,20 @@ export function ExportDialog({ children }: ExportDialogProps) {
     beta?: boolean;
     experimental?: boolean;
   }> = [
-    { key: "avd", label: "Animated Vector", hint: "Android · XML" },
-    { key: "vector", label: "Vector Drawable", hint: "Android · static" },
-    { key: "svg", label: "Morph demo SVG", hint: "Restyled endpoints", experimental: true },
-    { key: "static", label: "SVG", hint: "Web · static" },
-    { key: "css", label: "Morph demo CSS", hint: "Endpoint geometry", experimental: true },
+    { key: "avd", label: "Animated Vector", hint: "Android · AVD XML" },
+    { key: "vector", label: "Vector Drawable", hint: "Android · Static XML" },
+    { key: "svg", label: "Morph SVG", hint: "Restyled endpoints", experimental: true },
+    { key: "static", label: "SVG", hint: "Web · Static" },
+    { key: "css", label: "Morph CSS", hint: "Endpoint geometry", experimental: true },
     { key: "lottie", label: "Lottie", hint: "JSON", beta: true },
     { key: "pdf", label: "PDF", hint: "Print", beta: true },
     {
       key: "spritesheet",
-      label: "Morph sprite sheet",
+      label: "Sprite sheet",
       hint: "Endpoint frames",
       experimental: true,
     },
-    { key: "json", label: "Project", hint: "Reopen later" },
+    { key: "json", label: "Pathshift project", hint: "Reopen and keep editing" },
   ];
 
   const svgOutput =
@@ -152,6 +173,13 @@ export function ExportDialog({ children }: ExportDialogProps) {
       ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(generated.content)}`
       : null;
   const demo = ["svg", "css", "spritesheet"].includes(format);
+  const demosOpen = showDemos || demo;
+  const outputSize = generated ? new Blob([generated.content as BlobPart]).size : null;
+  const scopeLabel = demo
+    ? `Selected path · ${currentLayer?.name ?? "No path selected"}`
+    : format === "json"
+      ? "Whole document"
+      : `${selectedFrameId === "__page_root__" ? "Page" : "Artboard"} · ${selectedFrame?.name || vector.name}`;
   const handleExport = async () => {
     if (!currentLayer && LIVE_EXPORT_SCOPE[format as LiveExportKind] === "selected-layer") {
       toast.error("No layer selected");
@@ -259,106 +287,112 @@ export function ExportDialog({ children }: ExportDialogProps) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={children as React.ReactElement} />
-      <DialogContent className="flex max-h-[90dvh] max-w-[440px] flex-col gap-0 overflow-hidden p-0">
-        <DialogHeader className="px-5 pt-4 pb-3">
+      <DialogContent className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-[520px]">
+        <DialogHeader className="gap-0.5 px-5 pt-4 pb-3">
           <DialogTitle className="text-[15px]">Export</DialogTitle>
-          <DialogDescription className="sr-only">
-            Choose a format for {selectedFrame?.name || vector.name}.
-          </DialogDescription>
+          <DialogDescription className="text-[12px]">{scopeLabel}</DialogDescription>
         </DialogHeader>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 pb-4">
-          <div className="space-y-2">
-            <p className="text-[12px] text-muted-foreground">
-              {demo
-                ? `Selected path · ${currentLayer?.name ?? "No path selected"}`
-                : format === "json"
-                  ? "Whole document"
-                  : `${selectedFrameId === "__page_root__" ? "Page" : "Artboard"} · ${selectedFrame?.name || vector.name}`}
-            </p>
-            {svgOutput ? (
-              format === "svg" ? (
+          <figure className="overflow-hidden rounded-xl bg-secondary/60 ring-1 ring-border">
+            <div className="flex h-40 items-center justify-center bg-white bg-[conic-gradient(#ececec_25%,transparent_0_50%,#ececec_0_75%,transparent_0)] bg-[length:16px_16px] p-4">
+              {demo && svgOutput && format === "svg" ? (
                 <iframe
                   title="Generated morph demo preview"
                   sandbox="allow-scripts"
                   src={svgOutput}
-                  className="h-48 w-full rounded-lg border border-border"
+                  className="size-full rounded-md"
                 />
-              ) : (
+              ) : demo && svgOutput ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={svgOutput}
                   alt="Generated SVG output"
-                  className="h-40 w-full rounded-lg border border-border object-contain"
+                  className="size-full object-contain"
                 />
-              )
-            ) : generated && typeof generated.content === "string" ? (
-              <pre
-                aria-label="Generated export output"
-                className="max-h-32 overflow-auto rounded-lg bg-secondary p-2 text-[11px]"
-              >
-                {generated.content.slice(0, 6000)}
-              </pre>
-            ) : (
-              <p className="rounded-lg bg-secondary p-3 text-[12px] text-muted-foreground">
-                {generated
-                  ? "Output ready to download. This format has no visual preview."
-                  : "Generating output preview…"}
-              </p>
-            )}
-            {demo && (
-              <p className="rounded-lg bg-secondary p-3 text-[12px] leading-relaxed text-muted-foreground">
-                Experimental morph demo. Uses this path’s From → To geometry, with separate styling
-                and timing. It does not export authored fills, transforms, masks, or timeline
-                motion.
-                {format === "svg" &&
-                  " Includes a dark background, ghost endpoints, a colored outline, and demo easing."}
-              </p>
-            )}
-          </div>
+              ) : demo && generated && typeof generated.content === "string" ? (
+                <pre
+                  aria-label="Generated export output"
+                  className="size-full overflow-auto rounded-md bg-background/80 p-2 text-[11px]"
+                >
+                  {generated.content.slice(0, 6000)}
+                </pre>
+              ) : artworkPreview && !demo ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={artworkPreview}
+                  alt={`Preview of ${selectedFrame?.name || vector.name}`}
+                  className="size-full object-contain drop-shadow-sm"
+                />
+              ) : (
+                <Loader2 className="size-4 animate-spin text-muted-foreground" />
+              )}
+            </div>
+            <figcaption className="flex items-center gap-2 border-t border-border px-3 py-2 text-[12px]">
+              <span className="min-w-0 flex-1 truncate font-medium">
+                {generated?.filename ?? "Preparing file…"}
+              </span>
+              {outputSize != null && (
+                <span className="shrink-0 tabular-nums text-muted-foreground">
+                  {formatBytes(outputSize)}
+                </span>
+              )}
+            </figcaption>
+          </figure>
+          {demo && (
+            <p className="rounded-lg bg-secondary p-3 text-[12px] leading-relaxed text-muted-foreground">
+              Experimental morph demo. Uses this path’s From → To geometry, with separate styling
+              and timing. It does not export authored fills, transforms, masks, or timeline motion.
+              {format === "svg" &&
+                " Includes a dark background, ghost endpoints, a colored outline, and demo easing."}
+            </p>
+          )}
 
-          <div role="radiogroup" aria-label="Export format" className="space-y-3">
-            {[false, true].map((experimental) => (
-              <div key={String(experimental)} className="space-y-1.5">
-                <p className="text-[12px] font-medium">
-                  {experimental ? "Experimental demos" : "Artwork and project"}
-                </p>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {formatOptions
-                    .filter((item) => Boolean(item.experimental) === experimental)
-                    .map((item) => {
-                      const selected = format === item.key;
-                      return (
-                        <button
-                          key={item.key}
-                          type="button"
-                          role="radio"
-                          aria-checked={selected}
-                          onClick={() => {
-                            setFormat(item.key);
-                            setPreferredExportFormat(item.key);
-                          }}
-                          className={cn(
-                            "flex min-h-14 flex-col items-start justify-start rounded-lg px-2.5 py-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                            selected
-                              ? "bg-primary/10 shadow-[inset_0_0_0_1.5px_var(--primary)]"
-                              : "shadow-[inset_0_0_0_1px_var(--border)] hover:bg-muted",
-                          )}
-                        >
-                          <span className="text-[12px] leading-tight font-medium">
-                            {item.label}
-                          </span>
-                          <span className="mt-0.5 text-[11px] leading-tight text-muted-foreground">
-                            {item.hint}
-                            {item.beta && " · Beta"}
-                            {item.experimental && " · Experimental"}
-                          </span>
-                        </button>
-                      );
-                    })}
-                </div>
+          <div role="radiogroup" aria-label="Export format" className="space-y-2">
+            <div className="grid grid-cols-2 gap-1.5">
+              {formatOptions
+                .filter((item) => !item.experimental)
+                .map((item) => (
+                  <FormatOption
+                    key={item.key}
+                    item={item}
+                    selected={format === item.key}
+                    onSelect={() => {
+                      setFormat(item.key);
+                      setPreferredExportFormat(item.key);
+                    }}
+                  />
+                ))}
+            </div>
+            <button
+              type="button"
+              aria-expanded={demosOpen}
+              onClick={() => setShowDemos(!demosOpen)}
+              disabled={demo}
+              className="flex items-center gap-1 py-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none"
+            >
+              <ChevronRight
+                className={cn("size-3.5 transition-transform", demosOpen && "rotate-90")}
+              />
+              Experimental morph demos
+            </button>
+            {demosOpen && (
+              <div className="grid grid-cols-3 gap-1.5">
+                {formatOptions
+                  .filter((item) => item.experimental)
+                  .map((item) => (
+                    <FormatOption
+                      key={item.key}
+                      item={item}
+                      selected={format === item.key}
+                      onSelect={() => {
+                        setFormat(item.key);
+                        setPreferredExportFormat(item.key);
+                      }}
+                    />
+                  ))}
               </div>
-            ))}
+            )}
           </div>
 
           {hasOptions && (
@@ -511,5 +545,48 @@ function SizeField({
         className="h-7 w-full rounded-md border border-transparent bg-secondary pr-2 pl-6 text-[12px] tabular-nums outline-none hover:border-border focus:border-primary aria-invalid:border-destructive"
       />
     </label>
+  );
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function FormatOption({
+  item,
+  selected,
+  onSelect,
+}: {
+  item: { label: string; hint: string; beta?: boolean };
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onSelect}
+      className={cn(
+        "flex min-w-0 flex-col items-start rounded-lg px-3 py-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        selected
+          ? "bg-primary/10 shadow-[inset_0_0_0_1.5px_var(--primary)]"
+          : "shadow-[inset_0_0_0_1px_var(--border)] hover:bg-muted",
+      )}
+    >
+      <span className="flex w-full items-center gap-1.5 text-[12px] leading-tight font-medium">
+        <span className="truncate">{item.label}</span>
+        {item.beta && (
+          <span className="rounded bg-muted px-1 py-px text-[10px] font-medium text-muted-foreground">
+            Beta
+          </span>
+        )}
+      </span>
+      <span className="mt-0.5 w-full truncate text-[11px] leading-tight text-muted-foreground">
+        {item.hint}
+      </span>
+    </button>
   );
 }

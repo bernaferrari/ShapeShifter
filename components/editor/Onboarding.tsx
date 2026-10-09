@@ -233,11 +233,11 @@ export function Onboarding({
       role="dialog"
       aria-label="Getting started"
       className={cn(
-        "pointer-events-auto absolute right-3 bottom-16 z-40 w-64 max-w-[calc(100%-1.5rem)] max-md:left-3 max-md:w-auto rounded-xl bg-card p-3 [box-shadow:var(--elevation-floating)]",
+        "pointer-events-auto absolute right-3 bottom-16 z-40 w-72 max-w-[calc(100%-1.5rem)] max-md:left-3 max-md:w-auto rounded-xl bg-card p-3 [box-shadow:var(--elevation-floating)]",
         "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300",
       )}
     >
-      <div className="mb-2.5 text-[12px] font-semibold">Welcome to Pathshift</div>
+      <div className="mb-3 text-[13px] font-semibold">Welcome to Pathshift</div>
       <ul className="space-y-2">
         {tips.map((tip, i) => (
           <li key={i} className="flex gap-2.5">
@@ -245,13 +245,22 @@ export function Onboarding({
               {tip.icon}
             </span>
             <div className="min-w-0">
-              <div className="text-[11px] font-medium leading-tight">{tip.title}</div>
+              <div className="text-[12px] font-medium leading-tight">{tip.title}</div>
               <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{tip.body}</p>
             </div>
           </li>
         ))}
       </ul>
-      <div className="mt-3 flex flex-wrap justify-end gap-2">
+      <div className="mt-3 flex items-center justify-end gap-1.5">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8 px-3 text-[12px]"
+          onClick={dismiss}
+          aria-label="Dismiss onboarding"
+        >
+          Got it
+        </Button>
         <Button
           size="sm"
           className="h-8 px-3 text-[12px]"
@@ -262,15 +271,6 @@ export function Onboarding({
           }}
         >
           Make an icon move
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-7 px-3 text-[12px]"
-          onClick={dismiss}
-          aria-label="Dismiss onboarding"
-        >
-          Got it
         </Button>
       </div>
     </div>

@@ -50,7 +50,7 @@ export function AgentToolsDialog({
     }
   };
   const editorClass =
-    "h-64 resize-none rounded-lg border-transparent bg-secondary font-mono text-[11px] leading-relaxed [field-sizing:fixed] focus-visible:border-primary";
+    "h-64 resize-none rounded-lg border-transparent bg-secondary font-mono text-[11px] md:text-[11px] leading-relaxed [field-sizing:fixed] focus-visible:border-primary";
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="gap-0 p-0 sm:max-w-3xl">

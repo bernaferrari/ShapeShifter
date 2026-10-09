@@ -216,6 +216,14 @@ export function createCameraActions(
         const h = current.h * (current.scale / desiredScale);
         target = { x: center.x - w / 2, y: center.y - h / 2, w, h, scale: desiredScale };
       } else {
+        // Picking a layer that is already on screen must not move the camera;
+        // the stored viewport is always contained in the visible canvas.
+        const isVisible =
+          bounds.x >= current.x &&
+          bounds.y >= current.y &&
+          bounds.x + bounds.w <= current.x + current.w &&
+          bounds.y + bounds.h <= current.y + current.h;
+        if (isVisible) return;
         target = {
           ...current,
           x: center.x - current.w / 2,

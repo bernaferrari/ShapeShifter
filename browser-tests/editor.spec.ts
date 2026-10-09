@@ -166,7 +166,8 @@ test("morph demo preview is the generated output and uses the same settings as d
   await page.getByRole("button", { name: "Dismiss onboarding" }).click();
   await page.getByRole("button", { name: "Export", exact: true }).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByRole("radio", { name: "Morph demo SVG", exact: false }).click();
+  await dialog.getByRole("button", { name: "Experimental morph demos" }).click();
+  await dialog.getByRole("radio", { name: "Morph SVG", exact: false }).click();
   await expect(dialog.getByText("Experimental morph demo.", { exact: false })).toBeVisible();
   const preview = dialog.locator('iframe[title="Generated morph demo preview"]');
   await expect(preview).toBeVisible();

@@ -100,10 +100,10 @@ describe("editorStore", () => {
       expect(getStore().worldViewport).toEqual(before);
     });
 
-    it("centers a layer without changing zoom when selected from the Layers panel", () => {
+    it("centers an off-screen layer without changing zoom when selected from the Layers panel", () => {
       const frame = getStore().frames[0]!;
       const layer = frame.layers[0]!;
-      getStore().setWorldViewport({ x: -200, y: -150, w: 400, h: 300, scale: 1 });
+      getStore().setWorldViewport({ x: -1200, y: -150, w: 400, h: 300, scale: 1 });
 
       getStore().bringLayerIntoView(frame.id, layer.id, { animate: false, fit: false });
 
@@ -111,7 +111,18 @@ describe("editorStore", () => {
       expect(viewport.w).toBe(400);
       expect(viewport.h).toBe(300);
       expect(viewport.scale).toBe(1);
-      expect(viewport.x).toBeGreaterThan(-200);
+      expect(viewport.x).toBeGreaterThan(-1200);
+    });
+
+    it("keeps the camera still when the picked layer is already visible", () => {
+      const frame = getStore().frames[0]!;
+      const layer = frame.layers[0]!;
+      const visible = { x: -200, y: -150, w: 400, h: 300, scale: 1 };
+      getStore().setWorldViewport(visible);
+
+      getStore().bringLayerIntoView(frame.id, layer.id, { animate: false, fit: false });
+
+      expect(getStore().worldViewport).toEqual(visible);
     });
 
     it("fits a double-clicked layer instead of framing its entire artboard", () => {

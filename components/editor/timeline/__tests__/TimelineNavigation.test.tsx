@@ -303,7 +303,7 @@ describe("timeline navigation", () => {
     expect(range.style.left).toBe("350px");
     expect(range.style.width).toBe("600px");
     expect(label()).toBe("Looping 100–700 ms");
-    await timelineOption("Show frames");
+    React.act(() => useTimelineViewSettings.getState().setUnit("frames"));
     expect(label()).toBe("Looping 3–21 f");
     click("Preview full animation");
     expect(rendered.container.querySelector("[data-timeline-preview-range]")).toBeNull();
@@ -416,7 +416,7 @@ describe("timeline navigation", () => {
   it("displays and steps exact frames without rounding fractional milliseconds", async () => {
     useEditorStore.setState({ progress: 0.5 });
     rendered = renderEditorComponent(<KeyboardTimeline />);
-    await timelineOption("Show frames");
+    React.act(() => useTimelineViewSettings.getState().setUnit("frames"));
     const frame = rendered.container.querySelector<HTMLInputElement>(
       '[aria-label="Current frame"]',
     )!;
@@ -437,7 +437,7 @@ describe("timeline navigation", () => {
     const id = useEditorStore.getState().selectedBlockIds[0];
     store.updateTimelineBlock(id, { startTime: 100, endTime: 700 });
     rendered = renderEditorComponent(<LayerTimeline />);
-    await timelineOption("Show frames");
+    React.act(() => useTimelineViewSettings.getState().setUnit("frames"));
     const clip = rendered.container.querySelector<HTMLElement>("[data-timeline-block-id]")!;
     React.act(() =>
       clip.dispatchEvent(

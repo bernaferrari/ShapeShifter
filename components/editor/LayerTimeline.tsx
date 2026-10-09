@@ -476,6 +476,18 @@ export function LayerTimeline({
                     Slow motion
                   </DropdownMenuCheckboxItem>
                   <DropdownMenuCheckboxItem
+                    checked={Boolean(previewRange)}
+                    disabled={!previewRange && !selectedRange}
+                    onCheckedChange={() =>
+                      useEditorStore
+                        .getState()
+                        .setTimelinePreviewRange(previewRange ? null : selectedRange)
+                    }
+                  >
+                    Loop selection
+                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuCheckboxItem
                     checked={snapping}
                     onCheckedChange={(checked) => setSnapping(Boolean(checked))}
                   >
@@ -484,23 +496,28 @@ export function LayerTimeline({
                   <p className="px-2 py-1 text-[11px] leading-relaxed whitespace-nowrap text-muted-foreground">
                     Hold Alt / Option to ignore snapping.
                   </p>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuRadioGroup
-                    value={timeUnit}
-                    onValueChange={(value) => {
-                      setTimeUnit(value as TimelineTimeUnit);
-                      setOptionsOpen(false);
-                    }}
-                  >
-                    <DropdownMenuRadioItem value="seconds">Show seconds</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="milliseconds">
-                      Show milliseconds
-                    </DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="frames">Show frames</DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
                   <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>Frame rate · {fps} fps</DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent className="w-32">
+                    <DropdownMenuSubTrigger>
+                      Time display
+                      <span className="ml-auto pl-3 text-[12px] text-muted-foreground">
+                        {timeUnit === "seconds" ? "s" : timeUnit === "frames" ? `${fps} fps` : "ms"}
+                      </span>
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-40">
+                      <DropdownMenuRadioGroup
+                        value={timeUnit}
+                        onValueChange={(value) => {
+                          setTimeUnit(value as TimelineTimeUnit);
+                          setOptionsOpen(false);
+                        }}
+                      >
+                        <DropdownMenuRadioItem value="seconds">Seconds</DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="milliseconds">
+                          Milliseconds
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="frames">Frames</DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                      <DropdownMenuSeparator />
                       <DropdownMenuRadioGroup
                         value={String(fps)}
                         onValueChange={(value) => setFps(Number(value))}
@@ -514,17 +531,6 @@ export function LayerTimeline({
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
                   <DropdownMenuSeparator />
-                  <DropdownMenuCheckboxItem
-                    checked={Boolean(previewRange)}
-                    disabled={!previewRange && !selectedRange}
-                    onCheckedChange={() =>
-                      useEditorStore
-                        .getState()
-                        .setTimelinePreviewRange(previewRange ? null : selectedRange)
-                    }
-                  >
-                    Loop selection
-                  </DropdownMenuCheckboxItem>
                   <DropdownMenuItem onClick={() => navigation.zoomBy(Math.sqrt(2))}>
                     Zoom in
                     <DropdownMenuShortcut>⌘ scroll</DropdownMenuShortcut>
