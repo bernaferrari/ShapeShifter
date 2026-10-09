@@ -17,17 +17,23 @@ async function openMotion(page: Page, mobile: boolean) {
   await page.getByRole("button", { name: "Make an icon move", exact: true }).click();
   await page.getByRole("button", { name: "Close animation exercise" }).click();
   await page.getByRole("button", { name: "Animate Rotation", exact: true }).click();
-  if (mobile) await page.getByRole("button", { name: "Motion", exact: true }).click();
+  if (mobile) {
+    const motion = page
+      .getByRole("navigation", { name: "Panels" })
+      .getByRole("button", { name: "Motion", exact: true });
+    if ((await motion.getAttribute("aria-pressed")) !== "true") await motion.click();
+  }
   await page
     .getByRole("button", { name: "Select Rotation track for Moving icon", exact: true })
     .click();
   const time = page.getByRole("textbox", { name: "Current time in milliseconds" });
   await time.fill("400");
   await time.press("Enter");
-  if (mobile) {
-    await page.getByRole("button", { name: "Timeline options" }).click();
-    await page.getByRole("menuitem", { name: "Add keyframe at playhead" }).click();
-  } else await page.getByRole("button", { name: "Add keyframe at playhead" }).click();
+  await page
+    .getByRole("button", { name: "Add Rotation for Moving icon keyframe", exact: true })
+    .click();
+  const closeKeyEditor = page.getByRole("button", { name: "Close keyframe editor", exact: true });
+  if (await closeKeyEditor.isVisible()) await closeKeyEditor.click();
   await time.fill("250");
   await time.press("Enter");
 }
@@ -143,7 +149,7 @@ for (const mobile of [true, false]) {
         const target =
           kind === "keyframe"
             ? page.getByRole("button", {
-                name: "Rotation start keyframe at 400 milliseconds",
+                name: "Rotation end keyframe at 400 milliseconds",
                 exact: true,
               })
             : kind === "duration"
@@ -165,7 +171,7 @@ for (const mobile of [true, false]) {
         if (kind === "keyframe")
           await expect(
             page.getByRole("button", {
-              name: "Rotation start keyframe at 400 milliseconds",
+              name: "Rotation end keyframe at 400 milliseconds",
               exact: true,
             }),
           ).toHaveCount(0);

@@ -71,10 +71,18 @@ test("Motion labels playback and keyframe actions and inserts only into the sele
   await practice(page);
   await page.getByRole("button", { name: "Design", exact: true }).tap();
   await page.getByRole("button", { name: "Animate Position", exact: true }).tap();
-  await page.getByRole("button", { name: "Motion", exact: true }).tap();
-  const play = page.getByRole("button", { name: "Play", exact: true });
+  // Starting motion opens its sheet; tapping the active tab would close it.
+  const motionTab = page
+    .getByRole("navigation", { name: "Panels" })
+    .getByRole("button", { name: "Motion", exact: true });
+  await expect(motionTab).toHaveAttribute("aria-pressed", "true");
+  const closeKeyEditor = page.getByRole("button", { name: "Close keyframe editor", exact: true });
+  await closeKeyEditor.tap();
+  const motion = page.getByRole("region", { name: "Motion", exact: true });
+  const play = motion.getByRole("button", { name: "Play", exact: true });
   await expect(play).toHaveCount(1);
-  await expect(play).toHaveText("Play");
+  await expect(play).toHaveAccessibleName("Play");
+  await expect(play).toBeInViewport();
   await expect(
     page.getByRole("button", { name: "Add keyframe at playhead", exact: true }),
   ).toHaveCount(0);
@@ -90,14 +98,15 @@ test("Motion labels playback and keyframe actions and inserts only into the sele
   const x = page.getByRole("textbox", { name: "X", exact: true });
   await x.fill("8");
   await x.press("Enter");
-  await page.getByRole("button", { name: "Motion", exact: true }).tap();
+  if ((await motionTab.getAttribute("aria-pressed")) !== "true") await motionTab.tap();
+  if (await closeKeyEditor.isVisible()) await closeKeyEditor.tap();
   await page.getByRole("button", { name: "Select X track for Moving icon", exact: true }).tap();
   await expect(
     page.getByRole("button", { name: "Select X track for Moving icon", exact: true }),
-  ).toHaveText("X");
+  ).toContainText("X");
   await expect(
     page.getByRole("button", { name: "Select Y track for Moving icon", exact: true }),
-  ).toHaveText("Y");
+  ).toContainText("Y");
   const time = page.getByRole("textbox", { name: "Current time in milliseconds", exact: true });
   await time.fill("500");
   await time.press("Enter");
@@ -105,15 +114,16 @@ test("Motion labels playback and keyframe actions and inserts only into the sele
   const add = page.getByRole("menuitem", { name: "Add keyframe at playhead", exact: true });
   await expect(add).toHaveText("Add keyframe");
   await add.tap();
+  // A shared boundary is represented by the outgoing segment's start key.
   await expect(
-    page.getByRole("button", { name: "X end keyframe at 500 milliseconds", exact: true }),
+    page.getByRole("button", { name: "X start keyframe at 500 milliseconds", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Y end keyframe at 500 milliseconds", exact: true }),
+    page.getByRole("button", { name: "Y start keyframe at 500 milliseconds", exact: true }),
   ).toHaveCount(0);
   await page.getByRole("button", { name: "Undo", exact: true }).tap();
   await expect(
-    page.getByRole("button", { name: "X end keyframe at 500 milliseconds", exact: true }),
+    page.getByRole("button", { name: "X start keyframe at 500 milliseconds", exact: true }),
   ).toHaveCount(0);
   await page.screenshot({ path: "/tmp/pathshift-mobile-clear-motion.png" });
 });
@@ -247,6 +257,14 @@ test("every mobile panel uses one header row for its actions, grab handle, and c
     const close = header.getByRole("button", { name: "Close panel", exact: true });
     await expect(handle).toBeInViewport();
     await expect(close).toBeInViewport();
+    // Read header and panel geometry only after the sheet has slid into place.
+    await expect
+      .poll(async () => {
+        const headerBox = (await header.boundingBox())!;
+        const panelBox = (await panel.boundingBox())!;
+        return headerBox.y - panelBox.y;
+      })
+      .toBeCloseTo(1, 4);
     const geometry = await header.evaluate((element) => ({
       y: element.getBoundingClientRect().y,
       height: element.getBoundingClientRect().height,

@@ -133,11 +133,18 @@ test("guided animation and exact mobile values survive panels, landscape, and a 
   await expect(page.getByRole("button", { name: "Preview motion", exact: true })).toBeVisible();
   if (info.project.name === "phone") {
     await expect(x).toHaveCSS("font-size", "16px");
-    await page.getByRole("button", { name: "Motion", exact: true }).click();
+    await page
+      .getByRole("navigation", { name: "Panels" })
+      .getByRole("button", { name: "Motion", exact: true })
+      .click();
     await expect(page.getByRole("slider", { name: "Timeline playhead" })).toBeVisible();
     await page.getByRole("button", { name: "Edit X easing", exact: true }).first().click();
     await page.getByRole("combobox", { name: "X easing", exact: true }).selectOption("LINEAR");
-    await page.getByRole("button", { name: "Back to properties", exact: true }).click();
+    await page.getByRole("button", { name: "Close easing editor", exact: true }).click();
+    await page
+      .getByRole("navigation", { name: "Panels" })
+      .getByRole("button", { name: "Design", exact: true })
+      .click();
     await expect(page.getByRole("textbox", { name: "X", exact: true })).toHaveValue("8");
     await page.setViewportSize({ width: 390, height: 420 });
     await expect(page.getByRole("button", { name: "Close panel" })).toBeInViewport();
