@@ -105,7 +105,9 @@ export function Section({
         </button>
         {action && <div className="flex shrink-0 items-center gap-0.5">{action}</div>}
       </div>
-      {open && children ? <div className="space-y-2 px-3 pb-3">{children}</div> : null}
+      {open && React.Children.toArray(children).length > 0 ? (
+        <div className="space-y-2 px-3 pb-3">{children}</div>
+      ) : null}
     </section>
   );
 }

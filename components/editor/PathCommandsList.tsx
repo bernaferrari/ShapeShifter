@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { ArrowDownRight, ArrowUpLeft, Minus, Plus, Spline } from "lucide-react";
+import { ArrowDownRight, ArrowUpLeft, Plus } from "lucide-react";
 import type { CommandType, PathData, Selection } from "@/lib/pathshift/types";
 import {
   pathAnchors,
@@ -192,6 +192,22 @@ export function PathCommandsList({
           }
         });
         const selected = selectedPoints.find((point) => point.subPathIndex === subPathIndex);
+        // Morphing needs equal point counts, so compatible paths often stack extra
+        // points on an existing one. Name the point each duplicate sits on.
+        const overlaps = new Map<number, number>();
+        anchors.forEach((anchor, index) => {
+          const point = subPath.commands[anchor.commandIndex]?.points[anchor.pointIndex];
+          if (!point) return;
+          const twin = anchors.slice(0, index).find((other) => {
+            const candidate = subPath.commands[other.commandIndex]?.points[other.pointIndex];
+            return (
+              candidate &&
+              Math.abs(candidate.x - point.x) < 1e-6 &&
+              Math.abs(candidate.y - point.y) < 1e-6
+            );
+          });
+          if (twin) overlaps.set(anchor.number, twin.number);
+        });
         const fields = (address: PointAddress, label: string) => {
           const point = subPath.commands[address.commandIndex]?.points[address.pointIndex];
           if (!point) return null;
@@ -221,25 +237,12 @@ export function PathCommandsList({
             : null;
         return (
           <div key={`shape-${subPathIndex}`}>
-            <div className="sticky top-0 z-10 grid grid-cols-[minmax(0,1fr)_1.75rem_3.5rem_3.5rem] pointer-coarse:grid-cols-[minmax(0,1fr)_2.75rem_3.5rem_3.5rem] items-center gap-1 bg-sidebar px-1 py-1 text-[11px] text-muted-foreground">
+            <div className="sticky top-0 z-10 grid grid-cols-[minmax(0,1fr)_3.5rem_3.5rem] items-center gap-1 bg-sidebar px-1 py-1 text-[11px] text-muted-foreground">
               <span className="truncate px-1">
                 {pathData.subPaths.length > 1 ? `Shape ${subPathIndex + 1} · ` : ""}
                 <span>{anchors.length} points</span>
                 {subPath.commands.at(-1)?.type === "Z" ? " · Closed" : ""}
               </span>
-              {onAddPoint && longestLength >= 0 ? (
-                <button
-                  type="button"
-                  aria-label={`Add point to shape ${subPathIndex + 1}`}
-                  title="Add a point on the selected edge without changing its outline"
-                  className="grid size-7 pointer-coarse:size-11 shrink-0 touch-manipulation place-items-center rounded-md hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
-                  onClick={() => onAddPoint(subPathIndex, selected?.commandIndex ?? longest)}
-                >
-                  <Plus className="size-3.5" />
-                </button>
-              ) : (
-                <span />
-              )}
               <span className="text-right pr-1.5" aria-hidden="true">
                 X
               </span>
@@ -293,7 +296,7 @@ export function PathCommandsList({
                   >
                     <button
                       type="button"
-                      aria-label={`Select point ${anchor.number}${pathData.subPaths.length > 1 ? ` in shape ${subPathIndex + 1}` : ""}`}
+                      aria-label={`Select point ${anchor.number}${pathData.subPaths.length > 1 ? ` in shape ${subPathIndex + 1}` : ""}${overlaps.has(anchor.number) ? `, on top of point ${overlaps.get(anchor.number)}` : ""}`}
                       aria-pressed={isSelected}
                       onClick={() => select(anchor)}
                       className={cn(
@@ -301,11 +304,28 @@ export function PathCommandsList({
                         isSelected && "text-primary",
                       )}
                     >
+                      {overlaps.has(anchor.number) ? (
+                        <span
+                          className="relative size-2.5 shrink-0"
+                          title={`Sits exactly on Point ${overlaps.get(anchor.number)}. Shapes that morph need the same number of points, so extra points can share a spot until another keyframe moves them apart.`}
+                        >
+                          <span className="absolute top-0 left-0 size-2 rounded-[1px] border border-current opacity-50" />
+                          <span className="absolute right-0 bottom-0 size-2 rounded-[1px] border border-current bg-sidebar" />
+                        </span>
+                      ) : (
+                        <span
+                          className="size-2 shrink-0 border border-current rounded-[1px]"
+                          aria-hidden="true"
+                        />
+                      )}
                       <span
-                        className="size-2 shrink-0 border border-current rounded-[1px]"
-                        aria-hidden="true"
-                      />
-                      <span className="truncate tabular-nums">Point {anchor.number}</span>
+                        className={cn(
+                          "truncate tabular-nums",
+                          overlaps.has(anchor.number) && !isSelected && "text-muted-foreground",
+                        )}
+                      >
+                        Point {anchor.number}
+                      </span>
                     </button>
                     {canConvert && onChangeCommandType && edge ? (
                       <button
@@ -324,7 +344,7 @@ export function PathCommandsList({
                           });
                         }}
                         aria-label={`Make edge ${edge.start.number}–${edge.end.number} ${curved ? "straight" : "curved"}`}
-                        title={`Edge ${edge.start.number}–${edge.end.number}: ${curved ? "curved" : "straight"}. Click to make it ${curved ? "straight" : "curved"} in every pose.`}
+                        title={`Edge ${edge.start.number}–${edge.end.number}: ${curved ? "curved" : "straight"}. Click to make it ${curved ? "straight" : "curved"} in every keyframe.`}
                         aria-pressed={curved}
                         className="grid size-7 pointer-coarse:size-11 place-items-center rounded text-muted-foreground touch-manipulation hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
                         onClick={() =>
@@ -343,13 +363,7 @@ export function PathCommandsList({
                             });
                         }}
                       >
-                        <span aria-hidden="true">
-                          {curved ? (
-                            <Spline className="size-3.5" />
-                          ) : (
-                            <Minus className="size-3.5" />
-                          )}
-                        </span>
+                        <EdgeGlyph curved={curved} />
                       </button>
                     ) : (
                       <span />
@@ -424,9 +438,37 @@ export function PathCommandsList({
                 </div>
               );
             })}
+            {onAddPoint && longestLength >= 0 && (
+              <button
+                type="button"
+                aria-label={`Add point to shape ${subPathIndex + 1}`}
+                title="Adds a point on the selected edge (or the longest one) without changing the outline"
+                className="mt-0.5 flex h-7 pointer-coarse:h-11 w-full touch-manipulation items-center gap-1.5 rounded-md px-2 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                onClick={() => onAddPoint(subPathIndex, selected?.commandIndex ?? longest)}
+              >
+                <Plus className="size-3.5" />
+                Add point
+              </button>
+            )}
           </div>
         );
       })}
     </div>
+  );
+}
+
+/** The edge leading into a point: a straight or a curved segment between two dots. */
+function EdgeGlyph({ curved }: { curved: boolean }) {
+  return (
+    <svg width="16" height="12" viewBox="0 0 16 12" aria-hidden="true" fill="currentColor">
+      <circle cx="2.5" cy="9.5" r="1.5" />
+      <circle cx="13.5" cy="2.5" r="1.5" />
+      <path
+        d={curved ? "M2.5 9.5C2.5 3 8 2.5 13.5 2.5" : "M2.5 9.5L13.5 2.5"}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+      />
+    </svg>
   );
 }

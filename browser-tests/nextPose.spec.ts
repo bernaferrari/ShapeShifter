@@ -34,7 +34,7 @@ test("next-pose guide follows authored keys, survives reload and stays out of pl
   if (await closeKeyEditor.isVisible()) await closeKeyEditor.click();
   const options = page.getByRole("button", { name: "Timeline options" });
   await options.click();
-  await page.getByRole("menuitemcheckbox", { name: "Show next pose", exact: true }).click();
+  await page.getByRole("menuitemcheckbox", { name: "Show next keyframe", exact: true }).click();
   await expect(preview).toHaveAttribute("data-next-pose-time", "1000");
   await expect(preview).toHaveAttribute("pointer-events", "none");
   await expect(preview).toContainText("Next · 1000 ms");
@@ -75,9 +75,9 @@ test("next-pose guide follows authored keys, survives reload and stays out of pl
   await openPanel("Motion");
   await options.click();
   await expect(
-    page.getByRole("menuitemcheckbox", { name: "Show next pose", exact: true }),
+    page.getByRole("menuitemcheckbox", { name: "Show next keyframe", exact: true }),
   ).toHaveAttribute("aria-checked", "true");
-  await page.getByRole("menuitemcheckbox", { name: "Show next pose", exact: true }).click();
+  await page.getByRole("menuitemcheckbox", { name: "Show next keyframe", exact: true }).click();
   await expect(preview).toHaveCount(0);
   expect(errors).toEqual([]);
 });

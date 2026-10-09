@@ -131,6 +131,10 @@ describe("direct keyframe editing", () => {
     expect(blocks()[1].startTime).toBe(500);
     expect(useEditorStore.getState().history).toHaveLength(0);
     key(input, "Escape");
+    // Base UI 1.8 unmounts a dismissed popover after its exit transition settles.
+    await React.act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
     expect(field("Rotation keyframe time")).toBeNull();
     expect(blocks()[1].startTime).toBe(500);
   });

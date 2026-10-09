@@ -95,7 +95,7 @@ export function TimelineInsertKeyframeButton({
       title={
         canInsert
           ? `${label} · ${formatTimelineTime(time, unit, fps)}`
-          : "Select a layer or track and move to a new pose"
+          : "Select a layer or track and move the playhead to a new time"
       }
       disabled={!canInsert}
       onClick={insert}

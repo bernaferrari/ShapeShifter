@@ -43,7 +43,7 @@
           "pivotY": 0
         },
         "style": {
-          "fillColor": "#ff000000",
+          "fillColor": "#000000",
           "fillAlpha": 1,
           "strokeColor": "",
           "strokeAlpha": 1,
@@ -78,7 +78,7 @@
           "pivotY": 0
         },
         "style": {
-          "fillColor": "#ff000000",
+          "fillColor": "#000000",
           "fillAlpha": 1,
           "strokeColor": "",
           "strokeAlpha": 1,

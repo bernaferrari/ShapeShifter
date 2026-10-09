@@ -28,6 +28,7 @@ import { EditorCommandPalette, EditorHelpDialog } from "@/components/editor/Edit
 import { EditorContextMenu } from "@/components/editor/EditorContextMenu";
 import { AgentToolsDialog } from "@/components/editor/AgentToolsDialog";
 import { RecoveryHistoryDialog } from "@/components/editor/RecoveryHistoryDialog";
+import { NewProjectDialog } from "@/components/editor/NewProjectDialog";
 import {
   MobilePanelTabs,
   MobileWorkspace,
@@ -76,6 +77,7 @@ export default function PathshiftEditor() {
   const [helpOpen, setHelpOpen] = React.useState(false);
   const [agentOpen, setAgentOpen] = React.useState(false);
   const [recoveryOpen, setRecoveryOpen] = React.useState(false);
+  const [newProjectOpen, setNewProjectOpen] = React.useState(false);
   React.useEffect(() => registerEditorAgentTools(document, navigator), []);
 
   // === PANEL COLLAPSE / RESPONSIVE STATE ===
@@ -304,6 +306,7 @@ export default function PathshiftEditor() {
         onOpenCommand={() => setCommandOpen(true)}
         onOpenAgentTools={() => setAgentOpen(true)}
         onOpenRecovery={() => setRecoveryOpen(true)}
+        onNewProject={() => setNewProjectOpen(true)}
         onTogglePanel={togglePanel}
         panels={panels}
         autosave={autosave}
@@ -428,8 +431,10 @@ export default function PathshiftEditor() {
         onOpenChange={setRecoveryOpen}
         onRestore={autosave.restoreCheckpoint}
       />
+      <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
       <EditorCommandPalette
         open={commandOpen}
+        onNewProject={() => setNewProjectOpen(true)}
         onOpenChange={setCommandOpen}
         onOpenHelp={() => setHelpOpen(true)}
         onLoadSample={loadSample}

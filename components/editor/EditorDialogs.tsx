@@ -5,6 +5,7 @@ import {
   Circle,
   Copy,
   Download,
+  FilePlus,
   FolderMinus,
   FolderPlus,
   Frame,
@@ -198,6 +199,7 @@ interface EditorCommandPaletteProps {
   onLoadSample: (index: number) => void;
   onExport: (type: EditorExportType) => void;
   onOpenImport: () => void;
+  onNewProject: () => void;
   onToggleLayers: () => void;
   onToggleInspector: () => void;
   onToggleTimeline: () => void;
@@ -223,6 +225,7 @@ export function EditorCommandPalette({
   onLoadSample,
   onExport,
   onOpenImport,
+  onNewProject,
   onToggleLayers,
   onToggleInspector,
   onToggleTimeline,
@@ -392,6 +395,12 @@ export function EditorCommandPalette({
           icon: Sparkles,
           keywords: ["learn", "exercise", "onboarding"],
           action: () => useAnimationExercise.getState().start(),
+        },
+        {
+          label: "New project…",
+          icon: FilePlus,
+          keywords: ["blank", "template", "start", "create"],
+          action: onNewProject,
         },
         { label: "Import SVG, XML or project…", icon: Upload, action: onOpenImport },
         ...EXPORT_COMMANDS.map(([type, label]) => ({

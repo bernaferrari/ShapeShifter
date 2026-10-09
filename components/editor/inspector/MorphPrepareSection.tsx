@@ -54,7 +54,7 @@ export function MorphPrepareSection() {
             {previewing
               ? compatible === false
                 ? "These points could not be matched. Adjust their contours and try again."
-                : "Preview ready. Apply the matched points to every pose."
+                : "Preview ready. Apply the matched points to every keyframe."
               : "Animation poses need matching points to morph smoothly."}
           </p>
           <div className="flex gap-1">

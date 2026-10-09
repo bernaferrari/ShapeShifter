@@ -447,7 +447,7 @@ export function LayerTimeline({
                     checked={showNextPose}
                     onCheckedChange={(checked) => setShowNextPose(Boolean(checked))}
                   >
-                    Show next pose
+                    Show next keyframe
                   </DropdownMenuCheckboxItem>
                   <p className="px-2 py-1 text-[11px] leading-relaxed text-muted-foreground">
                     Ghost the selected object at its next keyframe.
@@ -546,11 +546,14 @@ export function LayerTimeline({
                     Go to playhead
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => addLayer("path")}>
-                    New path layer
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => addLayer("group")}>New group</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => addLayer("clipPath")}>New mask</DropdownMenuItem>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>New layer</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-40">
+                      <DropdownMenuItem onClick={() => addLayer("path")}>Path</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => addLayer("group")}>Group</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => addLayer("clipPath")}>Mask</DropdownMenuItem>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
                 </DropdownMenuContent>
               </DropdownMenu>
               {onCollapse && (

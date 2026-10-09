@@ -24,6 +24,8 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useTheme } from "@/components/theme-provider";
 import { useEditorStore } from "@/lib/store/editorStore";
+import { useTimelineViewSettings } from "./timeline/timelineViewSettings";
+import { formatTimelineTime } from "./timeline/timelineScale";
 import { DEMO_INFOS } from "@/lib/pathshift/demoProjects";
 import { ExportDialog } from "./ExportDialog";
 import { DocumentSaveStatus, type DocumentAutosave } from "./DocumentSaveStatus";
@@ -46,6 +48,7 @@ interface ToolbarProps {
   onOpenCommand: () => void;
   onOpenAgentTools?: () => void;
   onOpenRecovery?: () => void;
+  onNewProject: () => void;
   onTogglePanel: (panel: keyof EditorPanelVisibility) => void;
   panels: EditorPanelVisibility;
   autosave: DocumentAutosave;
@@ -74,6 +77,7 @@ export function Toolbar({
   onOpenCommand,
   onOpenAgentTools,
   onOpenRecovery,
+  onNewProject,
   onTogglePanel,
   panels,
   autosave,
@@ -88,6 +92,7 @@ export function Toolbar({
   canRedo,
 }: ToolbarProps) {
   const vector = useEditorStore((state) => state.vector);
+  const shapeKeyframeTimes = useShapeKeyframeTimes();
 
   return (
     <header
@@ -103,6 +108,7 @@ export function Toolbar({
           onOpenCommand={onOpenCommand}
           onOpenAgentTools={onOpenAgentTools}
           onOpenRecovery={onOpenRecovery}
+          onNewProject={onNewProject}
           onTogglePanel={onTogglePanel}
           panels={panels}
           resetAllViews={resetAllViews}
@@ -131,11 +137,11 @@ export function Toolbar({
         {isActionMode && (
           <>
             <span className="hidden text-[12px] text-muted-foreground lg:inline">
-              Editing morph shape
+              {shapeKeyframeTimes ? "Editing shape keyframe" : "Editing morph shape"}
             </span>
             <div
               role="radiogroup"
-              aria-label="Editing side"
+              aria-label={shapeKeyframeTimes ? "Shape keyframe" : "Editing side"}
               className="flex items-center rounded-lg bg-muted p-0.5"
             >
               {(["from", "to"] as const).map((side) => (
@@ -146,13 +152,17 @@ export function Toolbar({
                   aria-checked={editingSide === side}
                   onClick={() => setEditingSide(side)}
                   className={cn(
-                    "h-7 rounded-md px-3 text-[12px] font-medium capitalize transition-colors",
+                    "h-7 rounded-md px-3 text-[12px] font-medium tabular-nums transition-colors",
                     editingSide === side
                       ? "bg-background text-foreground shadow-xs"
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  {side === "from" ? "Start" : "End"}
+                  {shapeKeyframeTimes
+                    ? shapeKeyframeTimes[side]
+                    : side === "from"
+                      ? "Start"
+                      : "End"}
                 </button>
               ))}
             </div>
@@ -205,6 +215,27 @@ export function Toolbar({
       </div>
     </header>
   );
+}
+
+/**
+ * While a path keyframe is being edited, the two sides are real moments on the
+ * timeline, so they are labeled with their times instead of an abstract Start/End.
+ */
+function useShapeKeyframeTimes() {
+  const block = useEditorStore((state) =>
+    state.isActionMode
+      ? state.animation.blocks.find(
+          (item) => item.id === state.selectedBlockIds[0] && item.propertyName === "pathData",
+        )
+      : undefined,
+  );
+  const unit = useTimelineViewSettings((state) => state.unit);
+  const fps = useTimelineViewSettings((state) => state.fps);
+  if (!block) return null;
+  return {
+    from: formatTimelineTime(block.startTime, unit, fps),
+    to: formatTimelineTime(block.endTime, unit, fps),
+  };
 }
 
 /** Larger touch targets on phones, which have no keyboard shortcuts. */
@@ -297,6 +328,7 @@ function MainMenu({
   onOpenCommand,
   onOpenAgentTools,
   onOpenRecovery,
+  onNewProject,
   onTogglePanel,
   panels,
   resetAllViews,
@@ -314,6 +346,7 @@ function MainMenu({
   | "onOpenCommand"
   | "onOpenAgentTools"
   | "onOpenRecovery"
+  | "onNewProject"
   | "onTogglePanel"
   | "panels"
   | "resetAllViews"
@@ -339,7 +372,6 @@ function MainMenu({
   const extractSelectedSubPathToNewLayer = useEditorStore(
     (state) => state.extractSelectedSubPathToNewLayer,
   );
-  const resetProject = useEditorStore((state) => state.resetProject);
   const isRepeating = useEditorStore((state) => state.isRepeating);
   const playbackMode = useEditorStore((state) => state.playbackMode);
   const isSlowMotion = useEditorStore((state) => state.isSlowMotion);
@@ -380,16 +412,7 @@ function MainMenu({
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>File</DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="w-56">
-            <DropdownMenuItem
-              onClick={() => {
-                resetProject();
-                toast.success("Started a new project from the starter icons", {
-                  action: { label: "Undo", onClick: () => useEditorStore.getState().undo() },
-                });
-              }}
-            >
-              New project
-            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onNewProject}>New project…</DropdownMenuItem>
             <DropdownMenuItem onClick={onOpenSVGImport}>
               Import SVG, XML or project…
             </DropdownMenuItem>

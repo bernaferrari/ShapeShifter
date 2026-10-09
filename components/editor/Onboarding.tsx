@@ -140,7 +140,7 @@ export function Onboarding({
     const prompts = [
       "Enable Position motion in Design, or use the button below.",
       "Move the playhead to 500 ms.",
-      "In Design, change X to 8. This creates a new pose.",
+      "In Design, change X to 8. This adds a keyframe.",
       "Play your animation to see the icon move.",
       "Export Animated Vector or Lottie, or save a Project file.",
       "You made an icon move. Keep editing your practice artboard.",

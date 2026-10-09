@@ -145,21 +145,33 @@ export function Inspector() {
   ).size;
   const timeUnit = useTimelineViewSettings((state) => state.unit);
   const timeFps = useTimelineViewSettings((state) => state.fps);
-  const keyedAtPlayhead =
-    animatedPropertyCount > 0 &&
-    new Set(
-      animation.blocks
-        .filter(
-          (block) =>
-            String(block.layerId) === String(currentLayer?.id) &&
-            (sameKeyframeTime(block.startTime, playheadMs) ||
-              sameKeyframeTime(block.endTime, playheadMs)),
-        )
-        .map((block) => block.propertyName),
-    ).size === animatedPropertyCount;
-  const editingContext = animatedPropertyCount
-    ? `${keyedAtPlayhead ? "Keyframe" : "Pose"} · ${formatTimelineTime(playheadMs, timeUnit, timeFps)}`
-    : "Base artwork";
+  const keyedPropertyCount = new Set(
+    animation.blocks
+      .filter(
+        (block) =>
+          String(block.layerId) === String(currentLayer?.id) &&
+          (sameKeyframeTime(block.startTime, playheadMs) ||
+            sameKeyframeTime(block.endTime, playheadMs)),
+      )
+      .map((block) => block.propertyName),
+  ).size;
+  const keyedAtPlayhead = animatedPropertyCount > 0 && keyedPropertyCount === animatedPropertyCount;
+  const playheadLabel = formatTimelineTime(playheadMs, timeUnit, timeFps);
+  // Plain-language state of the playhead for this layer, and what an edit will do there.
+  const editingContext = !animatedPropertyCount
+    ? "Not animated"
+    : keyedAtPlayhead
+      ? `Keyframe · ${playheadLabel}`
+      : keyedPropertyCount > 0
+        ? `Partly keyed · ${playheadLabel}`
+        : `Between keyframes · ${playheadLabel}`;
+  const editingContextHint = !animatedPropertyCount
+    ? "Edits change the artwork itself. Click ◇ next to a property to animate it."
+    : keyedAtPlayhead
+      ? "Every animated property has a keyframe here, so edits update those keyframes."
+      : keyedPropertyCount > 0
+        ? `${keyedPropertyCount} of ${animatedPropertyCount} animated properties have a keyframe here. Changing another animated property adds its keyframe.`
+        : `Changing an animated property adds a keyframe at ${playheadLabel}.`;
   const single = multiCount <= 1 && Boolean(currentLayer);
   /** Animated properties are keyed at the playhead; the rest edit the base value. */
   const updateLayer = (input: Partial<Layer>) => {
@@ -464,15 +476,13 @@ export function Inspector() {
                 <span>Group</span>
               )}
               {animatedPropertyCount === 0 ? (
-                <span className="text-muted-foreground/70">Base artwork</span>
+                <span className="text-muted-foreground/70" title={editingContextHint}>
+                  {editingContext}
+                </span>
               ) : (
                 <span
                   className="inline-flex h-4 shrink-0 items-center gap-1 whitespace-nowrap rounded-sm bg-primary/12 px-1.5 text-[10px] font-medium tabular-nums text-primary"
-                  title={
-                    keyedAtPlayhead
-                      ? "Edits update keyed properties; unanimated properties edit base artwork"
-                      : "Edits to animated properties create a keyframe here"
-                  }
+                  title={editingContextHint}
                 >
                   <Diamond
                     className={keyedAtPlayhead ? "size-2 fill-current" : "size-2"}

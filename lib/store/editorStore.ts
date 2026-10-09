@@ -63,10 +63,7 @@ import { booleanSelectionIssue, combineBooleanSelection } from "./commands/boole
 import type { BooleanOp } from "../pathshift/path/booleanOperations";
 import { workspaceFromEditor } from "./documentRuntime";
 import { syncEditedTimelinePath, timelinePathSelection } from "./timelinePathEditing";
-import type {
-  TimelineClipboard,
-  TimelinePasteResult,
-} from "../pathshift/motion/timelineClipboard";
+import type { TimelineClipboard, TimelinePasteResult } from "../pathshift/motion/timelineClipboard";
 import type {
   TimelinePreviewRange,
   PlaybackMode,
@@ -557,7 +554,8 @@ export interface EditorState {
   setAnimationDuration: (ms: number, options?: { recordHistory?: boolean }) => void;
 
   // Project
-  resetProject: () => void;
+  /** Replace the document with fresh copies of `frames` (the starter icons by default). */
+  resetProject: (frames?: CanvasFrame[]) => void;
 
   // Helpers
   getCurrentSelectedPoint: () => Point | null;
@@ -943,10 +941,12 @@ export const useEditorStore = create<EditorState>((rawSet, get) => {
     },
 
     // === Project reset ===
-    resetProject: () => {
+    resetProject: (sourceFrames) => {
       get().pushHistory();
-      const frames = initialFrames.map(cloneFrame);
+      const frames = (sourceFrames?.length ? sourceFrames : initialFrames).map(cloneFrame);
       const active = frames[0]!;
+      // A blank artboard has nothing to select but itself.
+      const firstLayerId = active.layers.length ? getFirstEditableLayerId(active.layers) : null;
       const layers = cloneLayers(active.layers);
       const vector = structuredClone(active.vector);
       const animation = structuredClone(active.animation);
@@ -974,11 +974,10 @@ export const useEditorStore = create<EditorState>((rawSet, get) => {
         worldViewport: computeFramesViewport(frames),
         detailViewport: computeVectorViewport(active.vector),
         layers,
-        selectedLayerId: getFirstEditableLayerId(active.layers),
-        selectedLayerIds: [getFirstEditableLayerId(active.layers)],
-        selectedLayerRefs: [
-          { ownerId: active.id, layerId: getFirstEditableLayerId(active.layers) },
-        ],
+        selectedLayerId: firstLayerId ?? 0,
+        selectedLayerIds: firstLayerId == null ? [] : [firstLayerId],
+        selectedLayerRefs:
+          firstLayerId == null ? [] : [{ ownerId: active.id, layerId: firstLayerId }],
         selection: null,
         selectedPoints: [],
         selectedSubPaths: [],
@@ -1005,8 +1004,8 @@ export const useEditorStore = create<EditorState>((rawSet, get) => {
         timelineScrollY: 0,
         timelineCollapsed: false,
         hasCanvasSelection: true,
-        selectionKind: "layer",
-        selectedFrameIds: [],
+        selectionKind: firstLayerId == null ? "frame" : "layer",
+        selectedFrameIds: firstLayerId == null ? [active.id] : [],
         toolMode: "select",
         cursorType: "default",
         hoveredItem: null,

@@ -79,6 +79,8 @@ describe("supported motion authoring", () => {
   ])("authors %s from its inline keyframe toggle", (label, property, base) => {
     const current = mount();
     if (property.startsWith("trimPath")) openSection("Trim path");
+    // A shape without a stroke shows only "Add stroke", like Figma.
+    if (property.startsWith("stroke")) click(button("Add stroke"));
     click(button(`Animate ${label}`));
     const state = useEditorStore.getState();
     const track = state.animation.blocks.find((item) => item.id === state.selectedBlockIds[0]);

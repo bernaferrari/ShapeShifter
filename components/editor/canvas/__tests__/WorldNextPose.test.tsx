@@ -132,7 +132,7 @@ describe("next pose canvas guide", () => {
       rendered = renderEditorComponent(<LayerTimeline compact={compact} />);
       const state = useEditorStore.getState();
       const trigger = rendered.container.querySelector('[aria-label="Timeline options"]')!;
-      await chooseMenuItem(trigger, "Show next pose");
+      await chooseMenuItem(trigger, "Show next keyframe");
       expect(useTimelineViewSettings.getState().showNextPose).toBe(true);
       expect(useEditorStore.getState()).toMatchObject({
         layers: state.layers,

@@ -145,7 +145,7 @@ export function ungroupLayer(
     return {
       ok: false,
       message:
-        "This transformed group has animated children. Keep it grouped to preserve every pose.",
+        "This transformed group has animated children. Keep it grouped to preserve every keyframe.",
     };
   const patches = new Map<string, Partial<Layer>>();
   for (const child of children) {

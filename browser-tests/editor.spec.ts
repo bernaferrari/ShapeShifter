@@ -45,7 +45,11 @@ test("create, group, animate, duplicate, undo, save, reload, and export through 
   const x = page.getByRole("textbox", { name: "X", exact: true });
   await x.fill("8");
   await x.press("Enter");
-  await expect(page.getByText("Keyframe · 1000 ms", { exact: true })).toBeVisible();
+  // Only X was edited, so X gains a keyframe at the playhead while Y keeps its pose.
+  await expect(
+    page.getByRole("button", { name: "Select X for Group keyframe", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("Partly keyed · 1000 ms", { exact: true })).toBeVisible();
   await focusCanvas(page);
   await page.keyboard.press("ControlOrMeta+c");
   await page.keyboard.press("ControlOrMeta+d");

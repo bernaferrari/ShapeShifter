@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { SlidersHorizontal, X } from "lucide-react";
+import { Minus, Plus, SlidersHorizontal, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { gradientFromSolid } from "@/lib/pathshift/gradients";
@@ -414,6 +415,57 @@ export function LayerAppearanceSections({
     (item) => item.trimPathOffset ?? 0,
     layer.trimPathOffset ?? 0,
   );
+  // Like Figma, a missing fill or stroke is an empty section with +, never fake values.
+  const selectedIds = new Set(selectedLayers.map((item) => String(item.id)));
+  const animates = (properties: string[]) =>
+    blocks.some(
+      (block) => selectedIds.has(String(block.layerId)) && properties.includes(block.propertyName),
+    );
+  const fillAnimated = animates(["fillColor", "fillAlpha"]);
+  const strokeAnimated = animates(["strokeColor", "strokeAlpha", "strokeWidth"]);
+  const hasFill =
+    fillAnimated || selectedLayers.some((item) => Boolean(item.fillColor || item.fillGradient));
+  const hasStroke =
+    strokeAnimated ||
+    selectedLayers.some((item) => Boolean(item.strokeColor) && (item.strokeWidth ?? 0) > 0);
+  const paintToggle = (kind: "fill" | "stroke", present: boolean, animated: boolean) =>
+    present ? (
+      animated ? null : (
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          className="size-7 text-muted-foreground hover:text-foreground"
+          aria-label={`Remove ${kind}`}
+          title={`Remove ${kind}`}
+          onClick={() =>
+            onChange(
+              kind === "fill"
+                ? { fillColor: "", fillGradient: undefined }
+                : { strokeColor: "", strokeWidth: 0 },
+            )
+          }
+        >
+          <Minus className="size-3.5" />
+        </Button>
+      )
+    ) : (
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        className="size-7 text-muted-foreground hover:text-foreground"
+        aria-label={`Add ${kind}`}
+        title={`Add ${kind}`}
+        onClick={() =>
+          onChange(
+            kind === "fill"
+              ? { fillColor: "#000000", fillAlpha: 1 }
+              : { strokeColor: layer.strokeColor || "#000000", strokeWidth: 1, strokeAlpha: 1 },
+          )
+        }
+      >
+        <Plus className="size-3.5" />
+      </Button>
+    );
   const trimAnimated = blocks.some(
     (block) =>
       String(block.layerId) === String(layer.id) && block.propertyName.startsWith("trimPath"),
@@ -454,25 +506,30 @@ export function LayerAppearanceSections({
       <Section
         title="Fill"
         action={
-          <>
-            <InlineSelect
-              label="Fill type"
-              value={fillKind.mixed ? "" : (fillKind.value as "solid" | GradientType)}
-              options={[
-                { value: "solid", label: "Solid" },
-                { value: "linear", label: "Linear" },
-                { value: "radial", label: "Radial" },
-              ]}
-              onChange={setFillKind}
-            />
-            <KeyframeMenu
-              label="Fill"
-              keyframes={[keyframeFor("fillColor"), keyframeFor("fillAlpha")]}
-            />
-          </>
+          hasFill ? (
+            <>
+              <InlineSelect
+                label="Fill type"
+                value={fillKind.mixed ? "" : (fillKind.value as "solid" | GradientType)}
+                options={[
+                  { value: "solid", label: "Solid" },
+                  { value: "linear", label: "Linear" },
+                  { value: "radial", label: "Radial" },
+                ]}
+                onChange={setFillKind}
+              />
+              <KeyframeMenu
+                label="Fill"
+                keyframes={[keyframeFor("fillColor"), keyframeFor("fillAlpha")]}
+              />
+              {paintToggle("fill", true, fillAnimated)}
+            </>
+          ) : (
+            paintToggle("fill", false, false)
+          )
         }
       >
-        {fillKind.mixed ? (
+        {!hasFill ? null : fillKind.mixed ? (
           <p className="text-[11px] text-muted-foreground">Mixed fill types</p>
         ) : layer.fillGradient ? (
           <GradientEditor
@@ -497,17 +554,19 @@ export function LayerAppearanceSections({
             keyframe={keyframeFor("fillColor")}
           />
         )}
-        <NumberRow
-          label="Opacity"
-          value={Math.round(fillAlpha.value * 100)}
-          mixed={fillAlpha.mixed}
-          min={0}
-          max={100}
-          suffix="%"
-          onChange={(value) => onChange({ fillAlpha: value / 100 })}
-          keyframe={keyframeFor("fillAlpha")}
-        />
-        {showFillRule && (
+        {hasFill && (
+          <NumberRow
+            label="Opacity"
+            value={Math.round(fillAlpha.value * 100)}
+            mixed={fillAlpha.mixed}
+            min={0}
+            max={100}
+            suffix="%"
+            onChange={(value) => onChange({ fillAlpha: value / 100 })}
+            keyframe={keyframeFor("fillAlpha")}
+          />
+        )}
+        {hasFill && showFillRule && (
           <Row label="Rule">
             <Segmented
               value={fillRule.value}
@@ -525,45 +584,54 @@ export function LayerAppearanceSections({
       <Section
         title="Stroke"
         action={
-          <>
-            <StrokeSettings layer={layer} onChange={onChange} />
-            <KeyframeMenu
-              label="Stroke"
-              keyframes={[
-                keyframeFor("strokeColor"),
-                keyframeFor("strokeAlpha"),
-                keyframeFor("strokeWidth"),
-              ]}
-            />
-          </>
+          hasStroke ? (
+            <>
+              <StrokeSettings layer={layer} onChange={onChange} />
+              <KeyframeMenu
+                label="Stroke"
+                keyframes={[
+                  keyframeFor("strokeColor"),
+                  keyframeFor("strokeAlpha"),
+                  keyframeFor("strokeWidth"),
+                ]}
+              />
+              {paintToggle("stroke", true, strokeAnimated)}
+            </>
+          ) : (
+            paintToggle("stroke", false, false)
+          )
         }
       >
-        <ColorRow
-          label="Color"
-          color={strokeColor.value}
-          mixed={strokeColor.mixed}
-          onColor={(strokeColor) => onChange({ strokeColor })}
-          keyframe={keyframeFor("strokeColor")}
-        />
-        <NumberRow
-          label="Opacity"
-          value={Math.round(strokeAlpha.value * 100)}
-          mixed={strokeAlpha.mixed}
-          min={0}
-          max={100}
-          suffix="%"
-          onChange={(value) => onChange({ strokeAlpha: value / 100 })}
-          keyframe={keyframeFor("strokeAlpha")}
-        />
-        <NumberRow
-          label="Width"
-          value={strokeWidth.value}
-          mixed={strokeWidth.mixed}
-          min={0}
-          step={0.1}
-          onChange={(strokeWidth) => onChange({ strokeWidth })}
-          keyframe={keyframeFor("strokeWidth")}
-        />
+        {hasStroke && (
+          <>
+            <ColorRow
+              label="Color"
+              color={strokeColor.value}
+              mixed={strokeColor.mixed}
+              onColor={(strokeColor) => onChange({ strokeColor })}
+              keyframe={keyframeFor("strokeColor")}
+            />
+            <NumberRow
+              label="Opacity"
+              value={Math.round(strokeAlpha.value * 100)}
+              mixed={strokeAlpha.mixed}
+              min={0}
+              max={100}
+              suffix="%"
+              onChange={(value) => onChange({ strokeAlpha: value / 100 })}
+              keyframe={keyframeFor("strokeAlpha")}
+            />
+            <NumberRow
+              label="Width"
+              value={strokeWidth.value}
+              mixed={strokeWidth.mixed}
+              min={0}
+              step={0.1}
+              onChange={(strokeWidth) => onChange({ strokeWidth })}
+              keyframe={keyframeFor("strokeWidth")}
+            />
+          </>
+        )}
       </Section>
 
       <Section
