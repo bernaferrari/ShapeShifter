@@ -7,6 +7,8 @@ import { EasingPanel } from "../inspector/EasingPanel";
 import type { TimelineBlock } from "@/lib/pathshift/types";
 import { propertyLabel } from "@/lib/pathshift/propertyLabels";
 import { useEditorStore } from "@/lib/store/editorStore";
+import { HOLD_INTERPOLATOR } from "@/lib/pathshift/interpolators";
+import { cn } from "@/lib/utils";
 
 export function TimelineSegmentEasing({
   block,
@@ -18,6 +20,8 @@ export function TimelineSegmentEasing({
   endPct: number;
 }) {
   const [open, setOpen] = React.useState(false);
+  // Holds stay visible: a segment that jumps instead of tweening should read at a glance.
+  const hold = block.interpolator === HOLD_INTERPOLATOR;
   return (
     <div
       className="pointer-events-none absolute top-1/2 z-[3] @container/easing"
@@ -31,8 +35,11 @@ export function TimelineSegmentEasing({
           render={
             <button
               type="button"
-              aria-label={`Edit ${propertyLabel(block.propertyName)} easing`}
-              className="pointer-events-auto absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 hidden @min-[60px]/easing:grid pointer-coarse:@max-[87px]/easing:hidden size-5 pointer-coarse:size-11 place-items-center rounded-md text-primary opacity-0 outline-none hover:bg-muted focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-foreground group-hover/segment:opacity-100 pointer-coarse:opacity-100"
+              aria-label={`Edit ${propertyLabel(block.propertyName)} easing${hold ? " (hold)" : ""}`}
+              className={cn(
+                "pointer-events-auto absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 hidden @min-[60px]/easing:grid pointer-coarse:@max-[87px]/easing:hidden size-5 pointer-coarse:size-11 place-items-center rounded-md text-primary opacity-0 outline-none hover:bg-muted focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-foreground group-hover/segment:opacity-100 pointer-coarse:opacity-100",
+                hold && "bg-background opacity-100",
+              )}
               onPointerDown={(event) => {
                 if (event.pointerType !== "touch") event.stopPropagation();
               }}
@@ -43,7 +50,19 @@ export function TimelineSegmentEasing({
             />
           }
         >
-          <Spline className="size-3.5" />
+          {hold ? (
+            <svg viewBox="0 0 14 14" className="size-3.5" aria-hidden="true">
+              <path
+                d="M2 11 H11 V3"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinejoin="round"
+              />
+            </svg>
+          ) : (
+            <Spline className="size-3.5" />
+          )}
         </PopoverTrigger>
         <PopoverContent
           side="top"

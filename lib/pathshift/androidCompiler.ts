@@ -1,3 +1,4 @@
+import { HOLD_INTERPOLATOR } from "./interpolators";
 import {
   dominantColor,
   gradientUsesUserSpace,
@@ -587,6 +588,18 @@ ${body}
     const platform = platformInterpolator(value);
     if (platform) return platform;
     if (value.startsWith("@android:")) return value;
+    if (value === HOLD_INTERPOLATOR) {
+      const existing = customInterpolators.get(value);
+      if (existing) return `@interpolator/${existing}`;
+      const name = androidResourceName(`${resourceName}_hold`);
+      customInterpolators.set(value, name);
+      // A step: flat until the very end, then up. PathInterpolator needs x to only increase.
+      files.push({
+        path: `res/interpolator/${name}.xml`,
+        content: `<pathInterpolator xmlns:android="http://schemas.android.com/apk/res/android" android:pathData="M 0,0 L 0.9999,0 L 1,1" />\n`,
+      });
+      return `@interpolator/${name}`;
+    }
     if (value.startsWith("@")) {
       diagnostics.push({
         severity: "warning",

@@ -49,6 +49,8 @@ interface TimelineProjectionOptions {
   collapsedGroupKeys: Set<string>;
   /** When set, property rows for unsupported track kinds gain a capabilityNote. */
   formatProfile?: FormatProfile;
+  /** Hide layers that have no animation themselves or in any descendant. */
+  animatedOnly?: boolean;
 }
 
 export interface TimelineProjection {
@@ -127,6 +129,7 @@ export function buildTimelineProjection({
   collapsedFrameIds,
   collapsedGroupKeys,
   formatProfile,
+  animatedOnly = false,
 }: TimelineProjectionOptions): TimelineProjection {
   const activeFrameExists = frames.some((frame) => frame.id === selectedFrameId);
   // The page root ("__page_root__") owns vectors placed outside every artboard
@@ -170,6 +173,7 @@ export function buildTimelineProjection({
     animation: AnimationState,
   ): void => {
     if (layer.type === "vector") return;
+    if (animatedOnly && !subtreeAnimated(tree, layer, animation)) return;
     const key = `object-${frameId}-${layer.id}`;
     const children = tree.childrenOf(layer);
     const expanded = !collapsedGroupKeys.has(key);
@@ -246,4 +250,11 @@ export function buildTimelineProjection({
   }
 
   return { rows, contentForFrame, blocksForLayer, blocksForProperty };
+}
+
+function subtreeAnimated(tree: LayerTreeModel, layer: Layer, animation: AnimationState): boolean {
+  return (
+    animation.blocks.some((block) => String(block.layerId) === String(layer.id)) ||
+    tree.childrenOf(layer).some((child) => subtreeAnimated(tree, child, animation))
+  );
 }

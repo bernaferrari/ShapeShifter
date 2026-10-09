@@ -1,5 +1,6 @@
 "use client";
 
+import { AddAnchorIcon } from "./AddAnchorIcon";
 import React from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -17,7 +18,6 @@ import {
   MousePointer2,
   PaintBucket,
   PenTool,
-  Scissors,
   Square,
   Waypoints,
 } from "lucide-react";
@@ -44,7 +44,7 @@ const VECTOR_TOOLS: ToolDef[] = [
   { mode: "pen", label: "Pen", icon: <PenTool className="size-4" />, shortcut: "P" },
   { mode: "pencil", label: "Lasso", icon: <Lasso className="size-4" />, shortcut: "L" },
   { mode: "paint", label: "Paint", icon: <PaintBucket className="size-4" />, shortcut: "B" },
-  { mode: "knife", label: "Add point", icon: <Scissors className="size-4" />, shortcut: "K" },
+  { mode: "knife", label: "Add point", icon: <AddAnchorIcon className="size-4" />, shortcut: "K" },
 ];
 const VECTOR_MODES = new Set<ToolMode>(["direct", "pencil", "paint", "knife"]);
 

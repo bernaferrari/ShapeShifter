@@ -4,6 +4,7 @@ import React from "react";
 import { ChevronRight, Crop, Folder } from "lucide-react";
 import { propertyLabel } from "@/lib/pathshift/propertyLabels";
 import { useEditorStore } from "@/lib/store/editorStore";
+import { useTimelineViewSettings } from "./timelineViewSettings";
 import { cn } from "@/lib/utils";
 import { TextSizedInput } from "../TextSizedInput";
 import { TimelineRowKeyframeControls } from "./TimelineRowKeyframeControls";
@@ -61,7 +62,7 @@ interface TimelineLayersPaneProps {
   width: number;
   compact?: boolean;
   onToggleFrame: (frameId: string) => void;
-  onToggleGroup: (rowKey: string) => void;
+  onToggleGroup: (frameId: string, layerId: string | number) => void;
   blocksForLayer: TimelineProjection["blocksForLayer"];
   blocksForProperty: TimelineProjection["blocksForProperty"];
 }
@@ -124,6 +125,7 @@ export function TimelineLayersPane({
   const animationDuration = useEditorStore((state) => state.animation.duration);
   const frames = useEditorStore((state) => state.frames);
   const [renamingLayerKey, setRenamingLayerKey] = React.useState<string | null>(null);
+  const animatedOnly = useTimelineViewSettings((state) => state.animatedOnly);
 
   const isLayerSelected = (frameId: string, layerId: string | number) =>
     hasCanvasSelection &&
@@ -261,7 +263,7 @@ export function TimelineLayersPane({
                     aria-label={row.expanded ? `Collapse ${row.name}` : `Expand ${row.name}`}
                     onClick={(event) => {
                       event.stopPropagation();
-                      onToggleGroup(row.key);
+                      onToggleGroup(row.frameId, row.layer.id);
                     }}
                   >
                     <ChevronRight
@@ -402,6 +404,19 @@ export function TimelineLayersPane({
           </div>
         );
       })}
+      {animatedOnly && (
+        <div className="flex h-8 items-center gap-1.5 px-3 text-[11px] text-muted-foreground">
+          <span className="truncate">Animated layers only</span>
+          <button
+            type="button"
+            className="shrink-0 rounded px-1 text-primary hover:bg-primary/10"
+            onClick={() => useTimelineViewSettings.getState().setAnimatedOnly(false)}
+            title="Show every layer (U)"
+          >
+            Show all
+          </button>
+        </div>
+      )}
     </div>
   );
 }

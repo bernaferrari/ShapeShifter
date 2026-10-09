@@ -880,22 +880,6 @@ export function CanvasArea({
                         artboard can never hide the object before it is reparented. */}
                     <WorldDraggedLayers draws={draggedWorldDraws} worldPerPx={worldPerPx} />
                     <WorldSmartGuides guides={smartGuides} />
-                    <WorldMotionPaths
-                      visible={!isPlaying && selectTarget === "layer"}
-                      origin={editOrigin}
-                      layers={layers}
-                      animation={animation}
-                      selectedLayerIds={
-                        selectedLayerIds.length
-                          ? selectedLayerIds
-                          : selectedLayerId != null
-                            ? [selectedLayerId]
-                            : []
-                      }
-                      primaryLayerId={selectedLayerId}
-                      progress={progress}
-                      worldPerPixel={worldPerPx}
-                    />
                     <WorldFreehandLasso points={worldLassoPoints} />
                     {marquee && (
                       <WorldMarqueeOverlay start={marquee.start} current={marquee.current} />
@@ -983,6 +967,23 @@ export function CanvasArea({
                       worldPointFromClient={worldPointFromEvent}
                       onResizeStart={startLayerResize}
                       onRotateStart={startLayerRotate}
+                    />
+                    {/* Above the selection box so motion keyframes stay grabbable. */}
+                    <WorldMotionPaths
+                      visible={!isPlaying && selectTarget === "layer"}
+                      origin={editOrigin}
+                      layers={layers}
+                      animation={animation}
+                      selectedLayerIds={
+                        selectedLayerIds.length
+                          ? selectedLayerIds
+                          : selectedLayerId != null
+                            ? [selectedLayerId]
+                            : []
+                      }
+                      primaryLayerId={selectedLayerId}
+                      progress={progress}
+                      worldPerPixel={worldPerPx}
                     />
                     {shapeDrawing.preview && (
                       <path

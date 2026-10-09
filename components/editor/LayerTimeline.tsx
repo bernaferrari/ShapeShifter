@@ -1,7 +1,16 @@
 "use client";
 
 import React from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, Ellipsis, Pause, Play, X } from "lucide-react";
+import {
+  ChartSpline,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Ellipsis,
+  Pause,
+  Play,
+  X,
+} from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -25,6 +34,8 @@ import {
   TimelinePlayhead,
 } from "./timeline/TimelineLiveState";
 import { TimelineLayersPane } from "./timeline/TimelineLayersPane";
+import { TimelineGraphEditor } from "./timeline/TimelineGraphEditor";
+import { layerGroupKey, useLayerTreeExpansion } from "./layers/layerTreeExpansion";
 import { TimelineTracksPane } from "./timeline/TimelineTracksPane";
 import { buildTimelineProjection } from "./timeline/timelineProjection";
 import { useTimelineNavigation } from "./timeline/useTimelineNavigation";
@@ -91,6 +102,10 @@ export function LayerTimeline({
 
   const timeUnit = useTimelineViewSettings((state) => state.unit);
   const setTimeUnit = useTimelineViewSettings((state) => state.setUnit);
+  const animatedOnly = useTimelineViewSettings((state) => state.animatedOnly);
+  const setAnimatedOnly = useTimelineViewSettings((state) => state.setAnimatedOnly);
+  const graph = useTimelineViewSettings((state) => state.graph);
+  const setGraph = useTimelineViewSettings((state) => state.setGraph);
   const fps = useTimelineViewSettings((state) => state.fps);
   const setFps = useTimelineViewSettings((state) => state.setFps);
   const snapping = useTimelineViewSettings((state) => state.snapping);
@@ -171,24 +186,34 @@ export function LayerTimeline({
     });
   }, [timeUnit, fps]);
 
-  const [collapsedFrameIds, setCollapsedFrameIds] = React.useState<Set<string>>(() => new Set());
-  const [collapsedGroupKeys, setCollapsedGroupKeys] = React.useState<Set<string>>(() => new Set());
-  const toggleFrameExpanded = (frameId: string) => {
-    setCollapsedFrameIds((previous) => {
+  // Shared with the Layers panel: collapsing a group in either list collapses both.
+  const collapsedFrameIds = useLayerTreeExpansion((state) => state.collapsedOwners);
+  const collapsedGroups = useLayerTreeExpansion((state) => state.collapsedGroups);
+  const collapsedGroupKeys = React.useMemo(
+    () =>
+      new Set(
+        [...collapsedGroups].map((key) => {
+          const split = key.indexOf(":");
+          return `object-${key.slice(0, split)}-${key.slice(split + 1)}`;
+        }),
+      ),
+    [collapsedGroups],
+  );
+  const toggleFrameExpanded = (frameId: string) =>
+    useLayerTreeExpansion.getState().setCollapsedOwners((previous) => {
       const next = new Set(previous);
       if (next.has(frameId)) next.delete(frameId);
       else next.add(frameId);
       return next;
     });
-  };
-  const toggleGroupExpanded = (key: string) => {
-    setCollapsedGroupKeys((previous) => {
+  const toggleGroupExpanded = (frameId: string, layerId: string | number) =>
+    useLayerTreeExpansion.getState().setCollapsedGroups((previous) => {
+      const key = layerGroupKey(frameId, layerId);
       const next = new Set(previous);
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
     });
-  };
   const timelineProjection = React.useMemo(
     () =>
       buildTimelineProjection({
@@ -199,8 +224,10 @@ export function LayerTimeline({
         collapsedFrameIds,
         collapsedGroupKeys,
         formatProfile,
+        animatedOnly,
       }),
     [
+      animatedOnly,
       animation,
       collapsedFrameIds,
       collapsedGroupKeys,
@@ -421,13 +448,28 @@ export function LayerTimeline({
           className="flex shrink-0 items-center gap-0.5 border-r border-border pl-1.5 pr-1"
           actions={
             <>
+              {!compact && (
+                <button
+                  type="button"
+                  aria-label="Graph editor"
+                  aria-pressed={graph}
+                  title="Graph editor · value curves and easing handles"
+                  onClick={() => setGraph(!graph)}
+                  className={cn(
+                    "grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground",
+                    graph && "bg-primary/12 text-primary hover:bg-primary/15 hover:text-primary",
+                  )}
+                >
+                  <ChartSpline className="size-3.5" />
+                </button>
+              )}
               <DropdownMenu modal={false} open={optionsOpen} onOpenChange={setOptionsOpen}>
                 <DropdownMenuTrigger
                   render={
                     <button
                       type="button"
                       aria-label="Timeline options"
-                      className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground data-popup-open:bg-muted data-popup-open:text-foreground"
+                      className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground data-popup-open:bg-muted data-popup-open:text-foreground"
                     />
                   }
                 >
@@ -487,6 +529,13 @@ export function LayerTimeline({
                     Loop selection
                   </DropdownMenuCheckboxItem>
                   <DropdownMenuSeparator />
+                  <DropdownMenuCheckboxItem
+                    checked={animatedOnly}
+                    onCheckedChange={(checked) => setAnimatedOnly(Boolean(checked))}
+                  >
+                    Animated layers only
+                    <DropdownMenuShortcut>U</DropdownMenuShortcut>
+                  </DropdownMenuCheckboxItem>
                   <DropdownMenuCheckboxItem
                     checked={snapping}
                     onCheckedChange={(checked) => setSnapping(Boolean(checked))}
@@ -554,9 +603,15 @@ export function LayerTimeline({
                       <DropdownMenuItem onClick={() => addLayer("clipPath")}>Mask</DropdownMenuItem>
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
+                  {onCollapse && !compact && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={onCollapse}>Hide timeline</DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
-              {onCollapse && (
+              {onCollapse && compact && (
                 <button
                   type="button"
                   onClick={onCollapse}
@@ -581,7 +636,7 @@ export function LayerTimeline({
           <button
             type="button"
             className={cn(
-              "grid size-7 place-items-center rounded-md text-foreground transition-colors hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring",
+              "grid size-6 shrink-0 place-items-center rounded-md text-foreground transition-colors hover:bg-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring",
               compact && "size-11 mr-2 shrink-0 touch-manipulation",
             )}
             aria-label={isPlaying ? "Pause" : "Play"}
@@ -605,7 +660,10 @@ export function LayerTimeline({
                 <TimelineDurationInput unit={timeUnit} fps={fps} />
               </>
             )}
-            <span className="text-muted-foreground">{timelineUnitSuffix(timeUnit)}</span>
+            {/* The ruler labels already carry the unit on desktop. */}
+            {compact && (
+              <span className="text-muted-foreground">{timelineUnitSuffix(timeUnit)}</span>
+            )}
           </div>
           <div className="flex-1" />
         </PanelHeader>
@@ -860,25 +918,33 @@ export function LayerTimeline({
             blocksForProperty={blocksForPropertyInFrame}
           />
 
-          <TimelineNavigationCancellation.Provider value={registerCancellation}>
-            <TimelineTracksPane
-              rows={timelineRows}
-              compact={compact}
-              blocksForLayer={blocksForLayerInFrame}
-              blocksForProperty={blocksForPropertyInFrame}
+          {graph && !compact ? (
+            <TimelineGraphEditor
               contentWidth={navigation.contentWidth}
-              majorStep={rulerMajorStepMs}
-              gridStep={snapping ? (timeUnit === "frames" ? 1000 / fps : rulerMinorStepMs) : 1}
-              snapping={snapping}
-              onSnapChange={reportSnap}
-              keyboardStep={timeUnit === "frames" ? 1000 / fps : 1}
-              empty={isTimelineEmpty}
-              emptyHintDismissed={emptyHintDismissed}
-              onDismissEmptyHint={() => setEmptyHintDismissed(true)}
-              formatProfile={formatProfile}
               gutter={GUTTER}
+              stickyLeft={LAYERS_W}
             />
-          </TimelineNavigationCancellation.Provider>
+          ) : (
+            <TimelineNavigationCancellation.Provider value={registerCancellation}>
+              <TimelineTracksPane
+                rows={timelineRows}
+                compact={compact}
+                blocksForLayer={blocksForLayerInFrame}
+                blocksForProperty={blocksForPropertyInFrame}
+                contentWidth={navigation.contentWidth}
+                majorStep={rulerMajorStepMs}
+                gridStep={snapping ? (timeUnit === "frames" ? 1000 / fps : rulerMinorStepMs) : 1}
+                snapping={snapping}
+                onSnapChange={reportSnap}
+                keyboardStep={timeUnit === "frames" ? 1000 / fps : 1}
+                empty={isTimelineEmpty}
+                emptyHintDismissed={emptyHintDismissed}
+                onDismissEmptyHint={() => setEmptyHintDismissed(true)}
+                formatProfile={formatProfile}
+                gutter={GUTTER}
+              />
+            </TimelineNavigationCancellation.Provider>
+          )}
         </div>
       </div>
     </section>

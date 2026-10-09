@@ -25,7 +25,6 @@ import {
   Repeat,
   RotateCw,
   Ruler,
-  Scissors,
   SkipBack,
   Sparkles,
   Spline,
@@ -34,9 +33,9 @@ import {
   Upload,
   Waypoints,
   Zap,
-  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { AddAnchorIcon } from "./AddAnchorIcon";
 import {
   CommandDialog,
   CommandEmpty,
@@ -79,6 +78,7 @@ const SHORTCUT_SECTIONS: ReadonlyArray<{
       ["Previous / next keyframe", ", / ."],
       ["Previous / next frame", "⇧, / ⇧."],
       ["Precise timing while dragging", "⌥"],
+      ["Animated layers only", "U"],
     ],
   },
   {
@@ -209,7 +209,7 @@ interface EditorCommandPaletteProps {
 
 interface PaletteCommand {
   label: string;
-  icon?: LucideIcon;
+  icon?: React.ComponentType<{ className?: string }>;
   shortcut?: string;
   keywords?: string[];
   disabled?: boolean;
@@ -262,7 +262,7 @@ export function EditorCommandPalette({
         { label: "Ellipse", icon: Circle, shortcut: "O", action: tool("ellipse") },
         { label: "Lasso", icon: Lasso, shortcut: "L", action: tool("pencil") },
         { label: "Paint fill", icon: PaintBucket, shortcut: "B", action: tool("paint") },
-        { label: "Add point", icon: Scissors, shortcut: "K", action: tool("knife") },
+        { label: "Add point", icon: AddAnchorIcon, shortcut: "K", action: tool("knife") },
       ],
     },
     {

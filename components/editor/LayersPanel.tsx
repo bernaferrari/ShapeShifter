@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useLayerTreeExpansion } from "./layers/layerTreeExpansion";
 import { toast } from "sonner";
 import {
   ChevronRight,
@@ -91,8 +92,10 @@ export function LayersPanel({
   const moveSelectedLayersToRoot = useEditorStore((state) => state.moveSelectedLayersToRoot);
   const bringLayerIntoView = useEditorStore((state) => state.bringLayerIntoView);
 
-  const [collapsedOwners, setCollapsedOwners] = React.useState<Set<string>>(() => new Set());
-  const [collapsedGroups, setCollapsedGroups] = React.useState<Set<string>>(() => new Set());
+  const collapsedOwners = useLayerTreeExpansion((state) => state.collapsedOwners);
+  const collapsedGroups = useLayerTreeExpansion((state) => state.collapsedGroups);
+  const setCollapsedOwners = useLayerTreeExpansion((state) => state.setCollapsedOwners);
+  const setCollapsedGroups = useLayerTreeExpansion((state) => state.setCollapsedGroups);
   const [searchOpen, setSearchOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [renamingKey, setRenamingKey] = React.useState<string | null>(null);

@@ -2,6 +2,7 @@
 
 import React from "react";
 import { propertyLabel } from "@/lib/pathshift/propertyLabels";
+import { HOLD_INTERPOLATOR } from "@/lib/pathshift/interpolators";
 import { interpolatorControlPoints } from "@/lib/pathshift/motion/timelineKeyframes";
 import type { TimelineBlock } from "@/lib/pathshift/types";
 import { useEditorStore } from "@/lib/store/editorStore";
@@ -15,6 +16,7 @@ const EASING_OPTIONS = [
   ["FAST_OUT_LINEAR_IN", "Accelerate"],
   ["ACCELERATE_DECELERATE", "Ease in and out"],
   ["LINEAR", "Linear"],
+  [HOLD_INTERPOLATOR, "Hold"],
 ] as const;
 
 const formatCurve = (points: number[]) =>
@@ -103,6 +105,7 @@ export function EasingPanel({
         <div className="relative">
           <EasingIcon
             points={points}
+            hold={interpolator === HOLD_INTERPOLATOR}
             className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
           />
           <select
@@ -122,44 +125,66 @@ export function EasingPanel({
           </select>
           <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         </div>
-        <div className="grid place-items-center rounded-lg bg-secondary/60 py-3 text-foreground">
-          <LiveEasingCurve
-            size={208}
-            points={points}
-            block={block}
-            onEditStart={() => {
-              easingEditRef.current = { changed: false };
-            }}
-            onEditEnd={() => {
-              easingEditRef.current = null;
-            }}
-            onEditCancel={() => {
-              if (easingEditRef.current?.changed)
-                useEditorStore.getState().cancelLastHistoryTransaction();
-              easingEditRef.current = null;
-            }}
-            onChange={updateCurve}
-          />
-        </div>
-        <div className="flex items-start gap-1">
-          <CurveInput
-            ariaLabel={`${label} easing curve`}
-            points={points}
-            parse={parseCurve}
-            onCommit={updateCurve}
-          />
-          <button
-            type="button"
-            onClick={() =>
-              updateCurve([1 - points[2], 1 - points[3], 1 - points[0], 1 - points[1]])
-            }
-            aria-label="Flip curve"
-            title="Flip curve"
-            className="grid size-8 pointer-coarse:size-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <FlipHorizontal2 className="size-4" />
-          </button>
-        </div>
+        {interpolator === HOLD_INTERPOLATOR ? (
+          <div className="space-y-2 rounded-lg bg-secondary/60 p-3 text-foreground">
+            <svg viewBox="0 0 208 120" className="w-full" aria-hidden="true">
+              <path
+                d="M8 104 H196 V16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinejoin="round"
+              />
+              <circle cx="8" cy="104" r="4" fill="var(--primary)" />
+              <circle cx="196" cy="16" r="4" fill="var(--primary)" />
+            </svg>
+            <p className="text-[12px] leading-relaxed text-muted-foreground">
+              {label} stays at its starting value, then jumps to the next keyframe&apos;s value at
+              the end. Use it for blinks and instant swaps.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="grid place-items-center rounded-lg bg-secondary/60 py-3 text-foreground">
+              <LiveEasingCurve
+                size={208}
+                points={points}
+                block={block}
+                onEditStart={() => {
+                  easingEditRef.current = { changed: false };
+                }}
+                onEditEnd={() => {
+                  easingEditRef.current = null;
+                }}
+                onEditCancel={() => {
+                  if (easingEditRef.current?.changed)
+                    useEditorStore.getState().cancelLastHistoryTransaction();
+                  easingEditRef.current = null;
+                }}
+                onChange={updateCurve}
+              />
+            </div>
+            <div className="flex items-start gap-1">
+              <CurveInput
+                ariaLabel={`${label} easing curve`}
+                points={points}
+                parse={parseCurve}
+                onCommit={updateCurve}
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  updateCurve([1 - points[2], 1 - points[3], 1 - points[0], 1 - points[1]])
+                }
+                aria-label="Flip curve"
+                title="Flip curve"
+                className="grid size-8 pointer-coarse:size-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <FlipHorizontal2 className="size-4" />
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -167,9 +192,11 @@ export function EasingPanel({
 
 function EasingIcon({
   points,
+  hold = false,
   className,
 }: {
   points: [number, number, number, number];
+  hold?: boolean;
   className?: string;
 }) {
   const [x1, y1, x2, y2] = points;
@@ -177,7 +204,7 @@ function EasingIcon({
   return (
     <svg width={14} height={14} viewBox="0 0 14 14" fill="none" aria-hidden className={className}>
       <path
-        d={`M${p(0, 0)} C${p(x1, y1)} ${p(x2, y2)} ${p(1, 1)}`}
+        d={hold ? `M${p(0, 0)} H${1 + 12} V1` : `M${p(0, 0)} C${p(x1, y1)} ${p(x2, y2)} ${p(1, 1)}`}
         stroke="currentColor"
         strokeWidth="1.4"
         strokeLinecap="round"

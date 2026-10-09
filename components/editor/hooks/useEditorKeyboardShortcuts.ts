@@ -136,6 +136,13 @@ export function useEditorKeyboardShortcuts() {
           store.setToolMode(nextTool);
           return;
         }
+        if (key === "u") {
+          // After Effects' U: reveal only what moves.
+          event.preventDefault();
+          const view = useTimelineViewSettings.getState();
+          view.setAnimatedOnly(!view.animatedOnly);
+          return;
+        }
         if (key === "h") {
           event.preventDefault();
           handPressed = true;

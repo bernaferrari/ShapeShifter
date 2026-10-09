@@ -31,12 +31,11 @@ import {
   TextInput,
   type KeyframeToggleProps,
 } from "./InspectorControls";
-import { parsePath, pathToString } from "@/lib/pathshift/pathUtils";
-import { pathDAtTime } from "@/lib/pathshift/playheadResolve";
+import { parsePath } from "@/lib/pathshift/pathUtils";
+import { numberAtTime, pathDAtTime } from "@/lib/pathshift/playheadResolve";
 import { sameKeyframeTime } from "@/lib/pathshift/motion/timelineKeyframes";
 import { useTimelineViewSettings } from "../timeline/timelineViewSettings";
 import { formatTimelineTime } from "../timeline/timelineScale";
-import { scalePathToBounds } from "@/lib/pathshift/path/pathEditing";
 
 /**
  * Resolves the inline ◇ toggle for a property. Only properties the layer type can
@@ -406,7 +405,11 @@ export function PairRow({
   );
 }
 
-/** Geometry size. Animating it keys the path shape, so W/H share the Path ◇. */
+/**
+ * W/H. Static shapes resize their outline, like Figma. Once the outline or scale
+ * is animated, W/H show the visible size and resize through Scale, like After
+ * Effects: the morph keyframes stay untouched and the change keys like any value.
+ */
 export function LayerSizeRow({
   layer,
   selectedLayers,
@@ -426,11 +429,16 @@ export function LayerSizeRow({
   const blocks = useEditorStore((state) => state.animation.blocks);
   const duration = useEditorStore((state) => state.animation.duration);
   const keyframeFor = useKeyframeToggles(layer, count);
-  const animated =
-    count === 1 &&
+  const ownTrack = (...names: string[]) =>
     blocks.some(
-      (block) => String(block.layerId) === String(layer.id) && block.propertyName === "pathData",
+      (block) => String(block.layerId) === String(layer.id) && names.includes(block.propertyName),
     );
+  const animated = count === 1 && ownTrack("pathData");
+  const viaScale = count === 1 && (animated || ownTrack("scaleX", "scaleY"));
+  const scale = {
+    x: viaScale ? numberAtTime(layer, blocks, "scaleX", progressMs, duration, 1) : 1,
+    y: viaScale ? numberAtTime(layer, blocks, "scaleY", progressMs, duration, 1) : 1,
+  };
   const geometry = React.useMemo(() => {
     if (bounds?.coordinateSpace === "world") return null;
     const paths = selectedLayers.filter((item) => item.type !== "group");
@@ -454,34 +462,55 @@ export function LayerSizeRow({
     return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
   }, [animated, blocks, bounds?.coordinateSpace, duration, progressMs, selectedLayers]);
   if (!geometry || layer.locked) return null;
+  const visible = {
+    width: geometry.width * Math.abs(scale.x),
+    height: geometry.height * Math.abs(scale.y),
+  };
 
   const resize = (axis: "width" | "height", value: number) => {
     if (value <= 0) return;
+    const store = useEditorStore.getState();
+    if (viaScale) {
+      const factor = value / Math.max(1e-6, axis === "width" ? visible.width : visible.height);
+      const next = {
+        scaleX: axis === "width" || linked ? scale.x * factor : scale.x,
+        scaleY: axis === "height" || linked ? scale.y * factor : scale.y,
+      };
+      const round4 = (n: number) => Math.round(n * 10000) / 10000;
+      const patch: Record<string, number> = {
+        scaleX: round4(next.scaleX),
+        scaleY: round4(next.scaleY),
+      };
+      // Scale around the shape's center the first time, as After Effects anchors it.
+      if ((layer.pivotX ?? 0) === 0 && (layer.pivotY ?? 0) === 0 && !ownTrack("pivotX", "pivotY")) {
+        const box = getPathDataBounds(layer.from);
+        if (box) {
+          patch.pivotX = Math.round((box.x + box.w / 2) * 100) / 100;
+          patch.pivotY = Math.round((box.y + box.h / 2) * 100) / 100;
+        }
+      }
+      const rest = store.setPropertiesAtPlayhead(layer.id, patch as Record<string, never>);
+      if (Object.keys(rest).length) store.updateSelectedLayer(rest as Partial<Layer>);
+      return;
+    }
     const ratio = geometry.width / Math.max(1e-6, geometry.height);
     const width = axis === "width" ? value : linked ? value * ratio : geometry.width;
     const height = axis === "height" ? value : linked ? value / ratio : geometry.height;
-    const target = { ...geometry, width, height };
-    const store = useEditorStore.getState();
-    if (animated) {
-      // Animated shape: write the resized shape at the playhead.
-      const current = parsePath(
-        pathDAtTime(layer, store.animation.blocks, progressMs, duration, progressMs / duration),
-      );
-      store.setPropertiesAtPlayhead(layer.id, {
-        pathData: pathToString(scalePathToBounds(current, geometry, target)),
-      });
-      return;
-    }
-    store.resizeSelectedLayer(geometry, target);
+    store.resizeSelectedLayer(geometry, { ...geometry, width, height });
   };
   const round = (value: number) => Math.round(value * 100) / 100;
 
   return (
-    <PairRow keyframe={keyframeFor("pathData", "Path")} reserve={count === 1}>
+    <PairRow
+      keyframe={
+        viaScale ? keyframeFor(["scaleX", "scaleY"], "Scale") : keyframeFor("pathData", "Path")
+      }
+      reserve={count === 1}
+    >
       <NumberRow
         label="W"
         compact
-        value={round(geometry.width)}
+        value={round(visible.width)}
         min={0.01}
         step={0.1}
         onChange={(value) => resize("width", value)}
@@ -489,7 +518,7 @@ export function LayerSizeRow({
       <NumberRow
         label="H"
         compact
-        value={round(geometry.height)}
+        value={round(visible.height)}
         min={0.01}
         step={0.1}
         onChange={(value) => resize("height", value)}

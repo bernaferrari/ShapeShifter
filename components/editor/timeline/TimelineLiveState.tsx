@@ -155,7 +155,7 @@ export function TimelineCurrentTimeInput({
             ? "Current time in seconds"
             : "Current time in milliseconds"
       }
-      className="w-[8ch] min-w-0 rounded-sm border-0 bg-transparent p-0 text-right font-medium tabular-nums outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      className="w-[6.5ch] min-w-0 rounded-sm border-0 bg-transparent p-0 text-right font-medium tabular-nums outline-none focus-visible:ring-1 focus-visible:ring-ring"
       style={{ color }}
     />
   );
@@ -222,7 +222,7 @@ export function TimelineDurationInput({
             ? "Animation duration in seconds"
             : "Animation duration in milliseconds"
       }
-      className="h-4 w-[8ch] min-w-0 rounded-sm border-0 bg-transparent p-0 text-[11px] tabular-nums text-muted-foreground outline-none hover:text-foreground focus:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+      className="h-4 w-[5ch] min-w-0 rounded-sm border-0 bg-transparent p-0 text-[11px] tabular-nums text-muted-foreground outline-none hover:text-foreground focus:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
     />
   );
 }

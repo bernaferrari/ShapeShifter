@@ -471,7 +471,8 @@ export interface EditorState {
   setPropertiesAtPlayhead: (
     layerId: string | number,
     values: Record<string, TimelineBlock["fromValue"]>,
-    options?: { recordHistory?: boolean },
+    /** `time` (ms) writes a keyframe away from the playhead, e.g. from the motion path. */
+    options?: { recordHistory?: boolean; time?: number },
   ) => Record<string, TimelineBlock["fromValue"]>;
   copyTimelineBlocks: (blockIds?: string[]) => boolean;
   pasteTimelineBlocks: (layerId?: string | number, time?: number) => TimelinePasteResult;

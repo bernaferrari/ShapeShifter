@@ -1,4 +1,4 @@
-import { layerAtTime, pathDAtTime } from "../../pathshift/playheadResolve";
+import { layerAtTime, numberAtTime, pathDAtTime } from "../../pathshift/playheadResolve";
 import { toast } from "sonner";
 import { structuralLockIssue } from "../commands/structuralLayers";
 import { planLayerDeletion } from "../commands/deleteLayers";
@@ -137,6 +137,15 @@ function timelineBaseValue(layer: Layer, propertyName: string): number | string 
       return typeof raw === "string" ? raw : "";
   }
 }
+
+/** Properties keyed as one value, like After Effects' Position and Scale. */
+const COMPOUND_PROPERTIES = [
+  ["translateX", "translateY"],
+  ["scaleX", "scaleY"],
+] as const;
+
+const isTrack = (block: TimelineBlock, layerId: string | number, propertyName: string) =>
+  String(block.layerId) === String(layerId) && block.propertyName === propertyName;
 
 export function createDocumentActions(
   set: SetEditorState,
@@ -628,11 +637,29 @@ export function createDocumentActions(
     setPropertiesAtPlayhead: (layerId, values, options) => {
       const state = get();
       if (structuralLockIssue(state.layers, [layerId], false)) return {};
-      const time = state.progress * state.animation.duration;
+      const time = options?.time ?? state.progress * state.animation.duration;
       const unanimated: Record<string, TimelineBlock["fromValue"]> = {};
       let blocks = state.animation.blocks;
       const layers = state.layers;
-      for (const [propertyName, value] of Object.entries(values)) {
+      // Like After Effects' Position and Scale, both dimensions key together: editing
+      // X on an animated position also keys the animated Y at its current value.
+      const entries: Array<[string, TimelineBlock["fromValue"]]> = Object.entries(values);
+      const layer = createLayerTreeModel(layers).allLayers.find(
+        (item) => String(item.id) === String(layerId),
+      );
+      for (const group of COMPOUND_PROPERTIES) {
+        if (!layer || !group.some((name) => name in values)) continue;
+        for (const name of group) {
+          if (name in values || !blocks.some((block) => isTrack(block, layerId, name))) continue;
+          const stored = (layer as unknown as Record<string, unknown>)[name];
+          const base = typeof stored === "number" ? stored : name.startsWith("scale") ? 1 : 0;
+          entries.push([
+            name,
+            numberAtTime(layer, blocks, name, time, state.animation.duration, base),
+          ]);
+        }
+      }
+      for (const [propertyName, value] of entries) {
         const id = generateId();
         const apply = (list: TimelineBlock[]) =>
           setTrackValueAt(list, layerId, propertyName, time, value, id);

@@ -83,6 +83,24 @@ describe("timeline projection", () => {
     expect(projection.blocksForLayer("frame", "shape")).toHaveLength(3);
   });
 
+  it("hides unanimated layers but keeps groups that contain motion when filtered", () => {
+    const still: Layer = { ...layer, id: "still", name: "Still" };
+    const group: Layer = { ...layer, id: "group", name: "Group", type: "group" };
+    const child: Layer = { ...layer, id: "child", name: "Child", parentId: "group" };
+    const childMotion = { ...animation.blocks[1]!, id: "cx", layerId: "child" };
+    const projection = buildTimelineProjection({
+      frames: [frame],
+      selectedFrameId: frame.id,
+      activeLayers: [layer, still, group, child],
+      activeAnimation: { ...animation, blocks: [...animation.blocks, childMotion] },
+      collapsedFrameIds: new Set(),
+      collapsedGroupKeys: new Set(),
+      animatedOnly: true,
+    });
+    const objects = projection.rows.filter((row) => row.kind === "object").map((row) => row.key);
+    expect(objects).toEqual(["object-frame-shape", "object-frame-group", "object-frame-child"]);
+  });
+
   it("keeps translateY blocks selectable on their own row while translateX is animated", () => {
     const projection = buildTimelineProjection({
       frames: [frame],

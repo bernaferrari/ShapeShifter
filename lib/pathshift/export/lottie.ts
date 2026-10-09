@@ -1,6 +1,6 @@
 import { dominantColor, normalizeStops } from "../gradients";
 import { arcToBeziers } from "../geometry";
-import { INTERPOLATOR_CURVES } from "../interpolators";
+import { HOLD_INTERPOLATOR, INTERPOLATOR_CURVES } from "../interpolators";
 import { colorAtTime, numberAtTime, parseEditorColor } from "../playheadResolve";
 import { createLayerTreeModel } from "../scene/layerHierarchy";
 import type { AnimationState, Layer, PathData, TimelineBlock, VectorMetadata } from "../types";
@@ -409,6 +409,8 @@ export interface LottieDocumentOptions {
 }
 
 function lottieBezier(interpolator?: string) {
+  // Lottie's own hold flag: the keyframe value stays until the next keyframe.
+  if (interpolator === HOLD_INTERPOLATOR) return { h: 1 };
   const resolved = interpolator || "ACCELERATE_DECELERATE";
   const named = INTERPOLATOR_CURVES[resolved as keyof typeof INTERPOLATOR_CURVES];
   const values = named ?? interpolator?.match(/[-+]?(?:\d*\.)?\d+/g)?.map(Number);

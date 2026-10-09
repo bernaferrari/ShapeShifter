@@ -6,6 +6,12 @@
 
 import type { InterpolatorName } from "./types";
 
+/**
+ * After Effects' hold keyframe: the value stays put for the whole segment and
+ * jumps at its end. Android has no built-in hold, so export draws it as a step.
+ */
+export const HOLD_INTERPOLATOR = "HOLD";
+
 /** Cubic-bezier control points [x1, y1, x2, y2] for each named interpolator. */
 export const INTERPOLATOR_CURVES: Record<InterpolatorName, [number, number, number, number]> = {
   FAST_OUT_SLOW_IN: [0.4, 0, 0.2, 1],
@@ -121,6 +127,7 @@ export function evaluateInterpolator(t: number, interpolator?: string): number {
   // Android ObjectAnimator defaults to AccelerateDecelerateInterpolator. Keep
   // absent XML attributes and the editor preview on the same timing curve.
   const resolved = interpolator || "ACCELERATE_DECELERATE";
+  if (resolved === HOLD_INTERPOLATOR) return 0;
   if (resolved === "LINEAR") return t;
   // Android implements this named interpolator as a cosine, not a cubic-bezier.
   if (resolved === "ACCELERATE_DECELERATE") {

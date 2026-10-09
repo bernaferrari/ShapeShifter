@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { useEditorStore } from "@/lib/store/editorStore";
 import { usePathPointHighlight } from "../pathPointHighlight";
 import {
   pointPresentation,
@@ -7,6 +8,7 @@ import {
 } from "@/lib/pathshift/path/pointPresentation";
 import { materializeSmoothCommands } from "@/lib/pathshift/path/commandNormalization";
 import { getSegmentTargets } from "./pathCanvasGeometry";
+import { getPathDataBounds } from "@/lib/pathshift/path/pathDataIO";
 import { pathToString } from "@/lib/pathshift/pathUtils";
 import { numberAtTime, sampleMotionPath } from "@/lib/pathshift/playheadResolve";
 import {
@@ -82,22 +84,26 @@ export function WorldMotionPaths({
   return selectedLayerIds.map((id) => {
     const layer = layers.find((candidate) => String(candidate.id) === String(id));
     if (!layer) return null;
-    const points = sampleMotionPath(layer, animation.blocks, animation.duration, 40);
-    if (points.length < 2) return null;
+    const samples = sampleMotionPath(layer, animation.blocks, animation.duration, 40);
+    if (samples.length < 2) return null;
+    // Like After Effects, the path runs through the shape itself (its center),
+    // not through the artboard corner that translate offsets are measured from.
+    const box = layer.type !== "group" && layer.from ? getPathDataBounds(layer.from) : null;
+    const anchor = box ? { x: box.x + box.w / 2, y: box.y + box.h / 2 } : { x: 0, y: 0 };
+    const at = { x: origin.x + anchor.x, y: origin.y + anchor.y };
+    const points = samples;
     const primary = String(id) === String(primaryLayerId);
     const currentTime = progress * animation.duration;
     const current = {
       x:
-        origin.x +
-        numberAtTime(layer, animation.blocks, "translateX", currentTime, animation.duration),
+        at.x + numberAtTime(layer, animation.blocks, "translateX", currentTime, animation.duration),
       y:
-        origin.y +
-        numberAtTime(layer, animation.blocks, "translateY", currentTime, animation.duration),
+        at.y + numberAtTime(layer, animation.blocks, "translateY", currentTime, animation.duration),
     };
     return (
       <g key={`motion-${id}`} pointerEvents="none">
         <polyline
-          points={points.map((point) => `${origin.x + point.x},${origin.y + point.y}`).join(" ")}
+          points={points.map((point) => `${at.x + point.x},${at.y + point.y}`).join(" ")}
           fill="none"
           stroke="var(--primary)"
           strokeWidth={primary ? 1.25 : 1}
@@ -112,9 +118,133 @@ export function WorldMotionPaths({
           fill="var(--primary)"
           opacity={primary ? 0.9 : 0.5}
         />
+        {primary &&
+          motionKeyframeTimes(layer, animation).map((time) => (
+            <MotionKeyframeHandle
+              key={time}
+              layerId={layer.id}
+              time={time}
+              duration={animation.duration}
+              position={{
+                x: numberAtTime(layer, animation.blocks, "translateX", time, animation.duration),
+                y: numberAtTime(layer, animation.blocks, "translateY", time, animation.duration),
+              }}
+              origin={at}
+              axes={{
+                x: hasTrack(animation, layer.id, "translateX"),
+                y: hasTrack(animation, layer.id, "translateY"),
+              }}
+              worldPerPixel={worldPerPixel}
+            />
+          ))}
       </g>
     );
   });
+}
+
+const hasTrack = (animation: AnimationState, layerId: string | number, property: string) =>
+  animation.blocks.some(
+    (block) => String(block.layerId) === String(layerId) && block.propertyName === property,
+  );
+
+/** Every time where the layer's position has a keyframe, in order. */
+function motionKeyframeTimes(layer: Layer, animation: AnimationState) {
+  const times = new Set<number>();
+  for (const block of animation.blocks) {
+    if (String(block.layerId) !== String(layer.id)) continue;
+    if (block.propertyName !== "translateX" && block.propertyName !== "translateY") continue;
+    times.add(block.startTime);
+    times.add(block.endTime);
+  }
+  return [...times].sort((a, b) => a - b);
+}
+
+/**
+ * A position keyframe on the motion path, dragged like After Effects: pressing it
+ * moves the playhead there, dragging rewrites that keyframe, and one drag is one undo.
+ */
+function MotionKeyframeHandle({
+  layerId,
+  time,
+  duration,
+  position,
+  origin,
+  axes,
+  worldPerPixel,
+}: {
+  layerId: string | number;
+  time: number;
+  duration: number;
+  position: Point;
+  origin: Point;
+  axes: { x: boolean; y: boolean };
+  worldPerPixel: number;
+}) {
+  const drag = useRef<{ pointerId: number; clientX: number; clientY: number; start: Point } | null>(
+    null,
+  );
+  const size = worldPerPixel * 7;
+  const round = (value: number) => Math.round(value * 100) / 100;
+  const finish = () => {
+    if (!drag.current) return;
+    drag.current = null;
+    useEditorStore.getState().endHistoryGesture();
+  };
+  return (
+    <rect
+      data-motion-keyframe={time}
+      x={origin.x + position.x - size / 2}
+      y={origin.y + position.y - size / 2}
+      width={size}
+      height={size}
+      rx={worldPerPixel * 1.5}
+      transform={`rotate(45 ${origin.x + position.x} ${origin.y + position.y})`}
+      fill="var(--background)"
+      stroke="var(--primary)"
+      strokeWidth={1.5}
+      vectorEffect="non-scaling-stroke"
+      pointerEvents="all"
+      style={{ cursor: "move", touchAction: "none" }}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        event.stopPropagation();
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        const store = useEditorStore.getState();
+        store.setProgress(time / Math.max(1, duration));
+        store.beginHistoryGesture();
+        drag.current = {
+          pointerId: event.pointerId,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          start: position,
+        };
+      }}
+      onPointerMove={(event) => {
+        const active = drag.current;
+        if (!active || active.pointerId !== event.pointerId) return;
+        event.stopPropagation();
+        const dx = (event.clientX - active.clientX) * worldPerPixel;
+        const dy = (event.clientY - active.clientY) * worldPerPixel;
+        useEditorStore.getState().setPropertiesAtPlayhead(
+          layerId,
+          {
+            ...(axes.x && { translateX: round(active.start.x + dx) }),
+            ...(axes.y && { translateY: round(active.start.y + dy) }),
+          },
+          { time },
+        );
+      }}
+      onPointerUp={(event) => {
+        event.stopPropagation();
+        finish();
+      }}
+      onPointerCancel={finish}
+      onLostPointerCapture={finish}
+    >
+      <title>{`Position keyframe at ${round(time)} ms · drag to move it`}</title>
+    </rect>
+  );
 }
 
 export function WorldBezierHandles({
