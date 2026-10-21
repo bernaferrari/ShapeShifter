@@ -291,7 +291,7 @@ function BlankArtboard({ size }: { size: number }) {
   const edge = Math.round(18 + (Math.min(size, 108) / 108) * 38);
   return (
     <span
-      className="rounded-[3px] bg-white shadow-[0_1px_2px_rgb(0_0_0/0.25)]"
+      className="rounded-[3px] bg-white shadow-[0_1px_2px_rgb(0_0_0/0.2),0_0_0_1px_rgb(0_0_0/0.08)]"
       style={{ width: edge, height: edge }}
     />
   );
@@ -323,7 +323,7 @@ function TemplateThumbnail({ frames }: { frames: CanvasFrame[] }) {
           src={source.src}
           alt=""
           className={cn(
-            "rounded-[3px] bg-white object-contain p-1 shadow-[0_1px_2px_rgb(0_0_0/0.25)]",
+            "rounded-[3px] bg-white object-contain p-1 shadow-[0_1px_2px_rgb(0_0_0/0.2),0_0_0_1px_rgb(0_0_0/0.08)]",
             sources.length > 1 ? "size-12" : "size-16",
           )}
         />

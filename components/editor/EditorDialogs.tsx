@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   ArrowLeftRight,
   Circle,
@@ -35,6 +36,7 @@ import {
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
+import { defaultFilter } from "cmdk";
 import { AddAnchorIcon } from "./AddAnchorIcon";
 import {
   CommandDialog,
@@ -183,13 +185,14 @@ export function EditorHelpDialog({
 const EXPORT_COMMANDS: ReadonlyArray<[EditorExportType, string]> = [
   ["avd", "Export Animated Vector Drawable"],
   ["vector", "Export Vector Drawable"],
-  ["svg", "Export morph demo SVG (experimental)"],
   ["static", "Export SVG"],
-  ["css", "Export morph demo CSS (experimental)"],
-  ["lottie", "Export Lottie"],
-  ["pdf", "Export PDF"],
+  ["lottie", "Export Lottie (beta)"],
+  ["pdf", "Export PDF (beta)"],
+  ["json", "Save Pathshift project"],
+  // Same names as the Export dialog's experimental morph demos.
+  ["svg", "Export Morph SVG (experimental)"],
+  ["css", "Export Morph CSS (experimental)"],
   ["spritesheet", "Export morph sprite sheet (experimental)"],
-  ["json", "Save project file"],
 ];
 
 interface EditorCommandPaletteProps {
@@ -210,6 +213,8 @@ interface EditorCommandPaletteProps {
 interface PaletteCommand {
   label: string;
   icon?: React.ComponentType<{ className?: string }>;
+  /** Ranks above equally good matches; the default is 1. */
+  priority?: number;
   shortcut?: string;
   keywords?: string[];
   disabled?: boolean;
@@ -232,6 +237,7 @@ export function EditorCommandPalette({
   onToggleRulers,
   onResetViews,
 }: EditorCommandPaletteProps) {
+  const [query, setQuery] = useState("");
   const canUndo = useEditorStore((state) => state.canUndo);
   const canRedo = useEditorStore((state) => state.canRedo);
   const hasSelection = useEditorStore(
@@ -399,6 +405,7 @@ export function EditorCommandPalette({
         {
           label: "New project…",
           icon: FilePlus,
+          priority: 1.2,
           keywords: ["blank", "template", "start", "create"],
           action: onNewProject,
         },
@@ -422,40 +429,78 @@ export function EditorCommandPalette({
     },
   ];
 
+  // Each item's value is "Group Label"; rank by the label itself, then by priority.
+  const ranking = new Map<string, PaletteCommand>(
+    groups.flatMap((group) =>
+      group.commands.map((command) => [`${group.heading} ${command.label}`, command] as const),
+    ),
+  );
+  const filter = (value: string, search: string, keywords?: string[]) => {
+    const score = defaultFilter(value, search, keywords);
+    const command = ranking.get(value);
+    if (!score || !command) return score;
+    const labelMatch = command.label.toLowerCase().startsWith(search.trim().toLowerCase());
+    return score * (labelMatch ? 1.5 : 1) * (command.priority ?? 1);
+  };
+
+  const renderCommand = (heading: string, command: PaletteCommand, showSection: boolean) => {
+    const Icon = command.icon;
+    return (
+      <CommandItem
+        key={`${heading} ${command.label}`}
+        value={`${heading} ${command.label}`}
+        keywords={command.keywords}
+        disabled={command.disabled}
+        onSelect={() => {
+          command.action();
+          if (!command.keepOpen) onOpenChange(false);
+        }}
+      >
+        {Icon ? <Icon className="size-4" /> : <span className="size-4" />}
+        <span className="flex-1 truncate">{command.label}</span>
+        {showSection && (
+          <span className="shrink-0 text-[11px] text-muted-foreground">{heading}</span>
+        )}
+        {command.shortcut && (
+          <CommandShortcut>
+            <KeyCombo keys={command.shortcut} />
+          </CommandShortcut>
+        )}
+      </CommandItem>
+    );
+  };
+
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange} title="Quick actions">
-      <CommandInput placeholder="Search actions…" />
+    <CommandDialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) setQuery("");
+        onOpenChange(next);
+      }}
+      title="Quick actions"
+      filter={filter}
+    >
+      <CommandInput placeholder="Search actions…" value={query} onValueChange={setQuery} />
       <CommandList>
         <CommandEmpty>No matching actions</CommandEmpty>
-        {groups.map((group) => (
-          <CommandGroup key={group.heading} heading={group.heading}>
-            {group.commands
-              .filter((command) => !command.disabled)
-              .map((command) => {
-                const Icon = command.icon;
-                return (
-                  <CommandItem
-                    key={command.label}
-                    value={`${group.heading} ${command.label}`}
-                    keywords={command.keywords}
-                    disabled={command.disabled}
-                    onSelect={() => {
-                      command.action();
-                      if (!command.keepOpen) onOpenChange(false);
-                    }}
-                  >
-                    {Icon ? <Icon className="size-4" /> : <span className="size-4" />}
-                    <span className="flex-1 truncate">{command.label}</span>
-                    {command.shortcut && (
-                      <CommandShortcut>
-                        <KeyCombo keys={command.shortcut} />
-                      </CommandShortcut>
-                    )}
-                  </CommandItem>
-                );
-              })}
+        {/* While searching, one ranked list (best match first) instead of fixed sections. */}
+        {query.trim() ? (
+          <CommandGroup value="results">
+            {groups.flatMap((group) =>
+              group.commands
+                .filter((command) => !command.disabled)
+                .map((command) => renderCommand(group.heading, command, true)),
+            )}
           </CommandGroup>
-        ))}
+        ) : (
+          groups.map((group) => (
+            <CommandGroup key={group.heading} heading={group.heading}>
+              {group.commands
+                .filter((command) => !command.disabled)
+                .map((command) => renderCommand(group.heading, command, false))}
+            </CommandGroup>
+          ))
+        )}
       </CommandList>
       <div className="flex h-9 items-center gap-4 border-t border-border px-4 text-[11px] text-muted-foreground">
         <span className="flex items-center gap-1.5">

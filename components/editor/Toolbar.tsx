@@ -417,7 +417,9 @@ function MainMenu({
               Import SVG, XML or project…
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => onExport("json")}>Save project file</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onExport("json")}>
+              Save Pathshift project
+            </DropdownMenuItem>
             {onOpenRecovery && (
               <DropdownMenuItem onClick={onOpenRecovery}>Version history…</DropdownMenuItem>
             )}

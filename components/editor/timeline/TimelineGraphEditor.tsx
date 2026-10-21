@@ -8,6 +8,7 @@ import { propertyLabel } from "@/lib/pathshift/propertyLabels";
 import { HOLD_INTERPOLATOR } from "@/lib/pathshift/interpolators";
 import { interpolatorControlPoints } from "@/lib/pathshift/motion/timelineKeyframes";
 import type { Layer, TimelineBlock } from "@/lib/pathshift/types";
+import { useTimelineViewSettings } from "./timelineViewSettings";
 
 /** After Effects colors X red and Y green; the rest follow a fixed, distinct order. */
 const PROPERTY_COLORS: Record<string, string> = {
@@ -36,6 +37,27 @@ interface Track {
   max: number;
 }
 
+/** Position and Scale key as one property, so their keyframes also move in time together. */
+const PAIRED_PROPERTY: Record<string, string> = {
+  translateX: "translateY",
+  translateY: "translateX",
+  scaleX: "scaleY",
+  scaleY: "scaleX",
+};
+
+interface KeyframeRef {
+  blockId: string;
+  edge: "start" | "end";
+}
+
+/** The keyframe at `time`, preferring the segment that starts there (it survives retiming). */
+function keyframeAt(blocks: TimelineBlock[], time: number): KeyframeRef | null {
+  const starting = blocks.find((block) => block.startTime === time);
+  if (starting) return { blockId: starting.id, edge: "start" };
+  const ending = blocks.find((block) => block.endTime === time);
+  return ending ? { blockId: ending.id, edge: "end" } : null;
+}
+
 const isNumeric = (block: TimelineBlock) =>
   typeof block.fromValue === "number" && typeof block.toValue === "number";
 
@@ -60,6 +82,10 @@ export function TimelineGraphEditor({
   const selectedLayerId = useEditorStore((state) => state.selectedLayerId);
   const selectedBlockIds = useEditorStore((state) => state.selectedBlockIds);
   const selectionKind = useEditorStore((state) => state.selectionKind);
+  const timeUnit = useTimelineViewSettings((state) => state.unit);
+  const fps = useTimelineViewSettings((state) => state.fps);
+  // Keyframe times snap to whole frames when the timeline counts frames, else whole ms.
+  const timeStep = timeUnit === "frames" ? 1000 / fps : 1;
   const rootRef = React.useRef<HTMLDivElement>(null);
   const [height, setHeight] = React.useState(240);
   // Ranges freeze while dragging so the curve does not rescale under the pointer.
@@ -127,7 +153,7 @@ export function TimelineGraphEditor({
 
   const beginDrag = (
     event: React.PointerEvent<SVGElement>,
-    onMove: (dx: number, dy: number) => void,
+    onMove: (dx: number, dy: number, event: PointerEvent) => void,
   ) => {
     if (event.button !== 0 || !layer) return;
     event.stopPropagation();
@@ -140,7 +166,7 @@ export function TimelineGraphEditor({
     useEditorStore.getState().beginHistoryGesture();
     const move = (moveEvent: PointerEvent) => {
       if (moveEvent.pointerId !== event.pointerId) return;
-      onMove(moveEvent.clientX - startX, moveEvent.clientY - startY);
+      onMove(moveEvent.clientX - startX, moveEvent.clientY - startY, moveEvent);
     };
     const end = (endEvent: PointerEvent) => {
       if (endEvent.pointerId !== event.pointerId) return;
@@ -194,7 +220,7 @@ export function TimelineGraphEditor({
           }).join(" ");
           const keyTimes = [
             ...new Set(track.blocks.flatMap((block) => [block.startTime, block.endTime])),
-          ];
+          ].sort((a, b) => a - b);
           return (
             <g key={track.property}>
               <path d={d} fill="none" stroke={track.color} strokeWidth={1.75} />
@@ -263,10 +289,12 @@ export function TimelineGraphEditor({
                 );
               })}
               {keyTimes.map((time) => {
+                const ref = keyframeAt(track.blocks, time);
+                if (!ref) return null;
                 const value = numberAtTime(layer, blocks, track.property, time, duration);
                 return (
                   <rect
-                    key={time}
+                    key={`${ref.blockId}:${ref.edge}`}
                     data-graph-keyframe={`${track.property}:${time}`}
                     x={xAt(time) - 4.5}
                     y={yAt(track, value) - 4.5}
@@ -276,19 +304,56 @@ export function TimelineGraphEditor({
                     fill={track.color}
                     stroke="var(--background)"
                     strokeWidth={1.5}
-                    style={{ cursor: "ns-resize", touchAction: "none" }}
+                    style={{ cursor: "move", touchAction: "none" }}
                     onPointerDown={(event) => {
                       const perPixel = valuePerPixel(track);
+                      const msPerPixel = duration / Math.max(1, contentWidth);
+                      const pairedName = PAIRED_PROPERTY[track.property];
+                      const paired = pairedName
+                        ? keyframeAt(
+                            blocks.filter(
+                              (block) =>
+                                String(block.layerId) === String(layer.id) &&
+                                block.propertyName === pairedName,
+                            ),
+                            time,
+                          )
+                        : null;
                       useEditorStore.getState().setProgress(time / Math.max(1, duration));
-                      beginDrag(event, (_dx, dy) => {
-                        const next = Math.round((value - dy * perPixel) * 1000) / 1000;
-                        useEditorStore
+                      beginDrag(event, (dx, dy, moveEvent) => {
+                        // Shift keeps the drag on its dominant axis, like After Effects.
+                        const horizontal = Math.abs(dx) > Math.abs(dy);
+                        const keepTime = moveEvent.shiftKey && !horizontal;
+                        const keepValue = moveEvent.shiftKey && horizontal;
+                        const nextTime = keepTime
+                          ? time
+                          : Math.round((time + dx * msPerPixel) / timeStep) * timeStep;
+                        const nextValue = keepValue
+                          ? value
+                          : Math.round((value - dy * perPixel) * 1000) / 1000;
+                        const store = useEditorStore.getState();
+                        store.updateTimelineKeyframe(ref.blockId, ref.edge, {
+                          time: nextTime,
+                          value: nextValue,
+                        });
+                        // The store clamps between neighboring keyframes; follow where it landed.
+                        const updated = useEditorStore
                           .getState()
-                          .setPropertiesAtPlayhead(layer.id, { [track.property]: next }, { time });
+                          .animation.blocks.find((block) => block.id === ref.blockId);
+                        const landed = updated
+                          ? ref.edge === "start"
+                            ? updated.startTime
+                            : updated.endTime
+                          : time;
+                        if (paired)
+                          store.updateTimelineKeyframe(paired.blockId, paired.edge, {
+                            time: landed,
+                          });
+                        store.setProgress(landed / Math.max(1, duration));
                       });
                     }}
                   >
-                    <title>{`${propertyLabel(track.property)} · ${Math.round(value * 1000) / 1000} at ${Math.round(time)} ms · drag to change`}</title>
+                    <title>{`${propertyLabel(track.property)} · ${Math.round(value * 1000) / 1000} at ${Math.round(time)} ms · drag to change value and time, Shift to keep one`}</title>
                   </rect>
                 );
               })}
@@ -296,6 +361,14 @@ export function TimelineGraphEditor({
           );
         })}
       </svg>
+      {tracks.every((track) => track.max - track.min < 1e-9) && (
+        <p
+          className="pointer-events-none absolute text-[12px] text-muted-foreground"
+          style={{ left: gutter + 8, top: PADDING_TOP + innerHeight / 2 - 28 }}
+        >
+          Every keyframe has the same value. Move the playhead and change a value to draw a curve.
+        </p>
+      )}
       <div className="pointer-events-none absolute inset-0">
         <div
           className="sticky flex w-fit max-w-[60vw] flex-wrap gap-x-3 gap-y-1 p-2 text-[11px]"

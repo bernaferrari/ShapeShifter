@@ -49,7 +49,7 @@ Double-click, right-click, or press Enter on a keyframe diamond to edit its exac
 
 Magnetic snapping targets nearby keyframes, the playhead, and timeline bounds within an eight-pixel threshold at every zoom level. A visible guide identifies the target; Alt/Option bypasses snapping. Selected segments move with one shared offset and one Undo step. Linked neighbors follow their shared endpoint, unrelated segments prevent overlap, and inherited layer locks block edits. Escape, lost pointer capture, and unmount cancel an owned drag safely.
 
-Value and velocity graphs show one numeric segment. Velocity is a sampled numerical derivative in property units per second; color and path segments have no numeric velocity graph. Inserting a keyframe into accelerate–decelerate easing preserves the current pose but changes transition timing.
+The timeline's graph editor plots every numeric track of the selected layer as a value curve, each fit to its own height. Drag a keyframe up or down to change its value and sideways to retime it (hold Shift to keep one; Position and Scale keyframes move together), or drag a Bézier handle to reshape that segment's easing. Hold segments draw as steps. Color and path tracks have no numeric curve. Inserting a keyframe into accelerate–decelerate easing preserves the current pose but changes transition timing.
 
 ## Interoperability exports
 
@@ -69,6 +69,6 @@ Static SVG and PDF apply the same trim geometry used by the preview. Native Andr
 
 Autosave and up to 20 retained checkpoints are browser-local. Save failures expose retry and backup actions; conflicting writes from another tab are detected. **File → Version history** restores a checkpoint as one Undo step. Export project JSON for a portable backup.
 
-Seven WebMCP tools are registered where browser support is available. **File → Agent tools** provides inspection and atomic batch editing otherwise. Agent writes use explicit IDs and expected revisions; locked targets, stale revisions, playback, and active gestures reject competing edits. See [the agent guide](agent-editor.md).
+Seven WebMCP tools are registered where browser support is available. **Agent tools** in the main menu provides inspection and atomic batch editing otherwise. Agent writes use explicit IDs and expected revisions; locked targets, stale revisions, playback, and active gestures reject competing edits. See [the agent guide](agent-editor.md).
 
 Cloud sync, multiplayer editing, a document library, typography, reusable components, and layout constraints are outside the current scope. See [the quality review](../plans/editor-quality-review.md) for acceptance evidence and more detailed limits.

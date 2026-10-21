@@ -1,6 +1,6 @@
 # Pathshift agent editing
 
-The editor registers seven WebMCP tools when the browser supports `document.modelContext` (or the older `navigator.modelContext`). Discover tools in the current page; browser transports may append a session suffix to their names. **File → Agent tools** provides the same inspection and atomic edit interface in other browsers.
+The editor registers seven WebMCP tools when the browser supports `document.modelContext` (or the older `navigator.modelContext`). Discover tools in the current page; browser transports may append a session suffix to their names. **Agent tools** in the main menu provides the same inspection and atomic edit interface in other browsers.
 
 ## Safe editing sequence
 

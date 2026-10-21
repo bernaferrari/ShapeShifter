@@ -154,11 +154,19 @@ export function createDocumentActions(
   return {
     addLayer: (type = "path") => {
       const state = get();
+      // A centered square at half the artboard's size, so it fits any icon grid.
+      const width = state.vector.viewportWidth ?? state.vector.width ?? 24;
+      const height = state.vector.viewportHeight ?? state.vector.height ?? 24;
+      const side = Math.round(Math.min(width, height) * 0.5 * 100) / 100;
+      const left = Math.round(((width - side) / 2) * 100) / 100;
+      const top = Math.round(((height - side) / 2) * 100) / 100;
       const newLayer = createPathLayer({
         id: generateId(),
         name: `${layerLabel(type)} ${state.layers.length + 1}`,
         type,
-        from: parsePath("M 10 10 L 30 10 L 30 30 L 10 30 Z"),
+        from: parsePath(
+          `M ${left} ${top} L ${left + side} ${top} L ${left + side} ${top + side} L ${left} ${top + side} Z`,
+        ),
         visible: true,
         locked: false,
         fillColor: type === "path" ? "#000000" : "",

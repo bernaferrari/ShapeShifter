@@ -32,12 +32,15 @@ function CommandDialog({
   children,
   className,
   showCloseButton = false,
+  filter,
   ...props
 }: Omit<React.ComponentProps<typeof Dialog>, "children"> & {
   title?: string;
   description?: string;
   className?: string;
   showCloseButton?: boolean;
+  /** Custom ranking for the inner command list (cmdk's `filter`). */
+  filter?: React.ComponentProps<typeof CommandPrimitive>["filter"];
   children: React.ReactNode;
 }) {
   return (
@@ -53,7 +56,7 @@ function CommandDialog({
         )}
         showCloseButton={showCloseButton}
       >
-        <Command>{children}</Command>
+        <Command filter={filter}>{children}</Command>
       </DialogContent>
     </Dialog>
   );
@@ -160,10 +163,7 @@ function CommandShortcut({ className, ...props }: React.ComponentProps<"span">) 
   return (
     <span
       data-slot="command-shortcut"
-      className={cn(
-        "ml-auto flex items-center text-[11px] text-muted-foreground",
-        className,
-      )}
+      className={cn("ml-auto flex items-center text-[11px] text-muted-foreground", className)}
       {...props}
     />
   );

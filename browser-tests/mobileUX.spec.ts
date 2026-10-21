@@ -139,6 +139,8 @@ test("native touch navigation pans empty space and artwork in Move view without 
     page.on("pageerror", (error) => errors.push(error.message));
     await practice(page);
     const before = await project(page);
+    // The export toast spans the top of a phone canvas; touches must land on the canvas itself.
+    await expect(page.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 10_000 });
     const cdp = await context.newCDPSession(page);
     const touch = (type: "touchStart" | "touchMove" | "touchEnd", x = 0, y = 0) =>
       cdp.send("Input.dispatchTouchEvent", {

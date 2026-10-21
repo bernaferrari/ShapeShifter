@@ -423,11 +423,15 @@ export function LayerAppearanceSections({
     );
   const fillAnimated = animates(["fillColor", "fillAlpha"]);
   const strokeAnimated = animates(["strokeColor", "strokeAlpha", "strokeWidth"]);
+  // Imported and pen-drawn paths can spell "no paint" as "none" or "transparent".
+  const paints = (color?: string) =>
+    Boolean(color) && !["none", "transparent"].includes(color!.trim().toLowerCase());
   const hasFill =
-    fillAnimated || selectedLayers.some((item) => Boolean(item.fillColor || item.fillGradient));
+    fillAnimated ||
+    selectedLayers.some((item) => paints(item.fillColor) || Boolean(item.fillGradient));
   const hasStroke =
     strokeAnimated ||
-    selectedLayers.some((item) => Boolean(item.strokeColor) && (item.strokeWidth ?? 0) > 0);
+    selectedLayers.some((item) => paints(item.strokeColor) && (item.strokeWidth ?? 0) > 0);
   const paintToggle = (kind: "fill" | "stroke", present: boolean, animated: boolean) =>
     present ? (
       animated ? null : (
@@ -459,7 +463,11 @@ export function LayerAppearanceSections({
           onChange(
             kind === "fill"
               ? { fillColor: "#000000", fillAlpha: 1 }
-              : { strokeColor: layer.strokeColor || "#000000", strokeWidth: 1, strokeAlpha: 1 },
+              : {
+                  strokeColor: paints(layer.strokeColor) ? layer.strokeColor : "#000000",
+                  strokeWidth: 1,
+                  strokeAlpha: 1,
+                },
           )
         }
       >

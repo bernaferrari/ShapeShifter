@@ -228,17 +228,50 @@ export function Onboarding({
   }
   if (!visible) return null;
 
+  const primary = (
+    <Button
+      size="sm"
+      className="h-8 px-3 text-[12px]"
+      onClick={() => {
+        dismiss();
+        exercise.start();
+        onShowDesign?.();
+      }}
+    >
+      Make an icon move
+    </Button>
+  );
+  const secondary = (
+    <Button
+      size="sm"
+      variant="ghost"
+      className="h-8 px-3 text-[12px]"
+      onClick={dismiss}
+      aria-label="Dismiss onboarding"
+    >
+      Got it
+    </Button>
+  );
+
   return (
     <div
       role="dialog"
       aria-label="Getting started"
       className={cn(
         "pointer-events-auto absolute right-3 bottom-16 z-40 w-72 max-w-[calc(100%-1.5rem)] max-md:left-3 max-md:w-auto rounded-xl bg-card p-3 [box-shadow:var(--elevation-floating)]",
+        // A roomy canvas gets a short strip above the tool palette, below the artwork.
+        "@xl/canvas:right-auto @xl/canvas:left-1/2 @xl/canvas:bottom-[4.25rem] @xl/canvas:w-[min(680px,calc(100%-1.5rem))] @xl/canvas:-translate-x-1/2 @xl/canvas:px-4",
         "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300",
       )}
     >
-      <div className="mb-3 text-[13px] font-semibold">Welcome to Pathshift</div>
-      <ul className="space-y-2">
+      <div className="mb-3 flex items-center gap-2">
+        <div className="flex-1 text-[13px] font-semibold">Welcome to Pathshift</div>
+        <div className="hidden items-center gap-1.5 @xl/canvas:flex">
+          {secondary}
+          {primary}
+        </div>
+      </div>
+      <ul className="space-y-2 @xl/canvas:grid @xl/canvas:grid-cols-3 @xl/canvas:gap-4 @xl/canvas:space-y-0">
         {tips.map((tip, i) => (
           <li key={i} className="flex gap-2.5">
             <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">
@@ -251,27 +284,9 @@ export function Onboarding({
           </li>
         ))}
       </ul>
-      <div className="mt-3 flex items-center justify-end gap-1.5">
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-8 px-3 text-[12px]"
-          onClick={dismiss}
-          aria-label="Dismiss onboarding"
-        >
-          Got it
-        </Button>
-        <Button
-          size="sm"
-          className="h-8 px-3 text-[12px]"
-          onClick={() => {
-            dismiss();
-            exercise.start();
-            onShowDesign?.();
-          }}
-        >
-          Make an icon move
-        </Button>
+      <div className="mt-3 flex items-center justify-end gap-1.5 @xl/canvas:hidden">
+        {secondary}
+        {primary}
       </div>
     </div>
   );

@@ -260,7 +260,7 @@ export function TimelineKeyframeEditor({
           <button
             type="button"
             disabled={locked}
-            className="flex h-9 pointer-coarse:h-11 items-center justify-center gap-2 rounded-md bg-primary text-sm text-primary-foreground disabled:opacity-50"
+            className="flex h-8 pointer-coarse:h-11 items-center justify-center gap-1.5 rounded-md bg-secondary text-[12px] font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
             onClick={() => {
               useEditorStore.getState().selectTimelineKeyframe(block.id, edge, false);
               useEditorStore.getState().setToolMode("direct");
@@ -268,13 +268,14 @@ export function TimelineKeyframeEditor({
               onOpenChange(false);
             }}
           >
-            <PenTool className="size-4" />
+            <PenTool className="size-3.5" />
             Edit shape
           </button>
         )}
         {kind === "path" ? (
-          <details>
-            <summary className="cursor-pointer py-2 text-xs text-muted-foreground">
+          <details className="group/path-data">
+            <summary className="flex cursor-pointer list-none items-center gap-1 py-2 text-[11px] text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+              <ChevronRight className="size-3.5 transition-transform group-open/path-data:rotate-90" />
               Advanced path data
             </summary>
             {valueField}

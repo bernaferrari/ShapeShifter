@@ -135,7 +135,8 @@ export function LayersPanel({
       })),
       {
         id: PAGE_ROOT_ID,
-        name: "Canvas",
+        // Same name as the title bar and timeline use for layers outside every artboard.
+        name: "Page",
         layers: selectedFrameId === PAGE_ROOT_ID ? activeLayers : rootLayers,
         blocks: selectedFrameId === PAGE_ROOT_ID ? activeAnimation.blocks : rootAnimation.blocks,
       },

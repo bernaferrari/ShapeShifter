@@ -53,8 +53,15 @@ afterEach(() => {
   useEditorStore.setState(baseline, true);
 });
 
-function drag(element: Element, dx: number, dy: number) {
-  const init = { bubbles: true, cancelable: true, pointerId: 1, button: 0, isPrimary: true };
+function drag(element: Element, dx: number, dy: number, shiftKey = false) {
+  const init = {
+    bubbles: true,
+    cancelable: true,
+    pointerId: 1,
+    button: 0,
+    isPrimary: true,
+    shiftKey,
+  };
   React.act(() => {
     element.dispatchEvent(new PointerEvent("pointerdown", { ...init, clientX: 100, clientY: 100 }));
   });
@@ -74,11 +81,15 @@ const block = (id: string) =>
 
 describe("graph editor", () => {
   it("draws every numeric track with its keyframes, and holds without easing handles", () => {
-    rendered = renderEditorComponent(<TimelineGraphEditor contentWidth={500} gutter={8} stickyLeft={0} />);
+    rendered = renderEditorComponent(
+      <TimelineGraphEditor contentWidth={500} gutter={8} stickyLeft={0} />,
+    );
     const keys = [...rendered.container.querySelectorAll("[data-graph-keyframe]")].map((node) =>
       node.getAttribute("data-graph-keyframe"),
     );
-    expect(keys).toEqual(expect.arrayContaining(["rotation:0", "rotation:1000", "alpha:0", "alpha:500"]));
+    expect(keys).toEqual(
+      expect.arrayContaining(["rotation:0", "rotation:1000", "alpha:0", "alpha:500"]),
+    );
     const handles = [...rendered.container.querySelectorAll("[data-graph-handle]")].map((node) =>
       node.getAttribute("data-graph-handle"),
     );
@@ -87,15 +98,70 @@ describe("graph editor", () => {
   });
 
   it("drags a keyframe to change its value as one undo step", () => {
-    rendered = renderEditorComponent(<TimelineGraphEditor contentWidth={500} gutter={8} stickyLeft={0} />);
+    rendered = renderEditorComponent(
+      <TimelineGraphEditor contentWidth={500} gutter={8} stickyLeft={0} />,
+    );
     const historyBefore = useEditorStore.getState().history.length;
     drag(rendered.container.querySelector('[data-graph-keyframe="rotation:1000"]')!, 0, 40);
     expect(Number(block("spin").toValue)).toBeLessThan(90);
     expect(useEditorStore.getState().history.length).toBe(historyBefore + 1);
   });
 
+  it("drags a keyframe sideways to retime it, clamped to the animation", () => {
+    rendered = renderEditorComponent(
+      <TimelineGraphEditor contentWidth={500} gutter={8} stickyLeft={0} />,
+    );
+    // 100 px of a 500 px-wide, 1000 ms timeline is 200 ms.
+    drag(rendered.container.querySelector('[data-graph-keyframe="rotation:1000"]')!, -100, 0);
+    expect(block("spin").endTime).toBe(800);
+    expect(Number(block("spin").toValue)).toBe(90);
+    expect(useEditorStore.getState().progress).toBeCloseTo(0.8);
+  });
+
+  it("keeps the value when Shift locks a mostly horizontal drag to time", () => {
+    rendered = renderEditorComponent(
+      <TimelineGraphEditor contentWidth={500} gutter={8} stickyLeft={0} />,
+    );
+    drag(
+      rendered.container.querySelector('[data-graph-keyframe="rotation:1000"]')!,
+      -100,
+      30,
+      true,
+    );
+    expect(block("spin").endTime).toBe(800);
+    expect(Number(block("spin").toValue)).toBe(90);
+  });
+
+  it("retimes the paired Y keyframe with X, since Position keys as one property", () => {
+    const motion = (id: string, propertyName: string) => ({
+      id,
+      layerId,
+      propertyName,
+      fromValue: 0,
+      toValue: 6,
+      startTime: 0,
+      endTime: 1000,
+      interpolator: "LINEAR",
+      type: "number" as const,
+    });
+    useEditorStore.setState({
+      animation: {
+        ...useEditorStore.getState().animation,
+        blocks: [motion("x", "translateX"), motion("y", "translateY")],
+      },
+    });
+    rendered = renderEditorComponent(
+      <TimelineGraphEditor contentWidth={500} gutter={8} stickyLeft={0} />,
+    );
+    drag(rendered.container.querySelector('[data-graph-keyframe="translateX:1000"]')!, -50, 0);
+    expect(block("x").endTime).toBe(900);
+    expect(block("y").endTime).toBe(900);
+  });
+
   it("drags an easing handle into a custom curve", () => {
-    rendered = renderEditorComponent(<TimelineGraphEditor contentWidth={500} gutter={8} stickyLeft={0} />);
+    rendered = renderEditorComponent(
+      <TimelineGraphEditor contentWidth={500} gutter={8} stickyLeft={0} />,
+    );
     drag(rendered.container.querySelector('[data-graph-handle="spin:0"]')!, 100, 0);
     expect(block("spin").interpolator).toMatch(/^cubic-bezier\(0\.2, 0, 1, 1\)$/);
   });

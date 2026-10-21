@@ -254,7 +254,9 @@ export default function PathshiftEditor() {
     id: "editor-canvas",
     tabIndex: -1,
     "aria-label": "Editor canvas",
-    className: "relative flex min-w-0 flex-1 overflow-hidden",
+    // Programmatic focus target (tool keys, skip link); outlining the whole work surface reads as a bug.
+    className:
+      "@container/canvas relative flex min-w-0 flex-1 overflow-hidden focus-visible:outline-none",
   };
   // Touch actions have an explicit menu; a long press must not steal a canvas gesture.
   const canvas = compact ? (
