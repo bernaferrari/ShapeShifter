@@ -124,7 +124,7 @@ export interface KeyframeToggleProps {
 }
 
 /** Reserve only the diamond column, so fields align without space for a row menu. */
-const KEYFRAME_SLOT = "flex w-6 pointer-coarse:w-11 shrink-0 items-center";
+const KEYFRAME_SLOT = "flex w-6 pointer-coarse:-my-1 pointer-coarse:w-11 shrink-0 items-center";
 
 /** Holds a row's place when it has no keyframe control, keeping columns aligned. */
 export function KeyframeSlot() {
@@ -507,7 +507,7 @@ export function Segmented<T extends string>({
   mixed?: boolean;
 }) {
   return (
-    <div className="flex h-7 items-center rounded-md bg-secondary p-0.5">
+    <div className="flex h-7 pointer-coarse:h-9 items-center rounded-md bg-secondary p-0.5">
       {options.map((o) => (
         <Button
           key={o.value}
@@ -516,7 +516,7 @@ export function Segmented<T extends string>({
           variant="ghost"
           onClick={() => onChange(o.value)}
           className={cn(
-            "h-6 flex-1 rounded-[5px] px-1 text-[11px] capitalize",
+            "h-6 pointer-coarse:h-8 flex-1 rounded-[5px] px-1 text-[11px] capitalize",
             !mixed && value === o.value
               ? "bg-background font-medium text-foreground shadow-xs hover:bg-background dark:bg-accent dark:hover:bg-accent"
               : "text-muted-foreground hover:text-foreground",

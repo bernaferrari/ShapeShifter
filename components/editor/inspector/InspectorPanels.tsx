@@ -398,7 +398,7 @@ export function PairRow({
   reserve?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-1.5">
+    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2">
       {children}
       {keyframe ? <KeyframeToggle keyframe={keyframe} /> : reserve && <KeyframeSlot />}
     </div>
@@ -594,7 +594,7 @@ export function FrameDesignPanel({
             />
           </Row>
         )}
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-2 gap-2">
           <NumberRow
             label="X"
             compact
@@ -634,7 +634,7 @@ export function FrameDesignPanel({
       </Section>
       {count === 1 && (
         <Section title="Android" defaultOpen={false}>
-          <div className="grid grid-cols-2 gap-1.5">
+          <div className="grid grid-cols-2 gap-2">
             <NumberRow
               label="VW"
               compact
@@ -692,7 +692,7 @@ export function FrameDesignPanel({
 function MixedReadout({ label, values }: { label: string; values: number[] }) {
   const mixed = values.some((value) => value !== values[0]);
   return (
-    <div className="flex h-7 items-center gap-2 rounded-md bg-secondary/60 px-2 text-[11px]">
+    <div className="flex h-7 pointer-coarse:h-9 items-center gap-2 rounded-md bg-secondary/60 px-2 text-[11px]">
       <span className="w-3 text-muted-foreground">{label}</span>
       <span className="text-muted-foreground">{mixed ? "Mixed" : values[0]}</span>
     </div>

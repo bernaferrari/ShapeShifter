@@ -63,7 +63,7 @@ export function ColorRow({
     >
       {hasLabel && <span className="truncate text-[11px] text-muted-foreground">{label}</span>}
       <div className="flex min-w-0 items-center gap-0.5">
-        <div className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-transparent bg-secondary pl-1 pr-2 transition-[background-color,border-color] hover:border-border focus-within:border-primary focus-within:bg-background">
+        <div className="flex h-7 pointer-coarse:h-9 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-transparent bg-secondary pl-1 pr-2 transition-[background-color,border-color] hover:border-border focus-within:border-primary focus-within:bg-background">
           <CompactColorInput
             value={hex}
             onChange={onColor}
@@ -335,7 +335,7 @@ export function GradientEditor({
 
       {activeStop && (
         <div className="flex items-center gap-1">
-          <div className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-transparent bg-secondary pl-1 pr-2 transition-[background-color,border-color] hover:border-border focus-within:border-primary focus-within:bg-background">
+          <div className="flex h-7 pointer-coarse:h-9 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-transparent bg-secondary pl-1 pr-2 transition-[background-color,border-color] hover:border-border focus-within:border-primary focus-within:bg-background">
             <CompactColorInput
               value={hex}
               onChange={(c) => updateStop(activeIdx, { color: c })}

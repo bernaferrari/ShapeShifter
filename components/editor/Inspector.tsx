@@ -674,7 +674,7 @@ export function Inspector() {
             }
           >
             {(!selectedPoints || selectedPoints.length <= 1) && (
-              <div className="grid grid-cols-2 gap-1.5">
+              <div className="grid grid-cols-2 gap-2">
                 <NumberRow
                   label="X"
                   compact

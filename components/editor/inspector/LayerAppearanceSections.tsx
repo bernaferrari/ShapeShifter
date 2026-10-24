@@ -142,7 +142,7 @@ function StrokeOptionGroup<T extends string>({
             type="button"
             onClick={() => onChange(option.value)}
             className={cn(
-              "flex h-7 flex-1 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/70",
+              "flex h-7 pointer-coarse:h-8 flex-1 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted/70",
               value === option.value && "bg-card text-foreground shadow-sm",
             )}
             title={option.label}
@@ -308,7 +308,7 @@ function TrimRangeBar({
     onPointerCancel: finish,
   });
   const thumb =
-    "absolute top-1/2 z-10 h-4 w-3 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize touch-none before:absolute before:inset-y-0 before:left-1/2 before:w-[3px] before:-translate-x-1/2 before:rounded-full before:bg-foreground before:shadow-[0_0_0_1px_var(--color-sidebar)] pointer-coarse:w-6";
+    "absolute top-1/2 z-10 h-4 w-3 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize touch-none before:absolute before:inset-y-0 before:left-1/2 before:w-[3px] before:-translate-x-1/2 before:rounded-full before:bg-foreground before:shadow-[0_0_0_1px_var(--color-sidebar)] pointer-coarse:h-11 pointer-coarse:w-8 pointer-coarse:before:inset-y-1.5";
 
   return (
     <div className="grid grid-cols-[64px_minmax(0,1fr)] items-center gap-2">
@@ -317,7 +317,7 @@ function TrimRangeBar({
         <div
           ref={track}
           className={cn(
-            "relative h-5 min-w-0 flex-1 rounded-sm bg-secondary",
+            "relative h-5 pointer-coarse:h-9 min-w-0 flex-1 rounded-sm bg-secondary",
             disabled && "pointer-events-none opacity-50",
           )}
           title="Drag the ends to trim, or the bar to slide it along the path"

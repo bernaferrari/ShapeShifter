@@ -55,7 +55,7 @@ export function LayerOwnerRow({
         type="button"
         tabIndex={-1}
         data-tree-toggle=""
-        className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-muted"
+        className="grid size-5 in-[.mobile-workspace]:h-11 in-[.mobile-workspace]:w-7 place-items-center rounded text-muted-foreground hover:bg-muted"
         onClick={onToggle}
         aria-label={expanded ? `Collapse ${name}` : `Expand ${name}`}
       >
@@ -66,7 +66,7 @@ export function LayerOwnerRow({
       <button
         type="button"
         tabIndex={-1}
-        className="flex min-w-0 flex-1 items-center gap-2 px-1 text-left text-[12px] leading-none font-medium disabled:cursor-default"
+        className="flex min-w-0 flex-1 items-center gap-2 self-stretch px-1 text-left text-[12px] leading-none font-medium disabled:cursor-default"
         onClick={(event) => {
           if (selectable) onSelect(event.shiftKey);
           event.currentTarget.closest<HTMLElement>('[role="treeitem"]')?.focus();

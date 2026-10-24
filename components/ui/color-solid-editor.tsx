@@ -100,7 +100,7 @@ export function SolidColorEditor({
     <Select value={format} onValueChange={(next) => setFormat(next as ColorFormat)}>
       <SelectTrigger
         size="sm"
-        className="h-7 w-[64px] shrink-0 rounded-md border-transparent bg-secondary px-2 text-[11px] text-foreground hover:bg-accent"
+        className="h-7 pointer-coarse:h-9 w-[64px] shrink-0 rounded-md border-transparent bg-secondary px-2 text-[11px] text-foreground hover:bg-accent"
       >
         <SelectValue>{format}</SelectValue>
       </SelectTrigger>
@@ -214,7 +214,7 @@ export function SolidColorEditor({
                 value={Math.round(value)}
                 onChange={(event) => updateFormatValue(index, event.target.value)}
                 className={cn(
-                  "h-7 min-w-0 rounded-md border border-transparent bg-secondary text-center text-[11px] tabular-nums text-foreground outline-none focus:border-primary",
+                  "h-7 pointer-coarse:h-9 min-w-0 rounded-md border border-transparent bg-secondary text-center text-[11px] tabular-nums text-foreground outline-none focus:border-primary",
                 )}
               />
             ))}
@@ -236,7 +236,7 @@ export function SolidColorEditor({
       {format === "HEX" && (
         <div className="flex items-center gap-2">
           {formatSelect}
-          <div className="flex h-7 min-w-0 flex-1 items-center gap-1 rounded-md border border-transparent bg-secondary px-2 focus-within:border-primary">
+          <div className="flex h-7 pointer-coarse:h-9 min-w-0 flex-1 items-center gap-1 rounded-md border border-transparent bg-secondary px-2 focus-within:border-primary">
             <span className="text-[11px] text-muted-foreground">#</span>
             <input
               type="text"

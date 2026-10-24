@@ -403,7 +403,7 @@ export function LayersPanel({
           >
             <button
               type="button"
-              className="grid size-5 shrink-0 place-items-center rounded hover:bg-muted disabled:opacity-0"
+              className="grid size-5 in-[.mobile-workspace]:h-11 in-[.mobile-workspace]:w-7 shrink-0 place-items-center rounded hover:bg-muted disabled:opacity-0"
               disabled={!expandable}
               tabIndex={-1}
               data-tree-toggle=""
@@ -471,7 +471,7 @@ export function LayersPanel({
                       type="button"
                       data-tree-menu=""
                       tabIndex={selected ? 0 : -1}
-                      className="grid size-6 place-items-center rounded text-muted-foreground/55 opacity-0 pointer-coarse:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+                      className="grid size-6 in-[.mobile-workspace]:h-11 in-[.mobile-workspace]:w-9 place-items-center rounded text-muted-foreground/55 opacity-0 pointer-coarse:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
                       aria-label={`Move ${layer.name || "layer"} to another frame`}
                       onPointerDown={(event) => event.stopPropagation()}
                       onClick={(event) => event.stopPropagation()}
@@ -499,7 +499,7 @@ export function LayersPanel({
                 type="button"
                 tabIndex={selected ? 0 : -1}
                 className={cn(
-                  "grid size-6 place-items-center rounded text-muted-foreground/55 hover:bg-muted hover:text-foreground focus-visible:opacity-100",
+                  "grid size-6 in-[.mobile-workspace]:h-11 in-[.mobile-workspace]:w-9 place-items-center rounded text-muted-foreground/55 hover:bg-muted hover:text-foreground focus-visible:opacity-100",
                   layer.locked
                     ? "opacity-100"
                     : "opacity-0 pointer-coarse:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100",
@@ -513,7 +513,7 @@ export function LayersPanel({
                 type="button"
                 tabIndex={selected ? 0 : -1}
                 className={cn(
-                  "grid size-6 place-items-center rounded text-muted-foreground/55 hover:bg-muted hover:text-foreground focus-visible:opacity-100",
+                  "grid size-6 in-[.mobile-workspace]:h-11 in-[.mobile-workspace]:w-9 place-items-center rounded text-muted-foreground/55 hover:bg-muted hover:text-foreground focus-visible:opacity-100",
                   layer.visible === false
                     ? "opacity-100"
                     : "opacity-0 pointer-coarse:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100",
