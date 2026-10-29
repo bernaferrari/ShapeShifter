@@ -982,11 +982,8 @@ export function createDocumentActions(
         const duration = Math.max(100, milliseconds);
         const resizeBlock = (block: (typeof state.animation.blocks)[number]) => ({
           ...block,
-          startTime: Math.min(block.startTime, duration - 1),
-          endTime:
-            block.endTime === state.animation.duration
-              ? duration
-              : Math.min(block.endTime, duration),
+          startTime: (block.startTime * duration) / state.animation.duration,
+          endTime: (block.endTime * duration) / state.animation.duration,
         });
         return {
           animation: {

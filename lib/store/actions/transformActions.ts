@@ -1,3 +1,4 @@
+import { createLayerTreeModel } from "../../pathshift/scene/layerHierarchy";
 import {
   getPathDataBounds,
   scalePathToBounds,
@@ -164,8 +165,11 @@ export function createTransformActions(
       const moveOwnerLayers = (ownerId: string, ownerLayers: Layer[]) => {
         const ids = idsByOwner.get(ownerId);
         if (!ids) return ownerLayers;
+        const tree = createLayerTreeModel(ownerLayers);
         return ownerLayers.map((layer) =>
-          !ids.has(String(layer.id)) || layer.locked
+          !ids.has(String(layer.id)) ||
+          layer.locked ||
+          tree.ancestorsOf(layer.id).some((parent) => parent.locked || ids.has(String(parent.id)))
             ? layer
             : {
                 ...layer,

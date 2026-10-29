@@ -10,7 +10,10 @@ import {
 import { isEditorShortcutBlocked, useEditorKeyboardShortcuts } from "../useEditorKeyboardShortcuts";
 import { BottomToolPalette } from "../../BottomToolPalette";
 
+import { useProjectImport } from "../../project/useProjectImport";
+
 function KeyboardHarness() {
+  useProjectImport();
   useEditorKeyboardShortcuts();
   return (
     <>
@@ -51,6 +54,22 @@ afterEach(() => {
 });
 
 describe("useEditorKeyboardShortcuts", () => {
+  it("lets native paste import external SVG before the internal clipboard", () => {
+    const store = useEditorStore.getState();
+    store.copyLayers([store.layers[0].id]);
+    const key = dispatchAt(window, "keydown", { key: "v", ctrlKey: true });
+    expect(key.defaultPrevented).toBe(false);
+    const data = new DataTransfer();
+    data.setData(
+      "text/plain",
+      '<svg xmlns="http://www.w3.org/2000/svg"><path id="external" d="M0 0L1 1"/></svg>',
+    );
+    React.act(() =>
+      window.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, cancelable: true })),
+    );
+    expect(useEditorStore.getState().layers.at(-1)?.name).toBe("external");
+  });
+
   it("resolves Control command shortcuts before tool keys", () => {
     const store = useEditorStore.getState();
     const sourceId = store.layers[0]!.id;
@@ -60,6 +79,9 @@ describe("useEditorKeyboardShortcuts", () => {
     const beforeCount = useEditorStore.getState().layers.length;
 
     dispatchKey({ key: "v", ctrlKey: true });
+    React.act(() =>
+      window.dispatchEvent(new ClipboardEvent("paste", { clipboardData: new DataTransfer() })),
+    );
     expect(useEditorStore.getState().layers.length).toBe(beforeCount + 1);
     expect(useEditorStore.getState().toolMode).toBe("pen");
 

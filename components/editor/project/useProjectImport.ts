@@ -183,15 +183,25 @@ export function useProjectImport() {
 
   useEffect(() => {
     const onPaste = (event: ClipboardEvent) => {
-      if (isEditableTarget(event.target)) return;
+      if (event.defaultPrevented || isEditableTarget(event.target)) return;
+      if (
+        document.querySelector(
+          '[role="dialog"][aria-modal="true"]:not([hidden]):not([data-closed])',
+        )
+      )
+        return;
       const text = event.clipboardData?.getData("text/plain")?.trim();
-      if (!text) return;
-      const isSvg = text.includes("<svg") || text.includes("<path ");
-      const isVectorDrawable = text.includes("<vector");
-      if (!isSvg && !isVectorDrawable) return;
+
+      const isSvg = text?.includes("<svg") || text?.includes("<path ");
+      const isVectorDrawable = text?.includes("<vector");
+      if (!isSvg && !isVectorDrawable) {
+        event.preventDefault();
+        useEditorStore.getState().pasteLayers();
+        return;
+      }
       event.preventDefault();
       try {
-        const summary = importEditorText(isVectorDrawable ? "pasted.xml" : "pasted.svg", text);
+        const summary = importEditorText(isVectorDrawable ? "pasted.xml" : "pasted.svg", text!);
         toast.success(summary.title, { description: summary.description });
       } catch (error) {
         toast.error("Couldn’t import pasted content", { description: String(error) });

@@ -77,3 +77,71 @@ describe("transformActions", () => {
     });
   });
 });
+
+describe("hierarchical keyboard movement", () => {
+  it("moves only selected subtree roots and respects ancestor locks", () => {
+    const store = freshStore();
+    const child = store.layers[0];
+    const group = {
+      ...child,
+      id: "regression-group",
+      type: "group" as const,
+      parentId: null,
+      translateX: 0,
+    };
+    useEditorStore.setState({
+      layers: [group, { ...child, parentId: group.id, translateX: 0 }],
+      selectedLayerRefs: [
+        { ownerId: store.selectedFrameId, layerId: group.id },
+        { ownerId: store.selectedFrameId, layerId: child.id },
+      ],
+    });
+    getStore().translateSelectedLayer(1, 0);
+    expect(getStore().layers[0].translateX).toBe(1);
+    expect(getStore().layers[1].translateX).toBe(0);
+    useEditorStore.setState({
+      layers: getStore().layers.map((l) => (l.id === group.id ? { ...l, locked: true } : l)),
+      selectedLayerRefs: [{ ownerId: store.selectedFrameId, layerId: child.id }],
+    });
+    getStore().translateSelectedLayer(1, 0);
+    expect(getStore().layers[1].translateX).toBe(0);
+  });
+});
+
+it("rescales adjacent segments without overlaps when shortening duration", () => {
+  const store = freshStore();
+  const layerId = store.layers[0].id;
+  useEditorStore.setState({
+    animation: {
+      ...getStore().animation,
+      duration: 1000,
+      blocks: [
+        {
+          id: "a",
+          layerId,
+          propertyName: "translateX",
+          fromValue: 0,
+          toValue: 5,
+          startTime: 0,
+          endTime: 500,
+        },
+        {
+          id: "b",
+          layerId,
+          propertyName: "translateX",
+          fromValue: 5,
+          toValue: 10,
+          startTime: 500,
+          endTime: 1000,
+        },
+      ],
+    },
+  });
+  getStore().setAnimationDuration(200);
+  expect(getStore().animation.blocks.map((b) => [b.startTime, b.endTime])).toEqual([
+    [0, 100],
+    [100, 200],
+  ]);
+  getStore().undo();
+  expect(getStore().animation.duration).toBe(1000);
+});

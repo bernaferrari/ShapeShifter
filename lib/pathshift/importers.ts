@@ -1,3 +1,4 @@
+import { generateId } from "./ids";
 import { parsePath, ensureStableCommandIds } from "./pathUtils";
 import { arcToBeziers } from "./geometry";
 import type {
@@ -414,13 +415,33 @@ function getStyle(
   }
 
   // Helper: inline style takes priority over presentational attribute
-  const get = (name: string) => inlineStyle.get(name) ?? element.getAttribute(name) ?? "";
+  const get = (name: string): string => {
+    const own = inlineStyle.get(name) ?? element.getAttribute(name);
+    if (own && own !== "inherit") return own;
+    if (name !== "opacity" || own === "inherit") {
+      let parent = element.parentElement;
+      while (parent) {
+        const style = parent.getAttribute("style") ?? "";
+        const value =
+          style
+            .split(";")
+            .map((part) => part.split(":"))
+            .find(([key]) => key.trim().toLowerCase() === name)
+            ?.slice(1)
+            .join(":")
+            .trim() || parent.getAttribute(name);
+        if (value && value !== "inherit") return value;
+        parent = parent.parentElement;
+      }
+    }
+    return "";
+  };
 
-  const fill = get("fill");
+  const fill = get("fill") || "#000000";
   const stroke = get("stroke");
   const fillOpacity = Number(get("fill-opacity") || 1);
   const strokeOpacity = Number(get("stroke-opacity") || 1);
-  const strokeWidth = Number(get("stroke-width") || 0);
+  const strokeWidth = Number(get("stroke-width") || 1);
 
   // Resolve a url(#id) gradient fill into the model (solid fill stays a string).
   const fillRefId = fill ? urlRef(fill) : null;
@@ -436,6 +457,8 @@ function getStyle(
   }
 
   return {
+    alpha: Math.max(0, Math.min(1, Number(get("opacity") || 1))),
+    strokeDasharray: get("stroke-dasharray") || undefined,
     ...(fillGradient ? { fillGradient } : {}),
     fillColor: fill === "none" || fillRefId ? "" : fill,
     fillAlpha: Number.isFinite(fillOpacity) ? fillOpacity : 1,
@@ -545,14 +568,8 @@ function addReferencedClip(
       clipDefinitionTransform(definition),
     );
     const name = definition.clipPath.getAttribute("id") || `${namePrefix}_clip_${counter.n + 1}`;
-    const clip = layerFromPathData(
-      name,
-      pathData,
-      `${namePrefix}_clip_${counter.n++}`,
-      matrix,
-      {},
-      parentId,
-    );
+    const clip = layerFromPathData(name, pathData, generateId("clip"), matrix, {}, parentId);
+    counter.n++;
     layers.push({ ...clip, type: "clipPath", fillColor: "", strokeColor: "" });
   } catch {
     // A malformed external clip must not reject otherwise usable artwork.
@@ -599,13 +616,15 @@ function walkSvgChildren(
     if (tag === "defs" || tag === "symbol" || tag === "clippath") continue;
 
     if (tag === "g") {
-      const groupId = `${namePrefix}_g_${counter.n++}`;
+      const groupId = generateId("group");
+      counter.n++;
       const name = child.getAttribute("id") || `${namePrefix}_group_${counter.n}`;
       const emptyPath = ensureStableCommandIds(parsePath(""));
       layers.push({
         id: groupId,
         name,
         type: "group",
+        alpha: getStyle(child).alpha,
         from: emptyPath,
         to: emptyPath,
         pathData: emptyPath,
@@ -625,7 +644,8 @@ function walkSvgChildren(
         const pathData = svgPathDataFor(child, tag);
         if (!pathData.trim()) continue;
         const name = child.getAttribute("id") || `${namePrefix}_${tag}_${counter.n + 1}`;
-        const id = `${Date.now()}_${counter.n++}`;
+        const id = generateId("path");
+        counter.n++;
         const matrix = getAccumulatedTransform(child);
         const layer = layerFromPathData(
           name,
@@ -690,6 +710,29 @@ export function importLayersFromSvg(svgText: string, namePrefix = "svg") {
     use.parentNode?.replaceChild(wrapper, use);
   }
 
+  // Shape clips need their own scope so they do not clip subsequent siblings.
+  for (const shape of Array.from(
+    doc.querySelectorAll("path, rect, circle, ellipse, line, polygon, polyline"),
+  )) {
+    if (!shape.hasAttribute("clip-path") || shape.closest("defs, clipPath")) continue;
+    const wrapper = doc.createElementNS("http://www.w3.org/2000/svg", "g");
+    for (const attr of ["clip-path", "transform"]) {
+      if (shape.hasAttribute(attr)) {
+        wrapper.setAttribute(attr, shape.getAttribute(attr)!);
+        shape.removeAttribute(attr);
+      }
+    }
+    shape.replaceWith(wrapper);
+    wrapper.appendChild(shape);
+  }
+  const root = doc.documentElement;
+  const rootOpacity = getStyle(root).alpha;
+  if (rootOpacity !== 1) {
+    const wrapper = doc.createElementNS("http://www.w3.org/2000/svg", "g");
+    wrapper.setAttribute("opacity", String(rootOpacity));
+    for (const child of Array.from(root.children)) wrapper.appendChild(child);
+    root.appendChild(wrapper);
+  }
   const gradients = buildGradientLookup(doc);
   const clips = buildClipLookup(doc);
   const layers: Layer[] = [];

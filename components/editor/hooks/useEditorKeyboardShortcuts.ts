@@ -85,8 +85,7 @@ export function useEditorKeyboardShortcuts() {
         return;
       }
       if (command && key === "v") {
-        event.preventDefault();
-        store.pasteLayers?.();
+        // Let the paste event inspect external markup before using the layer clipboard.
         return;
       }
       if (command && key === "x") {

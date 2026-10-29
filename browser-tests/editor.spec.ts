@@ -191,3 +191,25 @@ test("morph demo preview is the generated output and uses the same settings as d
   const result = await event;
   expect(await readFile((await result.path())!, "utf8")).toBe(source);
 });
+
+test("native clipboard paste imports SVG before the internal layer clipboard", async ({
+  page,
+  context,
+}, info) => {
+  test.skip(info.project.name !== "desktop", "Chromium clipboard permissions.");
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Make an icon move", exact: true }).click();
+  await page.getByRole("button", { name: "Close animation exercise" }).click();
+  await focusCanvas(page);
+  await page.keyboard.press("ControlOrMeta+c");
+  await page.evaluate(() =>
+    navigator.clipboard.writeText(
+      '<svg xmlns="http://www.w3.org/2000/svg"><path id="External triangle" d="M0 0L10 0L0 10Z"/></svg>',
+    ),
+  );
+  await page.keyboard.press("ControlOrMeta+v");
+  await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue(
+    "External triangle",
+  );
+});

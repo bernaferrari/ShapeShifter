@@ -232,10 +232,10 @@ describe("timeline authoring actions", () => {
     store.setAnimationDuration(1000);
     expect(useEditorStore.getState().history).toHaveLength(historyLength);
     store.setAnimationDuration(999.75);
-    expect(blocks()[1].startTime).toBe(998.5);
+    expect(blocks()[1].startTime).toBeCloseTo((998.5 * 999.75) / 1000);
     expect(blocks()[1].endTime).toBe(999.75);
     store.setAnimationDuration(999);
-    expect(blocks()[1].startTime).toBe(998);
+    expect(blocks()[1].startTime).toBeCloseTo((998.5 * 999) / 1000);
     expect(blocks()[1].endTime).toBe(999);
   });
 });
